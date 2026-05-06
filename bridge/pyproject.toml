@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jarvis-bridge"
+version = "0.1.0"
+description = "Jarvis-LITE Bridge: Telegram-Bot mit Claude Code CLI"
+requires-python = ">=3.11"
+dependencies = [
+    "python-telegram-bot==21.7",
+    "python-dotenv==1.2.2",
+    "filelock>=3.13",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-mock>=3.12",
+]
+dev = [
+    "pre-commit>=4.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short"
+
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint.per-file-ignores]
+"main.py" = ["E402"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["domain*", "infrastructure*", "application*", "presentation*"]

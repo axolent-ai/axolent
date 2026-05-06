@@ -25,6 +25,10 @@ Cargo.lock
 .env.*.local
 *.secret
 
+# Runtime data & logs
+bridge/logs/
+bridge/data/
+
 # OS
 .DS_Store
 Thumbs.db
