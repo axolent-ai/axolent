@@ -36,6 +36,9 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+# Typing-Keepalive: Telegram zeigt Typing ca. 5s, wir triggern alle 4s neu
+TYPING_KEEPALIVE_INTERVAL_SECONDS: float = 4.0
+
 
 # Concurrency Controls: max 4 Claude-Prozesse global, max 1 pro User
 GLOBAL_CLAUDE_SEMAPHORE = asyncio.Semaphore(4)
@@ -58,6 +61,31 @@ _SUPPORTED_LANGUAGES: set[str] = {
     "ko",
     "zh",
 }
+
+
+async def _typing_keepalive(
+    chat: Any, interval: float = TYPING_KEEPALIVE_INTERVAL_SECONDS
+) -> None:
+    """Sendet Typing-Indicator periodisch bis der Task gecancelled wird.
+
+    Läuft als Background-Task parallel zum LLM-Call. Telegram zeigt den
+    Typing-Indicator nur ca. 5 Sekunden, daher triggern wir alle 4s neu.
+    Bei Telegram-API-Fehlern (Network-Hickup etc.) wird leise weitergemacht
+    oder beendet, niemals raised.
+
+    Args:
+        chat: Telegram Chat-Objekt mit send_chat_action-Methode.
+        interval: Sekunden zwischen Re-Triggers (Default: 4.0).
+    """
+    try:
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                await chat.send_chat_action(ChatAction.TYPING)
+            except Exception as exc:
+                log.debug("Typing-Keepalive ignoriert Fehler: %s", exc)
+    except asyncio.CancelledError:
+        pass
 
 
 def _get_user_lock(user_id: int) -> asyncio.Lock:
@@ -226,14 +254,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_lock = _get_user_lock(user_id)
     async with user_lock:  # max 1 Request pro User gleichzeitig
         async with GLOBAL_CLAUDE_SEMAPHORE:  # max 4 global
-            result = await chat_service.process_user_message(
-                text=text,
-                user_id=user_id,
-                chat_id=chat_id,
-                username=username,
-                system_prompt=_get_system_prompt(context),
-                reply_to_text=reply_to_text,
+            keepalive = asyncio.create_task(
+                _typing_keepalive(
+                    update.effective_chat,
+                    interval=TYPING_KEEPALIVE_INTERVAL_SECONDS,
+                )
             )
+            try:
+                result = await chat_service.process_user_message(
+                    text=text,
+                    user_id=user_id,
+                    chat_id=chat_id,
+                    username=username,
+                    system_prompt=_get_system_prompt(context),
+                    reply_to_text=reply_to_text,
+                )
+            finally:
+                keepalive.cancel()
+                try:
+                    await keepalive
+                except asyncio.CancelledError:
+                    pass
 
     if not result.success:
         await update.message.reply_text(result.error_message)
