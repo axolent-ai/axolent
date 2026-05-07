@@ -1,7 +1,7 @@
-"""Memory-Service: CRUD-Coordinator fuer Trinity-Memory.
+"""Memory-Service: CRUD-Coordinator für Trinity-Memory.
 
 Koordiniert zwischen Domain (Entry-Klassen) und Infrastructure (MemoryStorage).
-User-facing API fuer Telegram-Handler.
+User-facing API für Telegram-Handler.
 
 Phase 1: Manuelles Speichern/Abrufen via Commands.
 Phase 1+: Auto-Memory-Loading in Chat-Service, Konsolidierung.
@@ -21,10 +21,10 @@ log = logging.getLogger(__name__)
 
 
 class MemoryService:
-    """Koordinator fuer alle Memory-Operationen.
+    """Koordinator für alle Memory-Operationen.
 
     Bietet eine saubere API die von Telegram-Handlern genutzt wird.
-    Kuemmert sich um Entry-Erstellung, Validierung und Storage-Delegation.
+    Kümmert sich um Entry-Erstellung, Validierung und Storage-Delegation.
     """
 
     def __init__(self, storage: MemoryStorage) -> None:
@@ -161,7 +161,7 @@ class MemoryService:
         return self.storage.list_entries(user_id, layer, limit)
 
     def forget(self, user_id: int, entry_id: str) -> bool:
-        """Loescht einen Memory-Entry (mit Ownership-Check).
+        """Löscht einen Memory-Entry (mit Ownership-Check).
 
         Erkennt den Layer automatisch anhand des ID-Prefix.
 
@@ -170,11 +170,11 @@ class MemoryService:
             entry_id: ID des Entries (ep_..., sem_..., pro_...).
 
         Returns:
-            True wenn geloescht, False wenn nicht gefunden.
+            True wenn gelöscht, False wenn nicht gefunden.
         """
         layer = self._layer_from_id(entry_id)
         if layer is None:
-            log.warning("Unbekanntes ID-Prefix fuer forget: %s", entry_id)
+            log.warning("Unbekanntes ID-Prefix für forget: %s", entry_id)
             return False
         return self.storage.delete_by_id(entry_id, layer, user_id)
 

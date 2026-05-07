@@ -11,15 +11,15 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class SemanticEntry:
     """Ein Fakt in der Semantic Memory.
 
     Attributes:
-        id: Eindeutige ID mit Prefix sem_ fuer Layer-Erkennung.
+        id: Eindeutige ID mit Prefix sem_ für Layer-Erkennung.
         user_id: Telegram-User-ID.
         content: Der generalisierte Fakt.
-        category: Klassifizierung (z.B. "fakt", "person", "praeferenz", "projekt").
+        category: Klassifizierung (z.B. "fakt", "person", "präferenz", "projekt").
         context: Optionaler Kontext (Quelle, Confidence).
         timestamp: ISO 8601 UTC.
         importance: 1-10, Auto-Score oder User-vergeben.
@@ -36,7 +36,7 @@ class SemanticEntry:
     importance: int = 5
 
     def to_dict(self) -> dict:
-        """Serialisiert den Entry als Dict fuer JSONL-Persistierung."""
+        """Serialisiert den Entry als Dict für JSONL-Persistierung."""
         return {
             "id": self.id,
             "user_id": self.user_id,

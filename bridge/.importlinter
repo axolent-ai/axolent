@@ -1,0 +1,25 @@
+[importlinter]
+root_packages =
+    domain
+    application
+    infrastructure
+    presentation
+
+[importlinter:contract:layered]
+name = Hexagonal Layers
+type = layers
+layers =
+    presentation
+    application
+    infrastructure
+    domain
+
+[importlinter:contract:domain-pure]
+name = Domain darf nichts importieren
+type = forbidden
+source_modules =
+    domain
+forbidden_modules =
+    infrastructure
+    application
+    presentation

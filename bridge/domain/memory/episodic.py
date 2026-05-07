@@ -11,12 +11,12 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class EpisodicEntry:
     """Ein einzelnes Event in der Episodic Memory.
 
     Attributes:
-        id: Eindeutige ID mit Prefix ep_ fuer Layer-Erkennung.
+        id: Eindeutige ID mit Prefix ep_ für Layer-Erkennung.
         user_id: Telegram-User-ID.
         content: Beschreibung des Events.
         context: Optionaler Kontext (Workspace, Tags, Quelle).
@@ -34,7 +34,7 @@ class EpisodicEntry:
     importance: int = 5
 
     def to_dict(self) -> dict:
-        """Serialisiert den Entry als Dict fuer JSONL-Persistierung."""
+        """Serialisiert den Entry als Dict für JSONL-Persistierung."""
         return {
             "id": self.id,
             "user_id": self.user_id,

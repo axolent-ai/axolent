@@ -1,7 +1,7 @@
-"""Claude CLI Adapter: LEGACY-Kompatibilitaets-Wrapper.
+"""Claude CLI Adapter: LEGACY-Kompatibilitäts-Wrapper.
 
 VERALTET: Neuer Code soll infrastructure.providers.claude_cli.ClaudeProvider nutzen.
-Dieses Modul bleibt fuer Backward-Compatibility (Tests, alte Imports).
+Dieses Modul bleibt für Backward-Compatibility (Tests, alte Imports).
 
 Kapselt den Aufruf von `claude -p` als async Subprozess.
 Kein Telegram-Code, keine Presentation-Logik.
@@ -36,7 +36,7 @@ async def call_claude_async(
 
     Raises:
         FileNotFoundError: Wenn `claude` nicht im PATH gefunden wird.
-        asyncio.TimeoutError: Wenn Claude laenger als CLAUDE_TIMEOUT_SECONDS braucht.
+        asyncio.TimeoutError: Wenn Claude länger als CLAUDE_TIMEOUT_SECONDS braucht.
     """
     start = time.monotonic()
     cmd: list[str] = ["claude", "-p"]

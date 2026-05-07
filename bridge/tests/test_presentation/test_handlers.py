@@ -12,14 +12,31 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from filelock import FileLock
 
-from infrastructure.conversation_storage import _histories, _languages
+from application.chat_service import ChatService
+from infrastructure.conversation_storage import _reset_all_for_tests
+from infrastructure.providers.base import ProviderResponse
 
 
 @pytest.fixture(autouse=True)
 def _clear_storage() -> None:
-    """Raeumt Conversation-Storage vor jedem Test auf."""
-    _histories.clear()
-    _languages.clear()
+    """Räumt Conversation-Storage vor jedem Test auf."""
+    _reset_all_for_tests()
+
+
+def _make_mock_chat_service(
+    route_return: ProviderResponse | None = None,
+) -> ChatService:
+    """Erstellt einen ChatService mit gemocktem ProviderRouter."""
+    mock_router = MagicMock()
+    mock_router.route = AsyncMock(
+        return_value=route_return
+        or ProviderResponse(
+            text="Antwort von Claude",
+            duration_seconds=1.0,
+            provider_name="claude",
+        )
+    )
+    return ChatService(provider_router=mock_router, memory_service=None)
 
 
 def _make_update(user_id: int = 1, chat_id: int = 10, text: str = "") -> MagicMock:
@@ -30,6 +47,7 @@ def _make_update(user_id: int = 1, chat_id: int = 10, text: str = "") -> MagicMo
     update.effective_user.username = "testuser"
     update.effective_chat = MagicMock()
     update.effective_chat.id = chat_id
+    update.effective_chat.type = "private"
     update.message = MagicMock()
     update.message.text = text
     update.message.reply_text = AsyncMock()
@@ -37,12 +55,19 @@ def _make_update(user_id: int = 1, chat_id: int = 10, text: str = "") -> MagicMo
     return update
 
 
-def _make_context(args: list[str] | None = None) -> MagicMock:
-    """Erstellt einen gemockten Telegram-Context."""
+def _make_context(
+    args: list[str] | None = None,
+    chat_service: ChatService | None = None,
+) -> MagicMock:
+    """Erstellt einen gemockten Telegram-Context mit bot_data."""
     context = MagicMock()
     context.args = args or []
     context.bot = MagicMock()
     context.bot.send_chat_action = AsyncMock()
+    # bot_data fuer ChatService-Injection
+    svc = chat_service or _make_mock_chat_service()
+    context.application = MagicMock()
+    context.application.bot_data = {"chat_service": svc}
     return context
 
 
@@ -167,7 +192,7 @@ class TestHandleResetCommand:
             yield  # type: ignore[misc]
 
     async def test_reset_command_clears_history(self) -> None:
-        """/reset loescht History und Language."""
+        """/reset loescht History und Language, speichert dann die Reset-Bestaetigung."""
         from domain.conversation import ConversationTurn
         from infrastructure.conversation_storage import (
             get_history,
@@ -186,13 +211,124 @@ class TestHandleResetCommand:
 
         await handle_reset_command(update, context)
 
-        # Alles geloescht
+        # Alte History geloescht, aber Reset-Bestaetigung gespeichert
         history = await get_history(1, 10)
         lang = await get_language(1, 10)
-        assert history == []
+        assert len(history) == 1
+        assert history[0].role == "assistant"
+        assert (
+            "zurueckgesetzt" in history[0].content.lower()
+            or "frisch" in history[0].content.lower()
+        )
         assert lang is None
 
         # Bestaetigung gesendet
         update.message.reply_text.assert_called_once()
         reply_text = update.message.reply_text.call_args[0][0]
-        assert "zurückgesetzt" in reply_text.lower() or "reset" in reply_text.lower()
+        assert "zurueckgesetzt" in reply_text.lower() or "frisch" in reply_text.lower()
+
+
+class TestStartCommandHistory:
+    """Tests: /start speichert Bot-Antwort in Conversation-History (Fix A)."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        """Whitelist-Bypass."""
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    async def test_start_command_saves_to_history(self) -> None:
+        """/start speichert START_TEXT als assistant-Turn in History."""
+        from infrastructure.conversation_storage import get_history
+        from presentation.handlers import START_TEXT, handle_start_command
+
+        update = _make_update(user_id=1, chat_id=10)
+        context = _make_context()
+
+        await handle_start_command(update, context)
+
+        history = await get_history(1, 10)
+        assert len(history) == 1
+        assert history[0].role == "assistant"
+        assert history[0].content == START_TEXT
+
+    async def test_help_command_saves_to_history(self) -> None:
+        """/help speichert HELP_TEXT als assistant-Turn in History."""
+        from infrastructure.conversation_storage import get_history
+        from presentation.handlers import HELP_TEXT, handle_help_command
+
+        update = _make_update(user_id=1, chat_id=10)
+        context = _make_context()
+
+        await handle_help_command(update, context)
+
+        history = await get_history(1, 10)
+        assert len(history) == 1
+        assert history[0].role == "assistant"
+        assert history[0].content == HELP_TEXT
+
+
+class TestReplyToContext:
+    """Tests: Telegram-Reply-To wird als Kontext extrahiert (Fix B)."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        """Whitelist-Bypass."""
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    def _make_reply_chat_service(self) -> tuple[ChatService, MagicMock]:
+        """Erstellt ChatService mit mockbarem Router fuer Reply-Tests."""
+        mock_router = MagicMock()
+        mock_router.route = AsyncMock(
+            return_value=ProviderResponse(
+                text="Antwort mit Kontext",
+                duration_seconds=0.5,
+                provider_name="claude",
+            )
+        )
+        svc = ChatService(provider_router=mock_router, memory_service=None)
+        return svc, mock_router
+
+    async def test_reply_to_context_passed_to_provider(self) -> None:
+        """Wenn User auf Bot-Nachricht antwortet, wird Reply-Text im Prompt eingefuegt."""
+        from presentation.handlers import handle_message, set_system_prompt
+
+        set_system_prompt("Test prompt.")
+        svc, mock_router = self._make_reply_chat_service()
+
+        update = _make_update(user_id=1, chat_id=10, text="Was bedeutet das?")
+        # Simuliere Reply auf eine Bot-Nachricht
+        reply_msg = MagicMock()
+        reply_msg.text = "Tipp: Du kannst Bot-Nachrichten als Bookmark speichern."
+        update.message.reply_to_message = reply_msg
+
+        context = _make_context(chat_service=svc)
+
+        await handle_message(update, context)
+
+        # Der Prompt an den Router muss den Reply-Kontext enthalten
+        call_args = mock_router.route.call_args
+        prompt_sent = call_args.kwargs.get("prompt", "")
+        assert "REPLIED TO PREVIOUS BOT MESSAGE" in prompt_sent
+        assert "Bookmark speichern" in prompt_sent
+        assert "Was bedeutet das?" in prompt_sent
+
+    async def test_no_reply_to_sends_plain_text(self) -> None:
+        """Ohne Reply wird nur der normale Text gesendet."""
+        from presentation.handlers import handle_message, set_system_prompt
+
+        set_system_prompt("Test prompt.")
+        svc, mock_router = self._make_reply_chat_service()
+
+        update = _make_update(user_id=1, chat_id=10, text="Einfache Frage")
+        update.message.reply_to_message = None
+
+        context = _make_context(chat_service=svc)
+
+        await handle_message(update, context)
+
+        call_args = mock_router.route.call_args
+        prompt_sent = call_args.kwargs.get("prompt", "")
+        assert "REPLIED TO PREVIOUS BOT MESSAGE" not in prompt_sent
+        assert "Einfache Frage" in prompt_sent

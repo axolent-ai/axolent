@@ -3,7 +3,7 @@
 Startet den Telegram-Bot mit hexagonaler Architektur.
 Modus B (lokaler CLI-Wrapper, User hat eigene Pro/Max-Subscription).
 
-Laedt Konfiguration, registriert Provider + Handler, startet Long-Polling.
+Lädt Konfiguration, registriert Provider + Handler, startet Long-Polling.
 """
 
 from __future__ import annotations
@@ -28,12 +28,10 @@ from telegram.ext import (
 
 from pathlib import Path
 
+from application.chat_service import ChatService
 from application.memory_service import MemoryService
 from application.provider_router import ProviderRouter
-from application.chat_service import (
-    set_provider_router,
-    set_memory_service as set_chat_memory_service,
-)
+from infrastructure.bookmark_storage import migrate_legacy_chat_id
 from infrastructure.memory_storage import MemoryStorage
 from infrastructure.personality_loader import build_combined_prompt
 from infrastructure.providers import (
@@ -75,7 +73,7 @@ def _build_provider_router() -> ProviderRouter:
     """Erstellt und konfiguriert den ProviderRouter mit allen Providern.
 
     Registriert alle bekannten Provider (aktive + Stubs).
-    Default-Provider wird aus .env gelesen oder faellt auf 'claude' zurueck.
+    Default-Provider wird aus .env gelesen oder fällt auf 'claude' zurück.
     """
     providers = {
         "claude": ClaudeProvider(),
@@ -90,16 +88,16 @@ def _build_provider_router() -> ProviderRouter:
     # Validierung: Default muss registriert sein
     if default not in providers:
         log.warning(
-            "DEFAULT_PROVIDER='%s' nicht bekannt, falle auf 'claude' zurueck.",
+            "DEFAULT_PROVIDER='%s' nicht bekannt, falle auf 'claude' zurück.",
             default,
         )
         default = "claude"
 
     router = ProviderRouter(providers=providers, default=default)
 
-    # Log welche Provider tatsaechlich verfuegbar sind
+    # Log welche Provider tatsächlich verfügbar sind
     available = router.list_available()
-    log.info("Verfuegbare Provider: %s", available if available else ["KEINE!"])
+    log.info("Verfügbare Provider: %s", available if available else ["KEINE!"])
 
     return router
 
@@ -110,7 +108,7 @@ def main() -> None:
     if not WHITELIST and not ALLOW_ALL_USERS:
         log.critical(
             "WHITELIST_USER_IDS in .env nicht gesetzt oder leer. "
-            "Setze WHITELIST_USER_IDS=12345 oder ALLOW_ALL_USERS=true (nur fuer Dev!)"
+            "Setze WHITELIST_USER_IDS=12345 oder ALLOW_ALL_USERS=true (nur für Dev!)"
         )
         sys.exit(1)
 
@@ -120,16 +118,29 @@ def main() -> None:
         log.critical("Kein TELEGRAM_BOT_TOKEN in .env gefunden.")
         sys.exit(1)
 
-    # Provider-Router initialisieren und in ChatService injizieren
-    router = _build_provider_router()
-    set_provider_router(router)
+    # Legacy-Bookmarks migrieren (chat_id nachrüsten)
+    migrated_count = migrate_legacy_chat_id()
+    if migrated_count:
+        log.info(
+            "Bookmark-Migration: %d Einträge mit chat_id nachgerüstet", migrated_count
+        )
 
-    # Trinity-Memory initialisieren und in Handler + ChatService injizieren
+    # Provider-Router initialisieren
+    router = _build_provider_router()
+
+    # Trinity-Memory initialisieren
     bridge_root = Path(__file__).resolve().parent
     memory_storage = MemoryStorage(data_dir=bridge_root / "data")
     memory_svc = MemoryService(storage=memory_storage)
+
+    # ChatService mit Konstruktor-Injection erstellen
+    chat_service = ChatService(
+        provider_router=router,
+        memory_service=memory_svc,
+    )
+
+    # MemoryService in Handler injizieren (für /remember, /memory, /forget)
     set_memory_service(memory_svc)
-    set_chat_memory_service(memory_svc)
     log.info("Trinity-Memory-System initialisiert (JSONL-Backend, Auto-Loading aktiv)")
 
     # Personality laden und an Handler injizieren
@@ -138,6 +149,9 @@ def main() -> None:
 
     # Application bauen
     app = Application.builder().token(token).build()
+
+    # ChatService via bot_data teilen (für Handler-Zugriff)
+    app.bot_data["chat_service"] = chat_service
 
     # Command handlers
     app.add_handler(CommandHandler("start", handle_start_command))
@@ -172,7 +186,7 @@ def main() -> None:
     )
     log.info("Bookmarks-Feature aktiv (Reply-basiert via /save)")
     log.info("Trinity-Memory aktiv (/remember /memory /forget)")
-    log.info("Conversation-History aktiv (max 20 Turns, /reset zum Loeschen)")
+    log.info("Conversation-History aktiv (max 20 Turns, /reset zum Löschen)")
     app.run_polling()
 
 

@@ -1,4 +1,4 @@
-"""Provider-Router: waehlt fuer jede Anfrage den passenden LLM-Provider.
+"""Provider-Router: wählt für jede Anfrage den passenden LLM-Provider.
 
 Strategien:
   Aktuell: nur Claude (default).
@@ -11,7 +11,12 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from infrastructure.providers.base import LLMProvider, ProviderResponse
+from infrastructure.providers.base import (
+    LLMProvider,
+    ProviderCapabilities,
+    ProviderResponse,
+    ProviderUnavailable,
+)
 
 log = logging.getLogger(__name__)
 
@@ -19,7 +24,7 @@ log = logging.getLogger(__name__)
 class ProviderRouter:
     """Routet Anfragen an den richtigen LLM-Provider.
 
-    Haelt eine Registry aller registrierten Provider und waehlt
+    Hält eine Registry aller registrierten Provider und wählt
     anhand des provider_name oder des Defaults den richtigen aus.
 
     Attributes:
@@ -55,35 +60,36 @@ class ProviderRouter:
         provider_name: Optional[str] = None,
         timeout_seconds: int = 120,
     ) -> ProviderResponse:
-        """Sendet eine Anfrage an den gewuenschten Provider (oder Default).
+        """Sendet eine Anfrage an den gewünschten Provider (oder Default).
 
         Args:
             prompt: User-Nachricht / Prompt.
             system_prompt: Optionaler System-Prompt.
             provider_name: Expliziter Provider-Name (None = Default).
-            timeout_seconds: Timeout fuer den Provider-Aufruf.
+            timeout_seconds: Timeout für den Provider-Aufruf.
 
         Returns:
             ProviderResponse mit Antwort oder Fehler.
 
         Raises:
             ValueError: Wenn der Provider nicht registriert ist.
-            RuntimeError: Wenn der Provider nicht verfuegbar ist.
+            ProviderUnavailable: Wenn der Provider nicht verfügbar ist.
+            ProviderError: Bei sonstigen Provider-Fehlern (Basis-Klasse).
         """
         target = provider_name or self.default
 
         if target not in self.providers:
             raise ValueError(
                 f"Provider '{target}' nicht registriert. "
-                f"Verfuegbar: {list(self.providers.keys())}"
+                f"Verfügbar: {list(self.providers.keys())}"
             )
 
         provider = self.providers[target]
 
         if not provider.is_available():
-            raise RuntimeError(
-                f"Provider '{target}' ist nicht verfuegbar. "
-                f"Pruefe ob das CLI installiert ist."
+            raise ProviderUnavailable(
+                target,
+                reason="CLI nicht installiert oder kein API-Key gesetzt",
             )
 
         log.info("Routing an Provider '%s'", target)
@@ -94,11 +100,30 @@ class ProviderRouter:
         )
 
     def list_available(self) -> list[str]:
-        """Gibt eine Liste aller verfuegbaren Provider zurueck."""
+        """Gibt eine Liste aller verfügbaren Provider zurück."""
         return [
             name for name, provider in self.providers.items() if provider.is_available()
         ]
 
     def list_registered(self) -> list[str]:
-        """Gibt eine Liste aller registrierten Provider zurueck."""
+        """Gibt eine Liste aller registrierten Provider zurück."""
         return list(self.providers.keys())
+
+    def get_capabilities(self, provider_name: str) -> ProviderCapabilities:
+        """Gibt die Capabilities eines registrierten Providers zurück.
+
+        Args:
+            provider_name: Name des Providers.
+
+        Returns:
+            ProviderCapabilities-Instanz.
+
+        Raises:
+            ValueError: Wenn der Provider nicht registriert ist.
+        """
+        if provider_name not in self.providers:
+            raise ValueError(
+                f"Provider '{provider_name}' nicht registriert. "
+                f"Verfügbar: {list(self.providers.keys())}"
+            )
+        return self.providers[provider_name].get_capabilities()

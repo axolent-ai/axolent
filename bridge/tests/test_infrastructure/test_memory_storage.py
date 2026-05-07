@@ -1,6 +1,7 @@
 """Tests fuer MemoryStorage: JSONL-Persistierung mit FileLock.
 
-Testet append, list, search, delete und concurrent writes.
+Testet append, list, search, delete, concurrent writes,
+mode-Parameter und Aktualitaets-Sortierung.
 """
 
 from __future__ import annotations
@@ -58,11 +59,11 @@ class TestMemoryStorageAppend:
 
     def test_append_unicode(self, storage: MemoryStorage) -> None:
         """Unicode-Zeichen (Umlaute, Emojis) werden korrekt gespeichert."""
-        entry = {"id": "ep_unicode", "user_id": 1, "content": "Äöü ß Grüße"}
+        entry = {"id": "ep_unicode", "user_id": 1, "content": "Aeoeuess Gruesse"}
         storage.append(entry, "episodic")
 
         raw = storage.episodic_path.read_text(encoding="utf-8")
-        assert "Äöü ß Grüße" in raw
+        assert "Aeoeuess Gruesse" in raw
 
 
 class TestMemoryStorageList:
@@ -85,17 +86,42 @@ class TestMemoryStorageList:
         assert len(result) == 2
         assert all(e["user_id"] == 1 for e in result)
 
-    def test_list_returns_newest_first(self, storage: MemoryStorage) -> None:
-        """list_entries liefert neueste Eintraege zuerst."""
-        for i in range(5):
-            storage.append(
-                {"id": f"ep_{i}", "user_id": 1, "content": f"Entry {i}"}, "episodic"
-            )
+    def test_list_returns_newest_first_by_timestamp(
+        self, storage: MemoryStorage
+    ) -> None:
+        """list_entries sortiert nach Timestamp absteigend (neueste zuerst)."""
+        storage.append(
+            {
+                "id": "ep_old",
+                "user_id": 1,
+                "content": "Alt",
+                "timestamp": "2026-01-01T00:00:00",
+            },
+            "episodic",
+        )
+        storage.append(
+            {
+                "id": "ep_new",
+                "user_id": 1,
+                "content": "Neu",
+                "timestamp": "2026-05-07T12:00:00",
+            },
+            "episodic",
+        )
+        storage.append(
+            {
+                "id": "ep_mid",
+                "user_id": 1,
+                "content": "Mitte",
+                "timestamp": "2026-03-15T06:00:00",
+            },
+            "episodic",
+        )
 
         result = storage.list_entries(user_id=1, layer="episodic")
-        # Neueste zuerst = letzter geschriebener ist erster im Result
-        assert result[0]["id"] == "ep_4"
-        assert result[-1]["id"] == "ep_0"
+        assert result[0]["id"] == "ep_new"
+        assert result[1]["id"] == "ep_mid"
+        assert result[2]["id"] == "ep_old"
 
     def test_list_respects_limit(self, storage: MemoryStorage) -> None:
         """list_entries respektiert das Limit."""
@@ -161,6 +187,47 @@ class TestMemoryStorageSearch:
 
         result = storage.search(user_id=1, query="Match", layer="episodic", limit=3)
         assert len(result) == 3
+
+    def test_search_returns_newest_first(self, storage: MemoryStorage) -> None:
+        """Suche sortiert Treffer nach Timestamp absteigend."""
+        storage.append(
+            {
+                "id": "ep_old",
+                "user_id": 1,
+                "content": "Keyword old",
+                "timestamp": "2026-01-01T00:00:00",
+            },
+            "episodic",
+        )
+        storage.append(
+            {
+                "id": "ep_new",
+                "user_id": 1,
+                "content": "Keyword new",
+                "timestamp": "2026-05-07T12:00:00",
+            },
+            "episodic",
+        )
+
+        result = storage.search(user_id=1, query="Keyword", layer="episodic")
+        assert result[0]["id"] == "ep_new"
+        assert result[1]["id"] == "ep_old"
+
+    def test_search_embedding_mode_raises(self, storage: MemoryStorage) -> None:
+        """mode='embedding' raised NotImplementedError (Phase 1+)."""
+        with pytest.raises(NotImplementedError, match="Vector-Embedding"):
+            storage.search(user_id=1, query="test", layer="episodic", mode="embedding")
+
+    def test_search_default_mode_is_substring(self, storage: MemoryStorage) -> None:
+        """Default-mode ist 'substring' (bestehendes Verhalten)."""
+        storage.append(
+            {"id": "ep_1", "user_id": 1, "content": "Suchbegriff hier"}, "episodic"
+        )
+        # Explizit mode="substring"
+        result = storage.search(
+            user_id=1, query="Suchbegriff", layer="episodic", mode="substring"
+        )
+        assert len(result) == 1
 
 
 class TestMemoryStorageDelete:

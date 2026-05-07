@@ -19,6 +19,13 @@ repos:
 
   - repo: local
     hooks:
+      - id: import-linter
+        name: import-linter
+        entry: bash -c 'cd bridge && lint-imports'
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
       - id: pytest
         name: pytest
         entry: bash -c 'cd bridge && python -m pytest -q --no-header'

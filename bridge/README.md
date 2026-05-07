@@ -1,6 +1,6 @@
 # Bridge-Service
 
-Backend von Jarvis-LITE. Telegram-Bot der Claude Code CLI als lokalen Subprozess spawnt (Modus B). Hexagonale Architektur, 113 Tests, UTF-8 durchgängig.
+Backend von Jarvis-LITE. Telegram-Bot der Claude Code CLI als lokalen Subprozess spawnt (Modus B). Hexagonale Architektur, 220+ Tests, UTF-8 durchgängig.
 
 ## Architektur (Hexagonal)
 
@@ -37,11 +37,7 @@ Backend von Jarvis-LITE. Telegram-Bot der Claude Code CLI als lokalen Subprozess
 | `config/` | system_prompt.md, user_constitution.md |
 | `data/` | bookmarks.jsonl (Laufzeit-Daten) |
 | `logs/` | audit.jsonl (mit Rotation) |
-| `tests/` | 113 pytest-Tests |
-| `models/` | Datenmodelle |
-| `handlers/` | Legacy (wird migriert nach presentation/) |
-| `providers/` | Provider-Abstraktion (Phase 1+) |
-| `tools/` | Tool-Definitionen (Phase 1+) |
+| `tests/` | 220+ pytest-Tests |
 
 ## Setup
 
@@ -74,7 +70,7 @@ Erstelle eine `.env` Datei im `bridge/` Ordner:
 TELEGRAM_BOT_TOKEN=dein_bot_token_hier
 WHITELIST_USER_IDS=123456789
 
-# Optional (nur fuer Entwicklung!)
+# Optional (nur für Entwicklung!)
 ALLOW_ALL_USERS=false
 ```
 
@@ -134,7 +130,7 @@ python -m pytest --cov
 python -m pytest tests/test_bookmark.py
 ```
 
-Aktuell: **113 Tests**, alle grün, Laufzeit ca. 2 Sekunden.
+Aktuell: **220+ Tests**, alle grün, Laufzeit ca. 2 Sekunden.
 
 ## Architektur-Regeln (nicht verhandelbar)
 

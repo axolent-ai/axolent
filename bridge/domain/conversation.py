@@ -1,7 +1,7 @@
 """Conversation Domain Model.
 
-Defines ConversationTurn dataclass and history-building logic.
-Pure domain: no I/O, no storage, no framework dependencies.
+Definiert ConversationTurn-Dataclass und History-Building-Logik.
+Pure Domain: kein I/O, kein Storage, keine Framework-Abhängigkeiten.
 """
 
 from __future__ import annotations
@@ -12,12 +12,12 @@ from datetime import datetime, timezone
 
 @dataclass(frozen=True, slots=True)
 class ConversationTurn:
-    """A single turn in a conversation (user message or bot response).
+    """Ein einzelner Turn in der Konversation (User-Nachricht oder Bot-Antwort).
 
     Attributes:
-        role: "user" or "assistant".
-        content: The message text.
-        timestamp: UTC timestamp of the turn.
+        role: "user" oder "assistant".
+        content: Der Nachrichtentext.
+        timestamp: UTC-Zeitstempel des Turns.
     """
 
     role: str
@@ -31,7 +31,7 @@ MAX_HISTORY_TURNS: int = 20
 
 
 def build_context_block(history: list[ConversationTurn], current_message: str) -> str:
-    """Builds the conversation context string for Claude.
+    """Baut den Konversations-Kontext-String für Claude.
 
     Format:
         [VERLAUF DER UNTERHALTUNG]
@@ -41,14 +41,14 @@ def build_context_block(history: list[ConversationTurn], current_message: str) -
         [AKTUELLE NACHRICHT]
         <current message>
 
-    If history is empty, returns only the current message (no wrapper).
+    Bei leerer History wird nur die aktuelle Nachricht zurückgegeben (kein Wrapper).
 
     Args:
-        history: List of previous ConversationTurns (already trimmed to max).
-        current_message: The current user message.
+        history: Liste vorheriger ConversationTurns (bereits auf Max getrimmt).
+        current_message: Die aktuelle User-Nachricht.
 
     Returns:
-        Formatted context string to pass as prompt to Claude.
+        Formatierter Kontext-String für den Claude-Prompt.
     """
     if not history:
         return current_message

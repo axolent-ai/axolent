@@ -14,11 +14,29 @@ import logging
 import shutil
 import time
 
-from infrastructure.providers.base import LLMProvider, ProviderResponse
+from infrastructure.providers.base import (
+    LLMProvider,
+    ProviderCapabilities,
+    ProviderResponse,
+)
 
 log = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_SECONDS: int = 120
+
+_CAPABILITIES = ProviderCapabilities(
+    supports_streaming=False,
+    supports_tool_use=True,
+    supports_vision=True,
+    max_context_tokens=200_000,
+    cost_class="subscription",
+    privacy_class="cloud",
+    available_models=[
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-20250514",
+        "claude-haiku-3-5-20241022",
+    ],
+)
 
 
 class ClaudeProvider(LLMProvider):
@@ -30,8 +48,12 @@ class ClaudeProvider(LLMProvider):
 
     name = "claude"
 
+    def get_capabilities(self) -> ProviderCapabilities:
+        """Claude-Capabilities: Cloud, Subscription, 200k Context."""
+        return _CAPABILITIES
+
     def is_available(self) -> bool:
-        """Prueft ob `claude` CLI im PATH ist."""
+        """Prüft ob `claude` CLI im PATH ist."""
         return shutil.which("claude") is not None
 
     async def query(
@@ -39,13 +61,15 @@ class ClaudeProvider(LLMProvider):
         prompt: str,
         system_prompt: str = "",
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+        model: str | None = None,
     ) -> ProviderResponse:
         """Ruft Claude Code CLI auf und liefert die Antwort.
 
         Args:
             prompt: User-Nachricht.
-            system_prompt: Optionaler System-Prompt (via --append-system-prompt).
-            timeout_seconds: Timeout fuer den Subprozess.
+            system_prompt: Optionaler System-Prompt (via stdin, nicht argv).
+            timeout_seconds: Timeout für den Subprozess.
+            model: Optionaler Modell-Identifier (aktuell ignoriert, CLI nutzt Default).
 
         Returns:
             ProviderResponse mit Claude-Antwort oder Fehler.
@@ -53,8 +77,12 @@ class ClaudeProvider(LLMProvider):
         start = time.monotonic()
         cmd: list[str] = ["claude", "-p"]
 
+        # Privacy: kompletten Prompt via stdin senden, nicht als argv.
+        # --append-system-prompt würde Memory-Inhalte in Prozesslisten zeigen.
         if system_prompt:
-            cmd.extend(["--append-system-prompt", system_prompt])
+            combined = f"{system_prompt}\n\n---\n\nUser: {prompt}"
+        else:
+            combined = prompt
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -65,7 +93,7 @@ class ClaudeProvider(LLMProvider):
 
         try:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(input=prompt.encode("utf-8")),
+                proc.communicate(input=combined.encode("utf-8")),
                 timeout=timeout_seconds,
             )
         except asyncio.TimeoutError:

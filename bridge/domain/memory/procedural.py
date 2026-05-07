@@ -2,7 +2,7 @@
 
 Wiederholbare Handlungsmuster, die der Bot gelernt hat.
 Beispiel: "Wenn User nach Code fragt, immer mit Codeblock antworten"
-Phase 1+: Voyager-Pattern Skill-Compression fuellt diesen Layer automatisch.
+Phase 1+: Voyager-Pattern Skill-Compression füllt diesen Layer automatisch.
 """
 
 from __future__ import annotations
@@ -12,12 +12,12 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class ProceduralEntry:
     """Ein Skill/Pattern in der Procedural Memory.
 
     Attributes:
-        id: Eindeutige ID mit Prefix pro_ fuer Layer-Erkennung.
+        id: Eindeutige ID mit Prefix pro_ für Layer-Erkennung.
         user_id: Telegram-User-ID.
         content: Beschreibung des Skills/Patterns.
         skill_name: Kurzname des Skills (z.B. "code_format", "kurze_antworten").
@@ -39,7 +39,7 @@ class ProceduralEntry:
     importance: int = 5
 
     def to_dict(self) -> dict:
-        """Serialisiert den Entry als Dict fuer JSONL-Persistierung."""
+        """Serialisiert den Entry als Dict für JSONL-Persistierung."""
         return {
             "id": self.id,
             "user_id": self.user_id,

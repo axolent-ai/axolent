@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+from threading import Lock
 from typing import Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -19,10 +21,11 @@ from application.bookmark_service import (
     save_or_toggle_bookmark,
     search,
 )
-from application.chat_service import process_user_message
+from application.chat_service import ChatService
 from application.memory_service import MemoryService
+from domain.conversation import ConversationTurn
 from domain.bookmark import format_bookmark_preview
-from infrastructure.conversation_storage import reset_conversation, set_language
+from infrastructure.conversation_storage import save_turn
 from presentation.decorators import require_whitelist
 from presentation.render import (
     get_cached_response,
@@ -32,9 +35,22 @@ from presentation.render import (
 
 log = logging.getLogger(__name__)
 
+_PRIVATE_ONLY_MSG = (
+    "Dieser Befehl funktioniert nur im privaten Chat mit dem Bot. "
+    "Bitte schreib mir direkt."
+)
+
+
+def _is_private_chat(update: Update) -> bool:
+    """Telegram chat.type ist 'private' für DM, 'group'/'supergroup' für Gruppen."""
+    return update.effective_chat.type == "private"
+
+
 # Concurrency Controls: max 4 Claude-Prozesse global, max 1 pro User
 GLOBAL_CLAUDE_SEMAPHORE = asyncio.Semaphore(4)
-_user_locks: dict[int, asyncio.Lock] = {}
+_user_locks: dict[int, tuple[asyncio.Lock, float]] = {}
+_user_locks_meta_lock = Lock()
+_USER_LOCK_TTL_SECONDS = 3600  # 1h ohne Aktivität -> entfernt
 
 # Supported languages for /lang command
 _SUPPORTED_LANGUAGES: set[str] = {
@@ -54,10 +70,43 @@ _SUPPORTED_LANGUAGES: set[str] = {
 
 
 def _get_user_lock(user_id: int) -> asyncio.Lock:
-    """Gibt den pro-User Lock zurück (lazy init)."""
-    if user_id not in _user_locks:
-        _user_locks[user_id] = asyncio.Lock()
-    return _user_locks[user_id]
+    """Gibt den pro-User Lock zurück (lazy init mit TTL-Cleanup)."""
+    now = time.monotonic()
+    with _user_locks_meta_lock:
+        # Stale Locks entfernen (nur wenn nicht gehalten)
+        stale = [
+            uid
+            for uid, (lock, ts) in _user_locks.items()
+            if now - ts > _USER_LOCK_TTL_SECONDS and not lock.locked()
+        ]
+        for uid in stale:
+            del _user_locks[uid]
+        if user_id not in _user_locks:
+            _user_locks[user_id] = (asyncio.Lock(), now)
+        else:
+            lock, _ = _user_locks[user_id]
+            _user_locks[user_id] = (lock, now)
+        return _user_locks[user_id][0]
+
+
+def _get_chat_service(context: ContextTypes.DEFAULT_TYPE) -> ChatService:
+    """Holt den ChatService aus bot_data.
+
+    Args:
+        context: Telegram-Handler-Context.
+
+    Returns:
+        ChatService-Instanz.
+
+    Raises:
+        RuntimeError: Wenn ChatService nicht in bot_data ist.
+    """
+    svc = context.application.bot_data.get("chat_service")
+    if svc is None:
+        raise RuntimeError(
+            "ChatService nicht in bot_data. main.py muss ChatService initialisieren."
+        )
+    return svc
 
 
 # System-Prompt wird von main.py injiziert nach dem Laden
@@ -117,6 +166,24 @@ def build_bookmarks_keyboard(bookmarks: list[dict[str, Any]]) -> InlineKeyboardM
     return InlineKeyboardMarkup(rows)
 
 
+async def _save_bot_response_to_history(
+    user_id: int, chat_id: int, response_text: str
+) -> None:
+    """Speichert eine statische Bot-Antwort (z.B. /start, /help) in die Conversation-History.
+
+    Damit weiß der Bot beim nächsten Turn was er gerade gesagt hat.
+    Nur assistant-Turn wird gespeichert (der User-Command selbst ist kein
+    natürlicher Konversationsbeitrag).
+
+    Args:
+        user_id: Telegram User-ID.
+        chat_id: Telegram Chat-ID.
+        response_text: Der gesendete Bot-Text.
+    """
+    turn = ConversationTurn(role="assistant", content=response_text)
+    await save_turn(user_id, chat_id, turn)
+
+
 HELP_TEXT: str = (
     "Verfügbare Commands:\n\n"
     "/save  (als Antwort auf Bot-Nachricht)  Bookmark speichern/entfernen\n"
@@ -151,14 +218,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         5. Antwort in Chunks zurücksenden (HTML mit Fallback)
         6. Response cachen für Bookmark-Zugriff
     """
+    chat_service = _get_chat_service(context)
+
     user = update.effective_user
     user_id: int = user.id if user else 0
     username: str | None = user.username if user else None
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
     text: str = update.message.text or ""
 
+    # Fix B: Reply-To-Kontext extrahieren (wenn User auf eine Bot-Nachricht antwortet)
+    reply_to_text: str | None = None
+    if update.message.reply_to_message and update.message.reply_to_message.text:
+        reply_to_text = update.message.reply_to_message.text
+
     log.info(
-        "Eingehende Nachricht von %s (%s): %d Zeichen", username, user_id, len(text)
+        "Eingehende Nachricht von %s (%s): %d Zeichen%s",
+        username,
+        user_id,
+        len(text),
+        " (reply-to)" if reply_to_text else "",
     )
 
     # Typing-Indicator: User sieht dass der Bot arbeitet
@@ -168,12 +246,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_lock = _get_user_lock(user_id)
     async with user_lock:  # max 1 Request pro User gleichzeitig
         async with GLOBAL_CLAUDE_SEMAPHORE:  # max 4 global
-            result = await process_user_message(
+            result = await chat_service.process_user_message(
                 text=text,
                 user_id=user_id,
                 chat_id=chat_id,
                 username=username,
                 system_prompt=_system_prompt,
+                reply_to_text=reply_to_text,
             )
 
     if not result.success:
@@ -194,13 +273,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def handle_reset_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Handles /reset command. Clears conversation history and sticky language for this chat."""
+    """Verarbeitet /reset. Löscht Conversation-History und Sticky-Language für diesen Chat."""
+    chat_service = _get_chat_service(context)
+
     user = update.effective_user
     user_id: int = user.id if user else 0
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
-    await reset_conversation(user_id, chat_id)
-    await update.message.reply_text("Konversation zurückgesetzt. Wir starten frisch!")
+    await chat_service.reset(user_id, chat_id)
+    reset_msg = "Konversation zurückgesetzt. Wir starten frisch!"
+    await update.message.reply_text(reset_msg)
+    await _save_bot_response_to_history(user_id, chat_id, reset_msg)
     log.info("User %d reset conversation in chat %d", user_id, chat_id)
 
 
@@ -208,10 +291,12 @@ async def handle_reset_command(
 async def handle_lang_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Handles /lang <code> command. Sets sticky language for this chat.
+    """Verarbeitet /lang <code>. Setzt die Sticky-Language für diesen Chat.
 
-    Usage: /lang de, /lang en, /lang es, /lang fr, etc.
+    Benutzung: /lang de, /lang en, /lang es, /lang fr, etc.
     """
+    chat_service = _get_chat_service(context)
+
     user = update.effective_user
     user_id: int = user.id if user else 0
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
@@ -234,24 +319,26 @@ async def handle_lang_command(
         )
         return
 
-    await set_language(user_id, chat_id, lang_code)
+    await chat_service.set_chat_language(user_id, chat_id, lang_code)
 
     lang_names: dict[str, str] = {
         "de": "Deutsch",
         "en": "English",
-        "es": "Español",
-        "fr": "Français",
+        "es": "Espanol",
+        "fr": "Francais",
         "it": "Italiano",
-        "pt": "Português",
+        "pt": "Portugues",
         "nl": "Nederlands",
         "pl": "Polski",
-        "ru": "Русский",
-        "ja": "日本語",
-        "ko": "한국어",
-        "zh": "中文",
+        "ru": "Russki",
+        "ja": "Nihongo",
+        "ko": "Hangugeo",
+        "zh": "Zhongwen",
     }
     name = lang_names.get(lang_code, lang_code)
-    await update.message.reply_text(f"Sprache gewechselt: {name} ({lang_code})")
+    lang_msg = f"Sprache gewechselt: {name} ({lang_code})"
+    await update.message.reply_text(lang_msg)
+    await _save_bot_response_to_history(user_id, chat_id, lang_msg)
     log.info("User %d set language to '%s' in chat %d", user_id, lang_code, chat_id)
 
 
@@ -259,7 +346,7 @@ async def handle_lang_command(
 async def handle_new_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Handles /new command. Alias for /reset."""
+    """Verarbeitet /new. Alias für /reset."""
     await handle_reset_command(update, context)
 
 
@@ -267,9 +354,9 @@ async def handle_new_command(
 async def handle_save_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Handles /save command als Reply auf eine Bot-Nachricht (Toggle-Bookmark).
+    """Verarbeitet /save als Reply auf eine Bot-Nachricht (Toggle-Bookmark).
 
-    Usage: Reply auf eine Bot-Nachricht mit /save zum Speichern/Entfernen.
+    Benutzung: Reply auf eine Bot-Nachricht mit /save zum Speichern/Entfernen.
     """
     user = update.effective_user
     user_id: int = user.id if user else 0
@@ -313,12 +400,16 @@ async def handle_save_command(
 async def handle_bookmarks_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Handles /bookmarks und /bookmarks search <query> commands.
+    """Verarbeitet /bookmarks und /bookmarks search <query>.
 
-    Usage:
+    Benutzung:
         /bookmarks              -> Letzte 10 Bookmarks anzeigen
         /bookmarks search term  -> Bookmarks nach Inhalt durchsuchen
     """
+    if not _is_private_chat(update):
+        await update.message.reply_text(_PRIVATE_ONLY_MSG)
+        return
+
     user = update.effective_user
     user_id: int = user.id if user else 0
 
@@ -385,28 +476,42 @@ async def handle_bookmarks_command(
 async def handle_help_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Handles /help command. Zeigt verfügbare Commands an."""
+    """Verarbeitet /help. Zeigt verfügbare Commands an."""
+    user = update.effective_user
+    user_id: int = user.id if user else 0
+    chat_id: int = update.effective_chat.id if update.effective_chat else 0
+
     await update.message.reply_text(HELP_TEXT)
+    await _save_bot_response_to_history(user_id, chat_id, HELP_TEXT)
 
 
 @require_whitelist
 async def handle_start_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Handles /start command. Zeigt Willkommensnachricht an."""
+    """Verarbeitet /start. Zeigt Willkommensnachricht an."""
+    user = update.effective_user
+    user_id: int = user.id if user else 0
+    chat_id: int = update.effective_chat.id if update.effective_chat else 0
+
     await update.message.reply_text(START_TEXT)
+    await _save_bot_response_to_history(user_id, chat_id, START_TEXT)
 
 
 @require_whitelist
 async def handle_remember_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Handles /remember <text>.
+    """Verarbeitet /remember <text>.
 
     Speichert Text als Episodic Memory.
     Als Reply auf Bot-Nachricht: speichert die Bot-Antwort.
     Ohne Reply: speichert den mitgegebenen Text.
     """
+    if not _is_private_chat(update):
+        await update.message.reply_text(_PRIVATE_ONLY_MSG)
+        return
+
     if _memory_service is None:
         await update.message.reply_text("Memory-System nicht initialisiert.")
         return
@@ -422,7 +527,7 @@ async def handle_remember_command(
     if reply_msg and reply_msg.text:
         # Reply auf Bot-Nachricht: Bot-Antwort speichern
         content = reply_msg.text
-        # Wenn zusaetzlich Text angegeben: als Kontext-Label verwenden
+        # Wenn zusätzlich Text angegeben: als Kontext-Label verwenden
         if args:
             label = " ".join(args)
             content = f"[{label}] {content}"
@@ -446,11 +551,15 @@ async def handle_remember_command(
 async def handle_memory_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Handles /memory und /memory search <query>.
+    """Verarbeitet /memory und /memory search <query>.
 
-    /memory              Letzte 10 episodische Eintraege anzeigen
+    /memory              Letzte 10 episodische Einträge anzeigen
     /memory search <q>   Memory durchsuchen
     """
+    if not _is_private_chat(update):
+        await update.message.reply_text(_PRIVATE_ONLY_MSG)
+        return
+
     if _memory_service is None:
         await update.message.reply_text("Memory-System nicht initialisiert.")
         return
@@ -471,7 +580,7 @@ async def handle_memory_command(
             return
 
         lines: list[str] = [
-            f"Suchergebnisse fuer '{query_term}' ({len(results)} Treffer):\n"
+            f"Suchergebnisse für '{query_term}' ({len(results)} Treffer):\n"
         ]
         for entry in results[:10]:
             lines.append(f"  [{entry['id']}] {entry['content'][:80]}")
@@ -497,10 +606,14 @@ async def handle_memory_command(
 async def handle_forget_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Handles /forget <entry_id>.
+    """Verarbeitet /forget <entry_id>.
 
-    Loescht einen Memory-Eintrag anhand seiner ID.
+    Löscht einen Memory-Eintrag anhand seiner ID.
     """
+    if not _is_private_chat(update):
+        await update.message.reply_text(_PRIVATE_ONLY_MSG)
+        return
+
     if _memory_service is None:
         await update.message.reply_text("Memory-System nicht initialisiert.")
         return
@@ -523,5 +636,5 @@ async def handle_forget_command(
         log.info("User %d forgot memory: %s", user_id, entry_id)
     else:
         await update.message.reply_text(
-            f"Eintrag '{entry_id}' nicht gefunden oder gehoert dir nicht."
+            f"Eintrag '{entry_id}' nicht gefunden oder gehört dir nicht."
         )

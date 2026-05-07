@@ -9,8 +9,7 @@ import pytest
 
 from domain.conversation import ConversationTurn, MAX_HISTORY_TURNS
 from infrastructure.conversation_storage import (
-    _histories,
-    _languages,
+    _reset_all_for_tests,
     get_history,
     get_language,
     reset_conversation,
@@ -21,9 +20,8 @@ from infrastructure.conversation_storage import (
 
 @pytest.fixture(autouse=True)
 def _clear_storage() -> None:
-    """Raeumt den in-memory Storage vor jedem Test auf."""
-    _histories.clear()
-    _languages.clear()
+    """Räumt den In-Memory-Storage vor jedem Test auf."""
+    _reset_all_for_tests()
 
 
 class TestConversationStorage:

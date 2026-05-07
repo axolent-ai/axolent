@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from filelock import FileLock
 
@@ -25,12 +25,15 @@ log = logging.getLogger(__name__)
 # Valide Layer-Namen
 VALID_LAYERS: set[str] = {"episodic", "semantic", "procedural"}
 
+# Such-Modi: "substring" (heute), "embedding" (Phase 1+)
+SearchMode = Literal["substring", "embedding"]
+
 
 class MemoryStorage:
-    """JSONL-Adapter fuer Trinity-Memory-Persistierung.
+    """JSONL-Adapter für Trinity-Memory-Persistierung.
 
     Jeder Layer bekommt eine eigene JSONL-Datei.
-    Alle Operationen sind atomar via FileLock geschuetzt.
+    Alle Operationen sind atomar via FileLock geschützt.
     """
 
     def __init__(self, data_dir: Path) -> None:
@@ -49,7 +52,7 @@ class MemoryStorage:
         self._lock = FileLock(str(data_dir / "memory.lock"))
 
     def _path_for_layer(self, layer: str) -> Path:
-        """Gibt den Dateipfad fuer einen Layer zurueck.
+        """Gibt den Dateipfad für einen Layer zurück.
 
         Args:
             layer: "episodic", "semantic" oder "procedural".
@@ -70,7 +73,7 @@ class MemoryStorage:
         return path_map[layer]
 
     def append(self, entry: dict, layer: str) -> None:
-        """Haengt einen Entry an den entsprechenden Layer an.
+        """Hängt einen Entry an den entsprechenden Layer an.
 
         Args:
             entry: Serialisiertes Entry-Dict.
@@ -79,59 +82,82 @@ class MemoryStorage:
         path = self._path_for_layer(layer)
         with self._lock:
             append_jsonl_utf8(entry, path)
-        log.debug("Memory-Entry angehaengt: layer=%s id=%s", layer, entry.get("id"))
+        log.debug("Memory-Entry angehängt: layer=%s id=%s", layer, entry.get("id"))
+
+    def _read_filtered(self, path: Path, user_id: int, limit: int) -> list[dict]:
+        """Liest JSONL, filtert auf user_id, sortiert nach Timestamp absteigend.
+
+        Args:
+            path: Pfad zur JSONL-Datei.
+            user_id: Telegram-User-ID zum Filtern.
+            limit: Maximale Anzahl Ergebnisse.
+
+        Returns:
+            Liste von Entry-Dicts, neueste zuerst, limitiert.
+        """
+        if not path.exists():
+            return []
+        entries: list[dict] = []
+        with open_utf8(path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                    if entry.get("user_id") == user_id:
+                        entries.append(entry)
+                except json.JSONDecodeError:
+                    log.warning("Korrupte JSONL-Zeile in %s übersprungen", path)
+                    continue
+        # Neueste zuerst (nach Timestamp), dann limitieren
+        entries.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
+        return entries[:limit]
 
     def list_entries(self, user_id: int, layer: str, limit: int = 50) -> list[dict]:
-        """Liest Entries fuer einen User, neueste zuerst.
+        """Liest Entries für einen User, neueste zuerst.
 
         Args:
             user_id: Telegram-User-ID.
             layer: Zu lesender Layer.
-            limit: Maximale Anzahl Eintraege.
+            limit: Maximale Anzahl Einträge.
 
         Returns:
-            Liste von Entry-Dicts, neueste zuerst (reversed).
+            Liste von Entry-Dicts, neueste zuerst (nach Timestamp sortiert).
         """
         path = self._path_for_layer(layer)
-        if not path.exists():
-            return []
-
-        entries: list[dict] = []
         with self._lock:
-            with open_utf8(path, "r") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        entry = json.loads(line)
-                        if entry.get("user_id") == user_id:
-                            entries.append(entry)
-                    except json.JSONDecodeError:
-                        log.warning("Korrupte JSONL-Zeile in %s uebersprungen", path)
-                        continue
-
-        # Neueste zuerst, limitiert
-        entries.reverse()
-        return entries[:limit]
+            return self._read_filtered(path, user_id, limit)
 
     def search(
-        self, user_id: int, query: str, layer: str = "episodic", limit: int = 20
+        self,
+        user_id: int,
+        query: str,
+        layer: str = "episodic",
+        limit: int = 20,
+        mode: SearchMode = "substring",
     ) -> list[dict]:
-        """Substring-Suche ueber Memory-Entries eines Users.
-
-        Einfache Implementierung: case-insensitive substring match auf content.
-        Phase 1+: Vector-Embeddings fuer semantische Suche.
+        """Durchsucht Memory-Entries eines Users.
 
         Args:
             user_id: Telegram-User-ID.
             query: Suchbegriff.
             layer: Zu durchsuchender Layer.
             limit: Maximale Treffer.
+            mode: "substring" (default, heutige Logik) oder "embedding"
+                  (Phase 1+, noch nicht implementiert).
 
         Returns:
-            Liste von matching Entry-Dicts.
+            Liste von matching Entry-Dicts, neueste Treffer zuerst.
+
+        Raises:
+            NotImplementedError: Bei mode="embedding" (Phase 1+).
         """
+        if mode == "embedding":
+            raise NotImplementedError(
+                "Vector-Embedding-Suche ist Phase 1+. Heute nur 'substring'."
+            )
+
         path = self._path_for_layer(layer)
         if not path.exists():
             return []
@@ -151,25 +177,25 @@ class MemoryStorage:
                             continue
                         if query_lower in entry.get("content", "").lower():
                             results.append(entry)
-                            if len(results) >= limit:
-                                break
                     except json.JSONDecodeError:
                         continue
 
-        return results
+        # Neueste Treffer zuerst, dann limitieren
+        results.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
+        return results[:limit]
 
     def delete_by_id(self, entry_id: str, layer: str, user_id: int) -> bool:
-        """Loescht einen Entry anhand seiner ID (atomar via Read-Filter-Rewrite).
+        """Löscht einen Entry anhand seiner ID (atomar via Read-Filter-Rewrite).
 
-        Verifiziert Ownership: Entry muss dem User gehoeren.
+        Verifiziert Ownership: Entry muss dem User gehören.
 
         Args:
-            entry_id: ID des zu loeschenden Entries.
+            entry_id: ID des zu löschenden Entries.
             layer: Layer in dem gesucht wird.
-            user_id: User-ID fuer Ownership-Check.
+            user_id: User-ID für Ownership-Check.
 
         Returns:
-            True wenn Entry gefunden und geloescht, False wenn nicht gefunden.
+            True wenn Entry gefunden und gelöscht, False wenn nicht gefunden.
         """
         path = self._path_for_layer(layer)
         if not path.exists():
@@ -197,10 +223,12 @@ class MemoryStorage:
                         remaining.append(line_stripped)
 
             if found:
-                with open_utf8(path, "w") as f:
+                tmp_path = path.with_suffix(".jsonl.tmp")
+                with open_utf8(tmp_path, "w") as f:
                     for line_content in remaining:
                         f.write(line_content + "\n")
-                log.info("Memory-Entry geloescht: id=%s layer=%s", entry_id, layer)
+                tmp_path.replace(path)
+                log.info("Memory-Entry gelöscht: id=%s layer=%s", entry_id, layer)
 
         return found
 
@@ -210,7 +238,7 @@ class MemoryStorage:
         Args:
             entry_id: Gesuchte Entry-ID.
             layer: Layer in dem gesucht wird.
-            user_id: User-ID fuer Ownership-Check.
+            user_id: User-ID für Ownership-Check.
 
         Returns:
             Entry-Dict oder None wenn nicht gefunden.

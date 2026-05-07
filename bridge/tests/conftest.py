@@ -60,5 +60,5 @@ def sample_bookmark() -> dict[str, Any]:
         "username": "testuser",
         "message_id": 100,
         "chat_id": 67890,
-        "content": "Das ist ein Test-Bookmark mit Umlauten: aeoeuess",
+        "content": "Das ist ein Test-Bookmark mit Umlauten: äöüß",
     }

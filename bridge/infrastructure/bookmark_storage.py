@@ -24,6 +24,33 @@ _BM_LOCK_PATH = str(BOOKMARKS_PATH) + ".lock"
 _BM_LOCK = FileLock(_BM_LOCK_PATH)
 
 
+def migrate_legacy_chat_id() -> int:
+    """Schreibt fehlende chat_id in alte Bookmarks (idempotent).
+
+    Annahme: bei DMs in Telegram ist chat_id == user_id.
+
+    Returns:
+        Anzahl migrierter Einträge.
+    """
+    if not BOOKMARKS_PATH.exists():
+        return 0
+    migrated = 0
+    with _BM_LOCK:
+        with open_utf8(BOOKMARKS_PATH, "r") as f:
+            lines = [json.loads(line) for line in f if line.strip()]
+        for entry in lines:
+            if "chat_id" not in entry or entry.get("chat_id") is None:
+                entry["chat_id"] = entry.get("user_id", 0)
+                migrated += 1
+        if migrated:
+            tmp_path = BOOKMARKS_PATH.with_suffix(".jsonl.tmp")
+            with open_utf8(tmp_path, "w") as f:
+                for entry in lines:
+                    f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            tmp_path.replace(BOOKMARKS_PATH)
+    return migrated
+
+
 def save_bookmark(
     user_id: int,
     username: Optional[str],
@@ -148,11 +175,8 @@ def get_bookmark_by_message_id(
     """
     all_bm = _read_all_bookmarks(user_id)
     for bm in all_bm:
-        # Backward compat: alte Bookmarks haben evtl. keine chat_id
-        bm_chat_id = bm.get("chat_id")
-        if bm.get("message_id") == message_id:
-            if bm_chat_id is None or bm_chat_id == chat_id:
-                return bm
+        if bm.get("message_id") == message_id and bm.get("chat_id") == chat_id:
+            return bm
     return None
 
 
@@ -198,11 +222,10 @@ def delete_bookmark(user_id: int, chat_id: int, message_id: int) -> bool:
                 except json.JSONDecodeError:
                     lines_to_keep.append(stripped)
                     continue
-                bm_chat_id = entry.get("chat_id")
                 if (
                     entry.get("user_id") == user_id
                     and entry.get("message_id") == message_id
-                    and (bm_chat_id is None or bm_chat_id == chat_id)
+                    and entry.get("chat_id") == chat_id
                 ):
                     found = True
                     log.info(
@@ -215,8 +238,10 @@ def delete_bookmark(user_id: int, chat_id: int, message_id: int) -> bool:
                 lines_to_keep.append(stripped)
 
         if found:
-            with open_utf8(BOOKMARKS_PATH, "w") as f:
+            tmp_path = BOOKMARKS_PATH.with_suffix(".jsonl.tmp")
+            with open_utf8(tmp_path, "w") as f:
                 for kept_line in lines_to_keep:
                     f.write(kept_line + "\n")
+            tmp_path.replace(BOOKMARKS_PATH)
 
     return found

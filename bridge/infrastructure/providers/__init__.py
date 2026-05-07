@@ -5,7 +5,15 @@ Aktuell aktiv: ClaudeProvider (Modus B, CLI-Subprozess).
 Stubs: OpenAI Codex, Gemini, Mistral Vibe, Ollama.
 """
 
-from infrastructure.providers.base import LLMProvider, ProviderResponse
+from infrastructure.providers.base import (
+    LLMProvider,
+    ProviderCapabilities,
+    ProviderError,
+    ProviderNotImplemented,
+    ProviderResponse,
+    ProviderTimeout,
+    ProviderUnavailable,
+)
 from infrastructure.providers.claude_cli import ClaudeProvider
 from infrastructure.providers.openai_codex_cli import OpenAICodexProvider
 from infrastructure.providers.gemini_cli import GeminiProvider
@@ -14,7 +22,12 @@ from infrastructure.providers.ollama_local import OllamaProvider
 
 __all__ = [
     "LLMProvider",
+    "ProviderCapabilities",
+    "ProviderError",
+    "ProviderNotImplemented",
     "ProviderResponse",
+    "ProviderTimeout",
+    "ProviderUnavailable",
     "ClaudeProvider",
     "OpenAICodexProvider",
     "GeminiProvider",

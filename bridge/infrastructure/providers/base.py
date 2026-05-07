@@ -1,14 +1,39 @@
-"""Provider-Interface fuer LLM-Anbindungen.
+"""Provider-Interface für LLM-Anbindungen.
 
-Jeder Provider muss query() und is_available() implementieren.
+Jeder Provider muss query(), is_available() und get_capabilities() implementieren.
 Modus-B-Pflicht: Claude-Provider nutzt Subprozess.
-Andere Provider koennen API-Keys nutzen, aber niemals OAuth-Tokens hijacken.
+Andere Provider können API-Keys nutzen, aber niemals OAuth-Tokens hijacken.
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+
+@dataclass(frozen=True)
+class ProviderCapabilities:
+    """Beschreibt was ein Provider kann.
+
+    Wird vom Router genutzt um Anfragen passend zu routen.
+
+    Attributes:
+        supports_streaming: Kann der Provider Streaming-Responses?
+        supports_tool_use: Kann der Provider Function-Calling / Tool-Use?
+        supports_vision: Kann der Provider Bilder verarbeiten?
+        max_context_tokens: Maximale Context-Länge in Tokens.
+        cost_class: Kostenklasse ("free", "subscription", "pay_per_use").
+        privacy_class: Wo werden Daten verarbeitet? ("cloud", "local").
+        available_models: Liste der verfügbaren Modell-IDs.
+    """
+
+    supports_streaming: bool = False
+    supports_tool_use: bool = False
+    supports_vision: bool = False
+    max_context_tokens: int = 32_000
+    cost_class: str = "free"  # "free", "subscription", "pay_per_use"
+    privacy_class: str = "cloud"  # "cloud", "local"
+    available_models: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -35,14 +60,72 @@ class ProviderResponse:
         return self.error is None and bool(self.text)
 
 
+# ---------------------------------------------------------------------------
+# Provider-Error-Hierarchie
+# ---------------------------------------------------------------------------
+
+
+class ProviderError(Exception):
+    """Basis-Klasse für alle Provider-Fehler.
+
+    Attributes:
+        provider_name: Name des Providers der den Fehler ausgelöst hat.
+        retryable: True wenn ein Retry sinnvoll ist (z.B. Timeout).
+    """
+
+    def __init__(self, provider_name: str, retryable: bool, message: str) -> None:
+        self.provider_name = provider_name
+        self.retryable = retryable
+        super().__init__(message)
+
+
+class ProviderTimeout(ProviderError):
+    """Provider hat zu lange gebraucht. Retry sinnvoll."""
+
+    def __init__(self, provider_name: str, timeout_seconds: int) -> None:
+        super().__init__(
+            provider_name,
+            retryable=True,
+            message=f"Timeout nach {timeout_seconds}s",
+        )
+        self.timeout_seconds = timeout_seconds
+
+
+class ProviderUnavailable(ProviderError):
+    """Provider ist nicht verfügbar (CLI fehlt, kein API-Key, etc.)."""
+
+    def __init__(self, provider_name: str, reason: str) -> None:
+        super().__init__(
+            provider_name,
+            retryable=False,
+            message=f"{provider_name} nicht verfügbar: {reason}",
+        )
+
+
+class ProviderNotImplemented(ProviderError):
+    """Stub-Provider, query() ist noch nicht implementiert."""
+
+    def __init__(self, provider_name: str) -> None:
+        super().__init__(
+            provider_name,
+            retryable=False,
+            message=f"{provider_name} ist noch nicht implementiert (Phase 1+)",
+        )
+
+
 class LLMProvider(ABC):
-    """Abstract base class fuer alle LLM-Provider.
+    """Abstrakte Basisklasse für alle LLM-Provider.
 
     Jeder konkrete Provider registriert sich mit einem eindeutigen `name`
-    und implementiert query() + is_available().
+    und implementiert query(), is_available() und get_capabilities().
     """
 
     name: str  # "claude", "openai", "gemini", "mistral", "ollama"
+
+    @abstractmethod
+    def get_capabilities(self) -> ProviderCapabilities:
+        """Gibt die Fähigkeiten dieses Providers zurück."""
+        ...
 
     @abstractmethod
     async def query(
@@ -50,6 +133,7 @@ class LLMProvider(ABC):
         prompt: str,
         system_prompt: str = "",
         timeout_seconds: int = 120,
+        model: str | None = None,
     ) -> ProviderResponse:
         """Sendet eine Anfrage an den Provider und liefert eine Antwort.
 
@@ -57,6 +141,7 @@ class LLMProvider(ABC):
             prompt: Die User-Nachricht / der Prompt.
             system_prompt: Optionaler System-Prompt.
             timeout_seconds: Maximale Wartezeit bevor Timeout.
+            model: Optionaler Modell-Identifier (None = Provider-Default).
 
         Returns:
             ProviderResponse mit Text oder Fehler.
@@ -65,9 +150,9 @@ class LLMProvider(ABC):
 
     @abstractmethod
     def is_available(self) -> bool:
-        """Prueft ob der Provider auf diesem System verfuegbar ist.
+        """Prüft ob der Provider auf diesem System verfügbar ist.
 
-        Prueft z.B. ob das CLI-Binary im PATH liegt oder ein API-Key gesetzt ist.
+        Prüft z.B. ob das CLI-Binary im PATH liegt oder ein API-Key gesetzt ist.
         """
         ...
 
