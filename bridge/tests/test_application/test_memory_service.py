@@ -12,7 +12,7 @@ from infrastructure.memory_storage import MemoryStorage
 
 @pytest.fixture
 def memory_service(tmp_data_dir: Path) -> MemoryService:
-    """Erstellt einen frischen MemoryService mit temporaerem Storage."""
+    """Erstellt einen frischen MemoryService mit temporärem Storage."""
     storage = MemoryStorage(data_dir=tmp_data_dir)
     return MemoryService(storage=storage)
 

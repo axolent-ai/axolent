@@ -17,7 +17,7 @@ from infrastructure.memory_storage import MemoryStorage
 
 @pytest.fixture
 def storage(tmp_data_dir: Path) -> MemoryStorage:
-    """Erstellt eine frische MemoryStorage-Instanz mit temporaerem Verzeichnis."""
+    """Erstellt eine frische MemoryStorage-Instanz mit temporärem Verzeichnis."""
     return MemoryStorage(data_dir=tmp_data_dir)
 
 

@@ -292,7 +292,7 @@ class TestAuditLoggingBmShow:
 
     @pytest.fixture(autouse=True)
     def _isolate(self, tmp_path: Path) -> None:
-        """Patcht Bookmark-Storage und Whitelist fuer Isolation."""
+        """Patcht Bookmark-Storage und Whitelist für Isolation."""
         bm_path = tmp_path / "bookmarks.jsonl"
         lock_path = str(bm_path) + ".lock"
         new_lock = FileLock(lock_path)
@@ -360,7 +360,7 @@ class TestAuditLoggingBmDel:
 
     @pytest.fixture(autouse=True)
     def _isolate(self, tmp_path: Path) -> None:
-        """Patcht Bookmark-Storage und Whitelist fuer Isolation."""
+        """Patcht Bookmark-Storage und Whitelist für Isolation."""
         bm_path = tmp_path / "bookmarks.jsonl"
         lock_path = str(bm_path) + ".lock"
         new_lock = FileLock(lock_path)

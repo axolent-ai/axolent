@@ -1,4 +1,4 @@
-"""Audit-Service: Use-Case-Wrapper fuer strukturiertes Command-Audit-Logging.
+"""Audit-Service: Use-Case-Wrapper für strukturiertes Command-Audit-Logging.
 
 Stellt eine generische Funktion bereit, die der Presentation-Layer nutzt,
 um Command- und Callback-Aktionen im Audit-Log zu erfassen.
@@ -26,7 +26,7 @@ def log_command_audit(
     success: bool = True,
     details: Optional[str] = None,
 ) -> None:
-    """Schreibt einen Audit-Eintrag fuer Commands und Callbacks.
+    """Schreibt einen Audit-Eintrag für Commands und Callbacks.
 
     Args:
         action: Bezeichnung der Aktion (z.B. "remember", "forget", "bm_del").

@@ -16,10 +16,10 @@ import pytest
 
 @pytest.fixture
 def tmp_data_dir(tmp_path: Path) -> Path:
-    """Erstellt ein temporaeres Verzeichnis für isolierte Testdaten.
+    """Erstellt ein temporäres Verzeichnis für isolierte Testdaten.
 
     Nutzt pytests eingebautes tmp_path, liefert einen sauberen Ordner
-    der nach dem Test automatisch aufgeraeumt wird.
+    der nach dem Test automatisch aufgeräumt wird.
     """
     data_dir = tmp_path / "data"
     data_dir.mkdir()

@@ -305,7 +305,7 @@ async def handle_lang_command(
         )
         return
 
-    # Alte Sprache merken fuer Audit-Details
+    # Alte Sprache merken für Audit-Details
     old_lang = await chat_service.get_chat_language(user_id, chat_id) or "auto"
 
     await chat_service.set_chat_language(user_id, chat_id, lang_code)
