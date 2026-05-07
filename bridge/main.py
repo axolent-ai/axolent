@@ -26,8 +26,15 @@ from telegram.ext import (
     filters,
 )
 
+from pathlib import Path
+
+from application.memory_service import MemoryService
 from application.provider_router import ProviderRouter
-from application.chat_service import set_provider_router
+from application.chat_service import (
+    set_provider_router,
+    set_memory_service as set_chat_memory_service,
+)
+from infrastructure.memory_storage import MemoryStorage
 from infrastructure.personality_loader import build_combined_prompt
 from infrastructure.providers import (
     ClaudeProvider,
@@ -43,13 +50,17 @@ from presentation.callbacks import (
 from presentation.decorators import ALLOW_ALL_USERS, WHITELIST
 from presentation.handlers import (
     handle_bookmarks_command,
+    handle_forget_command,
     handle_help_command,
     handle_lang_command,
+    handle_memory_command,
     handle_message,
     handle_new_command,
+    handle_remember_command,
     handle_reset_command,
     handle_save_command,
     handle_start_command,
+    set_memory_service,
     set_system_prompt,
 )
 
@@ -113,6 +124,14 @@ def main() -> None:
     router = _build_provider_router()
     set_provider_router(router)
 
+    # Trinity-Memory initialisieren und in Handler + ChatService injizieren
+    bridge_root = Path(__file__).resolve().parent
+    memory_storage = MemoryStorage(data_dir=bridge_root / "data")
+    memory_svc = MemoryService(storage=memory_storage)
+    set_memory_service(memory_svc)
+    set_chat_memory_service(memory_svc)
+    log.info("Trinity-Memory-System initialisiert (JSONL-Backend, Auto-Loading aktiv)")
+
     # Personality laden und an Handler injizieren
     system_prompt = build_combined_prompt()
     set_system_prompt(system_prompt)
@@ -128,6 +147,9 @@ def main() -> None:
     app.add_handler(CommandHandler("reset", handle_reset_command))
     app.add_handler(CommandHandler("new", handle_new_command))
     app.add_handler(CommandHandler("lang", handle_lang_command))
+    app.add_handler(CommandHandler("remember", handle_remember_command))
+    app.add_handler(CommandHandler("memory", handle_memory_command))
+    app.add_handler(CommandHandler("forget", handle_forget_command))
 
     # Message handler (non-command text)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
@@ -149,6 +171,7 @@ def main() -> None:
         else ("ALLOW_ALL_USERS=true (Dev-Modus!)" if ALLOW_ALL_USERS else "FEHLER"),
     )
     log.info("Bookmarks-Feature aktiv (Reply-basiert via /save)")
+    log.info("Trinity-Memory aktiv (/remember /memory /forget)")
     log.info("Conversation-History aktiv (max 20 Turns, /reset zum Loeschen)")
     app.run_polling()
 

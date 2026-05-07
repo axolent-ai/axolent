@@ -20,6 +20,7 @@ from application.bookmark_service import (
     search,
 )
 from application.chat_service import process_user_message
+from application.memory_service import MemoryService
 from domain.bookmark import format_bookmark_preview
 from infrastructure.conversation_storage import reset_conversation, set_language
 from presentation.decorators import require_whitelist
@@ -62,6 +63,9 @@ def _get_user_lock(user_id: int) -> asyncio.Lock:
 # System-Prompt wird von main.py injiziert nach dem Laden
 _system_prompt: str = ""
 
+# MemoryService wird von main.py injiziert
+_memory_service: MemoryService | None = None
+
 
 def set_system_prompt(prompt: str) -> None:
     """Setzt den System-Prompt für alle Handler (wird von main.py aufgerufen).
@@ -71,6 +75,16 @@ def set_system_prompt(prompt: str) -> None:
     """
     global _system_prompt
     _system_prompt = prompt
+
+
+def set_memory_service(service: MemoryService) -> None:
+    """Injiziert den MemoryService in die Handler (wird von main.py aufgerufen).
+
+    Args:
+        service: Initialisierte MemoryService-Instanz.
+    """
+    global _memory_service
+    _memory_service = service
 
 
 def build_bookmarks_keyboard(bookmarks: list[dict[str, Any]]) -> InlineKeyboardMarkup:
@@ -108,6 +122,10 @@ HELP_TEXT: str = (
     "/save  (als Antwort auf Bot-Nachricht)  Bookmark speichern/entfernen\n"
     "/bookmarks  Gespeicherte Bookmarks anzeigen\n"
     "/bookmarks search <Begriff>  Bookmarks durchsuchen\n"
+    "/remember <text>  Etwas im Langzeitgedächtnis speichern\n"
+    "/memory  Letzte Memory-Einträge anzeigen\n"
+    "/memory search <Begriff>  Memory durchsuchen\n"
+    "/forget <id>  Memory-Eintrag löschen\n"
     "/reset  Konversation zurücksetzen (neuer Chat)\n"
     "/lang <code>  Sprache wechseln (de, en, es, fr, ...)\n"
     "/help  Diese Hilfe anzeigen"
@@ -377,3 +395,133 @@ async def handle_start_command(
 ) -> None:
     """Handles /start command. Zeigt Willkommensnachricht an."""
     await update.message.reply_text(START_TEXT)
+
+
+@require_whitelist
+async def handle_remember_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handles /remember <text>.
+
+    Speichert Text als Episodic Memory.
+    Als Reply auf Bot-Nachricht: speichert die Bot-Antwort.
+    Ohne Reply: speichert den mitgegebenen Text.
+    """
+    if _memory_service is None:
+        await update.message.reply_text("Memory-System nicht initialisiert.")
+        return
+
+    user = update.effective_user
+    user_id: int = user.id if user else 0
+    args: list[str] = context.args or []
+
+    # Inhalt bestimmen
+    content: str = ""
+    reply_msg = update.message.reply_to_message
+
+    if reply_msg and reply_msg.text:
+        # Reply auf Bot-Nachricht: Bot-Antwort speichern
+        content = reply_msg.text
+        # Wenn zusaetzlich Text angegeben: als Kontext-Label verwenden
+        if args:
+            label = " ".join(args)
+            content = f"[{label}] {content}"
+    elif args:
+        # Kein Reply: Text direkt speichern
+        content = " ".join(args)
+    else:
+        await update.message.reply_text(
+            "Benutzung:\n"
+            "/remember <text>  Text speichern\n"
+            "/remember <label>  (als Reply)  Bot-Antwort mit Label speichern"
+        )
+        return
+
+    entry_id = _memory_service.remember_episodic(user_id=user_id, content=content)
+    await update.message.reply_text(f"Gespeichert. [{entry_id}]")
+    log.info("User %d remembered: %s (id=%s)", user_id, content[:50], entry_id)
+
+
+@require_whitelist
+async def handle_memory_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handles /memory und /memory search <query>.
+
+    /memory              Letzte 10 episodische Eintraege anzeigen
+    /memory search <q>   Memory durchsuchen
+    """
+    if _memory_service is None:
+        await update.message.reply_text("Memory-System nicht initialisiert.")
+        return
+
+    user = update.effective_user
+    user_id: int = user.id if user else 0
+    args: list[str] = context.args or []
+
+    # /memory search <query>
+    if len(args) >= 2 and args[0].lower() == "search":
+        query_term = " ".join(args[1:])
+        results = _memory_service.recall(user_id, query_term, layer="episodic")
+
+        if not results:
+            await update.message.reply_text(
+                f"Keine Erinnerungen mit '{query_term}' gefunden."
+            )
+            return
+
+        lines: list[str] = [
+            f"Suchergebnisse fuer '{query_term}' ({len(results)} Treffer):\n"
+        ]
+        for entry in results[:10]:
+            lines.append(f"  [{entry['id']}] {entry['content'][:80]}")
+        await update.message.reply_text("\n".join(lines))
+        return
+
+    # /memory (keine Argumente): letzte 10 anzeigen
+    entries = _memory_service.list_recent(user_id, layer="episodic", limit=10)
+
+    if not entries:
+        await update.message.reply_text(
+            "Noch keine Erinnerungen gespeichert. Nutze /remember <text> um etwas zu merken."
+        )
+        return
+
+    lines: list[str] = [f"Letzte {len(entries)} Erinnerungen:\n"]
+    for entry in entries:
+        lines.append(f"  [{entry['id']}] {entry['content'][:80]}")
+    await update.message.reply_text("\n".join(lines))
+
+
+@require_whitelist
+async def handle_forget_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handles /forget <entry_id>.
+
+    Loescht einen Memory-Eintrag anhand seiner ID.
+    """
+    if _memory_service is None:
+        await update.message.reply_text("Memory-System nicht initialisiert.")
+        return
+
+    user = update.effective_user
+    user_id: int = user.id if user else 0
+    args: list[str] = context.args or []
+
+    if not args:
+        await update.message.reply_text(
+            "Benutzung: /forget <entry_id>\n\nIDs findest du via /memory"
+        )
+        return
+
+    entry_id = args[0].strip()
+    deleted = _memory_service.forget(user_id, entry_id)
+
+    if deleted:
+        await update.message.reply_text(f"Vergessen: {entry_id}")
+        log.info("User %d forgot memory: %s", user_id, entry_id)
+    else:
+        await update.message.reply_text(
+            f"Eintrag '{entry_id}' nicht gefunden oder gehoert dir nicht."
+        )

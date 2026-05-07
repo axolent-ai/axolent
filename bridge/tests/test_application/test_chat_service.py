@@ -1,7 +1,7 @@
 """Tests fuer application.chat_service: LLM-Aufruf-Orchestration via ProviderRouter.
 
 Mockt den ProviderRouter komplett. Kein echter LLM-Aufruf.
-Testet History-Integration, Sprach-Detection und Error-Handling.
+Testet History-Integration, Sprach-Detection, Error-Handling und Auto-Memory-Loading.
 """
 
 from __future__ import annotations
@@ -39,6 +39,17 @@ def _inject_mock_router():
     chat_service._provider_router = mock_router
     yield mock_router
     chat_service._provider_router = old_router
+
+
+@pytest.fixture(autouse=True)
+def _clear_memory_service():
+    """Raeumt MemoryService-Referenz im ChatService vor/nach jedem Test auf."""
+    from application import chat_service
+
+    old_memory = chat_service._memory_service
+    chat_service._memory_service = None
+    yield
+    chat_service._memory_service = old_memory
 
 
 class TestChatService:
@@ -264,3 +275,136 @@ class TestChatService:
 
         assert result.success is False
         assert "System-Fehler" in result.error_message
+
+
+class TestAutoMemoryLoading:
+    """Tests fuer Auto-Memory-Loading im Chat-Service."""
+
+    async def test_chat_service_loads_memory_when_relevant(
+        self, _inject_mock_router: MagicMock
+    ) -> None:
+        """Wenn MemoryService Treffer hat, wird Memory-Context in System-Prompt eingefuegt."""
+        from application import chat_service
+        from application.chat_service import process_user_message
+
+        # Mock MemoryService
+        mock_memory = MagicMock()
+        mock_memory.recall = MagicMock(
+            side_effect=lambda uid, q, layer, limit: (
+                [{"id": "ep_abc123", "content": "Lieblingsessen ist Pizza"}]
+                if layer == "episodic"
+                else []
+            )
+        )
+        chat_service._memory_service = mock_memory
+
+        await process_user_message(
+            text="Was ist mein Lieblingsessen?",
+            user_id=1,
+            chat_id=10,
+            username="test",
+            system_prompt="Du bist hilfreich.",
+        )
+
+        # Pruefen: system_prompt an Router muss Memory-Context enthalten
+        call_args = _inject_mock_router.route.call_args
+        system_sent = call_args.kwargs.get("system_prompt", "")
+        assert "GESPEICHERTE NOTIZEN" in system_sent
+        assert "Lieblingsessen ist Pizza" in system_sent
+
+    async def test_chat_service_skips_memory_when_no_keywords(
+        self, _inject_mock_router: MagicMock
+    ) -> None:
+        """Bei kurzen Worten (alle <= 3 Zeichen) wird kein Memory geladen."""
+        from application import chat_service
+        from application.chat_service import process_user_message
+
+        mock_memory = MagicMock()
+        mock_memory.recall = MagicMock(return_value=[])
+        chat_service._memory_service = mock_memory
+
+        await process_user_message(
+            text="hi da",  # Alle Worte <= 3 Zeichen
+            user_id=1,
+            chat_id=10,
+            username="test",
+            system_prompt="System.",
+        )
+
+        # recall sollte NIE aufgerufen werden (kein Keyword > 3 Zeichen)
+        mock_memory.recall.assert_not_called()
+
+    async def test_chat_service_includes_all_three_layers(
+        self, _inject_mock_router: MagicMock
+    ) -> None:
+        """Alle drei Layer (episodic, semantic, procedural) erscheinen im Context."""
+        from application import chat_service
+        from application.chat_service import process_user_message
+
+        def mock_recall(uid, q, layer, limit):
+            if layer == "episodic":
+                return [{"id": "ep_001", "content": "Event gestern"}]
+            elif layer == "semantic":
+                return [
+                    {
+                        "id": "sem_001",
+                        "content": "Python ist Lieblingssprache",
+                        "category": "praeferenz",
+                    }
+                ]
+            elif layer == "procedural":
+                return [
+                    {
+                        "id": "pro_001",
+                        "content": "Immer Tests schreiben",
+                        "skill_name": "testing",
+                    }
+                ]
+            return []
+
+        mock_memory = MagicMock()
+        mock_memory.recall = MagicMock(side_effect=mock_recall)
+        chat_service._memory_service = mock_memory
+
+        await process_user_message(
+            text="Erzaehl mir etwas ueber Python und Testing",
+            user_id=1,
+            chat_id=10,
+            username="test",
+            system_prompt="System.",
+        )
+
+        call_args = _inject_mock_router.route.call_args
+        system_sent = call_args.kwargs.get("system_prompt", "")
+        assert "Episodic" in system_sent
+        assert "Semantic" in system_sent
+        assert "Procedural" in system_sent
+        assert "ep_001" in system_sent
+        assert "sem_001" in system_sent
+        assert "pro_001" in system_sent
+        assert "praeferenz" in system_sent
+        assert "testing" in system_sent
+
+    async def test_chat_service_no_memory_when_service_is_none(
+        self, _inject_mock_router: MagicMock
+    ) -> None:
+        """Ohne MemoryService (None) laeuft alles normal ohne Memory-Block."""
+        from application import chat_service
+        from application.chat_service import process_user_message
+
+        # Sicherstellen: kein MemoryService
+        chat_service._memory_service = None
+
+        result = await process_user_message(
+            text="Was ist mein Lieblingsessen?",
+            user_id=1,
+            chat_id=10,
+            username="test",
+            system_prompt="Du bist hilfreich.",
+        )
+
+        assert result.success is True
+        # System-Prompt darf keinen Memory-Block haben
+        call_args = _inject_mock_router.route.call_args
+        system_sent = call_args.kwargs.get("system_prompt", "")
+        assert "GESPEICHERTE NOTIZEN" not in system_sent
