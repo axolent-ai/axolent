@@ -25,9 +25,10 @@ _BM_LOCK = FileLock(_BM_LOCK_PATH)
 
 
 def migrate_legacy_chat_id() -> int:
-    """Schreibt fehlende chat_id in alte Bookmarks (idempotent).
+    """Schreibt fehlende chat_id in alte Bookmarks (idempotent, crash-safe).
 
     Annahme: bei DMs in Telegram ist chat_id == user_id.
+    Korrupte JSONL-Zeilen werden übersprungen und geloggt statt den Start zu crashen.
 
     Returns:
         Anzahl migrierter Einträge.
@@ -35,19 +36,40 @@ def migrate_legacy_chat_id() -> int:
     if not BOOKMARKS_PATH.exists():
         return 0
     migrated = 0
+    valid_lines: list[dict] = []
+    corrupt_count = 0
     with _BM_LOCK:
         with open_utf8(BOOKMARKS_PATH, "r") as f:
-            lines = [json.loads(line) for line in f if line.strip()]
-        for entry in lines:
-            if "chat_id" not in entry or entry.get("chat_id") is None:
-                entry["chat_id"] = entry.get("user_id", 0)
-                migrated += 1
-        if migrated:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                    if "chat_id" not in entry or entry.get("chat_id") is None:
+                        entry["chat_id"] = entry.get("user_id", 0)
+                        migrated += 1
+                    valid_lines.append(entry)
+                except json.JSONDecodeError as e:
+                    corrupt_count += 1
+                    log.warning(
+                        "Migration: korrupte Zeile %d uebersprungen: %s",
+                        line_num,
+                        e,
+                    )
+        if migrated > 0 or corrupt_count > 0:
+            # Atomarer Rewrite
             tmp_path = BOOKMARKS_PATH.with_suffix(".jsonl.tmp")
             with open_utf8(tmp_path, "w") as f:
-                for entry in lines:
+                for entry in valid_lines:
                     f.write(json.dumps(entry, ensure_ascii=False) + "\n")
             tmp_path.replace(BOOKMARKS_PATH)
+        if corrupt_count > 0:
+            log.info(
+                "Migration: %d korrupte Zeile(n) entfernt, %d Eintraege migriert",
+                corrupt_count,
+                migrated,
+            )
     return migrated
 
 

@@ -1,4 +1,4 @@
-"""Tests fuer MemoryStorage: JSONL-Persistierung mit FileLock.
+"""Tests für MemoryStorage: JSONL-Persistierung mit FileLock.
 
 Testet append, list, search, delete, concurrent writes,
 mode-Parameter und Aktualitaets-Sortierung.
@@ -22,7 +22,7 @@ def storage(tmp_data_dir: Path) -> MemoryStorage:
 
 
 class TestMemoryStorageAppend:
-    """Tests fuer append-Operationen."""
+    """Tests für append-Operationen."""
 
     def test_append_episodic_creates_file(self, storage: MemoryStorage) -> None:
         """Erster append erstellt die JSONL-Datei."""
@@ -67,7 +67,7 @@ class TestMemoryStorageAppend:
 
 
 class TestMemoryStorageList:
-    """Tests fuer list_entries."""
+    """Tests für list_entries."""
 
     def test_list_empty(self, storage: MemoryStorage) -> None:
         """Leerer Storage gibt leere Liste zurueck."""
@@ -135,7 +135,7 @@ class TestMemoryStorageList:
 
 
 class TestMemoryStorageSearch:
-    """Tests fuer search."""
+    """Tests für search."""
 
     def test_search_empty(self, storage: MemoryStorage) -> None:
         """Suche in leerem Storage gibt leere Liste."""
@@ -231,7 +231,7 @@ class TestMemoryStorageSearch:
 
 
 class TestMemoryStorageDelete:
-    """Tests fuer delete_by_id."""
+    """Tests für delete_by_id."""
 
     def test_delete_existing(self, storage: MemoryStorage) -> None:
         """delete_by_id entfernt den Entry und gibt True zurueck."""
@@ -268,7 +268,7 @@ class TestMemoryStorageDelete:
 
 
 class TestMemoryStorageGetById:
-    """Tests fuer get_by_id."""
+    """Tests für get_by_id."""
 
     def test_get_existing(self, storage: MemoryStorage) -> None:
         """get_by_id findet existierenden Entry."""
@@ -287,7 +287,7 @@ class TestMemoryStorageGetById:
 
 
 class TestMemoryStorageConcurrency:
-    """Tests fuer concurrent writes via FileLock."""
+    """Tests für concurrent writes via FileLock."""
 
     def test_concurrent_appends(self, storage: MemoryStorage) -> None:
         """Parallele Writes via Threads fuehren zu korrekter JSONL-Datei."""

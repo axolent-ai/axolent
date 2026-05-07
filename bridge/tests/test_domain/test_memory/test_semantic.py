@@ -1,4 +1,4 @@
-"""Tests fuer SemanticEntry: Erstellung, Serialisierung, Deserialisierung."""
+"""Tests für SemanticEntry: Erstellung, Serialisierung, Deserialisierung."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from domain.memory.semantic import SemanticEntry
 
 
 class TestSemanticEntry:
-    """Tests fuer SemanticEntry Datenklasse."""
+    """Tests für SemanticEntry Datenklasse."""
 
     def test_default_creation(self) -> None:
         """Entry mit Default-Werten hat korrekte Struktur."""

@@ -1,4 +1,4 @@
-"""Tests fuer ProceduralEntry: Erstellung, Serialisierung, Deserialisierung."""
+"""Tests für ProceduralEntry: Erstellung, Serialisierung, Deserialisierung."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from domain.memory.procedural import ProceduralEntry
 
 
 class TestProceduralEntry:
-    """Tests fuer ProceduralEntry Datenklasse."""
+    """Tests für ProceduralEntry Datenklasse."""
 
     def test_default_creation(self) -> None:
         """Entry mit Default-Werten hat korrekte Struktur."""

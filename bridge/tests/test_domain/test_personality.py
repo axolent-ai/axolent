@@ -1,4 +1,4 @@
-"""Tests fuer domain.personality: Personality-Prompt-Kombination.
+"""Tests für domain.personality: Personality-Prompt-Kombination.
 
 Testet build_combined_prompt und build_effective_prompt mit Language-Override.
 """

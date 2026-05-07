@@ -1,7 +1,7 @@
-"""Tests fuer application.bookmark_service: Bookmark Use-Case-Orchestration.
+"""Tests für application.bookmark_service: Bookmark Use-Case-Orchestration.
 
 Testet Toggle-Logik, User-Scoping und Suche.
-Nutzt tmp_path fuer isolierte Testdaten.
+Nutzt tmp_path für isolierte Testdaten.
 """
 
 from __future__ import annotations
@@ -101,7 +101,7 @@ class TestBookmarkService:
         assert result["content"] == "Find me"
 
     def test_get_bookmark_not_found(self) -> None:
-        """get_bookmark gibt None fuer nicht-existierende Bookmarks."""
+        """get_bookmark gibt None für nicht-existierende Bookmarks."""
         from application.bookmark_service import get_bookmark
 
         result = get_bookmark(user_id=1, chat_id=10, message_id=999)

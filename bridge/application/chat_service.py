@@ -47,11 +47,88 @@ def _truncate(text: str, n: int) -> str:
     return text if len(text) <= n else text[: n - 3] + "..."
 
 
+_STOP_WORDS_DE = frozenset(
+    {
+        "diese",
+        "diesen",
+        "dieser",
+        "diesem",
+        "dieses",
+        "ihre",
+        "ihren",
+        "ihrer",
+        "ihrem",
+        "ihres",
+        "meine",
+        "meinen",
+        "meiner",
+        "meinem",
+        "meines",
+        "deine",
+        "deinen",
+        "seiner",
+        "seinem",
+        "sehr",
+        "schon",
+        "noch",
+        "auch",
+        "etwas",
+        "sollte",
+        "müsste",
+        "könnte",
+        "wollte",
+        "welche",
+        "welchen",
+        "welcher",
+        "welchem",
+        "manche",
+        "alles",
+        "viele",
+        "wenig",
+        "haben",
+        "machen",
+        "geben",
+        "nehmen",
+    }
+)
+_STOP_WORDS_EN = frozenset(
+    {
+        "this",
+        "that",
+        "these",
+        "those",
+        "their",
+        "there",
+        "where",
+        "which",
+        "would",
+        "could",
+        "should",
+        "very",
+        "much",
+        "more",
+        "most",
+        "want",
+        "need",
+        "have",
+        "been",
+        "from",
+        "some",
+        "many",
+        "few",
+        "what",
+        "when",
+        "while",
+    }
+)
+_STOP_WORDS = _STOP_WORDS_DE | _STOP_WORDS_EN
+
+
 def _extract_keywords(text: str) -> list[str]:
     """Extrahiert Suchbegriffe aus einer User-Nachricht.
 
-    Strategie: Interpunktion strippen, dann alle Worte mit > 3 Zeichen,
-    lowercase, dedupliziert.
+    Strategie: Interpunktion strippen, Stop-Words filtern,
+    dann alle Worte mit > 3 Zeichen, lowercase, dedupliziert.
 
     Args:
         text: User-Nachricht.
@@ -62,7 +139,8 @@ def _extract_keywords(text: str) -> list[str]:
     # Interpunktion an Wortgrenzen entfernen (?,.:;!'"…) damit
     # "Lieblingssprache?" -> "lieblingssprache" wird
     stripped = [w.strip("?,.:;!'\"-—–…()[]{}") for w in text.split()]
-    keywords = list({w.lower() for w in stripped if len(w) > 3})
+    candidates = {w.lower() for w in stripped if len(w) > 3}
+    keywords = list(candidates - _STOP_WORDS)
     # Sortiert nach Länge absteigend (längste = spezifischste zuerst)
     keywords.sort(key=len, reverse=True)
     return keywords
@@ -382,35 +460,48 @@ class ChatService:
 
         except ProviderError as e:
             # Spezifische Provider-Fehler (Unavailable, NotImplemented, Timeout)
+            error_id = uuid.uuid4().hex[:8]
             audit["error"] = f"provider_error: {e}"
+            audit["error_id"] = error_id
             log.error(
-                "Provider-Fehler (%s, retryable=%s): %s",
+                "Provider-Fehler (error_id=%s, provider=%s, retryable=%s): %s",
+                error_id,
                 e.provider_name,
                 e.retryable,
                 e,
             )
-            hint = " Bitte später erneut versuchen." if e.retryable else ""
+            hint = " Versuch es gleich noch mal." if e.retryable else ""
             return ChatResult(
                 success=False,
-                error_message=f"Provider-Fehler: {e}{hint}",
+                error_message=(
+                    f"Der Sprachmodell-Anbieter meldet ein Problem "
+                    f"(ref: {error_id}).{hint}"
+                ),
+                error_id=error_id,
             )
 
         except ValueError as e:
-            # Provider nicht registriert
-            audit["error"] = f"provider_error: {e}"
-            log.error("Provider-Fehler: %s", e)
+            # Provider nicht registriert o.ä.
+            error_id = uuid.uuid4().hex[:8]
+            audit["error"] = f"value_error: {e}"
+            audit["error_id"] = error_id
+            log.error("ValueError (error_id=%s): %s", error_id, e)
             return ChatResult(
                 success=False,
-                error_message=f"Provider-Fehler: {e}",
+                error_message=f"Anfrage konnte nicht verarbeitet werden (ref: {error_id}).",
+                error_id=error_id,
             )
 
         except RuntimeError as e:
             # Fallback für unerwartete Runtime-Fehler
+            error_id = uuid.uuid4().hex[:8]
             audit["error"] = f"runtime_error: {e}"
-            log.error("Runtime-Fehler: %s", e)
+            audit["error_id"] = error_id
+            log.error("RuntimeError (error_id=%s): %s", error_id, e)
             return ChatResult(
                 success=False,
-                error_message=f"System-Fehler: {e}",
+                error_message=f"Interner Fehler (ref: {error_id}).",
+                error_id=error_id,
             )
 
         except Exception as e:
@@ -433,6 +524,27 @@ class ChatService:
         """Use-Case-Wrapper: setzt Conversation und Sticky-Language zurück."""
         await _infra_reset_conversation(user_id, chat_id)
 
+    async def get_chat_language(self, user_id: int, chat_id: int) -> str | None:
+        """Use-Case-Wrapper: liest die Sticky-Language für einen Chat."""
+        return await get_language(user_id, chat_id)
+
     async def set_chat_language(self, user_id: int, chat_id: int, lang: str) -> None:
         """Use-Case-Wrapper: setzt die Sticky-Language für einen Chat."""
         await set_language(user_id, chat_id, lang)
+
+    async def save_static_response_to_history(
+        self, user_id: int, chat_id: int, response_text: str
+    ) -> None:
+        """Speichert eine statische Bot-Antwort (z.B. /start, /help) in die History.
+
+        Damit weiß der Bot beim nächsten Turn was er gerade gesagt hat.
+        Nur assistant-Turn wird gespeichert (der User-Command selbst ist kein
+        natürlicher Konversationsbeitrag).
+
+        Args:
+            user_id: Telegram User-ID.
+            chat_id: Telegram Chat-ID.
+            response_text: Der gesendete Bot-Text.
+        """
+        turn = ConversationTurn(role="assistant", content=response_text)
+        await save_turn(user_id, chat_id, turn)

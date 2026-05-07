@@ -19,54 +19,57 @@ _SYSTEM_PROMPT_PATH: Path = _CONFIG_DIR / "system_prompt.md"
 _CONSTITUTION_PATH: Path = _CONFIG_DIR / "user_constitution.md"
 
 
+def _load_config_file(path: Path, label: str) -> str:
+    """Lädt eine Config-Datei als UTF-8-String.
+
+    Args:
+        path: Pfad zur Config-Datei.
+        label: Beschreibung der Datei für Logs (z.B. "System-Prompt").
+
+    Returns:
+        Inhalt der Datei als String, oder leerer String bei FileNotFoundError.
+
+    Raises:
+        SystemExit: Bei kritischen Fehlern (Encoding, Permissions, OS-Fehler).
+    """
+    try:
+        with open_utf8(path, "r") as f:
+            content = f.read().strip()
+        log.info("%s geladen: %d Zeichen aus %s", label, len(content), path)
+        return content
+    except FileNotFoundError:
+        log.warning("%s nicht gefunden: %s (Fallback: leer)", label, path)
+        return ""
+    except (PermissionError, UnicodeDecodeError, OSError) as e:
+        log.error("%s konnte nicht gelesen werden: %s: %s", label, path, e)
+        raise SystemExit(
+            f"{label}-Datei {path} fehlerhaft. Bot-Start abgebrochen. "
+            f"Pruefe Datei-Encoding (UTF-8) und -Rechte. Original-Fehler: {e}"
+        ) from e
+
+
 def load_system_prompt() -> str:
     """Lädt den System-Prompt aus config/system_prompt.md.
 
     Returns:
-        Inhalt der Datei als String, oder leerer String bei Fehler.
+        Inhalt der Datei als String, oder leerer String wenn nicht vorhanden.
+
+    Raises:
+        SystemExit: Bei kritischen Datei-Fehlern (Encoding, Permissions).
     """
-    try:
-        with open_utf8(_SYSTEM_PROMPT_PATH, "r") as f:
-            content = f.read().strip()
-        log.info(
-            "System-Prompt geladen: %d Zeichen aus %s",
-            len(content),
-            _SYSTEM_PROMPT_PATH,
-        )
-        return content
-    except FileNotFoundError:
-        log.warning(
-            "System-Prompt nicht gefunden: %s (Fallback: leer)", _SYSTEM_PROMPT_PATH
-        )
-        return ""
-    except Exception as e:
-        log.warning("Fehler beim Laden des System-Prompts: %s", e)
-        return ""
+    return _load_config_file(_SYSTEM_PROMPT_PATH, "System-Prompt")
 
 
 def load_user_constitution() -> str:
     """Lädt die User-Constitution aus config/user_constitution.md.
 
     Returns:
-        Inhalt der Datei als String, oder leerer String bei Fehler.
+        Inhalt der Datei als String, oder leerer String wenn nicht vorhanden.
+
+    Raises:
+        SystemExit: Bei kritischen Datei-Fehlern (Encoding, Permissions).
     """
-    try:
-        with open_utf8(_CONSTITUTION_PATH, "r") as f:
-            content = f.read().strip()
-        log.info(
-            "User-Constitution geladen: %d Zeichen aus %s",
-            len(content),
-            _CONSTITUTION_PATH,
-        )
-        return content
-    except FileNotFoundError:
-        log.warning(
-            "User-Constitution nicht gefunden: %s (Fallback: leer)", _CONSTITUTION_PATH
-        )
-        return ""
-    except Exception as e:
-        log.warning("Fehler beim Laden der User-Constitution: %s", e)
-        return ""
+    return _load_config_file(_CONSTITUTION_PATH, "User-Constitution")
 
 
 def build_combined_prompt() -> str:

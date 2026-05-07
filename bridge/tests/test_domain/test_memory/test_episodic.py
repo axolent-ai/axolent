@@ -1,4 +1,4 @@
-"""Tests fuer EpisodicEntry: Erstellung, Serialisierung, Deserialisierung."""
+"""Tests für EpisodicEntry: Erstellung, Serialisierung, Deserialisierung."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from domain.memory.episodic import EpisodicEntry
 
 
 class TestEpisodicEntry:
-    """Tests fuer EpisodicEntry Datenklasse."""
+    """Tests für EpisodicEntry Datenklasse."""
 
     def test_default_creation(self) -> None:
         """Entry mit Default-Werten hat korrekte Struktur."""

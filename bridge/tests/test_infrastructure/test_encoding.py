@@ -1,4 +1,4 @@
-"""Tests fuer infrastructure.encoding: UTF-8-Helper.
+"""Tests für infrastructure.encoding: UTF-8-Helper.
 
 Testet dass alle I/O-Operationen konsistent UTF-8 verwenden
 und Unicode-Zeichen korrekt erhalten bleiben.

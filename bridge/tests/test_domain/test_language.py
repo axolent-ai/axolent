@@ -1,4 +1,4 @@
-"""Tests fuer domain.language: Sprach-Detection via Heuristik.
+"""Tests für domain.language: Sprach-Detection via Heuristik.
 
 Testet die korrekte Erkennung der gaengigsten Sprachen
 sowie Edge-Cases (kurze Nachrichten, Emojis, exotische Schriften).
@@ -61,7 +61,7 @@ class TestDetectLanguage:
         assert detect_language("مرحبا") == "de"  # Arabisch
 
     def test_detect_language_german_umlauts_boost(self) -> None:
-        """Umlaute geben einen Char-Hint-Bonus fuer Deutsch."""
+        """Umlaute geben einen Char-Hint-Bonus für Deutsch."""
         result = detect_language("Wir fahren nach Muenchen fuer die Pruefung")
         # Keine Umlaute im Text, aber genug deutsche Marker
         assert result == "de"

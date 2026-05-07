@@ -1,4 +1,4 @@
-"""Tests fuer infrastructure.conversation_storage: In-Memory Conversation History.
+"""Tests für infrastructure.conversation_storage: In-Memory Conversation History.
 
 Testet async CRUD-Operationen, MAX_HISTORY eviction und sticky language.
 """

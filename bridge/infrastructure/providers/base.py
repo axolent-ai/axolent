@@ -22,6 +22,7 @@ class ProviderCapabilities:
         supports_tool_use: Kann der Provider Function-Calling / Tool-Use?
         supports_vision: Kann der Provider Bilder verarbeiten?
         max_context_tokens: Maximale Context-Länge in Tokens.
+        max_memory_chars: Max Memory-Zeichen im System-Prompt (Phase 1+, per-Provider).
         cost_class: Kostenklasse ("free", "subscription", "pay_per_use").
         privacy_class: Wo werden Daten verarbeitet? ("cloud", "local").
         available_models: Liste der verfügbaren Modell-IDs.
@@ -31,6 +32,7 @@ class ProviderCapabilities:
     supports_tool_use: bool = False
     supports_vision: bool = False
     max_context_tokens: int = 32_000
+    max_memory_chars: int = 4000
     cost_class: str = "free"  # "free", "subscription", "pay_per_use"
     privacy_class: str = "cloud"  # "cloud", "local"
     available_models: list[str] = field(default_factory=list)

@@ -1,4 +1,4 @@
-"""Telegram-Decorators: Whitelist-Check und andere Guards.
+"""Telegram-Decorators: Whitelist-Check, Privacy-Guard und andere Guards.
 
 Enthält Decorator-Funktionen die vor Handler-Logik ausgeführt werden.
 """
@@ -22,6 +22,11 @@ WHITELIST: set[int] = {
     if uid.strip().isdigit()
 }
 ALLOW_ALL_USERS: bool = os.getenv("ALLOW_ALL_USERS", "").lower() in ("true", "1", "yes")
+
+_PRIVATE_ONLY_MSG = (
+    "Dieser Befehl funktioniert nur im privaten Chat mit dem Bot. "
+    "Bitte schreib mir direkt."
+)
 
 
 def require_whitelist(func: Callable) -> Callable:
@@ -52,6 +57,23 @@ def require_whitelist(func: Callable) -> Callable:
                 )
             return
 
+        return await func(update, context)
+
+    return wrapper
+
+
+def require_private_chat(func: Callable) -> Callable:
+    """Decorator: Erlaubt Command nur im privaten 1:1-Chat mit dem Bot.
+
+    In Gruppen/Supergruppen wird eine Fehlermeldung gesendet und der Handler abgebrochen.
+    """
+
+    @wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if update.effective_chat and update.effective_chat.type != "private":
+            if update.message:
+                await update.message.reply_text(_PRIVATE_ONLY_MSG)
+            return
         return await func(update, context)
 
     return wrapper

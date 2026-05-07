@@ -1,4 +1,4 @@
-"""Tests fuer MemoryService: CRUD-Flows ueber alle drei Layer."""
+"""Tests für MemoryService: CRUD-Flows ueber alle drei Layer."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ def memory_service(tmp_data_dir: Path) -> MemoryService:
 
 
 class TestRememberEpisodic:
-    """Tests fuer remember_episodic."""
+    """Tests für remember_episodic."""
 
     def test_remember_returns_id(self, memory_service: MemoryService) -> None:
         """remember_episodic gibt eine ep_-ID zurueck."""
@@ -40,7 +40,7 @@ class TestRememberEpisodic:
 
 
 class TestRememberSemantic:
-    """Tests fuer remember_semantic."""
+    """Tests für remember_semantic."""
 
     def test_remember_with_category(self, memory_service: MemoryService) -> None:
         """Semantic Entry mit Kategorie wird korrekt gespeichert."""
@@ -55,7 +55,7 @@ class TestRememberSemantic:
 
 
 class TestRememberProcedural:
-    """Tests fuer remember_procedural."""
+    """Tests für remember_procedural."""
 
     def test_remember_with_skill_name(self, memory_service: MemoryService) -> None:
         """Procedural Entry mit skill_name wird korrekt gespeichert."""
@@ -72,7 +72,7 @@ class TestRememberProcedural:
 
 
 class TestRecall:
-    """Tests fuer recall (Suche)."""
+    """Tests für recall (Suche)."""
 
     def test_recall_finds_match(self, memory_service: MemoryService) -> None:
         """recall findet Entries die den Suchbegriff enthalten."""
@@ -93,7 +93,7 @@ class TestRecall:
 
 
 class TestForget:
-    """Tests fuer forget."""
+    """Tests für forget."""
 
     def test_forget_existing(self, memory_service: MemoryService) -> None:
         """forget loescht Entry und gibt True zurueck."""
@@ -114,14 +114,14 @@ class TestForget:
         assert memory_service.forget(user_id=999, entry_id=entry_id) is False
 
     def test_forget_semantic(self, memory_service: MemoryService) -> None:
-        """forget funktioniert auch fuer semantic Layer (via ID-Prefix)."""
+        """forget funktioniert auch für semantic Layer (via ID-Prefix)."""
         entry_id = memory_service.remember_semantic(
             user_id=1, content="Fakt", category="fakt"
         )
         assert memory_service.forget(user_id=1, entry_id=entry_id) is True
 
     def test_forget_procedural(self, memory_service: MemoryService) -> None:
-        """forget funktioniert auch fuer procedural Layer (via ID-Prefix)."""
+        """forget funktioniert auch für procedural Layer (via ID-Prefix)."""
         entry_id = memory_service.remember_procedural(
             user_id=1, content="Skill", skill_name="test_skill"
         )
@@ -133,7 +133,7 @@ class TestForget:
 
 
 class TestGetEntry:
-    """Tests fuer get_entry."""
+    """Tests für get_entry."""
 
     def test_get_existing(self, memory_service: MemoryService) -> None:
         """get_entry findet vorhandenen Entry."""
@@ -149,7 +149,7 @@ class TestGetEntry:
 
 
 class TestLayerFromId:
-    """Tests fuer _layer_from_id."""
+    """Tests für _layer_from_id."""
 
     def test_episodic_prefix(self) -> None:
         assert MemoryService._layer_from_id("ep_abc123") == "episodic"

@@ -1,4 +1,4 @@
-"""Tests fuer presentation.render: Chunking und Response-Cache.
+"""Tests für presentation.render: Chunking und Response-Cache.
 
 Testet Message-Splitting, Cache-Logik und den send_response Flow.
 """

@@ -1,4 +1,4 @@
-"""Tests fuer infrastructure.audit_log: JSONL Audit-Log mit Rotation.
+"""Tests für infrastructure.audit_log: JSONL Audit-Log mit Rotation.
 
 Testet dass Audit-Eintraege korrekt geschrieben werden
 und die Rotation bei Ueberschreiten der Max-Groesse greift.
@@ -78,7 +78,7 @@ class TestAuditLog:
         test_logger.setLevel(logging.INFO)
         handler = logging.handlers.RotatingFileHandler(
             audit_path,
-            maxBytes=200,  # Sehr klein fuer schnelle Rotation
+            maxBytes=200,  # Sehr klein für schnelle Rotation
             backupCount=3,
             encoding="utf-8",
         )

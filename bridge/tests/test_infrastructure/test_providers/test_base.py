@@ -1,4 +1,4 @@
-"""Tests fuer das Provider-Interface (Abstract Base Class).
+"""Tests für das Provider-Interface (Abstract Base Class).
 
 Verifiziert:
     - LLMProvider kann nicht direkt instanziiert werden
@@ -24,7 +24,7 @@ from infrastructure.providers.base import (
 
 
 class TestProviderResponse:
-    """Tests fuer ProviderResponse Dataclass."""
+    """Tests für ProviderResponse Dataclass."""
 
     def test_success_when_text_present_no_error(self) -> None:
         resp = ProviderResponse(
@@ -62,7 +62,7 @@ class TestProviderResponse:
 
 
 class TestProviderCapabilities:
-    """Tests fuer ProviderCapabilities Dataclass."""
+    """Tests für ProviderCapabilities Dataclass."""
 
     def test_defaults(self) -> None:
         caps = ProviderCapabilities()
@@ -93,7 +93,7 @@ class TestProviderCapabilities:
 
 
 class TestProviderErrorHierarchy:
-    """Tests fuer die Provider-Error-Hierarchie."""
+    """Tests für die Provider-Error-Hierarchie."""
 
     def test_provider_error_is_exception(self) -> None:
         err = ProviderError("test", retryable=False, message="boom")

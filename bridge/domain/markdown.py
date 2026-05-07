@@ -10,6 +10,7 @@ Zusätzlich: strip_markdown() entfernt Markdown-Syntax für sauberen Plain-Text-
 import html
 import logging
 import re
+import uuid
 from urllib.parse import urlparse
 
 log = logging.getLogger(__name__)
@@ -39,7 +40,26 @@ def markdown_to_telegram_html(text: str) -> str:
     Returns:
         Telegram-HTML-String.
     """
-    # 1. Fenced Code-Blöcke extrahieren (vor allem anderen)
+    sentinel = uuid.uuid4().hex[:8]
+
+    # 1. Links zuerst extrahieren (vor HTML-Escape, verhindert Double-Escape)
+    links: list[tuple[str, str]] = []
+
+    def _extract_link(m: re.Match) -> str:
+        text_part = m.group(1)
+        url = m.group(2).strip()
+        try:
+            parsed = urlparse(url)
+            if parsed.scheme.lower() not in ALLOWED_URL_SCHEMES:
+                return text_part  # Unsicheres Scheme: nur Text, kein Link
+        except Exception:
+            return text_part
+        links.append((text_part, url))
+        return f"\x02LINK-{sentinel}-{len(links) - 1}\x02"
+
+    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", _extract_link, text)
+
+    # 2. Fenced Code-Blöcke extrahieren (vor allem anderen)
     code_blocks: list[str] = []
 
     def _extract_code_block(m: re.Match) -> str:
@@ -53,7 +73,7 @@ def markdown_to_telegram_html(text: str) -> str:
         flags=re.DOTALL,
     )
 
-    # 2. Inline-Code extrahieren (damit er nicht HTML-escaped wird)
+    # 3. Inline-Code extrahieren (damit er nicht HTML-escaped wird)
     inline_codes: list[str] = []
 
     def _extract_inline_code(m: re.Match) -> str:
@@ -62,20 +82,8 @@ def markdown_to_telegram_html(text: str) -> str:
 
     text = re.sub(r"`([^`\n]+)`", _extract_inline_code, text)
 
-    # 3. HTML-Sonderzeichen im normalen Text escapen
+    # 4. HTML-Sonderzeichen im normalen Text escapen
     text = html.escape(text, quote=False)
-
-    # 4. Markdown-Links: [text](url) -> <a href="url">text</a> (mit Scheme-Validierung)
-    def _convert_link(match: re.Match) -> str:
-        link_text = html.escape(match.group(1), quote=True)
-        url = match.group(2).strip()
-        parsed = urlparse(url)
-        if parsed.scheme.lower() not in ALLOWED_URL_SCHEMES:
-            return link_text  # Unsicheres Scheme: nur Text, kein Link
-        url_safe = html.escape(url, quote=True)
-        return f'<a href="{url_safe}">{link_text}</a>'
-
-    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", _convert_link, text)
 
     # 5. Headlines (# bis ######) -> <b>...</b> + Newline
     #    Alle ** innerhalb der Headline entfernen, sonst verschachtelte <b>-Tags in Telegram
@@ -108,6 +116,15 @@ def markdown_to_telegram_html(text: str) -> str:
     for i, code in enumerate(inline_codes):
         escaped_code = html.escape(code, quote=False)
         text = text.replace(f"\x01INLINE{i}\x01", f"<code>{escaped_code}</code>")
+
+    # 12. Links wieder einsetzen mit eigenständigem Escape
+    for i, (text_part, url) in enumerate(links):
+        escaped_text = html.escape(text_part, quote=True)
+        escaped_url = html.escape(url, quote=True)
+        text = text.replace(
+            f"\x02LINK-{sentinel}-{i}\x02",
+            f'<a href="{escaped_url}">{escaped_text}</a>',
+        )
 
     return text
 

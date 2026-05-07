@@ -1,4 +1,4 @@
-"""Tests fuer domain.bookmark: Bookmark-Dataclass und Serialisierung.
+"""Tests für domain.bookmark: Bookmark-Dataclass und Serialisierung.
 
 Testet Erstellung, Serialisierung und Deserialisierung der Bookmark-Entity.
 """
@@ -93,7 +93,7 @@ class TestBookmarkDataclass:
 
 
 class TestFormatBookmarkPreview:
-    """Preview-Formatierung fuer Bookmark-Auflistung."""
+    """Preview-Formatierung für Bookmark-Auflistung."""
 
     def test_format_bookmark_preview_short(self) -> None:
         """Kurze Bookmarks werden vollstaendig angezeigt."""

@@ -23,3 +23,12 @@ forbidden_modules =
     infrastructure
     application
     presentation
+
+[importlinter:contract:presentation-no-infra]
+name = Presentation darf nicht direkt aus Infrastructure importieren
+type = forbidden
+source_modules =
+    presentation
+forbidden_modules =
+    infrastructure
+allow_indirect_imports = True

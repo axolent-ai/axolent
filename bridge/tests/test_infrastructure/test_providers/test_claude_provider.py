@@ -1,4 +1,4 @@
-"""Tests fuer ClaudeProvider.
+"""Tests für ClaudeProvider.
 
 Verifiziert:
     - is_available() prueft ob claude im PATH ist
@@ -18,7 +18,7 @@ from infrastructure.providers.claude_cli import ClaudeProvider
 
 
 class TestClaudeProviderAvailability:
-    """Tests fuer is_available()."""
+    """Tests für is_available()."""
 
     def test_available_when_claude_in_path(self) -> None:
         provider = ClaudeProvider()
@@ -36,7 +36,7 @@ class TestClaudeProviderAvailability:
 
 
 class TestClaudeProviderQuery:
-    """Tests fuer query() mit gemocktem Subprozess."""
+    """Tests für query() mit gemocktem Subprozess."""
 
     @pytest.mark.asyncio
     async def test_successful_query(self) -> None:

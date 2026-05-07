@@ -1,7 +1,7 @@
-"""Tests fuer infrastructure.bookmark_storage: JSONL-Persistenz mit FileLock.
+"""Tests für infrastructure.bookmark_storage: JSONL-Persistenz mit FileLock.
 
 Testet CRUD-Operationen, Chat-ID-Scoping und Concurrent-Access.
-Nutzt tmp_path-Fixtures fuer isolierte Test-Dateien.
+Nutzt tmp_path-Fixtures für isolierte Test-Dateien.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ class TestBookmarkStorage:
 
     @pytest.fixture(autouse=True)
     def _isolate_storage(self, tmp_path: Path) -> None:
-        """Patcht BOOKMARKS_PATH auf tmp_path fuer Test-Isolation."""
+        """Patcht BOOKMARKS_PATH auf tmp_path für Test-Isolation."""
         self.bm_path = tmp_path / "bookmarks.jsonl"
         self.lock_path = str(self.bm_path) + ".lock"
 
@@ -175,7 +175,7 @@ class TestBookmarkStorage:
         assert len(all_bm) == num_threads
 
     def test_user_scope_isolation(self) -> None:
-        """Bookmarks eines Users sind fuer andere User nicht sichtbar."""
+        """Bookmarks eines Users sind für andere User nicht sichtbar."""
         from infrastructure.bookmark_storage import list_recent_bookmarks, save_bookmark
 
         save_bookmark(
@@ -192,3 +192,81 @@ class TestBookmarkStorage:
         assert user1_bm[0]["content"] == "User 1"
         assert len(user2_bm) == 1
         assert user2_bm[0]["content"] == "User 2"
+
+
+class TestMigrateLegacyChatId:
+    """Tests für crash-safe migrate_legacy_chat_id (FIX 9)."""
+
+    @pytest.fixture(autouse=True)
+    def _isolate_storage(self, tmp_path: Path) -> None:
+        """Patcht BOOKMARKS_PATH auf tmp_path für Test-Isolation."""
+        self.bm_path = tmp_path / "bookmarks.jsonl"
+        self.lock_path = str(self.bm_path) + ".lock"
+
+        patches = [
+            patch("infrastructure.bookmark_storage.BOOKMARKS_PATH", self.bm_path),
+            patch("infrastructure.bookmark_storage._BM_LOCK_PATH", self.lock_path),
+        ]
+        for p in patches:
+            p.start()
+
+        from filelock import FileLock
+
+        new_lock = FileLock(self.lock_path)
+        patches.append(patch("infrastructure.bookmark_storage._BM_LOCK", new_lock))
+        patches[-1].start()
+
+        yield  # type: ignore[misc]
+
+        for p in patches:
+            p.stop()
+
+    def test_migration_handles_corrupt_lines(self) -> None:
+        """Korrupte JSONL-Zeilen crashen die Migration nicht, werden uebersprungen."""
+        from infrastructure.bookmark_storage import (
+            list_recent_bookmarks,
+            migrate_legacy_chat_id,
+        )
+
+        # Schreibe Mix aus gueltigen und korrupten Zeilen
+        import json
+
+        lines = [
+            json.dumps({"user_id": 1, "message_id": 1, "content": "valid1"}),
+            "THIS IS NOT JSON {{{",
+            json.dumps(
+                {"user_id": 1, "message_id": 2, "chat_id": 1, "content": "valid2"}
+            ),
+            "",
+            "also broken",
+        ]
+        self.bm_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        migrated = migrate_legacy_chat_id()
+
+        # Nur die gueltige Zeile ohne chat_id wird migriert
+        assert migrated == 1
+
+        # Korrupte Zeilen sind raus, gueltige bleiben
+        all_bm = list_recent_bookmarks(user_id=1, limit=10)
+        assert len(all_bm) == 2
+
+    def test_migration_nonexistent_file(self) -> None:
+        """Bei nicht existierender Datei wird 0 zurueckgegeben."""
+        from infrastructure.bookmark_storage import migrate_legacy_chat_id
+
+        assert migrate_legacy_chat_id() == 0
+
+    def test_migration_all_valid(self) -> None:
+        """Wenn keine Migration noetig und keine Korruption: Datei bleibt unveraendert."""
+        from infrastructure.bookmark_storage import migrate_legacy_chat_id
+
+        import json
+
+        lines = [
+            json.dumps({"user_id": 1, "message_id": 1, "chat_id": 1, "content": "ok"}),
+        ]
+        self.bm_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        migrated = migrate_legacy_chat_id()
+        assert migrated == 0

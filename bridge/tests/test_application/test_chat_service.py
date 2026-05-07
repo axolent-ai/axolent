@@ -1,4 +1,4 @@
-"""Tests fuer application.chat_service: LLM-Aufruf-Orchestration via ChatService-Klasse.
+"""Tests für application.chat_service: LLM-Aufruf-Orchestration via ChatService-Klasse.
 
 Erstellt eine ChatService-Instanz mit gemockten Dependencies.
 Kein echter LLM-Aufruf.
@@ -14,7 +14,11 @@ import pytest
 from application.chat_service import ChatService
 from domain.conversation import ConversationTurn
 from infrastructure.conversation_storage import _reset_all_for_tests
-from infrastructure.providers.base import ProviderResponse
+from infrastructure.providers.base import (
+    ProviderError,
+    ProviderResponse,
+    ProviderTimeout,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -210,7 +214,7 @@ class TestChatService:
         assert result.detected_language == "es"
 
     async def test_process_user_message_provider_not_found(self) -> None:
-        """ValueError vom Router wird sauber abgefangen."""
+        """ValueError vom Router wird sauber abgefangen mit generischer Meldung."""
         svc, _ = _make_chat_service(
             route_side_effect=ValueError("Provider 'xyz' nicht registriert")
         )
@@ -225,12 +229,18 @@ class TestChatService:
         )
 
         assert result.success is False
-        assert "Provider" in result.error_message
+        # Generische Meldung, keine Implementierungs-Details
+        assert "Anfrage konnte nicht verarbeitet werden" in result.error_message
+        assert "ref:" in result.error_message
+        assert result.error_id != ""
+        # Original-Exception darf NICHT im User-Text stehen
+        assert "xyz" not in result.error_message
+        assert "nicht registriert" not in result.error_message
 
     async def test_process_user_message_provider_unavailable(self) -> None:
-        """RuntimeError vom Router (Provider nicht verfuegbar) wird abgefangen."""
+        """RuntimeError vom Router wird mit generischer Meldung abgefangen."""
         svc, _ = _make_chat_service(
-            route_side_effect=RuntimeError("Provider 'gemini' ist nicht verfuegbar")
+            route_side_effect=RuntimeError("Provider 'gemini' ist nicht verfügbar")
         )
 
         result = await svc.process_user_message(
@@ -243,7 +253,58 @@ class TestChatService:
         )
 
         assert result.success is False
-        assert "System-Fehler" in result.error_message
+        # Generische Meldung, keine Implementierungs-Details
+        assert "Interner Fehler" in result.error_message
+        assert "ref:" in result.error_message
+        assert result.error_id != ""
+        # Original-Exception darf NICHT im User-Text stehen
+        assert "gemini" not in result.error_message
+        assert "nicht verfügbar" not in result.error_message
+
+    async def test_process_user_message_provider_error_generic(self) -> None:
+        """ProviderError liefert generische Meldung ohne Implementierungs-Details."""
+        svc, _ = _make_chat_service(
+            route_side_effect=ProviderTimeout("claude", timeout_seconds=120)
+        )
+
+        result = await svc.process_user_message(
+            text="Test",
+            user_id=1,
+            chat_id=10,
+            username="test",
+            system_prompt="",
+        )
+
+        assert result.success is False
+        assert "Sprachmodell-Anbieter" in result.error_message
+        assert "ref:" in result.error_message
+        assert result.error_id != ""
+        # Retryable-Hint muss enthalten sein
+        assert "Versuch es gleich noch mal" in result.error_message
+        # Original-Exception darf NICHT im User-Text stehen
+        assert "Timeout" not in result.error_message
+        assert "120" not in result.error_message
+
+    async def test_process_user_message_provider_error_non_retryable(self) -> None:
+        """Nicht-retryable ProviderError hat keinen Retry-Hint."""
+        svc, _ = _make_chat_service(
+            route_side_effect=ProviderError(
+                "gemini", retryable=False, message="API key invalid"
+            )
+        )
+
+        result = await svc.process_user_message(
+            text="Test",
+            user_id=1,
+            chat_id=10,
+            username="test",
+            system_prompt="",
+        )
+
+        assert result.success is False
+        assert "Sprachmodell-Anbieter" in result.error_message
+        assert "Versuch es gleich noch mal" not in result.error_message
+        assert "API key" not in result.error_message
 
     async def test_reset_clears_conversation(self) -> None:
         """reset() setzt Conversation-History und Sticky-Language zurueck."""
@@ -277,7 +338,7 @@ class TestChatService:
 
 
 class TestAutoMemoryLoading:
-    """Tests fuer Auto-Memory-Loading im ChatService."""
+    """Tests für Auto-Memory-Loading im ChatService."""
 
     async def test_chat_service_loads_memory_when_relevant(self) -> None:
         """Wenn MemoryService Treffer hat, wird Memory-Context in System-Prompt eingefuegt."""
@@ -392,7 +453,7 @@ class TestAutoMemoryLoading:
 
 
 class TestExtractKeywords:
-    """Tests fuer _extract_keywords (Interpunktions-Bug Regression)."""
+    """Tests für _extract_keywords (Interpunktions-Bug Regression)."""
 
     def test_strips_question_mark(self) -> None:
         """Fragezeichen wird vom Keyword entfernt (Regression: mem=0 Bug)."""
@@ -437,3 +498,41 @@ class TestExtractKeywords:
         keywords = _extract_keywords("Python Lieblingssprache Programmierung")
         assert keywords[0] == "programmierung" or keywords[0] == "lieblingssprache"
         assert len(keywords[0]) >= len(keywords[-1])
+
+    def test_filters_german_stop_words(self) -> None:
+        """Deutsche Stop-Words werden entfernt."""
+        from application.chat_service import _extract_keywords
+
+        keywords = _extract_keywords(
+            "Diese meine Lieblingssprache sollte auch Python sein"
+        )
+        assert "diese" not in keywords
+        assert "meine" not in keywords
+        assert "sollte" not in keywords
+        assert "auch" not in keywords
+        assert "lieblingssprache" in keywords
+        assert "python" in keywords
+
+    def test_filters_english_stop_words(self) -> None:
+        """Englische Stop-Words werden entfernt."""
+        from application.chat_service import _extract_keywords
+
+        keywords = _extract_keywords(
+            "What would their favorite programming language have been"
+        )
+        assert "what" not in keywords
+        assert "would" not in keywords
+        assert "their" not in keywords
+        assert "have" not in keywords
+        assert "been" not in keywords
+        assert "favorite" in keywords
+        assert "programming" in keywords
+        assert "language" in keywords
+
+    def test_stop_words_combined_with_punctuation(self) -> None:
+        """Stop-Words werden auch nach Interpunktions-Strip gefiltert."""
+        from application.chat_service import _extract_keywords
+
+        keywords = _extract_keywords("Was ist meine Lieblingssprache?")
+        assert "meine" not in keywords
+        assert "lieblingssprache" in keywords

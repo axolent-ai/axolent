@@ -1,4 +1,4 @@
-"""Tests fuer presentation.handlers: Telegram Command-Handler.
+"""Tests für presentation.handlers: Telegram Command-Handler.
 
 Testet /save, /lang, /reset Commands mit gemockten Telegram-Objekten.
 Kein echter Bot, keine echten API-Aufrufe.
@@ -58,21 +58,27 @@ def _make_update(user_id: int = 1, chat_id: int = 10, text: str = "") -> MagicMo
 def _make_context(
     args: list[str] | None = None,
     chat_service: ChatService | None = None,
+    system_prompt: str = "Test system prompt.",
+    memory_service: object | None = None,
 ) -> MagicMock:
     """Erstellt einen gemockten Telegram-Context mit bot_data."""
     context = MagicMock()
     context.args = args or []
     context.bot = MagicMock()
     context.bot.send_chat_action = AsyncMock()
-    # bot_data fuer ChatService-Injection
+    # bot_data für ChatService-Injection + system_prompt + memory_service
     svc = chat_service or _make_mock_chat_service()
     context.application = MagicMock()
-    context.application.bot_data = {"chat_service": svc}
+    context.application.bot_data = {
+        "chat_service": svc,
+        "system_prompt": system_prompt,
+        "memory_service": memory_service,
+    }
     return context
 
 
 class TestHandleSaveCommand:
-    """Tests fuer /save Command."""
+    """Tests für /save Command."""
 
     @pytest.fixture(autouse=True)
     def _isolate_bookmark_storage(self, tmp_path: Path) -> None:
@@ -85,7 +91,7 @@ class TestHandleSaveCommand:
             patch("infrastructure.bookmark_storage.BOOKMARKS_PATH", bm_path),
             patch("infrastructure.bookmark_storage._BM_LOCK_PATH", lock_path),
             patch("infrastructure.bookmark_storage._BM_LOCK", new_lock),
-            # Whitelist-Bypass fuer Handler-Tests
+            # Whitelist-Bypass für Handler-Tests
             patch("presentation.decorators.ALLOW_ALL_USERS", True),
         ]
         for p in self._patches:
@@ -131,7 +137,7 @@ class TestHandleSaveCommand:
 
 
 class TestHandleLangCommand:
-    """Tests fuer /lang Command."""
+    """Tests für /lang Command."""
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
@@ -183,7 +189,7 @@ class TestHandleLangCommand:
 
 
 class TestHandleResetCommand:
-    """Tests fuer /reset Command."""
+    """Tests für /reset Command."""
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
@@ -278,7 +284,7 @@ class TestReplyToContext:
             yield  # type: ignore[misc]
 
     def _make_reply_chat_service(self) -> tuple[ChatService, MagicMock]:
-        """Erstellt ChatService mit mockbarem Router fuer Reply-Tests."""
+        """Erstellt ChatService mit mockbarem Router für Reply-Tests."""
         mock_router = MagicMock()
         mock_router.route = AsyncMock(
             return_value=ProviderResponse(
@@ -291,10 +297,9 @@ class TestReplyToContext:
         return svc, mock_router
 
     async def test_reply_to_context_passed_to_provider(self) -> None:
-        """Wenn User auf Bot-Nachricht antwortet, wird Reply-Text im Prompt eingefuegt."""
-        from presentation.handlers import handle_message, set_system_prompt
+        """Wenn User auf Bot-Nachricht antwortet, wird Reply-Text im Prompt eingefügt."""
+        from presentation.handlers import handle_message
 
-        set_system_prompt("Test prompt.")
         svc, mock_router = self._make_reply_chat_service()
 
         update = _make_update(user_id=1, chat_id=10, text="Was bedeutet das?")
@@ -303,7 +308,7 @@ class TestReplyToContext:
         reply_msg.text = "Tipp: Du kannst Bot-Nachrichten als Bookmark speichern."
         update.message.reply_to_message = reply_msg
 
-        context = _make_context(chat_service=svc)
+        context = _make_context(chat_service=svc, system_prompt="Test prompt.")
 
         await handle_message(update, context)
 
@@ -316,15 +321,14 @@ class TestReplyToContext:
 
     async def test_no_reply_to_sends_plain_text(self) -> None:
         """Ohne Reply wird nur der normale Text gesendet."""
-        from presentation.handlers import handle_message, set_system_prompt
+        from presentation.handlers import handle_message
 
-        set_system_prompt("Test prompt.")
         svc, mock_router = self._make_reply_chat_service()
 
         update = _make_update(user_id=1, chat_id=10, text="Einfache Frage")
         update.message.reply_to_message = None
 
-        context = _make_context(chat_service=svc)
+        context = _make_context(chat_service=svc, system_prompt="Test prompt.")
 
         await handle_message(update, context)
 
@@ -332,3 +336,233 @@ class TestReplyToContext:
         prompt_sent = call_args.kwargs.get("prompt", "")
         assert "REPLIED TO PREVIOUS BOT MESSAGE" not in prompt_sent
         assert "Einfache Frage" in prompt_sent
+
+
+class TestAuditLoggingReset:
+    """Tests: /reset schreibt Audit-Log-Eintrag."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        """Whitelist-Bypass."""
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    @patch("application.audit_service.write_audit_log")
+    async def test_reset_writes_audit(self, mock_audit: MagicMock) -> None:
+        """/reset schreibt einen Audit-Eintrag mit action='reset'."""
+        from presentation.handlers import handle_reset_command
+
+        update = _make_update(user_id=42, chat_id=99)
+        context = _make_context()
+
+        await handle_reset_command(update, context)
+
+        mock_audit.assert_called_once()
+        entry = mock_audit.call_args[0][0]
+        assert entry["event_type"] == "command"
+        assert entry["action"] == "reset"
+        assert entry["user_id"] == 42
+        assert entry["chat_id"] == 99
+        assert entry["success"] is True
+
+
+class TestAuditLoggingLang:
+    """Tests: /lang schreibt Audit-Log-Eintrag."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        """Whitelist-Bypass."""
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    @patch("application.audit_service.write_audit_log")
+    async def test_lang_change_writes_audit(self, mock_audit: MagicMock) -> None:
+        """/lang en schreibt Audit mit alter und neuer Sprache."""
+        from presentation.handlers import handle_lang_command
+
+        update = _make_update(user_id=42, chat_id=99)
+        context = _make_context(args=["en"])
+
+        await handle_lang_command(update, context)
+
+        mock_audit.assert_called_once()
+        entry = mock_audit.call_args[0][0]
+        assert entry["event_type"] == "command"
+        assert entry["action"] == "lang_change"
+        assert entry["user_id"] == 42
+        assert "en" in entry["details"]
+
+    @patch("application.audit_service.write_audit_log")
+    async def test_lang_invalid_no_audit(self, mock_audit: MagicMock) -> None:
+        """/lang xyz (ungueltig) schreibt KEINEN Audit-Eintrag."""
+        from presentation.handlers import handle_lang_command
+
+        update = _make_update(user_id=42, chat_id=99)
+        context = _make_context(args=["xyz"])
+
+        await handle_lang_command(update, context)
+
+        mock_audit.assert_not_called()
+
+
+class TestAuditLoggingSave:
+    """Tests: /save schreibt Audit-Log-Eintrag."""
+
+    @pytest.fixture(autouse=True)
+    def _isolate_bookmark_storage(self, tmp_path: Path) -> None:
+        """Patcht Bookmark-Storage."""
+        bm_path = tmp_path / "bookmarks.jsonl"
+        lock_path = str(bm_path) + ".lock"
+        new_lock = FileLock(lock_path)
+
+        self._patches = [
+            patch("infrastructure.bookmark_storage.BOOKMARKS_PATH", bm_path),
+            patch("infrastructure.bookmark_storage._BM_LOCK_PATH", lock_path),
+            patch("infrastructure.bookmark_storage._BM_LOCK", new_lock),
+            patch("presentation.decorators.ALLOW_ALL_USERS", True),
+        ]
+        for p in self._patches:
+            p.start()
+
+        yield  # type: ignore[misc]
+
+        for p in self._patches:
+            p.stop()
+
+    @patch("application.audit_service.write_audit_log")
+    async def test_save_bookmark_writes_audit(self, mock_audit: MagicMock) -> None:
+        """/save als Reply erstellt Audit-Eintrag mit action='save_bookmark'."""
+        from presentation.handlers import handle_save_command
+
+        update = _make_update(user_id=1, chat_id=10)
+        reply_msg = MagicMock()
+        reply_msg.message_id = 50
+        reply_msg.text = "Bot-Antwort"
+        update.message.reply_to_message = reply_msg
+
+        context = _make_context()
+
+        await handle_save_command(update, context)
+
+        mock_audit.assert_called_once()
+        entry = mock_audit.call_args[0][0]
+        assert entry["action"] == "save_bookmark"
+        assert entry["user_id"] == 1
+        assert entry["entry_id"] == "msg_50"
+
+
+class TestAuditLoggingBookmarks:
+    """Tests: /bookmarks schreibt Audit-Log-Eintrag."""
+
+    @pytest.fixture(autouse=True)
+    def _isolate_bookmark_storage(self, tmp_path: Path) -> None:
+        """Patcht Bookmark-Storage."""
+        bm_path = tmp_path / "bookmarks.jsonl"
+        lock_path = str(bm_path) + ".lock"
+        new_lock = FileLock(lock_path)
+
+        self._patches = [
+            patch("infrastructure.bookmark_storage.BOOKMARKS_PATH", bm_path),
+            patch("infrastructure.bookmark_storage._BM_LOCK_PATH", lock_path),
+            patch("infrastructure.bookmark_storage._BM_LOCK", new_lock),
+            patch("presentation.decorators.ALLOW_ALL_USERS", True),
+        ]
+        for p in self._patches:
+            p.start()
+
+        yield  # type: ignore[misc]
+
+        for p in self._patches:
+            p.stop()
+
+    @patch("application.audit_service.write_audit_log")
+    async def test_bookmarks_empty_writes_audit(self, mock_audit: MagicMock) -> None:
+        """/bookmarks ohne Bookmarks schreibt Audit mit '0 bookmarks'."""
+        from presentation.handlers import handle_bookmarks_command
+
+        update = _make_update(user_id=1, chat_id=10)
+        context = _make_context(args=[])
+
+        await handle_bookmarks_command(update, context)
+
+        mock_audit.assert_called_once()
+        entry = mock_audit.call_args[0][0]
+        assert entry["action"] == "list_bookmarks"
+        assert "0" in entry["details"]
+
+
+class TestAuditLoggingRemember:
+    """Tests: /remember schreibt Audit-Log-Eintrag."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        """Whitelist-Bypass."""
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    @patch("application.audit_service.write_audit_log")
+    async def test_remember_writes_audit(self, mock_audit: MagicMock) -> None:
+        """/remember text schreibt Audit mit action='remember' und entry_id."""
+        from presentation.handlers import handle_remember_command
+
+        mock_memory = MagicMock()
+        mock_memory.remember_episodic = MagicMock(return_value="ep_test123")
+
+        update = _make_update(user_id=42, chat_id=99)
+        context = _make_context(args=["mein", "Test"], memory_service=mock_memory)
+
+        await handle_remember_command(update, context)
+
+        mock_audit.assert_called_once()
+        entry = mock_audit.call_args[0][0]
+        assert entry["action"] == "remember"
+        assert entry["user_id"] == 42
+        assert entry["entry_id"] == "ep_test123"
+
+
+class TestAuditLoggingForget:
+    """Tests: /forget schreibt Audit-Log-Eintrag."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        """Whitelist-Bypass."""
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    @patch("application.audit_service.write_audit_log")
+    async def test_forget_success_writes_audit(self, mock_audit: MagicMock) -> None:
+        """/forget ep_123 (gefunden) schreibt Audit mit success=True."""
+        from presentation.handlers import handle_forget_command
+
+        mock_memory = MagicMock()
+        mock_memory.forget = MagicMock(return_value=True)
+
+        update = _make_update(user_id=42, chat_id=99)
+        context = _make_context(args=["ep_123"], memory_service=mock_memory)
+
+        await handle_forget_command(update, context)
+
+        mock_audit.assert_called_once()
+        entry = mock_audit.call_args[0][0]
+        assert entry["action"] == "forget"
+        assert entry["entry_id"] == "ep_123"
+        assert entry["success"] is True
+
+    @patch("application.audit_service.write_audit_log")
+    async def test_forget_not_found_writes_audit(self, mock_audit: MagicMock) -> None:
+        """/forget ep_999 (nicht gefunden) schreibt Audit mit success=False."""
+        from presentation.handlers import handle_forget_command
+
+        mock_memory = MagicMock()
+        mock_memory.forget = MagicMock(return_value=False)
+
+        update = _make_update(user_id=42, chat_id=99)
+        context = _make_context(args=["ep_999"], memory_service=mock_memory)
+
+        await handle_forget_command(update, context)
+
+        mock_audit.assert_called_once()
+        entry = mock_audit.call_args[0][0]
+        assert entry["action"] == "forget"
+        assert entry["entry_id"] == "ep_999"
+        assert entry["success"] is False

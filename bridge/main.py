@@ -58,8 +58,6 @@ from presentation.handlers import (
     handle_reset_command,
     handle_save_command,
     handle_start_command,
-    set_memory_service,
-    set_system_prompt,
 )
 
 logging.basicConfig(
@@ -139,19 +137,18 @@ def main() -> None:
         memory_service=memory_svc,
     )
 
-    # MemoryService in Handler injizieren (für /remember, /memory, /forget)
-    set_memory_service(memory_svc)
     log.info("Trinity-Memory-System initialisiert (JSONL-Backend, Auto-Loading aktiv)")
 
-    # Personality laden und an Handler injizieren
+    # Personality laden
     system_prompt = build_combined_prompt()
-    set_system_prompt(system_prompt)
 
     # Application bauen
     app = Application.builder().token(token).build()
 
-    # ChatService via bot_data teilen (für Handler-Zugriff)
+    # Alle Services via bot_data teilen (für Handler-Zugriff)
     app.bot_data["chat_service"] = chat_service
+    app.bot_data["system_prompt"] = system_prompt
+    app.bot_data["memory_service"] = memory_svc
 
     # Command handlers
     app.add_handler(CommandHandler("start", handle_start_command))

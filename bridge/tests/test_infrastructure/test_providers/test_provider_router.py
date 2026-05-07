@@ -1,4 +1,4 @@
-"""Tests fuer den ProviderRouter.
+"""Tests für den ProviderRouter.
 
 Verifiziert:
     - Default-Routing funktioniert
@@ -60,7 +60,7 @@ def _make_mock_provider(
 
 
 class TestProviderRouterInit:
-    """Tests fuer Router-Initialisierung."""
+    """Tests für Router-Initialisierung."""
 
     def test_init_with_valid_default(self) -> None:
         providers = {"claude": _make_mock_provider("claude")}
@@ -74,7 +74,7 @@ class TestProviderRouterInit:
 
 
 class TestProviderRouterRouting:
-    """Tests fuer route()."""
+    """Tests für route()."""
 
     @pytest.mark.asyncio
     async def test_default_routing(self) -> None:
@@ -122,7 +122,7 @@ class TestProviderRouterRouting:
 
 
 class TestProviderRouterListing:
-    """Tests fuer list_available() und list_registered()."""
+    """Tests für list_available() und list_registered()."""
 
     def test_list_registered(self) -> None:
         providers = {
@@ -146,7 +146,7 @@ class TestProviderRouterListing:
 
 
 class TestProviderRouterCapabilities:
-    """Tests fuer get_capabilities()."""
+    """Tests für get_capabilities()."""
 
     def test_get_capabilities_returns_correct_data(self) -> None:
         mock_claude = _make_mock_provider("claude")

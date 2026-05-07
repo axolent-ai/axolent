@@ -10,40 +10,31 @@ import asyncio
 import logging
 import time
 from threading import Lock
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 
+from application.audit_service import log_command_audit
 from application.bookmark_service import (
     list_bookmarks,
     save_or_toggle_bookmark,
     search,
 )
 from application.chat_service import ChatService
-from application.memory_service import MemoryService
-from domain.conversation import ConversationTurn
 from domain.bookmark import format_bookmark_preview
-from infrastructure.conversation_storage import save_turn
-from presentation.decorators import require_whitelist
+from presentation.decorators import require_private_chat, require_whitelist
 from presentation.render import (
     get_cached_response,
     send_response,
     split_message,
 )
 
+if TYPE_CHECKING:
+    from application.memory_service import MemoryService
+
 log = logging.getLogger(__name__)
-
-_PRIVATE_ONLY_MSG = (
-    "Dieser Befehl funktioniert nur im privaten Chat mit dem Bot. "
-    "Bitte schreib mir direkt."
-)
-
-
-def _is_private_chat(update: Update) -> bool:
-    """Telegram chat.type ist 'private' für DM, 'group'/'supergroup' für Gruppen."""
-    return update.effective_chat.type == "private"
 
 
 # Concurrency Controls: max 4 Claude-Prozesse global, max 1 pro User
@@ -109,31 +100,38 @@ def _get_chat_service(context: ContextTypes.DEFAULT_TYPE) -> ChatService:
     return svc
 
 
-# System-Prompt wird von main.py injiziert nach dem Laden
-_system_prompt: str = ""
-
-# MemoryService wird von main.py injiziert
-_memory_service: MemoryService | None = None
-
-
-def set_system_prompt(prompt: str) -> None:
-    """Setzt den System-Prompt für alle Handler (wird von main.py aufgerufen).
+def _get_system_prompt(context: ContextTypes.DEFAULT_TYPE) -> str:
+    """Holt den System-Prompt aus bot_data.
 
     Args:
-        prompt: Kombinierter System-Prompt aus PersonalityLoader.
+        context: Telegram-Handler-Context.
+
+    Returns:
+        System-Prompt-String.
+
+    Raises:
+        RuntimeError: Wenn system_prompt nicht in bot_data ist.
     """
-    global _system_prompt
-    _system_prompt = prompt
+    prompt = context.application.bot_data.get("system_prompt")
+    if prompt is None:
+        raise RuntimeError(
+            "system_prompt nicht in bot_data. main.py muss system_prompt setzen."
+        )
+    return prompt
 
 
-def set_memory_service(service: MemoryService) -> None:
-    """Injiziert den MemoryService in die Handler (wird von main.py aufgerufen).
+def _get_memory_service(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> "MemoryService | None":
+    """Holt den MemoryService aus bot_data (kann None sein).
 
     Args:
-        service: Initialisierte MemoryService-Instanz.
+        context: Telegram-Handler-Context.
+
+    Returns:
+        MemoryService-Instanz oder None.
     """
-    global _memory_service
-    _memory_service = service
+    return context.application.bot_data.get("memory_service")
 
 
 def build_bookmarks_keyboard(bookmarks: list[dict[str, Any]]) -> InlineKeyboardMarkup:
@@ -164,24 +162,6 @@ def build_bookmarks_keyboard(bookmarks: list[dict[str, Any]]) -> InlineKeyboardM
             ]
         )
     return InlineKeyboardMarkup(rows)
-
-
-async def _save_bot_response_to_history(
-    user_id: int, chat_id: int, response_text: str
-) -> None:
-    """Speichert eine statische Bot-Antwort (z.B. /start, /help) in die Conversation-History.
-
-    Damit weiß der Bot beim nächsten Turn was er gerade gesagt hat.
-    Nur assistant-Turn wird gespeichert (der User-Command selbst ist kein
-    natürlicher Konversationsbeitrag).
-
-    Args:
-        user_id: Telegram User-ID.
-        chat_id: Telegram Chat-ID.
-        response_text: Der gesendete Bot-Text.
-    """
-    turn = ConversationTurn(role="assistant", content=response_text)
-    await save_turn(user_id, chat_id, turn)
 
 
 HELP_TEXT: str = (
@@ -251,7 +231,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 user_id=user_id,
                 chat_id=chat_id,
                 username=username,
-                system_prompt=_system_prompt,
+                system_prompt=_get_system_prompt(context),
                 reply_to_text=reply_to_text,
             )
 
@@ -283,8 +263,14 @@ async def handle_reset_command(
     await chat_service.reset(user_id, chat_id)
     reset_msg = "Konversation zurückgesetzt. Wir starten frisch!"
     await update.message.reply_text(reset_msg)
-    await _save_bot_response_to_history(user_id, chat_id, reset_msg)
+    await chat_service.save_static_response_to_history(user_id, chat_id, reset_msg)
     log.info("User %d reset conversation in chat %d", user_id, chat_id)
+    log_command_audit(
+        action="reset",
+        user_id=user_id,
+        chat_id=chat_id,
+        username=user.username if user else None,
+    )
 
 
 @require_whitelist
@@ -319,27 +305,37 @@ async def handle_lang_command(
         )
         return
 
+    # Alte Sprache merken fuer Audit-Details
+    old_lang = await chat_service.get_chat_language(user_id, chat_id) or "auto"
+
     await chat_service.set_chat_language(user_id, chat_id, lang_code)
 
     lang_names: dict[str, str] = {
         "de": "Deutsch",
         "en": "English",
-        "es": "Espanol",
-        "fr": "Francais",
+        "es": "Español",
+        "fr": "Français",
         "it": "Italiano",
-        "pt": "Portugues",
+        "pt": "Português",
         "nl": "Nederlands",
         "pl": "Polski",
-        "ru": "Russki",
-        "ja": "Nihongo",
-        "ko": "Hangugeo",
-        "zh": "Zhongwen",
+        "ru": "Русский",
+        "ja": "日本語",
+        "ko": "한국어",
+        "zh": "中文",
     }
     name = lang_names.get(lang_code, lang_code)
     lang_msg = f"Sprache gewechselt: {name} ({lang_code})"
     await update.message.reply_text(lang_msg)
-    await _save_bot_response_to_history(user_id, chat_id, lang_msg)
+    await chat_service.save_static_response_to_history(user_id, chat_id, lang_msg)
     log.info("User %d set language to '%s' in chat %d", user_id, lang_code, chat_id)
+    log_command_audit(
+        action="lang_change",
+        user_id=user_id,
+        chat_id=chat_id,
+        username=user.username if user else None,
+        details=f"{old_lang} -> {lang_code}",
+    )
 
 
 @require_whitelist
@@ -351,6 +347,7 @@ async def handle_new_command(
 
 
 @require_whitelist
+@require_private_chat
 async def handle_save_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -394,9 +391,18 @@ async def handle_save_command(
         username,
         msg_id,
     )
+    log_command_audit(
+        action="save_bookmark",
+        user_id=user_id,
+        chat_id=chat_id,
+        username=username,
+        entry_id=f"msg_{msg_id}",
+        details="saved" if was_saved else "toggled_off",
+    )
 
 
 @require_whitelist
+@require_private_chat
 async def handle_bookmarks_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -406,14 +412,12 @@ async def handle_bookmarks_command(
         /bookmarks              -> Letzte 10 Bookmarks anzeigen
         /bookmarks search term  -> Bookmarks nach Inhalt durchsuchen
     """
-    if not _is_private_chat(update):
-        await update.message.reply_text(_PRIVATE_ONLY_MSG)
-        return
-
     user = update.effective_user
     user_id: int = user.id if user else 0
 
     args: list[str] = context.args or []
+
+    username: str | None = user.username if user else None
 
     # /bookmarks search <query>
     if len(args) >= 2 and args[0].lower() == "search":
@@ -423,6 +427,13 @@ async def handle_bookmarks_command(
         if not results:
             await update.message.reply_text(
                 f"Keine Bookmarks mit '{query_term}' gefunden."
+            )
+            log_command_audit(
+                action="list_bookmarks",
+                user_id=user_id,
+                chat_id=update.effective_chat.id if update.effective_chat else 0,
+                username=username,
+                details=f"search '{query_term}': 0 results",
             )
             return
 
@@ -442,15 +453,30 @@ async def handle_bookmarks_command(
                 await update.message.reply_text(chunk, reply_markup=keyboard)
             else:
                 await update.message.reply_text(chunk)
+        log_command_audit(
+            action="list_bookmarks",
+            user_id=user_id,
+            chat_id=update.effective_chat.id if update.effective_chat else 0,
+            username=username,
+            details=f"search '{query_term}': {len(results)} results",
+        )
         return
 
     # /bookmarks (keine Argumente) -> letzte anzeigen
     bookmarks = list_bookmarks(user_id, limit=10)
+    bm_chat_id = update.effective_chat.id if update.effective_chat else 0
 
     if not bookmarks:
         await update.message.reply_text(
             "Du hast noch keine Bookmarks. "
             "Antworte auf eine Bot-Nachricht mit /save um sie zu speichern."
+        )
+        log_command_audit(
+            action="list_bookmarks",
+            user_id=user_id,
+            chat_id=bm_chat_id,
+            username=username,
+            details="0 bookmarks",
         )
         return
 
@@ -470,6 +496,13 @@ async def handle_bookmarks_command(
             await update.message.reply_text(chunk, reply_markup=keyboard)
         else:
             await update.message.reply_text(chunk)
+    log_command_audit(
+        action="list_bookmarks",
+        user_id=user_id,
+        chat_id=bm_chat_id,
+        username=username,
+        details=f"{len(bookmarks)} bookmarks",
+    )
 
 
 @require_whitelist
@@ -477,12 +510,14 @@ async def handle_help_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     """Verarbeitet /help. Zeigt verfügbare Commands an."""
+    chat_service = _get_chat_service(context)
+
     user = update.effective_user
     user_id: int = user.id if user else 0
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
     await update.message.reply_text(HELP_TEXT)
-    await _save_bot_response_to_history(user_id, chat_id, HELP_TEXT)
+    await chat_service.save_static_response_to_history(user_id, chat_id, HELP_TEXT)
 
 
 @require_whitelist
@@ -490,15 +525,18 @@ async def handle_start_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     """Verarbeitet /start. Zeigt Willkommensnachricht an."""
+    chat_service = _get_chat_service(context)
+
     user = update.effective_user
     user_id: int = user.id if user else 0
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
     await update.message.reply_text(START_TEXT)
-    await _save_bot_response_to_history(user_id, chat_id, START_TEXT)
+    await chat_service.save_static_response_to_history(user_id, chat_id, START_TEXT)
 
 
 @require_whitelist
+@require_private_chat
 async def handle_remember_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -508,11 +546,8 @@ async def handle_remember_command(
     Als Reply auf Bot-Nachricht: speichert die Bot-Antwort.
     Ohne Reply: speichert den mitgegebenen Text.
     """
-    if not _is_private_chat(update):
-        await update.message.reply_text(_PRIVATE_ONLY_MSG)
-        return
-
-    if _memory_service is None:
+    memory_service = _get_memory_service(context)
+    if memory_service is None:
         await update.message.reply_text("Memory-System nicht initialisiert.")
         return
 
@@ -542,12 +577,20 @@ async def handle_remember_command(
         )
         return
 
-    entry_id = _memory_service.remember_episodic(user_id=user_id, content=content)
+    entry_id = memory_service.remember_episodic(user_id=user_id, content=content)
     await update.message.reply_text(f"Gespeichert. [{entry_id}]")
     log.info("User %d remembered: %s (id=%s)", user_id, content[:50], entry_id)
+    log_command_audit(
+        action="remember",
+        user_id=user_id,
+        chat_id=update.effective_chat.id if update.effective_chat else 0,
+        username=user.username if user else None,
+        entry_id=entry_id,
+    )
 
 
 @require_whitelist
+@require_private_chat
 async def handle_memory_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -556,11 +599,8 @@ async def handle_memory_command(
     /memory              Letzte 10 episodische Einträge anzeigen
     /memory search <q>   Memory durchsuchen
     """
-    if not _is_private_chat(update):
-        await update.message.reply_text(_PRIVATE_ONLY_MSG)
-        return
-
-    if _memory_service is None:
+    memory_service = _get_memory_service(context)
+    if memory_service is None:
         await update.message.reply_text("Memory-System nicht initialisiert.")
         return
 
@@ -571,7 +611,7 @@ async def handle_memory_command(
     # /memory search <query>
     if len(args) >= 2 and args[0].lower() == "search":
         query_term = " ".join(args[1:])
-        results = _memory_service.recall(user_id, query_term, layer="episodic")
+        results = memory_service.recall(user_id, query_term, layer="episodic")
 
         if not results:
             await update.message.reply_text(
@@ -588,7 +628,7 @@ async def handle_memory_command(
         return
 
     # /memory (keine Argumente): letzte 10 anzeigen
-    entries = _memory_service.list_recent(user_id, layer="episodic", limit=10)
+    entries = memory_service.list_recent(user_id, layer="episodic", limit=10)
 
     if not entries:
         await update.message.reply_text(
@@ -603,6 +643,7 @@ async def handle_memory_command(
 
 
 @require_whitelist
+@require_private_chat
 async def handle_forget_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -610,11 +651,8 @@ async def handle_forget_command(
 
     Löscht einen Memory-Eintrag anhand seiner ID.
     """
-    if not _is_private_chat(update):
-        await update.message.reply_text(_PRIVATE_ONLY_MSG)
-        return
-
-    if _memory_service is None:
+    memory_service = _get_memory_service(context)
+    if memory_service is None:
         await update.message.reply_text("Memory-System nicht initialisiert.")
         return
 
@@ -629,7 +667,7 @@ async def handle_forget_command(
         return
 
     entry_id = args[0].strip()
-    deleted = _memory_service.forget(user_id, entry_id)
+    deleted = memory_service.forget(user_id, entry_id)
 
     if deleted:
         await update.message.reply_text(f"Vergessen: {entry_id}")
@@ -638,3 +676,11 @@ async def handle_forget_command(
         await update.message.reply_text(
             f"Eintrag '{entry_id}' nicht gefunden oder gehört dir nicht."
         )
+    log_command_audit(
+        action="forget",
+        user_id=user_id,
+        chat_id=update.effective_chat.id if update.effective_chat else 0,
+        username=user.username if user else None,
+        entry_id=entry_id,
+        success=deleted,
+    )

@@ -1,4 +1,4 @@
-"""Tests fuer domain.markdown: Markdown-zu-Telegram-HTML-Konvertierung.
+"""Tests für domain.markdown: Markdown-zu-Telegram-HTML-Konvertierung.
 
 Testet Konvertierung, URL-Scheme-Whitelist und Plain-Text-Fallback.
 Die URL-Scheme-Tests sind sicherheitskritisch (XSS-Praevention).
@@ -83,6 +83,25 @@ class TestMarkdownToTelegramHtml:
         result = markdown_to_telegram_html(md)
         assert '<a href="https://google.com">Google</a>' in result
 
+    def test_link_no_double_escape(self) -> None:
+        """Links mit & im Text und URL werden nur einfach escaped, nicht doppelt.
+
+        Regression-Test: globales html.escape lief VOR Link-Konvertierung,
+        dann wurde Link-Text und URL nochmal escaped -> &amp;amp;
+        """
+        md = "[Tom & Jerry](https://example.com?a=1&b=2)"
+        result = markdown_to_telegram_html(md)
+        assert '<a href="https://example.com?a=1&amp;b=2">Tom &amp; Jerry</a>' in result
+        # Darf NICHT doppelt escaped sein
+        assert "&amp;amp;" not in result
+
+    def test_link_with_special_chars_in_text(self) -> None:
+        """HTML-Sonderzeichen im Link-Text werden korrekt escaped."""
+        md = "[a < b](https://example.com)"
+        result = markdown_to_telegram_html(md)
+        assert "a &lt; b" in result
+        assert "<a href=" in result
+
     def test_nested_bold_in_headline_stripped(self) -> None:
         """Bold-Marker innerhalb von Headlines werden entfernt (kein verschachteltes <b>)."""
         result = markdown_to_telegram_html("## **Fette Headline**")
@@ -96,7 +115,7 @@ class TestMarkdownToTelegramHtml:
 
 
 class TestStripMarkdown:
-    """strip_markdown entfernt Syntax fuer Plain-Text-Fallback."""
+    """strip_markdown entfernt Syntax für Plain-Text-Fallback."""
 
     def test_strip_markdown_for_fallback(self) -> None:
         """Alle Markdown-Syntax wird entfernt, reiner Inhalt bleibt."""

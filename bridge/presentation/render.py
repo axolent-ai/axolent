@@ -91,7 +91,9 @@ async def send_response(update: Update, response: str) -> Message | None:
     """
     plain_chunks = split_message(response, chunk_size=TELEGRAM_CHUNK_SIZE - 200)
     last_sent_message: Message | None = None
+    sent_ids: list[int] = []
     used_fallback = False
+    chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
     for i, plain_chunk in enumerate(plain_chunks):
         if used_fallback:
@@ -99,6 +101,8 @@ async def send_response(update: Update, response: str) -> Message | None:
             last_sent_message = await update.message.reply_text(
                 strip_markdown(plain_chunk)
             )
+            if last_sent_message is not None:
+                sent_ids.append(last_sent_message.message_id)
             continue
 
         html_chunk = markdown_to_telegram_html(plain_chunk)
@@ -106,6 +110,8 @@ async def send_response(update: Update, response: str) -> Message | None:
             last_sent_message = await update.message.reply_text(
                 html_chunk, parse_mode="HTML"
             )
+            if last_sent_message is not None:
+                sent_ids.append(last_sent_message.message_id)
         except Exception as html_err:
             log.warning(
                 "HTML-Send fehlgeschlagen für Chunk %d/%d, wechsle auf Plain-Text: %s",
@@ -118,14 +124,16 @@ async def send_response(update: Update, response: str) -> Message | None:
             last_sent_message = await update.message.reply_text(
                 strip_markdown(plain_chunk)
             )
+            if last_sent_message is not None:
+                sent_ids.append(last_sent_message.message_id)
 
-    # Cache the full response for bookmark retrieval via /save
-    if last_sent_message is not None:
-        cache_response(
-            update.effective_chat.id,
-            last_sent_message.message_id,
-            response,
-        )
+    # Cache ALL sent message IDs -> full response for bookmark retrieval via /save
+    if sent_ids:
+        with _CACHE_LOCK:
+            for msg_id in sent_ids:
+                _response_cache[(chat_id, msg_id)] = response
+            while len(_response_cache) > _CACHE_MAX:
+                _response_cache.popitem(last=False)
 
     if used_fallback:
         log.info("Antwort via Plain-Text-Fallback gesendet")

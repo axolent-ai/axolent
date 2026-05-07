@@ -1,6 +1,7 @@
-"""Tests fuer presentation.decorators: Whitelist-Guard.
+"""Tests für presentation.decorators: Whitelist-Guard und Privacy-Guard.
 
-Testet Autorisierung via User-ID-Whitelist und ALLOW_ALL_USERS Bypass.
+Testet Autorisierung via User-ID-Whitelist, ALLOW_ALL_USERS Bypass
+und require_private_chat Decorator.
 Mockt Telegram Update/Context Objekte.
 """
 
@@ -99,3 +100,65 @@ class TestRequireWhitelist:
             await decorated(update, context)
 
             handler.assert_not_called()
+
+
+class TestRequirePrivateChat:
+    """require_private_chat Decorator-Tests."""
+
+    def _make_update(self, chat_type: str = "private") -> MagicMock:
+        """Erstellt ein gemocktes Telegram-Update mit Chat-Type."""
+        update = MagicMock()
+        update.effective_user = MagicMock()
+        update.effective_user.id = 111
+        update.effective_user.username = "testuser"
+        update.effective_chat = MagicMock()
+        update.effective_chat.type = chat_type
+        update.message = MagicMock()
+        update.message.reply_text = AsyncMock()
+        return update
+
+    async def test_allows_private_chat(self) -> None:
+        """Im privaten Chat wird der Handler ausgefuehrt."""
+        from presentation.decorators import require_private_chat
+
+        handler = AsyncMock()
+        decorated = require_private_chat(handler)
+
+        update = self._make_update(chat_type="private")
+        context = MagicMock()
+
+        await decorated(update, context)
+
+        handler.assert_called_once_with(update, context)
+
+    async def test_blocks_group_chat(self) -> None:
+        """In Gruppen-Chats wird der Handler blockiert."""
+        from presentation.decorators import require_private_chat
+
+        handler = AsyncMock()
+        decorated = require_private_chat(handler)
+
+        update = self._make_update(chat_type="group")
+        context = MagicMock()
+
+        await decorated(update, context)
+
+        handler.assert_not_called()
+        update.message.reply_text.assert_called_once()
+        call_text = update.message.reply_text.call_args[0][0]
+        assert "privaten Chat" in call_text
+
+    async def test_blocks_supergroup_chat(self) -> None:
+        """In Supergruppen-Chats wird der Handler blockiert."""
+        from presentation.decorators import require_private_chat
+
+        handler = AsyncMock()
+        decorated = require_private_chat(handler)
+
+        update = self._make_update(chat_type="supergroup")
+        context = MagicMock()
+
+        await decorated(update, context)
+
+        handler.assert_not_called()
+        update.message.reply_text.assert_called_once()

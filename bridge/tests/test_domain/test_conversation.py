@@ -1,4 +1,4 @@
-"""Tests fuer domain.conversation: ConversationTurn und Context-Building.
+"""Tests für domain.conversation: ConversationTurn und Context-Building.
 
 Testet Dataclass-Erstellung, MAX_HISTORY_TURNS-Limit und build_context_block.
 """
