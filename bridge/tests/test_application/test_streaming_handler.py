@@ -963,3 +963,29 @@ class TestFloodControlStressSimulation:
             await finalize_streaming(session, "Finale Antwort")
 
         session.message.edit_text.assert_called_once()
+
+
+class TestMultiMessageEditFallback:
+    """Tests für P1-6: Multi-Message Final-Edit Fallback bei erschöpften 429-Retries."""
+
+    @pytest.mark.asyncio
+    async def test_edit_fallback_to_send_message_on_exhausted_429(self) -> None:
+        """Nach erschöpften Retries auf Edit: Fallback auf send_message."""
+        session = _make_session(started_offset=5.0)
+
+        # Edit schlägt immer mit 429 fehl
+        session.message.edit_text = AsyncMock(side_effect=_FakeRetryAfter(1))
+
+        # Erzeuge Text der 2+ Parts ergibt
+        long_text = "Dies ist ein Absatz.\n\n" * 300
+
+        with patch(
+            "application.streaming_handler.asyncio.sleep", new_callable=AsyncMock
+        ):
+            await finalize_streaming(session, long_text)
+
+        # edit_text wurde 1 + FINAL_EDIT_MAX_RETRIES mal versucht
+        assert session.message.edit_text.call_count == 1 + FINAL_EDIT_MAX_RETRIES
+
+        # Fallback: send_message wurde aufgerufen (für Part 1 als neue Nachricht)
+        assert session.message.chat.send_message.call_count >= 1

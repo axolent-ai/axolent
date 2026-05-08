@@ -1,8 +1,12 @@
-"""Audit-Service: Use-Case-Wrapper für strukturiertes Command-Audit-Logging.
+"""Audit-Service: Use-Case-Wrapper für strukturiertes Audit-Logging.
 
-Stellt eine generische Funktion bereit, die der Presentation-Layer nutzt,
-um Command- und Callback-Aktionen im Audit-Log zu erfassen.
+Stellt generische Funktionen bereit, die der Presentation-Layer nutzt,
+um Command-, Callback- und Streaming-Aktionen im Audit-Log zu erfassen.
 Der LLM-Pfad (chat_service) loggt weiterhin direkt via write_audit_log.
+
+write_raw_audit() erlaubt dem Presentation-Layer, rohe Audit-Dicts zu
+schreiben, ohne direkt auf infrastructure.audit_log zuzugreifen
+(Layer-Contract: presentation darf nicht direkt aus infrastructure importieren).
 """
 
 from __future__ import annotations
@@ -35,7 +39,7 @@ def log_command_audit(
         username: Telegram Username (optional).
         entry_id: Betroffene Entry/Bookmark-ID (optional, wenn anwendbar).
         success: Ob die Aktion erfolgreich war.
-        details: Zusaetzliche Info (optional).
+        details: Zusätzliche Info (optional).
     """
     entry: dict[str, Any] = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -52,4 +56,16 @@ def log_command_audit(
     if details is not None:
         entry["details"] = details
 
+    write_audit_log(entry)
+
+
+def write_raw_audit(entry: dict[str, Any]) -> None:
+    """Schreibt ein rohes Audit-Dict ins Audit-Log.
+
+    Erlaubt dem Presentation-Layer, strukturierte Audit-Einträge zu
+    schreiben, ohne direkt auf infrastructure.audit_log zuzugreifen.
+
+    Args:
+        entry: Dictionary mit Audit-Daten (timestamp, event_type, etc.).
+    """
     write_audit_log(entry)

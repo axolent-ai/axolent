@@ -77,7 +77,7 @@ def _build_provider_router(process_pool: ClaudeProcessPool) -> ProviderRouter:
     Fallback: claude (Legacy, einzelne Subprozesse).
 
     Args:
-        process_pool: ClaudeProcessPool fuer den PersistentProvider.
+        process_pool: ClaudeProcessPool für den PersistentProvider.
     """
     persistent_provider = ClaudePersistentProvider(process_pool=process_pool)
 
@@ -132,7 +132,7 @@ def main() -> None:
             "Bookmark-Migration: %d Einträge mit chat_id nachgerüstet", migrated_count
         )
 
-    # R04: Process-Pool initialisieren (fuer persistent Claude Subprocesses)
+    # R04: Process-Pool initialisieren (für persistent Claude Subprocesses)
     process_pool = ClaudeProcessPool()
 
     # Provider-Router initialisieren (mit Process-Pool)

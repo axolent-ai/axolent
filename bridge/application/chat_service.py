@@ -11,7 +11,7 @@ und fügt sie in den System-Prompt ein bevor der LLM-Call stattfindet.
 
 Seit R04: Streaming-fähig via ClaudePersistentProvider.
 process_user_message_streaming() liefert einen AsyncIterator von StreamEvents
-fuer Echtzeit-Telegram-Edits.
+für Echtzeit-Telegram-Edits.
 """
 
 from __future__ import annotations
@@ -540,7 +540,7 @@ class ChatService:
         """Streaming-Variante von process_user_message.
 
         Bereitet Prompt identisch vor (Memory, History, Language),
-        nutzt aber den ClaudePersistentProvider fuer Token-Streaming.
+        nutzt aber den ClaudePersistentProvider für Token-Streaming.
         History-Speicherung und Audit passieren NACH dem Stream.
 
         Args:
@@ -558,7 +558,7 @@ class ChatService:
 
         Note:
             Der Aufrufer muss nach dem Stream selbst:
-            1. save_streaming_result() aufrufen fuer History + Audit
+            1. save_streaming_result() aufrufen für History + Audit
         """
         uid = user_id or 0
         cid = chat_id or 0
@@ -596,6 +596,7 @@ class ChatService:
         async for event in persistent_provider.query_streaming(
             prompt=context_prompt,
             system_prompt=effective_prompt,
+            user_id=uid,
             chat_id=cid,
         ):
             yield event
@@ -621,7 +622,7 @@ class ChatService:
             user_id: Telegram User-ID.
             chat_id: Telegram Chat-ID.
             user_text: Original User-Nachricht.
-            response_text: Vollstaendige Provider-Antwort.
+            response_text: Vollständige Provider-Antwort.
             duration_seconds: Gesamtdauer der Anfrage.
             username: Telegram Username.
             was_cold: True wenn ein neuer Subprocess gestartet wurde.
@@ -638,6 +639,7 @@ class ChatService:
         # Audit-Log
         audit: dict[str, Any] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "event_type": "stream_completed",
             "user_id": user_id,
             "chat_id": chat_id,
             "username": username,

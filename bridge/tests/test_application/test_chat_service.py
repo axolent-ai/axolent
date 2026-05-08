@@ -337,6 +337,63 @@ class TestChatService:
         assert lang == "fr"
 
 
+class TestSaveStreamingResult:
+    """Tests fuer save_streaming_result: History + Audit-Log."""
+
+    async def test_save_streaming_result_writes_audit_with_event_type(self) -> None:
+        """save_streaming_result schreibt Audit mit event_type 'stream_completed'."""
+        from unittest.mock import patch
+
+        svc, _ = _make_chat_service()
+
+        with patch("application.chat_service.write_audit_log") as mock_audit:
+            await svc.save_streaming_result(
+                user_id=1,
+                chat_id=10,
+                user_text="Hallo",
+                response_text="Antwort",
+                duration_seconds=2.5,
+                username="testuser",
+                was_cold=True,
+                streaming_chunks=5,
+                subprocess_pid=1234,
+                memory_entries_loaded=2,
+            )
+
+            mock_audit.assert_called_once()
+            entry = mock_audit.call_args[0][0]
+            assert entry["event_type"] == "stream_completed"
+            assert entry["user_id"] == 1
+            assert entry["chat_id"] == 10
+            assert entry["was_cold"] is True
+            assert entry["was_warm"] is False
+            assert entry["streaming_chunks"] == 5
+            assert entry["subprocess_pid"] == 1234
+            assert entry["memory_entries_loaded"] == 2
+            assert entry["provider"] == "claude_persistent"
+
+    async def test_save_streaming_result_saves_history(self) -> None:
+        """save_streaming_result speichert User- und Assistant-Turn in History."""
+        from infrastructure.conversation_storage import get_history
+
+        svc, _ = _make_chat_service()
+
+        await svc.save_streaming_result(
+            user_id=1,
+            chat_id=10,
+            user_text="Frage",
+            response_text="Antwort",
+            duration_seconds=1.0,
+        )
+
+        history = await get_history(1, 10)
+        assert len(history) == 2
+        assert history[0].role == "user"
+        assert history[0].content == "Frage"
+        assert history[1].role == "assistant"
+        assert history[1].content == "Antwort"
+
+
 class TestAutoMemoryLoading:
     """Tests für Auto-Memory-Loading im ChatService."""
 

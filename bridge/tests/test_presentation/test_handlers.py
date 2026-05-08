@@ -60,6 +60,8 @@ def _make_context(
     chat_service: ChatService | None = None,
     system_prompt: str = "Test system prompt.",
     memory_service: object | None = None,
+    persistent_provider: object | None = None,
+    process_pool: object | None = None,
 ) -> MagicMock:
     """Erstellt einen gemockten Telegram-Context mit bot_data."""
     context = MagicMock()
@@ -73,6 +75,8 @@ def _make_context(
         "chat_service": svc,
         "system_prompt": system_prompt,
         "memory_service": memory_service,
+        "persistent_provider": persistent_provider,
+        "process_pool": process_pool,
     }
     return context
 
@@ -566,3 +570,383 @@ class TestAuditLoggingForget:
         assert entry["action"] == "forget"
         assert entry["entry_id"] == "ep_999"
         assert entry["success"] is False
+
+
+class TestPrivacyGuardHandleMessage:
+    """Tests: handle_message blockiert Gruppen-Chats (P0-1C)."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        """Whitelist-Bypass."""
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    async def test_group_chat_blocked(self) -> None:
+        """handle_message in Gruppe sendet Privacy-Block-Meldung."""
+        from presentation.handlers import handle_message
+
+        update = _make_update(user_id=1, chat_id=10, text="Hallo")
+        update.effective_chat.type = "group"
+
+        context = _make_context()
+        await handle_message(update, context)
+
+        update.message.reply_text.assert_called_once()
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "privaten Chat" in reply_text
+
+    async def test_private_chat_allowed(self) -> None:
+        """handle_message im privaten Chat funktioniert normal."""
+        from presentation.handlers import handle_message
+
+        update = _make_update(user_id=1, chat_id=10, text="Hallo")
+        update.effective_chat.type = "private"
+
+        context = _make_context()
+        # Kein persistent_provider => Legacy-Fallback
+        await handle_message(update, context)
+
+        # Sollte KEINE Privacy-Block-Meldung sein
+        if update.message.reply_text.called:
+            reply_text = update.message.reply_text.call_args[0][0]
+            assert "privaten Chat" not in reply_text
+
+
+class TestStreamingErrorRedaction:
+    """Tests: Streaming-Fehler werden redacted an User gesendet (P0-2)."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        """Whitelist-Bypass."""
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    @patch("presentation.handlers.write_raw_audit")
+    async def test_error_event_shows_generic_message(
+        self, mock_audit: MagicMock
+    ) -> None:
+        """Error-Event mit sensiblem Text zeigt nur generische Meldung mit ref."""
+        from infrastructure.claude_process_pool import StreamEvent
+        from presentation.handlers import _handle_message_streaming
+
+        # Mock persistent_provider der ein Error-Event liefert
+        mock_provider = MagicMock()
+        mock_provider.is_available = MagicMock(return_value=True)
+
+        # Mock chat_service.process_user_message_streaming
+        mock_svc = _make_mock_chat_service()
+
+        async def mock_stream(**kwargs):
+            yield StreamEvent(
+                event_type="error",
+                text="/secret/path/to/file.py: PermissionError traceback",
+                raw={"error": {"message": "secret stacktrace"}},
+                is_final=True,
+            )
+
+        mock_svc.process_user_message_streaming = mock_stream
+
+        # Mock pool
+        mock_pool = MagicMock()
+        mock_managed = MagicMock()
+        mock_managed.pid = 12345
+
+        async def mock_get_or_create(user_id, chat_id):
+            return mock_managed, True
+
+        mock_pool.get_or_create = mock_get_or_create
+
+        update = _make_update(user_id=42, chat_id=99, text="Test")
+        context = _make_context(
+            chat_service=mock_svc,
+            persistent_provider=mock_provider,
+            process_pool=mock_pool,
+        )
+
+        # Mock create_streaming_message
+        mock_msg = AsyncMock()
+        mock_msg.edit_text = AsyncMock()
+        mock_msg.chat = MagicMock()
+
+        with patch(
+            "presentation.handlers.create_streaming_message",
+            return_value=mock_msg,
+        ):
+            await _handle_message_streaming(
+                update=update,
+                context=context,
+                chat_service=mock_svc,
+                persistent_provider=mock_provider,
+                user_id=42,
+                chat_id=99,
+                username="testuser",
+                text="Test",
+                reply_to_text=None,
+            )
+
+        # Der User-facing Text darf KEINEN Pfad/Stacktrace enthalten
+        edit_calls = mock_msg.edit_text.call_args_list
+        for call in edit_calls:
+            text_sent = call[0][0]
+            assert "/secret/path" not in text_sent
+            assert "PermissionError" not in text_sent
+            assert "traceback" not in text_sent.lower()
+
+        # Muss "ref:" enthalten
+        last_edit_text = edit_calls[-1][0][0]
+        assert "ref:" in last_edit_text
+
+    @patch("presentation.handlers.write_raw_audit")
+    async def test_runtime_error_shows_generic_message(
+        self, mock_audit: MagicMock
+    ) -> None:
+        """RuntimeError mit Path-Info zeigt nur generische Meldung."""
+        from presentation.handlers import _handle_message_streaming
+
+        mock_provider = MagicMock()
+        mock_svc = _make_mock_chat_service()
+
+        async def mock_stream(**kwargs):
+            raise RuntimeError("C:\\Users\\secret\\pipe_broken.txt")
+
+        mock_svc.process_user_message_streaming = mock_stream
+
+        mock_pool = MagicMock()
+        mock_managed = MagicMock()
+        mock_managed.pid = 12345
+
+        async def mock_get_or_create(user_id, chat_id):
+            return mock_managed, False
+
+        mock_pool.get_or_create = mock_get_or_create
+
+        update = _make_update(user_id=42, chat_id=99, text="Test")
+        context = _make_context(
+            chat_service=mock_svc,
+            persistent_provider=mock_provider,
+            process_pool=mock_pool,
+        )
+
+        mock_msg = AsyncMock()
+        mock_msg.edit_text = AsyncMock()
+        mock_msg.chat = MagicMock()
+
+        with patch(
+            "presentation.handlers.create_streaming_message",
+            return_value=mock_msg,
+        ):
+            await _handle_message_streaming(
+                update=update,
+                context=context,
+                chat_service=mock_svc,
+                persistent_provider=mock_provider,
+                user_id=42,
+                chat_id=99,
+                username="testuser",
+                text="Test",
+                reply_to_text=None,
+            )
+
+        # Letzter Edit-Text darf keinen Pfad enthalten
+        last_edit_text = mock_msg.edit_text.call_args_list[-1][0][0]
+        assert "secret" not in last_edit_text
+        assert "pipe_broken" not in last_edit_text
+        assert "ref:" in last_edit_text
+
+
+class TestStreamingAuditEntries:
+    """Tests: Streaming erzeugt 2 Audit-Einträge (started + completed/crashed)."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        """Whitelist-Bypass."""
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    @patch("presentation.handlers.write_raw_audit")
+    async def test_successful_stream_writes_two_audit_entries(
+        self, mock_audit: MagicMock
+    ) -> None:
+        """Erfolgreicher Stream: 'stream_started' + save_streaming_result Audit."""
+        from infrastructure.claude_process_pool import StreamEvent
+        from presentation.handlers import _handle_message_streaming
+
+        mock_provider = MagicMock()
+        mock_svc = _make_mock_chat_service()
+        mock_svc.save_streaming_result = AsyncMock()
+
+        async def mock_stream(**kwargs):
+            yield StreamEvent(event_type="content_delta", text="Hallo")
+            yield StreamEvent(
+                event_type="result", full_text="Hallo Welt", is_final=True
+            )
+
+        mock_svc.process_user_message_streaming = mock_stream
+
+        mock_pool = MagicMock()
+        mock_managed = MagicMock()
+        mock_managed.pid = 999
+
+        async def mock_get_or_create(user_id, chat_id):
+            return mock_managed, True
+
+        mock_pool.get_or_create = mock_get_or_create
+
+        update = _make_update(user_id=42, chat_id=99, text="Frage")
+        context = _make_context(
+            chat_service=mock_svc,
+            persistent_provider=mock_provider,
+            process_pool=mock_pool,
+        )
+
+        mock_msg = AsyncMock()
+        mock_msg.edit_text = AsyncMock()
+        mock_msg.chat = MagicMock()
+
+        with patch(
+            "presentation.handlers.create_streaming_message",
+            return_value=mock_msg,
+        ):
+            await _handle_message_streaming(
+                update=update,
+                context=context,
+                chat_service=mock_svc,
+                persistent_provider=mock_provider,
+                user_id=42,
+                chat_id=99,
+                username="testuser",
+                text="Frage",
+                reply_to_text=None,
+            )
+
+        # Mindestens 1 Audit-Eintrag (stream_started)
+        assert mock_audit.call_count >= 1
+        first_entry = mock_audit.call_args_list[0][0][0]
+        assert first_entry["event_type"] == "stream_started"
+        assert first_entry["user_id"] == 42
+
+        # save_streaming_result wurde aufgerufen (= zweiter Audit)
+        mock_svc.save_streaming_result.assert_called_once()
+        save_kwargs = mock_svc.save_streaming_result.call_args
+        assert save_kwargs.kwargs.get("was_cold") is True
+        assert save_kwargs.kwargs.get("subprocess_pid") == 999
+
+    @patch("presentation.handlers.write_raw_audit")
+    async def test_crashed_stream_writes_error_audit(
+        self, mock_audit: MagicMock
+    ) -> None:
+        """Crash mid-stream: 'stream_started' + 'stream_error' Audit."""
+        from presentation.handlers import _handle_message_streaming
+
+        mock_provider = MagicMock()
+        mock_svc = _make_mock_chat_service()
+
+        async def mock_stream(**kwargs):
+            raise RuntimeError("unexpected crash")
+
+        mock_svc.process_user_message_streaming = mock_stream
+
+        mock_pool = MagicMock()
+        mock_managed = MagicMock()
+        mock_managed.pid = 888
+
+        async def mock_get_or_create(user_id, chat_id):
+            return mock_managed, False
+
+        mock_pool.get_or_create = mock_get_or_create
+
+        update = _make_update(user_id=42, chat_id=99, text="Crash")
+        context = _make_context(
+            chat_service=mock_svc,
+            persistent_provider=mock_provider,
+            process_pool=mock_pool,
+        )
+
+        mock_msg = AsyncMock()
+        mock_msg.edit_text = AsyncMock()
+        mock_msg.chat = MagicMock()
+
+        with patch(
+            "presentation.handlers.create_streaming_message",
+            return_value=mock_msg,
+        ):
+            await _handle_message_streaming(
+                update=update,
+                context=context,
+                chat_service=mock_svc,
+                persistent_provider=mock_provider,
+                user_id=42,
+                chat_id=99,
+                username="testuser",
+                text="Crash",
+                reply_to_text=None,
+            )
+
+        # Mindestens 2 Audit-Einträge: stream_started + stream_error
+        assert mock_audit.call_count >= 2
+        event_types = [c[0][0]["event_type"] for c in mock_audit.call_args_list]
+        assert "stream_started" in event_types
+        assert "stream_error" in event_types
+
+        # stream_error muss error_id haben
+        error_entries = [
+            c[0][0]
+            for c in mock_audit.call_args_list
+            if c[0][0]["event_type"] == "stream_error"
+        ]
+        assert error_entries[0]["error_id"] != ""
+
+
+class TestOuterExceptionCoverage:
+    """Tests: Outer Exception in _handle_message_streaming (P1-8)."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        """Whitelist-Bypass."""
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    @patch("presentation.handlers.write_raw_audit")
+    async def test_create_streaming_message_exception(
+        self, mock_audit: MagicMock
+    ) -> None:
+        """Wenn create_streaming_message wirft, bekommt User Fehlermeldung."""
+        from presentation.handlers import _handle_message_streaming
+
+        mock_provider = MagicMock()
+        mock_svc = _make_mock_chat_service()
+        mock_pool = MagicMock()
+
+        update = _make_update(user_id=42, chat_id=99, text="Test")
+        context = _make_context(
+            chat_service=mock_svc,
+            persistent_provider=mock_provider,
+            process_pool=mock_pool,
+        )
+
+        with patch(
+            "presentation.handlers.create_streaming_message",
+            side_effect=Exception("Telegram API down"),
+        ):
+            # Sollte NICHT crashen
+            await _handle_message_streaming(
+                update=update,
+                context=context,
+                chat_service=mock_svc,
+                persistent_provider=mock_provider,
+                user_id=42,
+                chat_id=99,
+                username="testuser",
+                text="Test",
+                reply_to_text=None,
+            )
+
+        # User muss eine Nachricht bekommen
+        update.message.reply_text.assert_called_once()
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "ref:" in reply_text
+
+        # Audit: stream_started + stream_error
+        event_types = [c[0][0]["event_type"] for c in mock_audit.call_args_list]
+        assert "stream_started" in event_types
+        assert "stream_error" in event_types

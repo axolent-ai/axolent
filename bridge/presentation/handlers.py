@@ -3,7 +3,7 @@
 Alle Telegram-spezifischen Handler die auf User-Input reagieren.
 Nutzt application-Layer für Business-Logik, presentation/render für Output.
 
-Seit R04: Streaming-Handler fuer Echtzeit-Token-Updates via Telegram-Edits.
+Seit R04: Streaming-Handler für Echtzeit-Token-Updates via Telegram-Edits.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import uuid
 from threading import Lock
 from typing import TYPE_CHECKING, Any
 
@@ -18,7 +19,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 
-from application.audit_service import log_command_audit
+from application.audit_service import log_command_audit, write_raw_audit
 from application.bookmark_service import (
     list_bookmarks,
     save_or_toggle_bookmark,
@@ -242,19 +243,21 @@ def _get_persistent_provider(
 
 
 @require_whitelist
+@require_private_chat
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Verarbeitet eingehende Telegram-Nachrichten via Claude Code Subprozess.
 
     R04-Flow (Streaming):
         1. Whitelist-Check (via Decorator)
-        2. Typing-Indicator senden
-        3. Pro-User Lock + globale Semaphore
-        4. Streaming-Nachricht erstellen ("...")
-        5. Token-Stream lesen, periodisch Telegram-Edits senden
-        6. Finale Edit mit vollstaendigem Text
-        7. History + Audit speichern
+        2. Privacy-Check: nur private Chats (via Decorator)
+        3. Typing-Indicator senden
+        4. Pro-User Lock + globale Semaphore
+        5. Streaming-Nachricht erstellen ("...")
+        6. Token-Stream lesen, periodisch Telegram-Edits senden
+        7. Finale Edit mit vollständigem Text
+        8. History + Audit speichern
 
-    Fallback auf Legacy-Flow wenn PersistentProvider nicht verfuegbar.
+    Fallback auf Legacy-Flow wenn PersistentProvider nicht verfügbar.
     """
     chat_service = _get_chat_service(context)
     persistent_provider = _get_persistent_provider(context)
@@ -327,105 +330,191 @@ async def _handle_message_streaming(
 
     Erstellt eine Placeholder-Nachricht und editiert sie
     inkrementell mit eingehenden Tokens.
+
+    Fehler-Handling:
+        - Error-Events: generische Meldung mit error_id an User,
+          Originaltext ins Audit-Log + Application-Log
+        - RuntimeError: analog
+        - Outer Exceptions (z.B. create_streaming_message fehlschlägt):
+          generische Fehlermeldung, Audit-Eintrag
+        - Audit: immer 2 Einträge (started + completed/crashed)
     """
+    from datetime import datetime, timezone
+
     t_start = time.monotonic()
     streaming_chunks = 0
     final_text = ""
     had_error = False
+    error_id = ""
+    session: StreamingSession | None = None
 
-    # Streaming-Nachricht erstellen
-    streaming_msg = await create_streaming_message(update.effective_chat)
-    session = StreamingSession(
-        message=streaming_msg,
-        started_at=time.monotonic(),
-    )
+    # Audit "started" Eintrag
+    audit_started: dict[str, Any] = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "event_type": "stream_started",
+        "user_id": user_id,
+        "chat_id": chat_id,
+        "username": username,
+        "prompt_length": len(text),
+        "provider": "claude_persistent",
+    }
+    write_raw_audit(audit_started)
 
-    # Typing-Keepalive parallel zum Stream (fuer sehr lange Antworten)
-    keepalive = asyncio.create_task(
-        _typing_keepalive(
-            update.effective_chat,
-            interval=TYPING_KEEPALIVE_INTERVAL_SECONDS,
-        )
-    )
+    # Process-Info vorab holen (für was_cold)
+    pool = context.application.bot_data.get("process_pool")
+    was_cold = False
+    subprocess_pid = 0
 
     try:
-        async for event in chat_service.process_user_message_streaming(
-            text=text,
-            user_id=user_id,
-            chat_id=chat_id,
-            username=username,
-            system_prompt=_get_system_prompt(context),
-            persistent_provider=persistent_provider,
-            reply_to_text=reply_to_text,
-        ):
-            if event.event_type == "content_delta":
-                streaming_chunks += 1
-                await process_streaming_edit(session, event.text)
+        # Streaming-Nachricht erstellen
+        streaming_msg = await create_streaming_message(update.effective_chat)
+        session = StreamingSession(
+            message=streaming_msg,
+            started_at=time.monotonic(),
+        )
 
-            elif event.event_type == "result":
-                final_text = event.full_text
-                await finalize_streaming(session, final_text)
-
-            elif event.event_type == "error":
-                had_error = True
-                await abort_streaming(
-                    session,
-                    f"Fehler bei der Verarbeitung: {event.text}",
-                )
-                break
-
-    except RuntimeError as e:
-        had_error = True
-        log.error("Streaming RuntimeError: %s", e)
-        await abort_streaming(session, f"Interner Fehler: {e}")
-
-    finally:
-        keepalive.cancel()
-        try:
-            await keepalive
-        except asyncio.CancelledError:
-            pass
-
-    duration = time.monotonic() - t_start
-
-    # Fallback: wenn kein finaler Text aber akkumulierter Text vorhanden
-    if not final_text and session.accumulated_text and not had_error:
-        final_text = session.accumulated_text
-        await finalize_streaming(session, final_text)
-
-    # History + Audit speichern (nur bei Erfolg)
-    if final_text and not had_error:
-        # Process-Info fuer Audit
-        pool = context.application.bot_data.get("process_pool")
-        subprocess_pid = 0
-        was_cold = False
+        # was_cold und subprocess_pid aus dem Pool holen
         if pool is not None:
-            stats = pool.get_stats()
-            for proc_info in stats.get("processes", []):
-                if proc_info.get("chat_id") == chat_id:
-                    subprocess_pid = proc_info.get("pid", 0)
+            managed, was_cold = await pool.get_or_create(user_id, chat_id)
+            subprocess_pid = managed.pid
+
+        # Typing-Keepalive parallel zum Stream
+        keepalive = asyncio.create_task(
+            _typing_keepalive(
+                update.effective_chat,
+                interval=TYPING_KEEPALIVE_INTERVAL_SECONDS,
+            )
+        )
+
+        try:
+            async for event in chat_service.process_user_message_streaming(
+                text=text,
+                user_id=user_id,
+                chat_id=chat_id,
+                username=username,
+                system_prompt=_get_system_prompt(context),
+                persistent_provider=persistent_provider,
+                reply_to_text=reply_to_text,
+            ):
+                if event.event_type == "content_delta":
+                    streaming_chunks += 1
+                    await process_streaming_edit(session, event.text)
+
+                elif event.event_type == "result":
+                    final_text = event.full_text
+                    await finalize_streaming(session, final_text)
+
+                elif event.event_type == "error":
+                    had_error = True
+                    error_id = uuid.uuid4().hex[:8]
+                    # Originaltext ins Log (nicht zum User)
+                    log.error(
+                        "Streaming error event (ref: %s): %s | raw: %s",
+                        error_id,
+                        event.text,
+                        event.raw,
+                    )
+                    # Generische Meldung an User
+                    await abort_streaming(
+                        session,
+                        "Der Sprachmodell-Anbieter meldet ein Problem "
+                        f"(ref: {error_id}). Versuch es gleich noch mal.",
+                    )
                     break
 
-        await chat_service.save_streaming_result(
-            user_id=user_id,
-            chat_id=chat_id,
-            user_text=text,
-            response_text=final_text,
-            duration_seconds=duration,
-            username=username,
-            was_cold=was_cold,
-            streaming_chunks=streaming_chunks,
-            subprocess_pid=subprocess_pid,
-        )
+        except RuntimeError as e:
+            had_error = True
+            error_id = uuid.uuid4().hex[:8]
+            log.error("Streaming RuntimeError (ref: %s): %s", error_id, e)
+            await abort_streaming(
+                session,
+                f"Interner Fehler (ref: {error_id}).",
+            )
 
-        log.info(
-            "Streaming-Antwort: %d Zeichen, %d Chunks, %.1fs",
-            len(final_text),
-            streaming_chunks,
-            duration,
-        )
-    elif had_error:
-        log.warning("Streaming fehlgeschlagen nach %.1fs", duration)
+        finally:
+            keepalive.cancel()
+            try:
+                await keepalive
+            except asyncio.CancelledError:
+                pass
+
+        duration = time.monotonic() - t_start
+
+        # Fallback: wenn kein finaler Text aber akkumulierter Text vorhanden
+        if not final_text and session.accumulated_text and not had_error:
+            final_text = session.accumulated_text
+            await finalize_streaming(session, final_text)
+
+        # History + Audit speichern
+        if final_text and not had_error:
+            await chat_service.save_streaming_result(
+                user_id=user_id,
+                chat_id=chat_id,
+                user_text=text,
+                response_text=final_text,
+                duration_seconds=duration,
+                username=username,
+                was_cold=was_cold,
+                streaming_chunks=streaming_chunks,
+                subprocess_pid=subprocess_pid,
+            )
+            log.info(
+                "Streaming-Antwort: %d Zeichen, %d Chunks, %.1fs",
+                len(final_text),
+                streaming_chunks,
+                duration,
+            )
+        elif had_error:
+            # Audit für Fehler-Fall
+            audit_error: dict[str, Any] = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "event_type": "stream_error",
+                "user_id": user_id,
+                "chat_id": chat_id,
+                "username": username,
+                "error_id": error_id,
+                "duration_seconds": round(duration, 2),
+                "streaming_chunks": streaming_chunks,
+                "was_cold": was_cold,
+                "subprocess_pid": subprocess_pid,
+            }
+            write_raw_audit(audit_error)
+            log.warning(
+                "Streaming fehlgeschlagen nach %.1fs (ref: %s)",
+                duration,
+                error_id,
+            )
+
+    except Exception as outer_exc:
+        # P1-8: Outer Exception Coverage (z.B. create_streaming_message wirft)
+        duration = time.monotonic() - t_start
+        error_id = uuid.uuid4().hex[:8]
+        log.exception("Outer streaming exception (ref: %s): %s", error_id, outer_exc)
+        # Audit-Eintrag für Crash
+        audit_crash: dict[str, Any] = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "event_type": "stream_error",
+            "user_id": user_id,
+            "chat_id": chat_id,
+            "username": username,
+            "error_id": error_id,
+            "duration_seconds": round(duration, 2),
+            "error": "outer_exception",
+        }
+        write_raw_audit(audit_crash)
+
+        # User-facing Fehlermeldung
+        error_msg = f"Interner Fehler (ref: {error_id})."
+        try:
+            if session is not None:
+                await abort_streaming(session, error_msg)
+            elif update.message:
+                await update.message.reply_text(error_msg)
+        except Exception as notify_exc:
+            log.warning(
+                "Konnte User nicht über Fehler benachrichtigen: %s",
+                notify_exc,
+            )
 
 
 async def _handle_message_legacy(

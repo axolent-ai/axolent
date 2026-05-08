@@ -1,15 +1,17 @@
-"""Tests fuer ClaudeProcessPool.
+"""Tests für ClaudeProcessPool.
 
 Verifiziert:
-    - Process-Spawn und Reuse (warm vs cold)
-    - Inaktivitaets-Timeout terminiert idle Processes
+    - Process-Spawn und Reuse (warm vs cold) mit (user_id, chat_id) Tuple-Routing
+    - Inaktivitäts-Timeout terminiert idle Processes
     - Crash-Recovery: toter Process wird neu gestartet
     - Multi-User-Isolation: User A's Process != User B's Process
     - Graceful Shutdown terminiert alle Processes
     - Health-Check erkennt tote Processes
     - Lock verhindert gleichzeitigen Zugriff auf eine Pipe
-    - CLI-Flags enthalten --include-partial-messages fuer Streaming
+    - CLI-Flags enthalten --include-partial-messages für Streaming
     - _read_response parsed echtes CLI-Event-Format korrekt
+    - Race-Condition-Schutz: parallele get_or_create erzeugen nur 1 Spawn
+    - Cleanup übersprungen aktive (gelockte) Processes
 """
 
 from __future__ import annotations
@@ -44,7 +46,7 @@ def _make_mock_process(alive: bool = True, pid: int = 12345) -> AsyncMock:
 
 
 class TestProcessPoolSpawnAndReuse:
-    """Tests fuer Process-Spawn und Wiederverwendung."""
+    """Tests für Process-Spawn und Wiederverwendung."""
 
     @pytest.mark.asyncio
     async def test_get_or_create_spawns_new_process(self) -> None:
@@ -56,10 +58,10 @@ class TestProcessPoolSpawnAndReuse:
                 "asyncio.create_subprocess_exec",
                 return_value=mock_proc,
             ):
-                managed, was_cold = await pool.get_or_create(chat_id=100)
+                managed, was_cold = await pool.get_or_create(user_id=1, chat_id=100)
 
         assert was_cold is True
-        assert managed.chat_id == 100
+        assert managed.routing_key == (1, 100)
         assert managed.pid == 12345
         await pool.shutdown()
 
@@ -73,8 +75,8 @@ class TestProcessPoolSpawnAndReuse:
                 "asyncio.create_subprocess_exec",
                 return_value=mock_proc,
             ):
-                managed1, cold1 = await pool.get_or_create(chat_id=200)
-                managed2, cold2 = await pool.get_or_create(chat_id=200)
+                managed1, cold1 = await pool.get_or_create(user_id=1, chat_id=200)
+                managed2, cold2 = await pool.get_or_create(user_id=1, chat_id=200)
 
         assert cold1 is True
         assert cold2 is False
@@ -96,17 +98,71 @@ class TestProcessPoolSpawnAndReuse:
 
         with patch("shutil.which", return_value="/usr/bin/claude"):
             with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
-                managed_a, _ = await pool.get_or_create(chat_id=1001)
-                managed_b, _ = await pool.get_or_create(chat_id=1002)
+                managed_a, _ = await pool.get_or_create(user_id=1, chat_id=1001)
+                managed_b, _ = await pool.get_or_create(user_id=2, chat_id=1001)
 
         assert managed_a.pid != managed_b.pid
-        assert managed_a.chat_id == 1001
-        assert managed_b.chat_id == 1002
+        assert managed_a.routing_key == (1, 1001)
+        assert managed_b.routing_key == (2, 1001)
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_same_user_different_chats_get_different_processes(self) -> None:
+        """Gleicher User in verschiedenen Chats bekommt verschiedene Processes."""
+        pool = ClaudeProcessPool()
+        proc_a = _make_mock_process(pid=111)
+        proc_b = _make_mock_process(pid=222)
+
+        call_count = 0
+
+        async def mock_create(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return proc_a if call_count == 1 else proc_b
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
+                managed_a, _ = await pool.get_or_create(user_id=1, chat_id=100)
+                managed_b, _ = await pool.get_or_create(user_id=1, chat_id=200)
+
+        assert managed_a.pid != managed_b.pid
+        await pool.shutdown()
+
+
+class TestProcessPoolRaceCondition:
+    """Tests für Race-Condition-Schutz bei parallelen get_or_create."""
+
+    @pytest.mark.asyncio
+    async def test_parallel_get_or_create_spawns_only_once(self) -> None:
+        """Zwei parallele get_or_create mit gleichem Key dürfen nur 1 Spawn erzeugen."""
+        pool = ClaudeProcessPool()
+        spawn_count = 0
+
+        async def slow_mock_create(*args, **kwargs):
+            nonlocal spawn_count
+            spawn_count += 1
+            await asyncio.sleep(0.05)  # Simuliere langsamen Spawn
+            return _make_mock_process(pid=spawn_count * 100)
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch("asyncio.create_subprocess_exec", side_effect=slow_mock_create):
+                # Zwei parallele Anfragen für den gleichen Key
+                results = await asyncio.gather(
+                    pool.get_or_create(user_id=1, chat_id=500),
+                    pool.get_or_create(user_id=1, chat_id=500),
+                )
+
+        # Nur 1 Spawn (Double-Check-Locking schützt)
+        assert spawn_count == 1
+        # Beide bekommen den gleichen ManagedProcess
+        managed1 = results[0][0]
+        managed2 = results[1][0]
+        assert managed1.pid == managed2.pid
         await pool.shutdown()
 
 
 class TestProcessPoolCrashRecovery:
-    """Tests fuer Crash-Recovery."""
+    """Tests für Crash-Recovery."""
 
     @pytest.mark.asyncio
     async def test_dead_process_triggers_respawn(self) -> None:
@@ -124,7 +180,7 @@ class TestProcessPoolCrashRecovery:
         with patch("shutil.which", return_value="/usr/bin/claude"):
             with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
                 # Erster Aufruf: erstellt dead_proc
-                managed1, cold1 = await pool.get_or_create(chat_id=300)
+                managed1, cold1 = await pool.get_or_create(user_id=1, chat_id=300)
                 assert cold1 is True
                 assert managed1.pid == 111
 
@@ -132,7 +188,7 @@ class TestProcessPoolCrashRecovery:
                 dead_proc.returncode = 1
 
                 # Zweiter Aufruf: erkennt toten Process, erstellt neuen
-                managed2, cold2 = await pool.get_or_create(chat_id=300)
+                managed2, cold2 = await pool.get_or_create(user_id=1, chat_id=300)
                 assert cold2 is True
                 assert managed2.pid == 222
 
@@ -140,7 +196,7 @@ class TestProcessPoolCrashRecovery:
 
 
 class TestProcessPoolTimeout:
-    """Tests fuer Inaktivitaets-Timeout."""
+    """Tests für Inaktivitäts-Timeout."""
 
     @pytest.mark.asyncio
     async def test_cleanup_terminates_expired_processes(self) -> None:
@@ -152,9 +208,9 @@ class TestProcessPoolTimeout:
                 "asyncio.create_subprocess_exec",
                 return_value=mock_proc,
             ):
-                managed, _ = await pool.get_or_create(chat_id=400)
+                managed, _ = await pool.get_or_create(user_id=1, chat_id=400)
 
-        # Simuliere: last_used ist laenger als Timeout her
+        # Simuliere: last_used ist länger als Timeout her
         import time
 
         managed.last_used = time.monotonic() - INACTIVITY_TIMEOUT_SECONDS - 10
@@ -163,11 +219,41 @@ class TestProcessPoolTimeout:
 
         # Process sollte entfernt worden sein
         async with pool._pool_lock:
-            assert 400 not in pool._processes
+            assert (1, 400) not in pool._processes
+
+    @pytest.mark.asyncio
+    async def test_cleanup_skips_locked_processes(self) -> None:
+        """Cleanup terminiert NICHT Processes deren Lock aktiv ist."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process()
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ):
+                managed, _ = await pool.get_or_create(user_id=1, chat_id=401)
+
+        import time
+
+        managed.last_used = time.monotonic() - INACTIVITY_TIMEOUT_SECONDS - 10
+
+        # Lock akquirieren (simuliert laufenden Stream)
+        await managed.lock.acquire()
+        try:
+            await pool._cleanup_expired()
+
+            # Process sollte NICHT entfernt worden sein
+            async with pool._pool_lock:
+                assert (1, 401) in pool._processes
+        finally:
+            managed.lock.release()
+
+        await pool.shutdown()
 
 
 class TestProcessPoolShutdown:
-    """Tests fuer Graceful Shutdown."""
+    """Tests für Graceful Shutdown."""
 
     @pytest.mark.asyncio
     async def test_shutdown_terminates_all(self) -> None:
@@ -184,8 +270,8 @@ class TestProcessPoolShutdown:
 
         with patch("shutil.which", return_value="/usr/bin/claude"):
             with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
-                await pool.get_or_create(chat_id=501)
-                await pool.get_or_create(chat_id=502)
+                await pool.get_or_create(user_id=1, chat_id=501)
+                await pool.get_or_create(user_id=2, chat_id=502)
 
         await pool.shutdown()
 
@@ -198,16 +284,16 @@ class TestProcessPoolShutdown:
         await pool.shutdown()
 
         with pytest.raises(RuntimeError, match="Shutdown"):
-            await pool.get_or_create(chat_id=600)
+            await pool.get_or_create(user_id=1, chat_id=600)
 
 
 class TestProcessPoolHealthCheck:
-    """Tests fuer Health-Check (_is_alive)."""
+    """Tests für Health-Check (_is_alive)."""
 
     def test_alive_process(self) -> None:
         proc = _make_mock_process(alive=True)
         managed = ManagedProcess(
-            chat_id=700,
+            routing_key=(1, 700),
             process=proc,
             lock=asyncio.Lock(),
             last_used=0,
@@ -218,7 +304,7 @@ class TestProcessPoolHealthCheck:
     def test_dead_process(self) -> None:
         proc = _make_mock_process(alive=False)
         managed = ManagedProcess(
-            chat_id=700,
+            routing_key=(1, 700),
             process=proc,
             lock=asyncio.Lock(),
             last_used=0,
@@ -228,7 +314,7 @@ class TestProcessPoolHealthCheck:
 
 
 class TestProcessPoolStats:
-    """Tests fuer get_stats()."""
+    """Tests für get_stats()."""
 
     @pytest.mark.asyncio
     async def test_stats_returns_correct_info(self) -> None:
@@ -240,19 +326,21 @@ class TestProcessPoolStats:
                 "asyncio.create_subprocess_exec",
                 return_value=mock_proc,
             ):
-                await pool.get_or_create(chat_id=800)
+                await pool.get_or_create(user_id=42, chat_id=800)
 
         stats = pool.get_stats()
         assert stats["active_processes"] == 1
         assert len(stats["processes"]) == 1
+        assert stats["processes"][0]["user_id"] == 42
         assert stats["processes"][0]["chat_id"] == 800
         assert stats["processes"][0]["pid"] == 999
         assert stats["processes"][0]["is_alive"] is True
+        assert stats["processes"][0]["is_locked"] is False
         await pool.shutdown()
 
 
 class TestProcessPoolCLICheck:
-    """Tests fuer CLI-Verfuegbarkeitspruefung."""
+    """Tests für CLI-Verfügbarkeitsprüfung."""
 
     def test_cli_available(self) -> None:
         with patch("shutil.which", return_value="/usr/bin/claude"):
@@ -282,7 +370,7 @@ class TestSpawnProcessFlags:
                 "asyncio.create_subprocess_exec",
                 side_effect=capture_cmd,
             ):
-                await pool.get_or_create(chat_id=900)
+                await pool.get_or_create(user_id=1, chat_id=900)
 
         assert "--include-partial-messages" in captured_cmd, (
             "CLI-Flags muessen --include-partial-messages enthalten, "
@@ -306,7 +394,7 @@ class TestSpawnProcessFlags:
                 "asyncio.create_subprocess_exec",
                 side_effect=capture_cmd,
             ):
-                await pool.get_or_create(chat_id=901)
+                await pool.get_or_create(user_id=1, chat_id=901)
 
         assert "--output-format" in captured_cmd
         assert "--input-format" in captured_cmd
@@ -315,7 +403,7 @@ class TestSpawnProcessFlags:
 
 
 class TestReadResponseParsing:
-    """Tests fuer _read_response: verifiziert Parsing des echten CLI-Event-Formats.
+    """Tests für _read_response: verifiziert Parsing des echten CLI-Event-Formats.
 
     Das echte Format (mit --include-partial-messages) liefert:
         system, rate_limit_event, stream_event (message_start,
@@ -328,12 +416,12 @@ class TestReadResponseParsing:
         """Erstellt ManagedProcess mit gemocktem stdout das die gegebenen Zeilen liefert."""
         proc = _make_mock_process()
         encoded_lines = [line.encode("utf-8") for line in lines]
-        # readline() liefert die Zeilen nacheinander, dann b"" fuer EOF
+        # readline() liefert die Zeilen nacheinander, dann b"" für EOF
         proc.stdout.readline = AsyncMock(
             side_effect=encoded_lines + [b""],
         )
         return ManagedProcess(
-            chat_id=1000,
+            routing_key=(1, 1000),
             process=proc,
             lock=asyncio.Lock(),
             last_used=0,
@@ -390,7 +478,7 @@ class TestReadResponseParsing:
 
     @pytest.mark.asyncio
     async def test_ignores_signature_delta_events(self) -> None:
-        """signature_delta Events (Thinking) duerfen kein content_delta yielden."""
+        """signature_delta Events (Thinking) dürfen kein content_delta yielden."""
         lines = [
             json.dumps(
                 {
