@@ -59,6 +59,8 @@ class ProviderRouter:
         system_prompt: str = "",
         provider_name: Optional[str] = None,
         timeout_seconds: int = 120,
+        user_id: int | None = None,
+        chat_id: int | None = None,
     ) -> ProviderResponse:
         """Sendet eine Anfrage an den gewünschten Provider (oder Default).
 
@@ -67,6 +69,8 @@ class ProviderRouter:
             system_prompt: Optionaler System-Prompt.
             provider_name: Expliziter Provider-Name (None = Default).
             timeout_seconds: Timeout für den Provider-Aufruf.
+            user_id: Optionale Telegram-User-ID (benötigt von claude_persistent).
+            chat_id: Optionale Telegram-Chat-ID (benötigt von claude_persistent).
 
         Returns:
             ProviderResponse mit Antwort oder Fehler.
@@ -93,11 +97,20 @@ class ProviderRouter:
             )
 
         log.info("Routing an Provider '%s'", target)
-        return await provider.query(
-            prompt=prompt,
-            system_prompt=system_prompt,
-            timeout_seconds=timeout_seconds,
-        )
+
+        # Provider-spezifische kwargs zusammenbauen.
+        # claude_persistent braucht user_id/chat_id, andere Provider ignorieren sie.
+        kwargs: dict = {
+            "prompt": prompt,
+            "system_prompt": system_prompt,
+            "timeout_seconds": timeout_seconds,
+        }
+        if user_id is not None:
+            kwargs["user_id"] = user_id
+        if chat_id is not None:
+            kwargs["chat_id"] = chat_id
+
+        return await provider.query(**kwargs)
 
     def list_available(self) -> list[str]:
         """Gibt eine Liste aller verfügbaren Provider zurück."""

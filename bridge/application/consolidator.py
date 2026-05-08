@@ -17,10 +17,24 @@ class MemoryConsolidator:
       - Aging/Decay: alte, nie abgerufene Einträge herabstufen oder archivieren
     """
 
-    def consolidate(self) -> None:
+    def consolidate(
+        self,
+        user_id: int | None = None,
+        since_iso: str | None = None,
+        max_entries: int = 100,
+    ) -> int:
         """Führt eine Konsolidierungsrunde durch.
 
-        Phase 1+: Hier wird die eigentliche Logik implementiert.
-        Aktuell: No-Op.
+        Phase 1+: Hier wird die eigentliche Logik implementiert
+        (Episodic-Dedup, Semantic-Promotion, Aging/Decay).
+
+        Args:
+            user_id: Wenn gesetzt, nur Memory dieses Users konsolidieren.
+                     None = alle User.
+            since_iso: Wenn gesetzt, nur Einträge ab diesem Zeitstempel berücksichtigen.
+            max_entries: Obergrenze für die Anzahl konsolidierter Einträge pro Lauf.
+
+        Returns:
+            Anzahl konsolidierter Einträge (heute 0).
         """
-        pass
+        return 0

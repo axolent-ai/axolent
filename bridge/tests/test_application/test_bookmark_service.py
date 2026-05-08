@@ -38,7 +38,7 @@ class TestBookmarkService:
             p.stop()
 
     def test_save_or_toggle_creates_then_deletes(self) -> None:
-        """Erster Aufruf speichert, zweiter Aufruf loescht (Toggle)."""
+        """Erster Aufruf speichert, zweiter Aufruf löscht (Toggle)."""
         from application.bookmark_service import save_or_toggle_bookmark
 
         # Erster Aufruf: speichern
@@ -48,7 +48,7 @@ class TestBookmarkService:
         assert was_saved is True
         assert "gespeichert" in msg.lower()
 
-        # Zweiter Aufruf: loeschen
+        # Zweiter Aufruf: löschen
         was_saved, msg = save_or_toggle_bookmark(
             user_id=1, username="t", chat_id=10, message_id=100, content="Test"
         )
@@ -56,7 +56,7 @@ class TestBookmarkService:
         assert "entfernt" in msg.lower()
 
     def test_list_returns_user_specific(self) -> None:
-        """list_bookmarks gibt nur Bookmarks des angegebenen Users zurueck."""
+        """list_bookmarks gibt nur Bookmarks des angegebenen Users zurück."""
         from application.bookmark_service import list_bookmarks, save_or_toggle_bookmark
 
         save_or_toggle_bookmark(
@@ -108,7 +108,7 @@ class TestBookmarkService:
         assert result is None
 
     def test_remove_bookmark(self) -> None:
-        """remove_bookmark loescht und gibt True zurueck."""
+        """remove_bookmark löscht und gibt True zurück."""
         from application.bookmark_service import (
             get_bookmark,
             remove_bookmark,

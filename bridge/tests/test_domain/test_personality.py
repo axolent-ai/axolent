@@ -28,13 +28,13 @@ class TestPersonalityConfig:
         assert "---" not in result
 
     def test_only_constitution(self) -> None:
-        """Wenn nur Constitution vorhanden, wird nur diese zurueckgegeben."""
+        """Wenn nur Constitution vorhanden, wird nur diese zurückgegeben."""
         config = PersonalityConfig(system_prompt="", user_constitution="Nur Regeln.")
         result = config.build_combined_prompt()
         assert result == "Nur Regeln."
 
     def test_both_empty_returns_empty(self) -> None:
-        """Ohne beides wird ein leerer String zurueckgegeben."""
+        """Ohne beides wird ein leerer String zurückgegeben."""
         config = PersonalityConfig(system_prompt="", user_constitution="")
         result = config.build_combined_prompt()
         assert result == ""
@@ -44,25 +44,25 @@ class TestBuildEffectivePrompt:
     """build_effective_prompt mit optionalem Language-Override."""
 
     def test_no_language_override_for_german(self) -> None:
-        """Bei 'de' wird kein Language-Override angehaengt."""
+        """Bei 'de' wird kein Language-Override angehängt."""
         result = build_effective_prompt("Base prompt.", "de")
         assert "LANGUAGE OVERRIDE" not in result
         assert result == "Base prompt."
 
     def test_language_override_for_english(self) -> None:
-        """Bei 'en' wird ein Language-Override-Block angehaengt."""
+        """Bei 'en' wird ein Language-Override-Block angehängt."""
         result = build_effective_prompt("Base prompt.", "en")
         assert "LANGUAGE OVERRIDE" in result
         assert "'en'" in result
 
     def test_language_override_for_spanish(self) -> None:
-        """Beliebige Nicht-de-Sprache loest Override aus."""
+        """Beliebige Nicht-de-Sprache löst Override aus."""
         result = build_effective_prompt("Base.", "es")
         assert "LANGUAGE OVERRIDE" in result
         assert "'es'" in result
 
     def test_empty_language_hint_no_override(self) -> None:
-        """Leerer Language-Hint fuegt keinen Override an."""
+        """Leerer Language-Hint fügt keinen Override an."""
         result = build_effective_prompt("Base.", "")
         assert "LANGUAGE OVERRIDE" not in result
         assert result == "Base."

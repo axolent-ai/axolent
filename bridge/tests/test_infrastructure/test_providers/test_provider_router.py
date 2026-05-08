@@ -4,7 +4,7 @@ Verifiziert:
     - Default-Routing funktioniert
     - Explizites Provider-Routing funktioniert
     - Unbekannter Provider raised ValueError
-    - Nicht verfuegbarer Provider raised ProviderUnavailable
+    - Nicht verfügbarer Provider raised ProviderUnavailable
     - list_available() und list_registered() korrekt
     - get_capabilities() liefert ProviderCapabilities
 """
@@ -165,3 +165,46 @@ class TestProviderRouterCapabilities:
 
         with pytest.raises(ValueError, match="nicht registriert"):
             router.get_capabilities("unknown")
+
+
+class TestProviderRouterUserChatId:
+    """Tests für user_id/chat_id Durchreichung (Task 4: Non-streaming + claude_persistent)."""
+
+    @pytest.mark.asyncio
+    async def test_route_passes_user_id_chat_id_to_provider(self) -> None:
+        """user_id und chat_id werden an provider.query() durchgereicht."""
+        mock_claude = _make_mock_provider("claude", with_async_query=True)
+        providers = {"claude": mock_claude}
+        router = ProviderRouter(providers=providers, default="claude")
+
+        await router.route("Hallo", user_id=42, chat_id=100)
+
+        call_kwargs = mock_claude.query.call_args[1]
+        assert call_kwargs["user_id"] == 42
+        assert call_kwargs["chat_id"] == 100
+
+    @pytest.mark.asyncio
+    async def test_route_without_user_id_omits_from_kwargs(self) -> None:
+        """Ohne user_id/chat_id werden sie nicht an den Provider übergeben."""
+        mock_claude = _make_mock_provider("claude", with_async_query=True)
+        providers = {"claude": mock_claude}
+        router = ProviderRouter(providers=providers, default="claude")
+
+        await router.route("Hallo")
+
+        call_kwargs = mock_claude.query.call_args[1]
+        assert "user_id" not in call_kwargs
+        assert "chat_id" not in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_route_with_only_user_id_passes_only_user_id(self) -> None:
+        """Nur user_id ohne chat_id: nur user_id wird übergeben."""
+        mock_claude = _make_mock_provider("claude", with_async_query=True)
+        providers = {"claude": mock_claude}
+        router = ProviderRouter(providers=providers, default="claude")
+
+        await router.route("Hallo", user_id=42)
+
+        call_kwargs = mock_claude.query.call_args[1]
+        assert call_kwargs["user_id"] == 42
+        assert "chat_id" not in call_kwargs

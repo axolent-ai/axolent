@@ -389,7 +389,7 @@ class TestAuditLoggingBmDel:
             username="testuser",
             message_id=200,
             chat_id=10,
-            content="Zu loeschender Bookmark",
+            content="Zu löschender Bookmark",
         )
 
         update = _make_callback_update("bm_del:10:200", user_id=1)

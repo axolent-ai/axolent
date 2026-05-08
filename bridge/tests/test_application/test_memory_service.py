@@ -1,4 +1,4 @@
-"""Tests für MemoryService: CRUD-Flows ueber alle drei Layer."""
+"""Tests für MemoryService: CRUD-Flows über alle drei Layer."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ class TestRememberEpisodic:
     """Tests für remember_episodic."""
 
     def test_remember_returns_id(self, memory_service: MemoryService) -> None:
-        """remember_episodic gibt eine ep_-ID zurueck."""
+        """remember_episodic gibt eine ep_-ID zurück."""
         entry_id = memory_service.remember_episodic(user_id=1, content="Test Event")
         assert entry_id.startswith("ep_")
 
@@ -79,7 +79,7 @@ class TestRecall:
         memory_service.remember_episodic(
             user_id=1, content="Jarvis-LITE Bridge Architektur"
         )
-        memory_service.remember_episodic(user_id=1, content="Etwas voellig anderes")
+        memory_service.remember_episodic(user_id=1, content="Etwas völlig anderes")
 
         results = memory_service.recall(user_id=1, query="Jarvis")
         assert len(results) == 1
@@ -96,7 +96,7 @@ class TestForget:
     """Tests für forget."""
 
     def test_forget_existing(self, memory_service: MemoryService) -> None:
-        """forget loescht Entry und gibt True zurueck."""
+        """forget löscht Entry und gibt True zurück."""
         entry_id = memory_service.remember_episodic(user_id=1, content="Vergessen mich")
         assert memory_service.forget(user_id=1, entry_id=entry_id) is True
 
@@ -105,12 +105,12 @@ class TestForget:
         assert len(entries) == 0
 
     def test_forget_nonexistent(self, memory_service: MemoryService) -> None:
-        """forget gibt False zurueck wenn Entry nicht existiert."""
+        """forget gibt False zurück wenn Entry nicht existiert."""
         assert memory_service.forget(user_id=1, entry_id="ep_ghost123456") is False
 
     def test_forget_wrong_user(self, memory_service: MemoryService) -> None:
-        """forget verweigert Loeschung bei falschem User."""
-        entry_id = memory_service.remember_episodic(user_id=1, content="Gehoert User 1")
+        """forget verweigert Löschung bei falschem User."""
+        entry_id = memory_service.remember_episodic(user_id=1, content="Gehört User 1")
         assert memory_service.forget(user_id=999, entry_id=entry_id) is False
 
     def test_forget_semantic(self, memory_service: MemoryService) -> None:
@@ -128,7 +128,7 @@ class TestForget:
         assert memory_service.forget(user_id=1, entry_id=entry_id) is True
 
     def test_forget_unknown_prefix(self, memory_service: MemoryService) -> None:
-        """forget gibt False zurueck bei unbekanntem ID-Prefix."""
+        """forget gibt False zurück bei unbekanntem ID-Prefix."""
         assert memory_service.forget(user_id=1, entry_id="unknown_abc123") is False
 
 
@@ -143,7 +143,7 @@ class TestGetEntry:
         assert result["content"] == "Findbar"
 
     def test_get_nonexistent(self, memory_service: MemoryService) -> None:
-        """get_entry gibt None zurueck bei unbekannter ID."""
+        """get_entry gibt None zurück bei unbekannter ID."""
         result = memory_service.get_entry(user_id=1, entry_id="ep_nope12345678")
         assert result is None
 

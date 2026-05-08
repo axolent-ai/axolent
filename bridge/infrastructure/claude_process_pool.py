@@ -218,8 +218,9 @@ class ClaudeProcessPool:
         key = (user_id, chat_id)
         managed, was_cold = await self.get_or_create(user_id, chat_id)
 
-        # Warte auf Init wenn cold
-        if was_cold and not managed.is_ready:
+        # Warte auf Init unabhängig von was_cold (Pre-Warm-Pfad kann
+        # was_cold=False liefern obwohl is_ready noch False ist).
+        if not managed.is_ready:
             await self._wait_for_init(managed)
 
         async with managed.lock:
@@ -316,7 +317,7 @@ class ClaudeProcessPool:
             "stream-json",
             "--output-format",
             "stream-json",
-            "--include-partial-messages",
+            "--include-partial-messages",  # R04 Round 1: ohne dieses Flag emittiert die CLI keine content_block_delta-Events
             "--verbose",
             "--no-session-persistence",
         ]

@@ -28,7 +28,7 @@ class TestConversationStorage:
     """Conversation-Storage async Operationen."""
 
     async def test_save_and_get_history(self) -> None:
-        """Gespeicherte Turns werden per get_history zurueckgegeben."""
+        """Gespeicherte Turns werden per get_history zurückgegeben."""
         turn = ConversationTurn(role="user", content="Hi")
         await save_turn(1, 10, turn)
 
@@ -38,14 +38,14 @@ class TestConversationStorage:
         assert history[0].role == "user"
 
     async def test_max_20_turns_eviction(self) -> None:
-        """Nach 20 Turns werden die aeltesten evicted (FIFO)."""
+        """Nach 20 Turns werden die ältesten evicted (FIFO)."""
         for i in range(25):
             turn = ConversationTurn(role="user", content=f"Msg {i}")
             await save_turn(1, 10, turn)
 
         history = await get_history(1, 10)
         assert len(history) == MAX_HISTORY_TURNS  # Genau 20
-        # Aelteste (0-4) wurden evicted, neueste (5-24) bleiben
+        # Älteste (0-4) wurden evicted, neueste (5-24) bleiben
         assert history[0].content == "Msg 5"
         assert history[-1].content == "Msg 24"
 
@@ -56,12 +56,12 @@ class TestConversationStorage:
         assert lang == "en"
 
     async def test_get_language_unset_returns_none(self) -> None:
-        """Ohne set_language gibt get_language None zurueck."""
+        """Ohne set_language gibt get_language None zurück."""
         lang = await get_language(99, 99)
         assert lang is None
 
     async def test_reset_clears_history_and_language(self) -> None:
-        """reset_conversation loescht sowohl History als auch Language."""
+        """reset_conversation löscht sowohl History als auch Language."""
         turn = ConversationTurn(role="user", content="Before reset")
         await save_turn(1, 10, turn)
         await set_language(1, 10, "fr")
@@ -95,7 +95,7 @@ class TestConversationStorage:
         assert await get_language(1, 20) == "en"
 
     async def test_history_returns_copy(self) -> None:
-        """get_history gibt eine Kopie zurueck, nicht die interne Liste."""
+        """get_history gibt eine Kopie zurück, nicht die interne Liste."""
         await save_turn(1, 10, ConversationTurn(role="user", content="Test"))
         history = await get_history(1, 10)
         history.clear()  # Externe Modifikation

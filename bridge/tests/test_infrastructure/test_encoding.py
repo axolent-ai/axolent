@@ -39,9 +39,9 @@ class TestOpenUtf8:
         assert "こんにちは" in content
 
     def test_open_utf8_errors_replace(self, tmp_path: Path) -> None:
-        """Ungueltige Bytes werden durch Replacement-Character ersetzt (kein Crash)."""
+        """Ungültige Bytes werden durch Replacement-Character ersetzt (kein Crash)."""
         test_file = tmp_path / "invalid.txt"
-        # Schreibe ungueltige UTF-8 Bytes
+        # Schreibe ungültige UTF-8 Bytes
         test_file.write_bytes(b"Valid \xff\xfe Invalid")
 
         with open_utf8(test_file, "r") as f:
@@ -54,8 +54,8 @@ class TestRunSubprocessUtf8:
     """run_subprocess_utf8 Tests."""
 
     def test_run_subprocess_utf8_returns_decoded_output(self) -> None:
-        """Subprocess-Output wird als UTF-8-String zurueckgegeben."""
-        # echo gibt auf allen Plattformen etwas zurueck
+        """Subprocess-Output wird als UTF-8-String zurückgegeben."""
+        # echo gibt auf allen Plattformen etwas zurück
         result = run_subprocess_utf8(["python", "-c", "print('Hallo Welt')"])
         assert "Hallo Welt" in result.stdout
         assert result.returncode == 0
@@ -64,7 +64,7 @@ class TestRunSubprocessUtf8:
         """Unicode im Subprocess-Output wird korrekt dekodiert.
 
         Erzwingt PYTHONUTF8=1 im Subprozess damit stdout auf Windows
-        tatsaechlich UTF-8 schreibt (nicht cp1252).
+        tatsächlich UTF-8 schreibt (nicht cp1252).
         """
         import os
 
@@ -103,7 +103,7 @@ class TestAppendJsonlUtf8:
     """append_jsonl_utf8 Tests."""
 
     def test_append_jsonl_utf8_appends_unicode_safely(self, tmp_path: Path) -> None:
-        """Mehrere Eintraege werden korrekt als JSONL angehaengt."""
+        """Mehrere Einträge werden korrekt als JSONL angehängt."""
         test_file = tmp_path / "sub" / "test.jsonl"
         # Verzeichnis wird automatisch erstellt
         append_jsonl_utf8({"msg": "Erste Zeile"}, test_file)

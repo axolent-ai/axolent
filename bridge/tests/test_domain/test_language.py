@@ -1,6 +1,6 @@
 """Tests für domain.language: Sprach-Detection via Heuristik.
 
-Testet die korrekte Erkennung der gaengigsten Sprachen
+Testet die korrekte Erkennung der gängigsten Sprachen
 sowie Edge-Cases (kurze Nachrichten, Emojis, exotische Schriften).
 """
 
@@ -11,29 +11,29 @@ class TestDetectLanguage:
     """Sprach-Detection Smoke-Tests und Edge-Cases."""
 
     def test_detect_language_german(self) -> None:
-        """Deutsche Saetze muessen als 'de' erkannt werden."""
+        """Deutsche Sätze müssen als 'de' erkannt werden."""
         assert detect_language("Ich habe heute viel gelernt") == "de"
         assert detect_language("Wie geht es dir?") == "de"
         assert detect_language("Das ist sehr gut") == "de"
 
     def test_detect_language_english(self) -> None:
-        """Englische Saetze muessen als 'en' erkannt werden."""
+        """Englische Sätze müssen als 'en' erkannt werden."""
         assert detect_language("I have learned a lot today") == "en"
         assert detect_language("How are you doing?") == "en"
         assert detect_language("This is very good") == "en"
 
     def test_detect_language_spanish(self) -> None:
-        """Spanische Saetze muessen als 'es' erkannt werden."""
+        """Spanische Sätze müssen als 'es' erkannt werden."""
         assert detect_language("Hola, como estas?") == "es"
         assert detect_language("Muchas gracias por tu ayuda") == "es"
 
     def test_detect_language_french(self) -> None:
-        """Franzoesische Saetze muessen als 'fr' erkannt werden."""
+        """Französische Sätze müssen als 'fr' erkannt werden."""
         assert detect_language("Bonjour, comment allez-vous?") == "fr"
         assert detect_language("Merci beaucoup pour votre aide") == "fr"
 
     def test_detect_language_short_message_fallback_to_default(self) -> None:
-        """Sehr kurze Nachrichten ohne klare Marker fallen auf 'de' zurueck."""
+        """Sehr kurze Nachrichten ohne klare Marker fallen auf 'de' zurück."""
         assert detect_language("ok") == "de"
         assert detect_language("") == "de"
         assert detect_language("   ") == "de"
@@ -52,7 +52,7 @@ class TestDetectLanguage:
         assert detect_language("\U0001f600\U0001f44d\U0001f389") == "de"
 
     def test_detect_language_japanese_chinese_arabic_fallback(self) -> None:
-        """Nicht-lateinische Schriften ohne Marker fallen auf 'de' zurueck.
+        """Nicht-lateinische Schriften ohne Marker fallen auf 'de' zurück.
 
         Das ist korrektes Verhalten: wir erkennen nur de/en/es/fr explizit.
         """
@@ -71,6 +71,6 @@ class TestDetectLanguage:
 
     def test_detect_language_mixed_but_dominant(self) -> None:
         """Bei gemischtem Text gewinnt die dominante Sprache."""
-        # Ueberwiegend Englisch mit einem deutschen Wort
+        # Überwiegend Englisch mit einem deutschen Wort
         result = detect_language("I think this is a great idea for the team")
         assert result == "en"

@@ -1,13 +1,13 @@
-"""Tests fuer den Streaming-Handler.
+"""Tests für den Streaming-Handler.
 
 Verifiziert:
     - Token-Aggregation und Rate-Limiting
     - Erste Edit erst nach FIRST_EDIT_DELAY_SECONDS
-    - Finalize setzt vollstaendigen Text
+    - Finalize setzt vollständigen Text
     - Multi-Message-Split bei langen Antworten (>4096 Zeichen)
     - Abort zeigt Fehlermeldung
     - Telegram-API-Fehler werden leise geschluckt
-    - Telegram-Laengen-Limit wird eingehalten
+    - Telegram-Längen-Limit wird eingehalten
     - Zwischen-Edits als HTML mit smart-trim (Option A)
     - Finale Edit als HTML mit Markdown-Konvertierung
     - split_text_for_telegram() respektiert Markdown-Grenzen
@@ -48,7 +48,7 @@ def _make_session(started_offset: float = 0.0) -> StreamingSession:
     """Erstellt eine Test-StreamingSession mit gemockter Message."""
     msg = AsyncMock()
     msg.edit_text = AsyncMock()
-    # Mock chat fuer Multi-Message-Split (send_message auf dem Chat)
+    # Mock chat für Multi-Message-Split (send_message auf dem Chat)
     msg.chat = MagicMock()
     msg.chat.send_message = AsyncMock()
     return StreamingSession(
@@ -58,7 +58,7 @@ def _make_session(started_offset: float = 0.0) -> StreamingSession:
 
 
 class TestStreamingEdit:
-    """Tests fuer process_streaming_edit()."""
+    """Tests für process_streaming_edit()."""
 
     @pytest.mark.asyncio
     async def test_first_edit_delayed(self) -> None:
@@ -97,7 +97,7 @@ class TestStreamingEdit:
         """Text wird korrekt akkumuliert."""
         session = _make_session(started_offset=3.0)
         session.is_first_edit = False
-        session.last_edit_time = 0  # Laengst faellig
+        session.last_edit_time = 0  # Längst fällig
 
         await process_streaming_edit(session, "Hello ")
         await process_streaming_edit(session, "World")
@@ -107,7 +107,7 @@ class TestStreamingEdit:
 
 
 class TestStreamingFinalize:
-    """Tests fuer finalize_streaming()."""
+    """Tests für finalize_streaming()."""
 
     @pytest.mark.asyncio
     async def test_finalize_sets_final_text(self) -> None:
@@ -124,7 +124,7 @@ class TestStreamingFinalize:
 
     @pytest.mark.asyncio
     async def test_finalize_returns_full_text_even_when_split(self) -> None:
-        """finalize_streaming gibt immer den VOLLEN Text zurueck, auch bei Split."""
+        """finalize_streaming gibt immer den VOLLEN Text zurück, auch bei Split."""
         session = _make_session(started_offset=5.0)
         long_text = "Dies ist ein Absatz.\n\n" * 300  # >4096 Zeichen
 
@@ -161,7 +161,7 @@ class TestStreamingFinalize:
         first_html = session.message.edit_text.call_args[0][0]
         assert "(1/" in first_html
 
-        # Folge-Nachrichten muessen Part-Marker haben
+        # Folge-Nachrichten müssen Part-Marker haben
         for call in session.message.chat.send_message.call_args_list:
             call_text = call[0][0]
             assert "(" in call_text  # Part-Marker vorhanden
@@ -185,7 +185,7 @@ class TestStreamingFinalize:
 
 
 class TestStreamingAbort:
-    """Tests fuer abort_streaming()."""
+    """Tests für abort_streaming()."""
 
     @pytest.mark.asyncio
     async def test_abort_shows_error(self) -> None:
@@ -197,7 +197,7 @@ class TestStreamingAbort:
 
 
 class TestStreamingTelegramErrors:
-    """Tests fuer Telegram-API-Fehlerbehandlung."""
+    """Tests für Telegram-API-Fehlerbehandlung."""
 
     @pytest.mark.asyncio
     async def test_message_not_modified_silenced(self) -> None:
@@ -221,7 +221,7 @@ class TestStreamingTelegramErrors:
 
 
 class TestStreamingMarkdownConversion:
-    """Tests fuer die Markdown-zu-HTML-Konvertierung im Streaming-Pfad.
+    """Tests für die Markdown-zu-HTML-Konvertierung im Streaming-Pfad.
 
     Zwischen-Edits nutzen jetzt Option A (smart-trim mit HTML-Rendering).
     Die finale Edit konvertiert Markdown zu Telegram-HTML.
@@ -243,9 +243,9 @@ class TestStreamingMarkdownConversion:
 
     @pytest.mark.asyncio
     async def test_intermediate_edit_trims_incomplete_bold(self) -> None:
-        """Zwischen-Edit schneidet unvollstaendige ** am Ende ab."""
+        """Zwischen-Edit schneidet unvollständige ** am Ende ab."""
         session = _make_session(started_offset=2.0)
-        # Unvollstaendiger Bold-Marker am Ende
+        # Unvollständiger Bold-Marker am Ende
         await process_streaming_edit(session, "Fertiger Text. **angefan")
 
         session.message.edit_text.assert_called_once()
@@ -302,7 +302,7 @@ class TestStreamingMarkdownConversion:
 
     @pytest.mark.asyncio
     async def test_finalize_html_fallback_on_parse_error(self) -> None:
-        """Bei HTML-Parse-Fehler faellt finalize auf Plain-Text zurueck."""
+        """Bei HTML-Parse-Fehler fällt finalize auf Plain-Text zurück."""
         session = _make_session(started_offset=5.0)
 
         # Erster Aufruf (HTML) schlaegt fehl, zweiter (Plain-Text) gelingt
@@ -327,14 +327,14 @@ class TestStreamingMarkdownConversion:
 
     @pytest.mark.asyncio
     async def test_streaming_then_finalize_flow(self) -> None:
-        """Vollstaendiger Flow: Zwischen-Edits HTML (smart-trim), finale Edit HTML."""
+        """Vollständiger Flow: Zwischen-Edits HTML (smart-trim), finale Edit HTML."""
         session = _make_session(started_offset=3.0)
         session.is_first_edit = False
-        session.last_edit_time = 0  # Laengst faellig
+        session.last_edit_time = 0  # Längst fällig
 
         # Zwischen-Edit (jetzt HTML mit smart-trim)
         await process_streaming_edit(session, "**Das Grundprinzip")
-        # Bei unvollstaendigem **: HTML ohne den unfertigen Teil
+        # Bei unvollständigem **: HTML ohne den unfertigen Teil
         assert session.message.edit_text.call_count >= 1
 
         # Finale Edit (HTML, vollstaendig)
@@ -345,7 +345,7 @@ class TestStreamingMarkdownConversion:
 
 
 class TestSplitTextForTelegram:
-    """Tests fuer split_text_for_telegram()."""
+    """Tests für split_text_for_telegram()."""
 
     def test_short_text_single_part(self) -> None:
         """Kurzer Text bleibt ein Teil."""
@@ -371,7 +371,7 @@ class TestSplitTextForTelegram:
 
     def test_split_respects_bold_markers(self) -> None:
         """Split schneidet nicht mitten in **bold**."""
-        # Text mit Bold-Marker der ueber die Grenze geht
+        # Text mit Bold-Marker der über die Grenze geht
         text = "A" * 4000 + "**wichtiger fetter Text**" + "B" * 100
         result = split_text_for_telegram(text, max_length=4096)
         # Keiner der Teile sollte ein offenes ** haben
@@ -400,10 +400,10 @@ class TestSplitTextForTelegram:
 
 
 class TestFindSafeMarkdownEnd:
-    """Tests fuer find_safe_markdown_end()."""
+    """Tests für find_safe_markdown_end()."""
 
     def test_complete_markdown_returns_full_length(self) -> None:
-        """Vollstaendiger Markdown gibt volle Laenge."""
+        """Vollständiger Markdown gibt volle Länge."""
         text = "**fett** und *kursiv* und `code`"
         assert find_safe_markdown_end(text) == len(text)
 
@@ -434,7 +434,7 @@ class TestFindSafeMarkdownEnd:
 
 
 class TestIsSafeMarkdownPosition:
-    """Tests fuer _is_safe_markdown_position()."""
+    """Tests für _is_safe_markdown_position()."""
 
     def test_safe_after_closed_bold(self) -> None:
         text = "**fett** normal"
@@ -462,21 +462,21 @@ class TestIsSafeMarkdownPosition:
 
 
 class TestTruncateMarkdownForHtmlLimit:
-    """Tests fuer _truncate_markdown_for_html_limit().
+    """Tests für _truncate_markdown_for_html_limit().
 
     Bug-Reproduktion: Bei langen Antworten (>4096 HTML-Zeichen) wurde
-    der HTML-Text hart abgeschnitten, was HTML-Tags zerstoerte und
+    der HTML-Text hart abgeschnitten, was HTML-Tags zerstörte und
     Telegram 400 Bad Request lieferte.
     """
 
     def test_short_text_unchanged(self) -> None:
-        """Kurzer Text wird nicht veraendert."""
+        """Kurzer Text wird nicht verändert."""
         text = "**Kurzer** Text"
         result = _truncate_markdown_for_html_limit(text)
         assert result == text
 
     def test_long_text_produces_valid_html(self) -> None:
-        """Langer Text wird so gekuerzt dass HTML valide bleibt."""
+        """Langer Text wird so gekürzt dass HTML valide bleibt."""
         from domain.markdown import markdown_to_telegram_html
 
         # Erzeuge Text der >4096 HTML-Zeichen ergibt
@@ -489,7 +489,7 @@ class TestTruncateMarkdownForHtmlLimit:
 
         # HTML muss unter dem Limit sein
         assert len(truncated_html) <= 4096
-        # HTML darf keine kaputten Tags haben (alle <b> muessen geschlossen sein)
+        # HTML darf keine kaputten Tags haben (alle <b> müssen geschlossen sein)
         assert truncated_html.count("<b>") == truncated_html.count("</b>")
         assert truncated_html.count("<i>") == truncated_html.count("</i>")
         assert truncated_html.count("<code>") == truncated_html.count("</code>")
@@ -512,7 +512,7 @@ class TestTruncateMarkdownForHtmlLimit:
         assert truncated_html.count("<b>") == truncated_html.count("</b>")
 
     def test_code_blocks_not_broken(self) -> None:
-        """Code-Bloecke werden nicht mitten drin abgeschnitten."""
+        """Code-Blöcke werden nicht mitten drin abgeschnitten."""
         from domain.markdown import markdown_to_telegram_html
 
         text = "Intro.\n\n```python\n" + "x = 1\n" * 800 + "```\n\nOutro."
@@ -528,11 +528,11 @@ class TestTruncateMarkdownForHtmlLimit:
 
 
 class TestStreamingDuplicateEditsSkipped:
-    """Tests fuer Duplikat-Erkennung bei Zwischen-Edits.
+    """Tests für Duplikat-Erkennung bei Zwischen-Edits.
 
     Bug-Reproduktion: Wenn smart-trim bei zwei aufeinanderfolgenden
     Edits denselben Text liefert (weil neue Tokens noch nicht safe sind),
-    wurde identischer Text an Telegram geschickt -> unnoetige 400er.
+    wurde identischer Text an Telegram geschickt -> unnötige 400er.
     """
 
     @pytest.mark.asyncio
@@ -545,17 +545,17 @@ class TestStreamingDuplicateEditsSkipped:
 
         session = _make_session(started_offset=3.0)
         session.is_first_edit = False
-        session.last_edit_time = 0  # Faellig
+        session.last_edit_time = 0  # Fällig
         session.accumulated_text = "Hello World"
 
         # Pre-seed: so tun als ob die letzte Edit genau diesen HTML-Text hatte
         expected_html = markdown_to_telegram_html("Hello World")
         session._last_edit_html = expected_html
 
-        # Versuch eine Edit zu senden (Text unveraendert)
+        # Versuch eine Edit zu senden (Text unverändert)
         await process_streaming_edit(session, "")
 
-        # Kein API-Call weil der Text sich nicht geaendert hat
+        # Kein API-Call weil der Text sich nicht geändert hat
         session.message.edit_text.assert_not_called()
 
     @pytest.mark.asyncio
@@ -576,8 +576,8 @@ class TestStreamingDuplicateEditsSkipped:
 class TestStreamingLongTextNoHTMLCorruption:
     """Integration-Test: langer Stream erzeugt keine kaputten HTML-Edits.
 
-    Bug-Reproduktion fuer den konkreten Fehler:
-    Antwort mit 7148 Zeichen, 144 Chunks. Nach ca. 40s ueberschreitet
+    Bug-Reproduktion für den konkreten Fehler:
+    Antwort mit 7148 Zeichen, 144 Chunks. Nach ca. 40s überschreitet
     der akkumulierte HTML-Text 4096 Zeichen. Alte Logik schnitt HTML
     hart ab -> 400 Bad Request von Telegram.
     """
@@ -591,15 +591,15 @@ class TestStreamingLongTextNoHTMLCorruption:
         # Simuliere 50 Streaming-Chunks die zusammen >4096 HTML-Zeichen ergeben
         chunk = "**Punkt:** Ein Satz mit Erklärung. "  # ~35 Zeichen pro Chunk
         for i in range(50):
-            session.last_edit_time = 0  # Jede Edit ist faellig
+            session.last_edit_time = 0  # Jede Edit ist fällig
             await process_streaming_edit(session, chunk)
 
-        # Pruefe alle edit_text Aufrufe: keiner darf kaputtes HTML haben
+        # Prüfe alle edit_text Aufrufe: keiner darf kaputtes HTML haben
         for call in session.message.edit_text.call_args_list:
             html_sent = call[0][0]
             call_kwargs = call[1]
             if call_kwargs.get("parse_mode") == "HTML":
-                # Valides HTML: gleiche Anzahl oeffnende/schliessende Tags
+                # Valides HTML: gleiche Anzahl öffnende/schließende Tags
                 assert html_sent.count("<b>") == html_sent.count("</b>"), (
                     f"Kaputtes HTML (offener <b>): {html_sent[-100:]}"
                 )
@@ -608,7 +608,7 @@ class TestStreamingLongTextNoHTMLCorruption:
                 assert html_sent.count("<pre>") == html_sent.count("</pre>")
                 # Laenge unter Telegram-Limit
                 assert len(html_sent) <= 4096, (
-                    f"HTML ueber Limit: {len(html_sent)} Zeichen"
+                    f"HTML über Limit: {len(html_sent)} Zeichen"
                 )
 
 
@@ -626,7 +626,7 @@ class _FakeRetryAfter(Exception):
 
 
 class TestIsRetryAfter:
-    """Tests fuer _is_retry_after() Erkennung."""
+    """Tests für _is_retry_after() Erkennung."""
 
     def test_detects_retry_after_attribute(self) -> None:
         """Erkennt Exception mit retry_after Attribut."""
@@ -645,23 +645,23 @@ class TestIsRetryAfter:
         assert _is_retry_after(exc) == 30
 
     def test_returns_none_for_unrelated_error(self) -> None:
-        """Gibt None fuer nicht-429-Fehler zurueck."""
+        """Gibt None für nicht-429-Fehler zurück."""
         exc = Exception("Network timeout")
         assert _is_retry_after(exc) is None
 
     def test_returns_none_for_bad_request(self) -> None:
-        """Gibt None fuer Bad Request (kein 429)."""
+        """Gibt None für Bad Request (kein 429)."""
         exc = Exception("Bad Request: can't parse entities")
         assert _is_retry_after(exc) is None
 
     def test_returns_none_for_not_modified(self) -> None:
-        """Gibt None fuer 'message is not modified'."""
+        """Gibt None für 'message is not modified'."""
         exc = Exception("Bad Request: message is not modified")
         assert _is_retry_after(exc) is None
 
 
 class TestApplyFloodBackoff:
-    """Tests fuer _apply_flood_backoff()."""
+    """Tests für _apply_flood_backoff()."""
 
     def test_sets_pause_until(self) -> None:
         """Setzt _paused_until auf now + retry_after."""
@@ -699,7 +699,7 @@ class TestApplyFloodBackoff:
 
 
 class TestRecordEditSuccess:
-    """Tests fuer _record_edit_success() Throttle-Recovery."""
+    """Tests für _record_edit_success() Throttle-Recovery."""
 
     def test_increments_counter(self) -> None:
         """Zaehlt erfolgreiche Edits."""
@@ -710,7 +710,7 @@ class TestRecordEditSuccess:
     def test_recovery_after_threshold(self) -> None:
         """Throttle reduziert sich nach THROTTLE_RECOVERY_AFTER Erfolgen."""
         session = _make_session(started_offset=5.0)
-        session._current_throttle = 6.0  # Erhoeht durch vorherige 429
+        session._current_throttle = 6.0  # Erhöht durch vorherige 429
 
         for _ in range(THROTTLE_RECOVERY_AFTER):
             _record_edit_success(session)
@@ -718,7 +718,7 @@ class TestRecordEditSuccess:
         # Throttle sollte reduziert sein
         assert session._current_throttle < 6.0
         assert session._current_throttle == max(6.0 * 0.7, DEFAULT_THROTTLE)
-        # Counter zurueckgesetzt
+        # Counter zurückgesetzt
         assert session._consecutive_success == 0
 
     def test_throttle_never_below_default(self) -> None:
@@ -733,7 +733,7 @@ class TestRecordEditSuccess:
 
 
 class TestFloodControlIntermediateEdits:
-    """Tests fuer Flood-Control bei Zwischen-Edits."""
+    """Tests für Flood-Control bei Zwischen-Edits."""
 
     @pytest.mark.asyncio
     async def test_429_triggers_pause(self) -> None:
@@ -748,17 +748,17 @@ class TestFloodControlIntermediateEdits:
 
         # Session sollte pausiert sein
         assert session._paused_until > time.monotonic()
-        # Throttle sollte erhoeht sein
+        # Throttle sollte erhöht sein
         assert session._current_throttle > DEFAULT_THROTTLE
 
     @pytest.mark.asyncio
     async def test_edits_skipped_during_pause(self) -> None:
-        """Waehrend Pause werden Zwischen-Edits uebersprungen."""
+        """Während Pause werden Zwischen-Edits übersprungen."""
         session = _make_session(started_offset=3.0)
         session.is_first_edit = False
         session.last_edit_time = 0
 
-        # Pause fuer 60 Sekunden setzen
+        # Pause für 60 Sekunden setzen
         session._paused_until = time.monotonic() + 60
 
         await process_streaming_edit(session, "Skipped text")
@@ -802,7 +802,7 @@ class TestFloodControlIntermediateEdits:
         """Throttle erholt sich nach erfolgreichen Edits."""
         session = _make_session(started_offset=3.0)
         session.is_first_edit = False
-        session._current_throttle = 6.0  # Erhoeht
+        session._current_throttle = 6.0  # Erhöht
 
         for i in range(THROTTLE_RECOVERY_AFTER):
             session.last_edit_time = 0
@@ -817,7 +817,7 @@ class TestFloodControlIntermediateEdits:
         """Rate-Limiting nutzt _current_throttle statt fixen Wert."""
         session = _make_session(started_offset=3.0)
         session.is_first_edit = False
-        session._current_throttle = 5.0  # Erhoeht
+        session._current_throttle = 5.0  # Erhöht
         # Letzte Edit war vor 2 Sekunden (unter 5.0s Throttle)
         session.last_edit_time = time.monotonic() - 2.0
 
@@ -828,7 +828,7 @@ class TestFloodControlIntermediateEdits:
 
 
 class TestFloodControlFinalEdit:
-    """Tests fuer Flood-Control bei Final-Edits."""
+    """Tests für Flood-Control bei Final-Edits."""
 
     @pytest.mark.asyncio
     async def test_final_edit_retries_on_429(self) -> None:
@@ -838,7 +838,7 @@ class TestFloodControlFinalEdit:
         # Erster Versuch: 429, zweiter Versuch: Erfolg
         session.message.edit_text = AsyncMock(
             side_effect=[
-                _FakeRetryAfter(1),  # Kurze Wartezeit fuer Test
+                _FakeRetryAfter(1),  # Kurze Wartezeit für Test
                 None,  # Erfolg
             ]
         )
@@ -853,7 +853,7 @@ class TestFloodControlFinalEdit:
 
     @pytest.mark.asyncio
     async def test_final_edit_fallback_send_message_after_max_retries(self) -> None:
-        """Final-Edit faellt auf send_message zurueck nach max Retries."""
+        """Final-Edit fällt auf send_message zurück nach max Retries."""
         session = _make_session(started_offset=5.0)
 
         # Alle Versuche schlagen mit 429 fehl
@@ -871,7 +871,7 @@ class TestFloodControlFinalEdit:
 
     @pytest.mark.asyncio
     async def test_final_edit_does_not_skip(self) -> None:
-        """Final-Edit wird NICHT uebersprungen obwohl Session pausiert ist."""
+        """Final-Edit wird NICHT übersprungen obwohl Session pausiert ist."""
         session = _make_session(started_offset=5.0)
         session._paused_until = time.monotonic() + 60  # Aktive Pause
 
@@ -883,7 +883,7 @@ class TestFloodControlFinalEdit:
 
 
 class TestFloodControlMultiMessage:
-    """Tests fuer Flood-Control bei Multi-Message-Split."""
+    """Tests für Flood-Control bei Multi-Message-Split."""
 
     @pytest.mark.asyncio
     async def test_multi_message_follow_up_retries_on_429(self) -> None:
@@ -914,7 +914,7 @@ class TestFloodControlMultiMessage:
 
 
 class TestFloodControlStressSimulation:
-    """Stress-Simulation: Mock-Telegram der nach N Edits 429 zurueckgibt."""
+    """Stress-Simulation: Mock-Telegram der nach N Edits 429 zurückgibt."""
 
     @pytest.mark.asyncio
     async def test_stress_429_after_5_edits(self) -> None:
@@ -923,7 +923,7 @@ class TestFloodControlStressSimulation:
         Erwartung:
         - Edits 1-5 gehen durch
         - Edit 6 bekommt 429 -> Session pausiert
-        - Folge-Edits waehrend Pause werden uebersprungen
+        - Folge-Edits während Pause werden übersprungen
         - Final-Edit wird trotzdem zugestellt
         """
         session = _make_session(started_offset=3.0)
@@ -944,16 +944,16 @@ class TestFloodControlStressSimulation:
 
         # Simuliere 10 schnelle Zwischen-Edits
         for i in range(10):
-            session.last_edit_time = 0  # Jede Edit ist faellig
+            session.last_edit_time = 0  # Jede Edit ist fällig
             await process_streaming_edit(session, f"Chunk {i} ")
 
         # 5 erfolgreiche + 1 fehlgeschlagene Edits
-        # Danach sollten Edits uebersprungen werden (Pause aktiv)
+        # Danach sollten Edits übersprungen werden (Pause aktiv)
         assert successful_edits == 5  # Nur 5 gingen durch
         assert session._paused_until > time.monotonic()
 
         # Final-Edit muss trotzdem ankommen
-        edit_attempts = 0  # Reset fuer finalize (neuer Mock-Zaehler)
+        edit_attempts = 0  # Reset für finalize (neuer Mock-Zähler)
         successful_edits = 0
         session.message.edit_text = AsyncMock()  # Gelingt jetzt
 

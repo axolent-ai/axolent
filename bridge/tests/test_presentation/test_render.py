@@ -22,7 +22,7 @@ class TestSplitMessage:
     """split_message Chunking-Tests."""
 
     def test_split_then_convert_chunks_correctly(self) -> None:
-        """Kurze Nachrichten werden als einzelner Chunk zurueckgegeben."""
+        """Kurze Nachrichten werden als einzelner Chunk zurückgegeben."""
         result = split_message("Hallo Welt")
         assert result == ["Hallo Welt"]
 
@@ -40,7 +40,7 @@ class TestSplitMessage:
         assert len(chunks) == 1
 
     def test_split_one_over_limit(self) -> None:
-        """Text ein Zeichen ueber dem Limit wird in 2 Chunks geteilt."""
+        """Text ein Zeichen über dem Limit wird in 2 Chunks geteilt."""
         text = "C" * (TELEGRAM_CHUNK_SIZE + 1)
         chunks = split_message(text)
         assert len(chunks) == 2
@@ -66,25 +66,25 @@ class TestResponseCache:
         assert result == "Cached text"
 
     def test_cache_miss_returns_none(self) -> None:
-        """Nicht-gecachter Key gibt None zurueck."""
+        """Nicht-gecachter Key gibt None zurück."""
         result = get_cached_response(99, 99)
         assert result is None
 
     def test_cache_evicts_oldest(self) -> None:
-        """Cache evicted aelteste Eintraege bei Ueberschreitung von _CACHE_MAX."""
-        # _CACHE_MAX Eintraege einfuegen
+        """Cache evicted älteste Einträge bei Überschreitung von _CACHE_MAX."""
+        # _CACHE_MAX Einträge einfügen
         for i in range(_CACHE_MAX + 10):
             cache_response(1, i, f"Response {i}")
 
-        # Die aeltesten (0-9) sollten evicted sein
+        # Die ältesten (0-9) sollten evicted sein
         assert get_cached_response(1, 0) is None
         # Die neuesten sollten noch da sein
         assert get_cached_response(1, _CACHE_MAX + 9) is not None
 
     def test_html_fallback_on_invalid_tags(self) -> None:
-        """Wenn HTML-Send fehlschlaegt, wird Plain-Text-Fallback genutzt.
+        """Wenn HTML-Send fehlschlägt, wird Plain-Text-Fallback genutzt.
 
-        Dieser Test prueft die Fallback-Logik in send_response indirekt
+        Dieser Test prüft die Fallback-Logik in send_response indirekt
         via den split+convert Mechanismus.
         """
         from domain.markdown import markdown_to_telegram_html, strip_markdown
@@ -94,7 +94,7 @@ class TestResponseCache:
         html_result = markdown_to_telegram_html(md)
         plain_result = strip_markdown(md)
 
-        # HTML enthaelt Tags
+        # HTML enthält Tags
         assert "<b>" in html_result
         # Plain hat keine Tags
         assert "<b>" not in plain_result

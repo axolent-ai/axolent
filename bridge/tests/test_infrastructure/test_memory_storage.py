@@ -70,7 +70,7 @@ class TestMemoryStorageList:
     """Tests für list_entries."""
 
     def test_list_empty(self, storage: MemoryStorage) -> None:
-        """Leerer Storage gibt leere Liste zurueck."""
+        """Leerer Storage gibt leere Liste zurück."""
         result = storage.list_entries(user_id=1, layer="episodic")
         assert result == []
 
@@ -234,7 +234,7 @@ class TestMemoryStorageDelete:
     """Tests für delete_by_id."""
 
     def test_delete_existing(self, storage: MemoryStorage) -> None:
-        """delete_by_id entfernt den Entry und gibt True zurueck."""
+        """delete_by_id entfernt den Entry und gibt True zurück."""
         storage.append({"id": "ep_keep", "user_id": 1, "content": "Keep"}, "episodic")
         storage.append(
             {"id": "ep_delete", "user_id": 1, "content": "Delete me"}, "episodic"
@@ -243,18 +243,18 @@ class TestMemoryStorageDelete:
         result = storage.delete_by_id("ep_delete", "episodic", user_id=1)
         assert result is True
 
-        # Nur noch ein Entry uebrig
+        # Nur noch ein Entry übrig
         entries = storage.list_entries(user_id=1, layer="episodic")
         assert len(entries) == 1
         assert entries[0]["id"] == "ep_keep"
 
     def test_delete_nonexistent(self, storage: MemoryStorage) -> None:
-        """delete_by_id gibt False zurueck wenn Entry nicht existiert."""
+        """delete_by_id gibt False zurück wenn Entry nicht existiert."""
         result = storage.delete_by_id("ep_ghost", "episodic", user_id=1)
         assert result is False
 
     def test_delete_wrong_user(self, storage: MemoryStorage) -> None:
-        """delete_by_id verweigert Loeschung wenn user_id nicht passt."""
+        """delete_by_id verweigert Löschung wenn user_id nicht passt."""
         storage.append(
             {"id": "ep_owned", "user_id": 1, "content": "Owned by 1"}, "episodic"
         )
@@ -281,7 +281,7 @@ class TestMemoryStorageGetById:
         assert result["content"] == "Findbar"
 
     def test_get_nonexistent(self, storage: MemoryStorage) -> None:
-        """get_by_id gibt None zurueck wenn nicht gefunden."""
+        """get_by_id gibt None zurück wenn nicht gefunden."""
         result = storage.get_by_id("ep_nope", "episodic", user_id=1)
         assert result is None
 
@@ -313,7 +313,7 @@ class TestMemoryStorageConcurrency:
         for t in threads:
             t.join()
 
-        # Alle Zeilen muessen valides JSON sein
+        # Alle Zeilen müssen valides JSON sein
         lines = storage.episodic_path.read_text(encoding="utf-8").strip().split("\n")
         assert len(lines) == num_threads * entries_per_thread
 

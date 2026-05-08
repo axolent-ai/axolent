@@ -58,7 +58,7 @@ class TestBookmarkStorage:
         assert result["user_id"] == 1
 
     def test_list_recent_bookmarks(self) -> None:
-        """list_recent gibt die neuesten Bookmarks zurueck (neueste zuerst)."""
+        """list_recent gibt die neuesten Bookmarks zurück (neueste zuerst)."""
         from infrastructure.bookmark_storage import list_recent_bookmarks, save_bookmark
 
         for i in range(5):
@@ -89,7 +89,7 @@ class TestBookmarkStorage:
         assert len(results) == 2  # Case-insensitive: "Python" und "python" matchen
 
     def test_delete_bookmark(self) -> None:
-        """Geloeschter Bookmark ist nicht mehr auffindbar."""
+        """Gelöschter Bookmark ist nicht mehr auffindbar."""
         from infrastructure.bookmark_storage import (
             bookmark_exists,
             delete_bookmark,
@@ -106,14 +106,14 @@ class TestBookmarkStorage:
         assert not bookmark_exists(user_id=1, chat_id=10, message_id=50)
 
     def test_delete_nonexistent_returns_false(self) -> None:
-        """Loeschen eines nicht-existierenden Bookmarks gibt False zurueck."""
+        """Löschen eines nicht-existierenden Bookmarks gibt False zurück."""
         from infrastructure.bookmark_storage import delete_bookmark
 
         result = delete_bookmark(user_id=1, chat_id=10, message_id=9999)
         assert result is False
 
     def test_bookmark_exists_true_false(self) -> None:
-        """bookmark_exists gibt True/False korrekt zurueck."""
+        """bookmark_exists gibt True/False korrekt zurück."""
         from infrastructure.bookmark_storage import bookmark_exists, save_bookmark
 
         assert not bookmark_exists(user_id=1, chat_id=10, message_id=77)
@@ -144,7 +144,7 @@ class TestBookmarkStorage:
         assert "Chat A" in contents or "Chat B" in contents
 
     def test_filelock_protects_concurrent_writes(self) -> None:
-        """Mehrere Threads koennen gleichzeitig schreiben ohne Datenverlust."""
+        """Mehrere Threads können gleichzeitig schreiben ohne Datenverlust."""
         from infrastructure.bookmark_storage import list_recent_bookmarks, save_bookmark
 
         num_threads = 10
@@ -222,13 +222,13 @@ class TestMigrateLegacyChatId:
             p.stop()
 
     def test_migration_handles_corrupt_lines(self) -> None:
-        """Korrupte JSONL-Zeilen crashen die Migration nicht, werden uebersprungen."""
+        """Korrupte JSONL-Zeilen crashen die Migration nicht, werden übersprungen."""
         from infrastructure.bookmark_storage import (
             list_recent_bookmarks,
             migrate_legacy_chat_id,
         )
 
-        # Schreibe Mix aus gueltigen und korrupten Zeilen
+        # Schreibe Mix aus gültigen und korrupten Zeilen
         import json
 
         lines = [
@@ -244,15 +244,15 @@ class TestMigrateLegacyChatId:
 
         migrated = migrate_legacy_chat_id()
 
-        # Nur die gueltige Zeile ohne chat_id wird migriert
+        # Nur die gültige Zeile ohne chat_id wird migriert
         assert migrated == 1
 
-        # Korrupte Zeilen sind raus, gueltige bleiben
+        # Korrupte Zeilen sind raus, gültige bleiben
         all_bm = list_recent_bookmarks(user_id=1, limit=10)
         assert len(all_bm) == 2
 
     def test_migration_nonexistent_file(self) -> None:
-        """Bei nicht existierender Datei wird 0 zurueckgegeben."""
+        """Bei nicht existierender Datei wird 0 zurückgegeben."""
         from infrastructure.bookmark_storage import migrate_legacy_chat_id
 
         assert migrate_legacy_chat_id() == 0

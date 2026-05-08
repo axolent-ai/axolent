@@ -387,6 +387,8 @@ class ChatService:
                 prompt=context_prompt,
                 system_prompt=effective_prompt,
                 provider_name=provider_name,
+                user_id=uid,
+                chat_id=cid,
             )
 
             audit.update(

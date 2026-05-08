@@ -20,7 +20,7 @@ class TestEpisodicEntry:
         assert entry.timestamp != ""
 
     def test_creation_with_values(self) -> None:
-        """Entry mit expliziten Werten uebernimmt alle Felder."""
+        """Entry mit expliziten Werten übernimmt alle Felder."""
         entry = EpisodicEntry(
             user_id=12345,
             content="User hat nach RAG gefragt",

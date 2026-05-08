@@ -373,14 +373,14 @@ class TestSpawnProcessFlags:
                 await pool.get_or_create(user_id=1, chat_id=900)
 
         assert "--include-partial-messages" in captured_cmd, (
-            "CLI-Flags muessen --include-partial-messages enthalten, "
+            "CLI-Flags müssen --include-partial-messages enthalten, "
             "sonst liefert die CLI keine stream_event/content_block_delta Events"
         )
         await pool.shutdown()
 
     @pytest.mark.asyncio
     async def test_stream_json_flags_present(self) -> None:
-        """--output-format stream-json und --input-format stream-json muessen gesetzt sein."""
+        """--output-format stream-json und --input-format stream-json müssen gesetzt sein."""
         pool = ClaudeProcessPool()
         mock_proc = _make_mock_process()
         captured_cmd: list[str] = []
@@ -629,3 +629,73 @@ class TestReadResponseParsing:
         assert events[0].event_type == "error"
         assert "Rate limit" in events[0].text
         assert events[0].is_final is True
+
+
+class TestSendMessageWaitsForReady:
+    """Tests für Task 5: send_message() wartet immer auf is_ready."""
+
+    @pytest.mark.asyncio
+    async def test_send_message_waits_even_when_not_cold(self) -> None:
+        """send_message wartet auf is_ready auch wenn was_cold=False ist.
+
+        Reproduziert den Pre-Warm-Bug: get_or_create wird vorab aufgerufen,
+        dann liefert der zweite Aufruf was_cold=False obwohl is_ready=False.
+        """
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process()
+        # stdout liefert Init-Events und dann Result
+        init_line = json.dumps({"type": "system", "version": "1.0"}) + "\n"
+        result_line = json.dumps({"type": "result", "result": "OK"}) + "\n"
+        mock_proc.stdout.readline = AsyncMock(
+            side_effect=[
+                init_line.encode("utf-8"),
+                result_line.encode("utf-8"),
+                b"",
+            ]
+        )
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ):
+                # Pre-Warm: erster Aufruf setzt was_cold=True
+                managed, was_cold_1 = await pool.get_or_create(user_id=1, chat_id=500)
+                assert was_cold_1 is True
+                # Simuliere: is_ready ist noch False (Init nicht abgeschlossen)
+                managed.is_ready = False
+
+                # Zweiter Aufruf: was_cold=False, aber is_ready noch False
+                managed2, was_cold_2 = await pool.get_or_create(user_id=1, chat_id=500)
+                assert was_cold_2 is False
+                assert managed2.is_ready is False
+
+        # send_message muss trotzdem auf is_ready warten (nicht nur bei was_cold)
+        # _wait_for_init setzt is_ready=True nach Init-Events
+        # Wir patchen _wait_for_init um zu verifizieren dass es aufgerufen wird
+        wait_called = False
+
+        async def track_wait(m: ManagedProcess) -> None:
+            nonlocal wait_called
+            wait_called = True
+            m.is_ready = True  # Simuliere erfolgreiche Init
+
+        pool._wait_for_init = track_wait  # type: ignore[assignment]
+
+        # Mock stdout für die eigentliche Message-Response
+        result_line_2 = json.dumps({"type": "result", "result": "Response"}) + "\n"
+        mock_proc.stdout.readline = AsyncMock(
+            side_effect=[
+                result_line_2.encode("utf-8"),
+                b"",
+            ]
+        )
+
+        async for _event in pool.send_message(user_id=1, chat_id=500, prompt="Test"):
+            pass
+
+        assert wait_called is True, (
+            "send_message muss _wait_for_init aufrufen wenn is_ready=False, "
+            "auch wenn was_cold=False"
+        )
+        await pool.shutdown()

@@ -1,7 +1,7 @@
 """Tests für ClaudeProvider.
 
 Verifiziert:
-    - is_available() prueft ob claude im PATH ist
+    - is_available() prüft ob claude im PATH ist
     - query() ruft Subprozess korrekt auf (gemockt)
     - Timeout-Handling funktioniert
     - Fehler-Handling bei non-zero exit code

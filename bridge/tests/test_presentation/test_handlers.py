@@ -202,7 +202,7 @@ class TestHandleResetCommand:
             yield  # type: ignore[misc]
 
     async def test_reset_command_clears_history(self) -> None:
-        """/reset loescht History und Language, speichert dann die Reset-Bestaetigung."""
+        """/reset löscht History und Language, speichert dann die Reset-Bestätigung."""
         from domain.conversation import ConversationTurn
         from infrastructure.conversation_storage import (
             get_history,
@@ -221,13 +221,13 @@ class TestHandleResetCommand:
 
         await handle_reset_command(update, context)
 
-        # Alte History geloescht, aber Reset-Bestaetigung gespeichert
+        # Alte History gelöscht, aber Reset-Bestätigung gespeichert
         history = await get_history(1, 10)
         lang = await get_language(1, 10)
         assert len(history) == 1
         assert history[0].role == "assistant"
         assert (
-            "zurueckgesetzt" in history[0].content.lower()
+            "zurückgesetzt" in history[0].content.lower()
             or "frisch" in history[0].content.lower()
         )
         assert lang is None
@@ -235,7 +235,7 @@ class TestHandleResetCommand:
         # Bestaetigung gesendet
         update.message.reply_text.assert_called_once()
         reply_text = update.message.reply_text.call_args[0][0]
-        assert "zurueckgesetzt" in reply_text.lower() or "frisch" in reply_text.lower()
+        assert "zurückgesetzt" in reply_text.lower() or "frisch" in reply_text.lower()
 
 
 class TestStartCommandHistory:

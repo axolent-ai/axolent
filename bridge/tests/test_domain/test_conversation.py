@@ -44,7 +44,7 @@ class TestBuildContextBlock:
     """build_context_block Formatierungs-Tests."""
 
     def test_empty_history_returns_current_message(self) -> None:
-        """Ohne History wird nur die aktuelle Nachricht zurueckgegeben."""
+        """Ohne History wird nur die aktuelle Nachricht zurückgegeben."""
         result = build_context_block([], "Meine Frage")
         assert result == "Meine Frage"
 

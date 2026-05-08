@@ -2,7 +2,7 @@
 
 Verifiziert:
     - LLMProvider kann nicht direkt instanziiert werden
-    - Konkrete Subklassen muessen query(), is_available() und get_capabilities() implementieren
+    - Konkrete Subklassen müssen query(), is_available() und get_capabilities() implementieren
     - ProviderResponse hat korrektes success-Property
     - ProviderCapabilities ist frozen
     - Error-Hierarchie: ProviderError, ProviderTimeout, ProviderUnavailable, ProviderNotImplemented

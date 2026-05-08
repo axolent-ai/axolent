@@ -1,7 +1,7 @@
 """Tests für infrastructure.audit_log: JSONL Audit-Log mit Rotation.
 
-Testet dass Audit-Eintraege korrekt geschrieben werden
-und die Rotation bei Ueberschreiten der Max-Groesse greift.
+Testet dass Audit-Einträge korrekt geschrieben werden
+und die Rotation bei Überschreiten der Max-Größe greift.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ class TestAuditLog:
         test_logger.removeHandler(handler)
 
     def test_audit_log_writes_jsonl(self, isolated_audit) -> None:
-        """Audit-Eintraege werden als gueltige JSONL-Zeilen geschrieben."""
+        """Audit-Einträge werden als gültige JSONL-Zeilen geschrieben."""
         audit_path, logger = isolated_audit
 
         entry = {
@@ -58,7 +58,7 @@ class TestAuditLog:
         assert parsed["action"] == "message"
 
     def test_audit_log_multiple_entries(self, isolated_audit) -> None:
-        """Mehrere Eintraege werden als separate JSONL-Zeilen geschrieben."""
+        """Mehrere Einträge werden als separate JSONL-Zeilen geschrieben."""
         audit_path, logger = isolated_audit
 
         for i in range(5):
@@ -70,7 +70,7 @@ class TestAuditLog:
             assert json.loads(line)["seq"] == i
 
     def test_audit_log_rotation_at_max_bytes(self, tmp_path: Path) -> None:
-        """Bei Ueberschreiten von maxBytes wird rotiert (simuliert mit kleinem maxBytes)."""
+        """Bei Überschreiten von maxBytes wird rotiert (simuliert mit kleinem maxBytes)."""
         audit_path = tmp_path / "small_audit.jsonl"
 
         # Sehr kleiner maxBytes: 200 Bytes pro Datei
@@ -87,7 +87,7 @@ class TestAuditLog:
         test_logger.propagate = False
 
         try:
-            # Genug Eintraege schreiben um Rotation auszuloesen
+            # Genug Einträge schreiben um Rotation auszulösen
             for i in range(50):
                 entry = {"seq": i, "data": "x" * 50}
                 test_logger.info(json.dumps(entry, ensure_ascii=False))
@@ -95,7 +95,7 @@ class TestAuditLog:
             # Backup-Datei muss existieren (Rotation hat stattgefunden)
             backup = Path(str(audit_path) + ".1")
             assert backup.exists(), (
-                "Rotation haette eine .1-Backup-Datei erzeugen muessen"
+                "Rotation hätte eine .1-Backup-Datei erzeugen müssen"
             )
         finally:
             handler.close()

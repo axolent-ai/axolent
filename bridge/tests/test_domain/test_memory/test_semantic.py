@@ -41,7 +41,7 @@ class TestSemanticEntry:
         data = {
             "id": "sem_abc123def456",
             "user_id": 42,
-            "content": "Fakt ueber User",
+            "content": "Fakt über User",
             "category": "projekt",
             "context": {},
             "timestamp": "2026-05-07T02:00:00+00:00",

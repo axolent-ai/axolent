@@ -129,7 +129,7 @@ class TestChatService:
         assert history[1].content == "Bot sagt hallo"
 
     async def test_process_user_message_error_from_provider(self) -> None:
-        """Bei Provider-Fehler wird ein Fehler-Result zurueckgegeben."""
+        """Bei Provider-Fehler wird ein Fehler-Result zurückgegeben."""
         svc, _ = _make_chat_service(
             route_return=ProviderResponse(
                 text="",
@@ -172,7 +172,7 @@ class TestChatService:
         assert "leerer Output" in result.error_message
 
     async def test_process_user_message_detects_language(self) -> None:
-        """Die erkannte Sprache wird im Result zurueckgegeben."""
+        """Die erkannte Sprache wird im Result zurückgegeben."""
         svc, _ = _make_chat_service(
             route_return=ProviderResponse(
                 text="Response",
@@ -307,7 +307,7 @@ class TestChatService:
         assert "API key" not in result.error_message
 
     async def test_reset_clears_conversation(self) -> None:
-        """reset() setzt Conversation-History und Sticky-Language zurueck."""
+        """reset() setzt Conversation-History und Sticky-Language zurück."""
         from infrastructure.conversation_storage import (
             get_history,
             get_language,
@@ -338,7 +338,7 @@ class TestChatService:
 
 
 class TestSaveStreamingResult:
-    """Tests fuer save_streaming_result: History + Audit-Log."""
+    """Tests für save_streaming_result: History + Audit-Log."""
 
     async def test_save_streaming_result_writes_audit_with_event_type(self) -> None:
         """save_streaming_result schreibt Audit mit event_type 'stream_completed'."""
@@ -472,7 +472,7 @@ class TestAutoMemoryLoading:
         svc, mock_router = _make_chat_service(memory_service=mock_memory)
 
         await svc.process_user_message(
-            text="Erzaehl mir etwas ueber Python und Testing",
+            text="Erzähl mir etwas über Python und Testing",
             user_id=1,
             chat_id=10,
             username="test",
