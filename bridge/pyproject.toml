@@ -23,6 +23,9 @@ test = [
 dev = [
     "pre-commit>=4.0",
     "import-linter>=2.0",
+    "semgrep>=1.45",
+    "bandit>=1.7",
+    "pip-audit>=2.7",
 ]
 
 [tool.pytest.ini_options]

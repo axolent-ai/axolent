@@ -1,0 +1,9 @@
+# Bandit configuration for jarvis-lite bridge
+skips:
+  # B101: assert used - acceptable in test code, tests are excluded anyway
+  - B101
+
+exclude_dirs:
+  - tests
+  - .venv
+  - __pycache__

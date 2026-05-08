@@ -1,0 +1,27 @@
+title = "Jarvis-LITE Gitleaks Config"
+
+[extend]
+useDefault = true
+
+# Custom rules for Telegram Bot Tokens
+[[rules]]
+id = "telegram-bot-token"
+description = "Telegram Bot Token"
+regex = '''(?i)\b\d{8,10}:[A-Za-z0-9_-]{35}\b'''
+keywords = ["telegram", "bot", "token"]
+
+[[rules]]
+id = "anthropic-api-key"
+description = "Anthropic API Key"
+regex = '''sk-ant-[A-Za-z0-9_-]{20,}'''
+keywords = ["anthropic", "claude", "sk-ant"]
+
+[allowlist]
+paths = [
+    '''.venv/''',
+    '''venv/''',
+    '''node_modules/''',
+    '''\.egg-info/''',
+    '''desktop/''',
+    '''mini-app/''',
+]

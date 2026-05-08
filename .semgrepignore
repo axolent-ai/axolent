@@ -1,0 +1,21 @@
+# Virtual environments
+.venv/
+venv/
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+__pycache__/
+
+# Node/Desktop (not Python)
+node_modules/
+desktop/
+mini-app/
+
+# Data and logs
+bridge/data/
+bridge/logs/
+
+# Docs
+docs/

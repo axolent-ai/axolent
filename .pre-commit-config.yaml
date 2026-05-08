@@ -17,6 +17,25 @@ repos:
         args: [--fix]
       - id: ruff-format
 
+  # Security: Bandit (Python SAST)
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.8.3
+    hooks:
+      - id: bandit
+        args: ['-c', 'bridge/.bandit.yaml', '-r']
+        files: ^bridge/
+        exclude: ^bridge/tests/
+
+  # Security: gitleaks (Secrets scanner)
+  # HINWEIS: gitleaks pre-commit mirror nutzt wasm-basierte go-re2 die auf
+  # Windows mit panic: "wasm error: invalid table access" crasht.
+  # Workaround: gitleaks manuell ausfuehren bis Upstream-Fix verfuegbar.
+  # Tracking: https://github.com/gitleaks/gitleaks/issues
+  # - repo: https://github.com/gitleaks/gitleaks
+  #   rev: v8.22.1
+  #   hooks:
+  #     - id: gitleaks
+
   - repo: local
     hooks:
       - id: import-linter
@@ -32,4 +51,21 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+        stages: [pre-commit]
+
+      # Security: pip-audit (Dependency vulnerability scanner)
+      - id: pip-audit
+        name: pip-audit
+        entry: bash -c 'cd bridge && pip-audit'
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      # Security: semgrep (SAST with 2000+ rules, on changed files only)
+      - id: semgrep
+        name: semgrep
+        entry: bash -c 'cd bridge && semgrep --config=auto --quiet --error'
+        language: system
+        files: ^bridge/.*\.py$
+        types: [python]
         stages: [pre-commit]

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
-import subprocess
+import subprocess  # nosec B404 - bewusster zentraler Wrapper, alle Calls hier kontrolliert
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -48,7 +48,7 @@ def run_subprocess_utf8(
     Returns:
         subprocess.CompletedProcess mit stdout/stderr als str (UTF-8 dekodiert).
     """
-    return subprocess.run(
+    return subprocess.run(  # nosec B603 - shell=False, kein Injection-Risiko
         cmd,
         capture_output=True,
         text=True,
