@@ -1,0 +1,543 @@
+"""Tests fuer ClaudeProcessPool.
+
+Verifiziert:
+    - Process-Spawn und Reuse (warm vs cold)
+    - Inaktivitaets-Timeout terminiert idle Processes
+    - Crash-Recovery: toter Process wird neu gestartet
+    - Multi-User-Isolation: User A's Process != User B's Process
+    - Graceful Shutdown terminiert alle Processes
+    - Health-Check erkennt tote Processes
+    - Lock verhindert gleichzeitigen Zugriff auf eine Pipe
+    - CLI-Flags enthalten --include-partial-messages fuer Streaming
+    - _read_response parsed echtes CLI-Event-Format korrekt
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from infrastructure.claude_process_pool import (
+    INACTIVITY_TIMEOUT_SECONDS,
+    ClaudeProcessPool,
+    ManagedProcess,
+)
+
+
+def _make_mock_process(alive: bool = True, pid: int = 12345) -> AsyncMock:
+    """Erstellt einen gemockten asyncio.subprocess.Process."""
+    proc = AsyncMock()
+    proc.pid = pid
+    proc.returncode = None if alive else 1
+    proc.stdin = AsyncMock()
+    proc.stdin.write = MagicMock()
+    proc.stdin.drain = AsyncMock()
+    proc.stdout = AsyncMock()
+    proc.stderr = AsyncMock()
+    proc.terminate = MagicMock()
+    proc.kill = MagicMock()
+    proc.wait = AsyncMock()
+    return proc
+
+
+class TestProcessPoolSpawnAndReuse:
+    """Tests fuer Process-Spawn und Wiederverwendung."""
+
+    @pytest.mark.asyncio
+    async def test_get_or_create_spawns_new_process(self) -> None:
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process()
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ):
+                managed, was_cold = await pool.get_or_create(chat_id=100)
+
+        assert was_cold is True
+        assert managed.chat_id == 100
+        assert managed.pid == 12345
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_get_or_create_reuses_existing(self) -> None:
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process()
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ):
+                managed1, cold1 = await pool.get_or_create(chat_id=200)
+                managed2, cold2 = await pool.get_or_create(chat_id=200)
+
+        assert cold1 is True
+        assert cold2 is False
+        assert managed1 is managed2
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_different_users_get_different_processes(self) -> None:
+        pool = ClaudeProcessPool()
+        proc_a = _make_mock_process(pid=111)
+        proc_b = _make_mock_process(pid=222)
+
+        call_count = 0
+
+        async def mock_create(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return proc_a if call_count == 1 else proc_b
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
+                managed_a, _ = await pool.get_or_create(chat_id=1001)
+                managed_b, _ = await pool.get_or_create(chat_id=1002)
+
+        assert managed_a.pid != managed_b.pid
+        assert managed_a.chat_id == 1001
+        assert managed_b.chat_id == 1002
+        await pool.shutdown()
+
+
+class TestProcessPoolCrashRecovery:
+    """Tests fuer Crash-Recovery."""
+
+    @pytest.mark.asyncio
+    async def test_dead_process_triggers_respawn(self) -> None:
+        pool = ClaudeProcessPool()
+        dead_proc = _make_mock_process(alive=False, pid=111)
+        new_proc = _make_mock_process(alive=True, pid=222)
+
+        call_count = 0
+
+        async def mock_create(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return dead_proc if call_count == 1 else new_proc
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
+                # Erster Aufruf: erstellt dead_proc
+                managed1, cold1 = await pool.get_or_create(chat_id=300)
+                assert cold1 is True
+                assert managed1.pid == 111
+
+                # Markiere als tot
+                dead_proc.returncode = 1
+
+                # Zweiter Aufruf: erkennt toten Process, erstellt neuen
+                managed2, cold2 = await pool.get_or_create(chat_id=300)
+                assert cold2 is True
+                assert managed2.pid == 222
+
+        await pool.shutdown()
+
+
+class TestProcessPoolTimeout:
+    """Tests fuer Inaktivitaets-Timeout."""
+
+    @pytest.mark.asyncio
+    async def test_cleanup_terminates_expired_processes(self) -> None:
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process()
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ):
+                managed, _ = await pool.get_or_create(chat_id=400)
+
+        # Simuliere: last_used ist laenger als Timeout her
+        import time
+
+        managed.last_used = time.monotonic() - INACTIVITY_TIMEOUT_SECONDS - 10
+
+        await pool._cleanup_expired()
+
+        # Process sollte entfernt worden sein
+        async with pool._pool_lock:
+            assert 400 not in pool._processes
+
+
+class TestProcessPoolShutdown:
+    """Tests fuer Graceful Shutdown."""
+
+    @pytest.mark.asyncio
+    async def test_shutdown_terminates_all(self) -> None:
+        pool = ClaudeProcessPool()
+        proc1 = _make_mock_process(pid=11)
+        proc2 = _make_mock_process(pid=22)
+
+        call_count = 0
+
+        async def mock_create(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return proc1 if call_count == 1 else proc2
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
+                await pool.get_or_create(chat_id=501)
+                await pool.get_or_create(chat_id=502)
+
+        await pool.shutdown()
+
+        async with pool._pool_lock:
+            assert len(pool._processes) == 0
+
+    @pytest.mark.asyncio
+    async def test_shutdown_prevents_new_spawns(self) -> None:
+        pool = ClaudeProcessPool()
+        await pool.shutdown()
+
+        with pytest.raises(RuntimeError, match="Shutdown"):
+            await pool.get_or_create(chat_id=600)
+
+
+class TestProcessPoolHealthCheck:
+    """Tests fuer Health-Check (_is_alive)."""
+
+    def test_alive_process(self) -> None:
+        proc = _make_mock_process(alive=True)
+        managed = ManagedProcess(
+            chat_id=700,
+            process=proc,
+            lock=asyncio.Lock(),
+            last_used=0,
+            pid=12345,
+        )
+        assert ClaudeProcessPool._is_alive(managed) is True
+
+    def test_dead_process(self) -> None:
+        proc = _make_mock_process(alive=False)
+        managed = ManagedProcess(
+            chat_id=700,
+            process=proc,
+            lock=asyncio.Lock(),
+            last_used=0,
+            pid=12345,
+        )
+        assert ClaudeProcessPool._is_alive(managed) is False
+
+
+class TestProcessPoolStats:
+    """Tests fuer get_stats()."""
+
+    @pytest.mark.asyncio
+    async def test_stats_returns_correct_info(self) -> None:
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process(pid=999)
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ):
+                await pool.get_or_create(chat_id=800)
+
+        stats = pool.get_stats()
+        assert stats["active_processes"] == 1
+        assert len(stats["processes"]) == 1
+        assert stats["processes"][0]["chat_id"] == 800
+        assert stats["processes"][0]["pid"] == 999
+        assert stats["processes"][0]["is_alive"] is True
+        await pool.shutdown()
+
+
+class TestProcessPoolCLICheck:
+    """Tests fuer CLI-Verfuegbarkeitspruefung."""
+
+    def test_cli_available(self) -> None:
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            assert ClaudeProcessPool.is_cli_available() is True
+
+    def test_cli_not_available(self) -> None:
+        with patch("shutil.which", return_value=None):
+            assert ClaudeProcessPool.is_cli_available() is False
+
+
+class TestSpawnProcessFlags:
+    """Verifiziert dass _spawn_process die richtigen CLI-Flags setzt."""
+
+    @pytest.mark.asyncio
+    async def test_include_partial_messages_flag_present(self) -> None:
+        """--include-partial-messages MUSS gesetzt sein, sonst kein Streaming."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process()
+        captured_cmd: list[str] = []
+
+        async def capture_cmd(*args, **kwargs):
+            captured_cmd.extend(args)
+            return mock_proc
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                side_effect=capture_cmd,
+            ):
+                await pool.get_or_create(chat_id=900)
+
+        assert "--include-partial-messages" in captured_cmd, (
+            "CLI-Flags muessen --include-partial-messages enthalten, "
+            "sonst liefert die CLI keine stream_event/content_block_delta Events"
+        )
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_stream_json_flags_present(self) -> None:
+        """--output-format stream-json und --input-format stream-json muessen gesetzt sein."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process()
+        captured_cmd: list[str] = []
+
+        async def capture_cmd(*args, **kwargs):
+            captured_cmd.extend(args)
+            return mock_proc
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                side_effect=capture_cmd,
+            ):
+                await pool.get_or_create(chat_id=901)
+
+        assert "--output-format" in captured_cmd
+        assert "--input-format" in captured_cmd
+        assert "stream-json" in captured_cmd
+        await pool.shutdown()
+
+
+class TestReadResponseParsing:
+    """Tests fuer _read_response: verifiziert Parsing des echten CLI-Event-Formats.
+
+    Das echte Format (mit --include-partial-messages) liefert:
+        system, rate_limit_event, stream_event (message_start,
+        content_block_start, content_block_delta*, content_block_stop,
+        message_delta, message_stop), assistant, result
+    """
+
+    @staticmethod
+    def _build_managed_with_mock_stdout(lines: list[str]) -> ManagedProcess:
+        """Erstellt ManagedProcess mit gemocktem stdout das die gegebenen Zeilen liefert."""
+        proc = _make_mock_process()
+        encoded_lines = [line.encode("utf-8") for line in lines]
+        # readline() liefert die Zeilen nacheinander, dann b"" fuer EOF
+        proc.stdout.readline = AsyncMock(
+            side_effect=encoded_lines + [b""],
+        )
+        return ManagedProcess(
+            chat_id=1000,
+            process=proc,
+            lock=asyncio.Lock(),
+            last_used=0,
+            pid=54321,
+        )
+
+    @pytest.mark.asyncio
+    async def test_parses_content_block_delta_events(self) -> None:
+        """content_block_delta Events werden als content_delta StreamEvents geyielded."""
+        lines = [
+            json.dumps(
+                {
+                    "type": "stream_event",
+                    "event": {
+                        "type": "content_block_delta",
+                        "index": 1,
+                        "delta": {"type": "text_delta", "text": "Hallo "},
+                    },
+                }
+            )
+            + "\n",
+            json.dumps(
+                {
+                    "type": "stream_event",
+                    "event": {
+                        "type": "content_block_delta",
+                        "index": 1,
+                        "delta": {"type": "text_delta", "text": "Welt"},
+                    },
+                }
+            )
+            + "\n",
+            json.dumps(
+                {
+                    "type": "result",
+                    "result": "Hallo Welt",
+                }
+            )
+            + "\n",
+        ]
+
+        managed = self._build_managed_with_mock_stdout(lines)
+        pool = ClaudeProcessPool()
+        events = [e async for e in pool._read_response(managed)]
+
+        assert len(events) == 3
+        assert events[0].event_type == "content_delta"
+        assert events[0].text == "Hallo "
+        assert events[1].event_type == "content_delta"
+        assert events[1].text == "Welt"
+        assert events[2].event_type == "result"
+        assert events[2].full_text == "Hallo Welt"
+        assert events[2].is_final is True
+
+    @pytest.mark.asyncio
+    async def test_ignores_signature_delta_events(self) -> None:
+        """signature_delta Events (Thinking) duerfen kein content_delta yielden."""
+        lines = [
+            json.dumps(
+                {
+                    "type": "stream_event",
+                    "event": {
+                        "type": "content_block_delta",
+                        "index": 0,
+                        "delta": {
+                            "type": "signature_delta",
+                            "signature": "EoQC...",
+                        },
+                    },
+                }
+            )
+            + "\n",
+            json.dumps(
+                {
+                    "type": "stream_event",
+                    "event": {
+                        "type": "content_block_delta",
+                        "index": 1,
+                        "delta": {"type": "text_delta", "text": "Antwort"},
+                    },
+                }
+            )
+            + "\n",
+            json.dumps({"type": "result", "result": "Antwort"}) + "\n",
+        ]
+
+        managed = self._build_managed_with_mock_stdout(lines)
+        pool = ClaudeProcessPool()
+        events = [e async for e in pool._read_response(managed)]
+
+        # signature_delta hat kein "text" => wird nicht als content_delta geyielded
+        content_deltas = [e for e in events if e.event_type == "content_delta"]
+        assert len(content_deltas) == 1
+        assert content_deltas[0].text == "Antwort"
+
+    @pytest.mark.asyncio
+    async def test_ignores_non_streaming_event_types(self) -> None:
+        """system, rate_limit_event, assistant werden ignoriert."""
+        lines = [
+            json.dumps({"type": "system", "subtype": "init"}) + "\n",
+            json.dumps({"type": "rate_limit_event", "rate_limit_info": {}}) + "\n",
+            json.dumps(
+                {
+                    "type": "stream_event",
+                    "event": {
+                        "type": "message_start",
+                        "message": {"model": "claude-opus-4-7"},
+                    },
+                }
+            )
+            + "\n",
+            json.dumps(
+                {
+                    "type": "stream_event",
+                    "event": {
+                        "type": "content_block_delta",
+                        "index": 1,
+                        "delta": {"type": "text_delta", "text": "Test"},
+                    },
+                }
+            )
+            + "\n",
+            json.dumps({"type": "assistant", "message": {"content": []}}) + "\n",
+            json.dumps({"type": "result", "result": "Test"}) + "\n",
+        ]
+
+        managed = self._build_managed_with_mock_stdout(lines)
+        pool = ClaudeProcessPool()
+        events = [e async for e in pool._read_response(managed)]
+
+        assert len(events) == 2
+        assert events[0].event_type == "content_delta"
+        assert events[1].event_type == "result"
+
+    @pytest.mark.asyncio
+    async def test_result_as_dict_with_content_blocks(self) -> None:
+        """Result kann als dict mit content-Array kommen."""
+        lines = [
+            json.dumps(
+                {
+                    "type": "result",
+                    "result": {
+                        "content": [
+                            {"type": "text", "text": "Teil eins "},
+                            {"type": "text", "text": "Teil zwei"},
+                        ],
+                    },
+                }
+            )
+            + "\n",
+        ]
+
+        managed = self._build_managed_with_mock_stdout(lines)
+        pool = ClaudeProcessPool()
+        events = [e async for e in pool._read_response(managed)]
+
+        assert len(events) == 1
+        assert events[0].event_type == "result"
+        assert events[0].full_text == "Teil eins Teil zwei"
+
+    @pytest.mark.asyncio
+    async def test_accumulated_text_fallback(self) -> None:
+        """Wenn result leer ist, wird accumulated text verwendet."""
+        lines = [
+            json.dumps(
+                {
+                    "type": "stream_event",
+                    "event": {
+                        "type": "content_block_delta",
+                        "index": 1,
+                        "delta": {"type": "text_delta", "text": "Akkumuliert"},
+                    },
+                }
+            )
+            + "\n",
+            json.dumps({"type": "result", "result": ""}) + "\n",
+        ]
+
+        managed = self._build_managed_with_mock_stdout(lines)
+        pool = ClaudeProcessPool()
+        events = [e async for e in pool._read_response(managed)]
+
+        result_events = [e for e in events if e.event_type == "result"]
+        assert len(result_events) == 1
+        assert result_events[0].full_text == "Akkumuliert"
+
+    @pytest.mark.asyncio
+    async def test_error_event_yields_error(self) -> None:
+        """Error-Events werden als error StreamEvent geyielded."""
+        lines = [
+            json.dumps(
+                {
+                    "type": "error",
+                    "error": {"message": "Rate limit exceeded"},
+                }
+            )
+            + "\n",
+        ]
+
+        managed = self._build_managed_with_mock_stdout(lines)
+        pool = ClaudeProcessPool()
+        events = [e async for e in pool._read_response(managed)]
+
+        assert len(events) == 1
+        assert events[0].event_type == "error"
+        assert "Rate limit" in events[0].text
+        assert events[0].is_final is True

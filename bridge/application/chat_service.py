@@ -8,6 +8,10 @@ Default-Provider: Claude (Modus B, CLI-Subprozess).
 
 Seit Phase 1 (Auto-Memory): Lädt automatisch relevante Memory-Einträge
 und fügt sie in den System-Prompt ein bevor der LLM-Call stattfindet.
+
+Seit R04: Streaming-fähig via ClaudePersistentProvider.
+process_user_message_streaming() liefert einen AsyncIterator von StreamEvents
+fuer Echtzeit-Telegram-Edits.
 """
 
 from __future__ import annotations
@@ -16,12 +20,13 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, AsyncIterator, Optional
 
 from domain.conversation import ConversationTurn, build_context_block
 from domain.language import detect_language
 from domain.personality import build_effective_prompt
 from infrastructure.audit_log import write_audit_log
+from infrastructure.claude_process_pool import StreamEvent
 from infrastructure.providers.base import ProviderError
 from infrastructure.conversation_storage import (
     get_history,
@@ -34,6 +39,7 @@ from infrastructure.conversation_storage import (
 if TYPE_CHECKING:
     from application.memory_service import MemoryService
     from application.provider_router import ProviderRouter
+    from infrastructure.providers.claude_persistent import ClaudePersistentProvider
 
 log = logging.getLogger(__name__)
 
@@ -519,6 +525,133 @@ class ChatService:
 
         finally:
             write_audit_log(audit)
+
+    async def process_user_message_streaming(
+        self,
+        text: str,
+        user_id: int | None,
+        chat_id: int | None,
+        username: str | None,
+        system_prompt: str,
+        persistent_provider: "ClaudePersistentProvider",
+        language_override: Optional[str] = None,
+        reply_to_text: Optional[str] = None,
+    ) -> AsyncIterator[StreamEvent]:
+        """Streaming-Variante von process_user_message.
+
+        Bereitet Prompt identisch vor (Memory, History, Language),
+        nutzt aber den ClaudePersistentProvider fuer Token-Streaming.
+        History-Speicherung und Audit passieren NACH dem Stream.
+
+        Args:
+            text: User-Nachricht.
+            user_id: Telegram User-ID.
+            chat_id: Telegram Chat-ID (auch Process-Routing-Key).
+            username: Telegram Username.
+            system_prompt: Base System-Prompt.
+            persistent_provider: Der Streaming-faehige Provider.
+            language_override: Optionale Sprach-Override.
+            reply_to_text: Reply-To-Kontext.
+
+        Yields:
+            StreamEvent-Objekte (content_delta, result, error).
+
+        Note:
+            Der Aufrufer muss nach dem Stream selbst:
+            1. save_streaming_result() aufrufen fuer History + Audit
+        """
+        uid = user_id or 0
+        cid = chat_id or 0
+
+        # Prompt vorbereiten (identisch zu process_user_message)
+        history = await get_history(uid, cid)
+        memory_context, _memory_entries = self._build_memory_context(uid, text)
+
+        if reply_to_text:
+            enriched_text = (
+                "[USER REPLIED TO PREVIOUS BOT MESSAGE]\n"
+                f'"{reply_to_text}"\n\n'
+                "[USER'S CURRENT MESSAGE]\n"
+                f"{text}"
+            )
+        else:
+            enriched_text = text
+        context_prompt = build_context_block(history, enriched_text)
+
+        if language_override:
+            lang = language_override
+        else:
+            sticky_lang = await get_language(uid, cid)
+            if sticky_lang:
+                lang = sticky_lang
+            else:
+                lang = detect_language(text)
+                await set_language(uid, cid, lang)
+
+        effective_prompt = build_effective_prompt(system_prompt, lang)
+        if memory_context:
+            effective_prompt = f"{effective_prompt}\n\n{memory_context}"
+
+        # Streaming via persistent Provider
+        async for event in persistent_provider.query_streaming(
+            prompt=context_prompt,
+            system_prompt=effective_prompt,
+            chat_id=cid,
+        ):
+            yield event
+
+    async def save_streaming_result(
+        self,
+        user_id: int,
+        chat_id: int,
+        user_text: str,
+        response_text: str,
+        duration_seconds: float,
+        username: str | None = None,
+        was_cold: bool = False,
+        streaming_chunks: int = 0,
+        subprocess_pid: int = 0,
+        memory_entries_loaded: int = 0,
+    ) -> None:
+        """Speichert das Ergebnis einer Streaming-Session in History + Audit.
+
+        Wird vom Presentation-Layer NACH Abschluss des Streams aufgerufen.
+
+        Args:
+            user_id: Telegram User-ID.
+            chat_id: Telegram Chat-ID.
+            user_text: Original User-Nachricht.
+            response_text: Vollstaendige Provider-Antwort.
+            duration_seconds: Gesamtdauer der Anfrage.
+            username: Telegram Username.
+            was_cold: True wenn ein neuer Subprocess gestartet wurde.
+            streaming_chunks: Anzahl empfangener Content-Delta-Events.
+            subprocess_pid: PID des genutzten Subprocess.
+            memory_entries_loaded: Anzahl geladener Memory-Eintraege.
+        """
+        # History speichern
+        user_turn = ConversationTurn(role="user", content=user_text)
+        assistant_turn = ConversationTurn(role="assistant", content=response_text)
+        await save_turn(user_id, chat_id, user_turn)
+        await save_turn(user_id, chat_id, assistant_turn)
+
+        # Audit-Log
+        audit: dict[str, Any] = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "user_id": user_id,
+            "chat_id": chat_id,
+            "username": username,
+            "prompt_length": len(user_text),
+            "provider": "claude_persistent",
+            "response_length": len(response_text),
+            "duration_seconds": round(duration_seconds, 2),
+            "was_warm": not was_cold,
+            "was_cold": was_cold,
+            "streaming_chunks": streaming_chunks,
+            "subprocess_pid": subprocess_pid,
+            "memory_entries_loaded": memory_entries_loaded,
+        }
+        write_audit_log(audit)
 
     async def reset(self, user_id: int, chat_id: int) -> None:
         """Use-Case-Wrapper: setzt Conversation und Sticky-Language zurück."""

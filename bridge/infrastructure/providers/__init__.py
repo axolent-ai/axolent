@@ -1,7 +1,9 @@
 """LLM Provider-Infrastruktur: Multi-Provider-Abstraktion.
 
 Exportiert das Provider-Interface und alle konkreten Provider-Implementierungen.
-Aktuell aktiv: ClaudeProvider (Modus B, CLI-Subprozess).
+Aktuell aktiv:
+    - ClaudePersistentProvider (R04, persistent stdin-Pipe, Streaming)
+    - ClaudeProvider (Legacy-Fallback, einzelne Subprozesse)
 Stubs: OpenAI Codex, Gemini, Mistral Vibe, Ollama.
 """
 
@@ -15,6 +17,7 @@ from infrastructure.providers.base import (
     ProviderUnavailable,
 )
 from infrastructure.providers.claude_cli import ClaudeProvider
+from infrastructure.providers.claude_persistent import ClaudePersistentProvider
 from infrastructure.providers.openai_codex_cli import OpenAICodexProvider
 from infrastructure.providers.gemini_cli import GeminiProvider
 from infrastructure.providers.mistral_vibe_cli import MistralVibeProvider
@@ -29,6 +32,7 @@ __all__ = [
     "ProviderTimeout",
     "ProviderUnavailable",
     "ClaudeProvider",
+    "ClaudePersistentProvider",
     "OpenAICodexProvider",
     "GeminiProvider",
     "MistralVibeProvider",

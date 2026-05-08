@@ -2,6 +2,8 @@
 
 Alle Telegram-spezifischen Handler die auf User-Input reagieren.
 Nutzt application-Layer für Business-Logik, presentation/render für Output.
+
+Seit R04: Streaming-Handler fuer Echtzeit-Token-Updates via Telegram-Edits.
 """
 
 from __future__ import annotations
@@ -23,6 +25,13 @@ from application.bookmark_service import (
     search,
 )
 from application.chat_service import ChatService
+from application.streaming_handler import (
+    StreamingSession,
+    abort_streaming,
+    create_streaming_message,
+    finalize_streaming,
+    process_streaming_edit,
+)
 from domain.bookmark import format_bookmark_preview
 from presentation.decorators import require_private_chat, require_whitelist
 from presentation.render import (
@@ -214,19 +223,41 @@ START_TEXT: str = (
 )
 
 
+def _get_persistent_provider(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> Any:
+    """Holt den PersistentProvider aus bot_data (kann None sein).
+
+    Typ: ClaudePersistentProvider | None
+    (Typ-Annotation als Any wegen Hexagonal-Layer-Contract:
+    presentation darf infrastructure nicht direkt importieren.)
+
+    Args:
+        context: Telegram-Handler-Context.
+
+    Returns:
+        ClaudePersistentProvider-Instanz oder None.
+    """
+    return context.application.bot_data.get("persistent_provider")
+
+
 @require_whitelist
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Verarbeitet eingehende Telegram-Nachrichten via Claude Code Subprozess.
 
-    Flow:
+    R04-Flow (Streaming):
         1. Whitelist-Check (via Decorator)
         2. Typing-Indicator senden
         3. Pro-User Lock + globale Semaphore
-        4. Claude CLI aufrufen (async, non-blocking) with conversation history
-        5. Antwort in Chunks zurücksenden (HTML mit Fallback)
-        6. Response cachen für Bookmark-Zugriff
+        4. Streaming-Nachricht erstellen ("...")
+        5. Token-Stream lesen, periodisch Telegram-Edits senden
+        6. Finale Edit mit vollstaendigem Text
+        7. History + Audit speichern
+
+    Fallback auf Legacy-Flow wenn PersistentProvider nicht verfuegbar.
     """
     chat_service = _get_chat_service(context)
+    persistent_provider = _get_persistent_provider(context)
 
     user = update.effective_user
     user_id: int = user.id if user else 0
@@ -234,7 +265,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
     text: str = update.message.text or ""
 
-    # Fix B: Reply-To-Kontext extrahieren (wenn User auf eine Bot-Nachricht antwortet)
+    # Reply-To-Kontext extrahieren
     reply_to_text: str | None = None
     if update.message.reply_to_message and update.message.reply_to_message.text:
         reply_to_text = update.message.reply_to_message.text
@@ -247,44 +278,197 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         " (reply-to)" if reply_to_text else "",
     )
 
-    # Typing-Indicator: User sieht dass der Bot arbeitet
+    # Typing-Indicator
     await context.bot.send_chat_action(update.effective_chat.id, ChatAction.TYPING)
 
     # Pro-User Lock + globale Semaphore
     user_lock = _get_user_lock(user_id)
-    async with user_lock:  # max 1 Request pro User gleichzeitig
-        async with GLOBAL_CLAUDE_SEMAPHORE:  # max 4 global
-            keepalive = asyncio.create_task(
-                _typing_keepalive(
-                    update.effective_chat,
-                    interval=TYPING_KEEPALIVE_INTERVAL_SECONDS,
-                )
-            )
-            try:
-                result = await chat_service.process_user_message(
-                    text=text,
+    async with user_lock:
+        async with GLOBAL_CLAUDE_SEMAPHORE:
+            # R04: Streaming-Pfad wenn PersistentProvider verfuegbar
+            if persistent_provider is not None and persistent_provider.is_available():
+                await _handle_message_streaming(
+                    update=update,
+                    context=context,
+                    chat_service=chat_service,
+                    persistent_provider=persistent_provider,
                     user_id=user_id,
                     chat_id=chat_id,
                     username=username,
-                    system_prompt=_get_system_prompt(context),
+                    text=text,
                     reply_to_text=reply_to_text,
                 )
-            finally:
-                keepalive.cancel()
-                try:
-                    await keepalive
-                except asyncio.CancelledError:
-                    pass
+            else:
+                # Legacy-Fallback: non-streaming
+                await _handle_message_legacy(
+                    update=update,
+                    context=context,
+                    chat_service=chat_service,
+                    user_id=user_id,
+                    chat_id=chat_id,
+                    username=username,
+                    text=text,
+                    reply_to_text=reply_to_text,
+                )
+
+
+async def _handle_message_streaming(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_service: ChatService,
+    persistent_provider: Any,
+    user_id: int,
+    chat_id: int,
+    username: str | None,
+    text: str,
+    reply_to_text: str | None,
+) -> None:
+    """Streaming-Message-Handler (R04).
+
+    Erstellt eine Placeholder-Nachricht und editiert sie
+    inkrementell mit eingehenden Tokens.
+    """
+    t_start = time.monotonic()
+    streaming_chunks = 0
+    final_text = ""
+    had_error = False
+
+    # Streaming-Nachricht erstellen
+    streaming_msg = await create_streaming_message(update.effective_chat)
+    session = StreamingSession(
+        message=streaming_msg,
+        started_at=time.monotonic(),
+    )
+
+    # Typing-Keepalive parallel zum Stream (fuer sehr lange Antworten)
+    keepalive = asyncio.create_task(
+        _typing_keepalive(
+            update.effective_chat,
+            interval=TYPING_KEEPALIVE_INTERVAL_SECONDS,
+        )
+    )
+
+    try:
+        async for event in chat_service.process_user_message_streaming(
+            text=text,
+            user_id=user_id,
+            chat_id=chat_id,
+            username=username,
+            system_prompt=_get_system_prompt(context),
+            persistent_provider=persistent_provider,
+            reply_to_text=reply_to_text,
+        ):
+            if event.event_type == "content_delta":
+                streaming_chunks += 1
+                await process_streaming_edit(session, event.text)
+
+            elif event.event_type == "result":
+                final_text = event.full_text
+                await finalize_streaming(session, final_text)
+
+            elif event.event_type == "error":
+                had_error = True
+                await abort_streaming(
+                    session,
+                    f"Fehler bei der Verarbeitung: {event.text}",
+                )
+                break
+
+    except RuntimeError as e:
+        had_error = True
+        log.error("Streaming RuntimeError: %s", e)
+        await abort_streaming(session, f"Interner Fehler: {e}")
+
+    finally:
+        keepalive.cancel()
+        try:
+            await keepalive
+        except asyncio.CancelledError:
+            pass
+
+    duration = time.monotonic() - t_start
+
+    # Fallback: wenn kein finaler Text aber akkumulierter Text vorhanden
+    if not final_text and session.accumulated_text and not had_error:
+        final_text = session.accumulated_text
+        await finalize_streaming(session, final_text)
+
+    # History + Audit speichern (nur bei Erfolg)
+    if final_text and not had_error:
+        # Process-Info fuer Audit
+        pool = context.application.bot_data.get("process_pool")
+        subprocess_pid = 0
+        was_cold = False
+        if pool is not None:
+            stats = pool.get_stats()
+            for proc_info in stats.get("processes", []):
+                if proc_info.get("chat_id") == chat_id:
+                    subprocess_pid = proc_info.get("pid", 0)
+                    break
+
+        await chat_service.save_streaming_result(
+            user_id=user_id,
+            chat_id=chat_id,
+            user_text=text,
+            response_text=final_text,
+            duration_seconds=duration,
+            username=username,
+            was_cold=was_cold,
+            streaming_chunks=streaming_chunks,
+            subprocess_pid=subprocess_pid,
+        )
+
+        log.info(
+            "Streaming-Antwort: %d Zeichen, %d Chunks, %.1fs",
+            len(final_text),
+            streaming_chunks,
+            duration,
+        )
+    elif had_error:
+        log.warning("Streaming fehlgeschlagen nach %.1fs", duration)
+
+
+async def _handle_message_legacy(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_service: ChatService,
+    user_id: int,
+    chat_id: int,
+    username: str | None,
+    text: str,
+    reply_to_text: str | None,
+) -> None:
+    """Legacy-Message-Handler (pre-R04, non-streaming Fallback)."""
+    keepalive = asyncio.create_task(
+        _typing_keepalive(
+            update.effective_chat,
+            interval=TYPING_KEEPALIVE_INTERVAL_SECONDS,
+        )
+    )
+    try:
+        result = await chat_service.process_user_message(
+            text=text,
+            user_id=user_id,
+            chat_id=chat_id,
+            username=username,
+            system_prompt=_get_system_prompt(context),
+            reply_to_text=reply_to_text,
+        )
+    finally:
+        keepalive.cancel()
+        try:
+            await keepalive
+        except asyncio.CancelledError:
+            pass
 
     if not result.success:
         await update.message.reply_text(result.error_message)
         return
 
-    # Antwort senden (HTML-Chunks + Fallback)
     await send_response(update, result.response)
 
     log.info(
-        "Antwort gesendet: %d Zeichen in %.1fs",
+        "Legacy-Antwort gesendet: %d Zeichen in %.1fs",
         len(result.response),
         result.duration,
     )

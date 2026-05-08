@@ -32,10 +32,12 @@ from application.chat_service import ChatService
 from application.memory_service import MemoryService
 from application.provider_router import ProviderRouter
 from infrastructure.bookmark_storage import migrate_legacy_chat_id
+from infrastructure.claude_process_pool import ClaudeProcessPool
 from infrastructure.memory_storage import MemoryStorage
 from infrastructure.personality_loader import build_combined_prompt
 from infrastructure.providers import (
     ClaudeProvider,
+    ClaudePersistentProvider,
     GeminiProvider,
     MistralVibeProvider,
     OllamaProvider,
@@ -67,13 +69,20 @@ logging.basicConfig(
 log = logging.getLogger("jarvis-bridge")
 
 
-def _build_provider_router() -> ProviderRouter:
+def _build_provider_router(process_pool: ClaudeProcessPool) -> ProviderRouter:
     """Erstellt und konfiguriert den ProviderRouter mit allen Providern.
 
     Registriert alle bekannten Provider (aktive + Stubs).
-    Default-Provider wird aus .env gelesen oder fällt auf 'claude' zurück.
+    Default-Provider: claude_persistent (R04, persistent stdin-Pipe).
+    Fallback: claude (Legacy, einzelne Subprozesse).
+
+    Args:
+        process_pool: ClaudeProcessPool fuer den PersistentProvider.
     """
+    persistent_provider = ClaudePersistentProvider(process_pool=process_pool)
+
     providers = {
+        "claude_persistent": persistent_provider,
         "claude": ClaudeProvider(),
         "openai": OpenAICodexProvider(),
         "gemini": GeminiProvider(),
@@ -81,15 +90,15 @@ def _build_provider_router() -> ProviderRouter:
         "ollama": OllamaProvider(),
     }
 
-    default = os.getenv("DEFAULT_PROVIDER", "claude")
+    default = os.getenv("DEFAULT_PROVIDER", "claude_persistent")
 
     # Validierung: Default muss registriert sein
     if default not in providers:
         log.warning(
-            "DEFAULT_PROVIDER='%s' nicht bekannt, falle auf 'claude' zurück.",
+            "DEFAULT_PROVIDER='%s' nicht bekannt, falle auf 'claude_persistent' zurück.",
             default,
         )
-        default = "claude"
+        default = "claude_persistent"
 
     router = ProviderRouter(providers=providers, default=default)
 
@@ -123,8 +132,11 @@ def main() -> None:
             "Bookmark-Migration: %d Einträge mit chat_id nachgerüstet", migrated_count
         )
 
-    # Provider-Router initialisieren
-    router = _build_provider_router()
+    # R04: Process-Pool initialisieren (fuer persistent Claude Subprocesses)
+    process_pool = ClaudeProcessPool()
+
+    # Provider-Router initialisieren (mit Process-Pool)
+    router = _build_provider_router(process_pool)
 
     # Trinity-Memory initialisieren
     bridge_root = Path(__file__).resolve().parent
@@ -149,6 +161,22 @@ def main() -> None:
     app.bot_data["chat_service"] = chat_service
     app.bot_data["system_prompt"] = system_prompt
     app.bot_data["memory_service"] = memory_svc
+    app.bot_data["process_pool"] = process_pool
+    app.bot_data["persistent_provider"] = router.providers.get("claude_persistent")
+
+    # Lifecycle-Hooks: ProcessPool starten/stoppen
+    async def post_init(application: Application) -> None:
+        """Startet den ProcessPool Cleanup-Task nach App-Init."""
+        await process_pool.start()
+        log.info("R04: ClaudeProcessPool gestartet (persistent stdin-Pipe aktiv)")
+
+    async def post_shutdown(application: Application) -> None:
+        """Graceful Shutdown: alle Subprocesses terminieren."""
+        await process_pool.shutdown()
+        log.info("R04: ClaudeProcessPool heruntergefahren")
+
+    app.post_init = post_init
+    app.post_shutdown = post_shutdown
 
     # Command handlers
     app.add_handler(CommandHandler("start", handle_start_command))
@@ -173,7 +201,7 @@ def main() -> None:
         CallbackQueryHandler(handle_bookmark_delete_callback, pattern=r"^bm_del:")
     )
 
-    log.info("Jarvis-LITE Bridge startet, Modus B (Multi-Provider-Router)")
+    log.info("Jarvis-LITE Bridge startet, Modus B (R04: Persistent Pipe + Streaming)")
     log.info("Default-Provider: '%s'", router.default)
     log.info(
         "Whitelist aktiv: %s",

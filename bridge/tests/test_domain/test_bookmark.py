@@ -115,4 +115,4 @@ class TestFormatBookmarkPreview:
         }
         result = format_bookmark_preview(bm, 1)
         assert "..." in result
-        assert len(result) < 300  # Wurde gekuerzt
+        assert len(result) < 300  # Wurde gekürzt
