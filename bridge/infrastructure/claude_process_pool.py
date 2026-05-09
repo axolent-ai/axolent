@@ -5,7 +5,7 @@ Niemals werden Subprocesses zwischen Users geteilt (Context-Leak-Risiko).
 
 Features:
     - Process-per-User Isolation via (user_id, chat_id) Routing-Key
-    - 5-Minuten Inaktivitätstimeout mit automatischer Terminierung
+    - 60-Minuten Inaktivitätstimeout mit automatischer Terminierung
     - Health-Check vor jedem Send
     - Crash-Recovery: bei totem Subprocess wird ein neuer gestartet
     - Graceful Shutdown: alle Subprocesses werden sauber beendet
@@ -25,8 +25,10 @@ from typing import AsyncIterator
 
 log = logging.getLogger(__name__)
 
-# Inaktivitätstimeout: 5 Minuten
-INACTIVITY_TIMEOUT_SECONDS: float = 300.0
+# 1 Stunde Idle-Timeout: bei Solo/kleinen Multi-User-Setups praktischer.
+# Tradeoff: ~150-300 MB RAM pro Subprocess solange er warm gehalten wird.
+# Bei <10 aktiven Usern unkritisch. Phase-1+: konfigurierbar via .env.
+INACTIVITY_TIMEOUT_SECONDS: float = 60 * 60
 
 # Cleanup-Intervall: alle 60 Sekunden auf abgelaufene Processes prüfen
 CLEANUP_INTERVAL_SECONDS: float = 60.0
@@ -80,7 +82,7 @@ class ClaudeProcessPool:
     """Verwaltet persistente Claude-CLI-Subprocesses pro User.
 
     Jeder User (identifiziert durch (user_id, chat_id) Tuple) bekommt
-    einen eigenen Subprocess der wiederverwendet wird. Nach 5 Minuten
+    einen eigenen Subprocess der wiederverwendet wird. Nach 60 Minuten
     Inaktivität wird der Subprocess terminiert.
 
     Thread-Safety: Alle Methoden sind async-safe. Jeder ManagedProcess

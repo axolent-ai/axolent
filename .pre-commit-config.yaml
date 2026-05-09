@@ -54,17 +54,19 @@ repos:
         stages: [pre-commit]
 
       # Security: pip-audit (Dependency vulnerability scanner)
+      # Nutzt venv-relativen Pfad, funktioniert ohne aktivierte venv.
       - id: pip-audit
         name: pip-audit
-        entry: bash -c 'cd bridge && pip-audit'
+        entry: bash -c 'cd bridge && VENV_PY=$( [ -f .venv/Scripts/python.exe ] && echo .venv/Scripts/python.exe || echo .venv/bin/python ) && "$VENV_PY" -m pip_audit'
         language: system
         pass_filenames: false
         stages: [pre-commit]
 
       # Security: semgrep (SAST with 2000+ rules, on changed files only)
+      # Nutzt venv-relativen Pfad, funktioniert ohne aktivierte venv.
       - id: semgrep
         name: semgrep
-        entry: bash -c 'cd bridge && semgrep --config=auto --quiet --error'
+        entry: bash -c 'cd bridge && SG=$( [ -f .venv/Scripts/semgrep.exe ] && echo .venv/Scripts/semgrep.exe || echo .venv/bin/semgrep ) && "$SG" --config=auto --quiet --error'
         language: system
         files: ^bridge/.*\.py$
         types: [python]
