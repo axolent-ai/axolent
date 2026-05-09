@@ -552,7 +552,7 @@ class ChatService:
         persistent_provider: "ClaudePersistentProvider",
         language_override: Optional[str] = None,
         reply_to_text: Optional[str] = None,
-    ) -> AsyncIterator[StreamEvent]:
+    ) -> tuple[AsyncIterator[StreamEvent], int]:
         """Streaming-Variante von process_user_message.
 
         Bereitet Prompt identisch vor (Memory, History, Language),
@@ -565,12 +565,14 @@ class ChatService:
             chat_id: Telegram Chat-ID (auch Process-Routing-Key).
             username: Telegram Username.
             system_prompt: Base System-Prompt.
-            persistent_provider: Der Streaming-faehige Provider.
+            persistent_provider: Der Streaming-fähige Provider.
             language_override: Optionale Sprach-Override.
             reply_to_text: Reply-To-Kontext.
 
-        Yields:
-            StreamEvent-Objekte (content_delta, result, error).
+        Returns:
+            Tuple von (StreamEvent-AsyncIterator, memory_entries_loaded).
+            memory_entries_loaded: Anzahl Memory-Einträge die in den Prompt
+            eingefügt wurden (für Audit-Log).
 
         Note:
             Der Aufrufer muss nach dem Stream selbst:
@@ -581,7 +583,7 @@ class ChatService:
 
         # Prompt vorbereiten (identisch zu process_user_message)
         history = await get_history(uid, cid)
-        memory_context, _memory_entries = self._build_memory_context(uid, text)
+        memory_context, memory_entries_loaded = self._build_memory_context(uid, text)
 
         if reply_to_text:
             enriched_text = (
@@ -609,13 +611,16 @@ class ChatService:
             effective_prompt = f"{effective_prompt}\n\n{memory_context}"
 
         # Streaming via persistent Provider
-        async for event in persistent_provider.query_streaming(
-            prompt=context_prompt,
-            system_prompt=effective_prompt,
-            user_id=uid,
-            chat_id=cid,
-        ):
-            yield event
+        async def _stream() -> AsyncIterator[StreamEvent]:
+            async for event in persistent_provider.query_streaming(
+                prompt=context_prompt,
+                system_prompt=effective_prompt,
+                user_id=uid,
+                chat_id=cid,
+            ):
+                yield event
+
+        return _stream(), memory_entries_loaded
 
     async def save_streaming_result(
         self,
@@ -634,8 +639,8 @@ class ChatService:
         """Speichert das Ergebnis einer Streaming-Session in History + Audit.
 
         Wird vom Presentation-Layer NACH Abschluss des Streams aufgerufen.
-        Prueft Response auf System-Prompt-Leakage (C-3) und gibt die
-        ggf. bereinigte Response zurueck.
+        Prüft Response auf System-Prompt-Leakage (C-3) und gibt die
+        ggf. bereinigte Response zurück.
 
         Args:
             user_id: Telegram User-ID.
@@ -647,12 +652,12 @@ class ChatService:
             was_cold: True wenn ein neuer Subprocess gestartet wurde.
             streaming_chunks: Anzahl empfangener Content-Delta-Events.
             subprocess_pid: PID des genutzten Subprocess.
-            memory_entries_loaded: Anzahl geladener Memory-Eintraege.
-            system_prompt: Aktiver System-Prompt fuer Leakage-Check (C-3).
+            memory_entries_loaded: Anzahl geladener Memory-Einträge.
+            system_prompt: Aktiver System-Prompt für Leakage-Check (C-3).
 
         Returns:
-            Die (ggf. bereinigte) Response-Text. Caller muss pruefen ob
-            sich der Text geaendert hat fuer ein finales Telegram-Edit.
+            Die (ggf. bereinigte) Response-Text. Caller muss prüfen ob
+            sich der Text geändert hat für ein finales Telegram-Edit.
         """
         leakage_detected = False
 

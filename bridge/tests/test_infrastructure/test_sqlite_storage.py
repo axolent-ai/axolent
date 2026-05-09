@@ -1225,3 +1225,56 @@ class TestPerformanceSmokeTest:
             assert query_time < 0.05, (
                 f"User {uid} Query dauerte {query_time:.3f}s (>50ms)"
             )
+
+
+# ──────────────────────────────────────────────────────────────
+# V6-Regression-Tests
+# ──────────────────────────────────────────────────────────────
+
+
+class TestV6SubstringFallback:
+    """V6-Regression: FTS5-0-Treffer fällt auf LIKE zurück."""
+
+    def test_substring_finds_token_inner(
+        self, mem_storage: SqliteMemoryStorage
+    ) -> None:
+        """LIKE-Fallback findet Token-Inneres das FTS5 nicht matcht.
+
+        FTS5 tokenisiert: "JarvisLiteSuperword" ist EIN Token.
+        Suche nach "Super" liefert mit FTS5 0 Treffer,
+        muss aber per LIKE-Fallback trotzdem gefunden werden.
+        """
+        mem_storage.append(
+            {
+                "id": "ep_compound",
+                "user_id": 1,
+                "content": "JarvisLiteSuperword ist ein Test",
+                "timestamp": "2026-01-01T00:00:00",
+            },
+            "episodic",
+        )
+
+        result = mem_storage.search(
+            user_id=1, query="Super", layer="episodic", mode="substring"
+        )
+        assert len(result) == 1
+        assert result[0]["id"] == "ep_compound"
+
+    def test_fts5_quote_in_query_no_crash(
+        self, mem_storage: SqliteMemoryStorage
+    ) -> None:
+        """Anführungszeichen in der Query dürfen keinen FTS5-Syntax-Fehler verursachen."""
+        mem_storage.append(
+            {
+                "id": "ep_quote",
+                "user_id": 1,
+                "content": "Zitat: Er sagte etwas Wichtiges",
+                "timestamp": "2026-01-01T00:00:00",
+            },
+            "episodic",
+        )
+
+        # Query mit Anführungszeichen
+        result = mem_storage.search(user_id=1, query='"Wichtiges"', layer="episodic")
+        # Soll nicht crashen, und das Wort finden
+        assert len(result) == 1

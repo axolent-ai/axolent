@@ -63,6 +63,7 @@ def _make_context(
     persistent_provider: object | None = None,
     process_pool: object | None = None,
     rate_limiter: object | None = None,
+    bookmark_service: object | None = None,
 ) -> MagicMock:
     """Erstellt einen gemockten Telegram-Context mit bot_data."""
     context = MagicMock()
@@ -79,6 +80,7 @@ def _make_context(
         "persistent_provider": persistent_provider,
         "process_pool": process_pool,
         "rate_limiter": rate_limiter,
+        "bookmark_service": bookmark_service,
     }
     return context
 
@@ -88,10 +90,15 @@ class TestHandleSaveCommand:
 
     @pytest.fixture(autouse=True)
     def _isolate_bookmark_storage(self, tmp_path: Path) -> None:
-        """Patcht Bookmark-Storage."""
+        """Patcht Bookmark-Storage und erstellt BookmarkService."""
         bm_path = tmp_path / "bookmarks.jsonl"
         lock_path = str(bm_path) + ".lock"
         new_lock = FileLock(lock_path)
+
+        from application.bookmark_service import BookmarkService
+        from infrastructure.bookmark_storage import JsonlBookmarkStorageAdapter
+
+        self._bookmark_svc = BookmarkService(storage=JsonlBookmarkStorageAdapter())
 
         self._patches = [
             patch("infrastructure.bookmark_storage.BOOKMARKS_PATH", bm_path),
@@ -119,10 +126,10 @@ class TestHandleSaveCommand:
         reply_msg.text = "Bot-Antwort zum Speichern"
         update.message.reply_to_message = reply_msg
 
-        context = _make_context()
+        context = _make_context(bookmark_service=self._bookmark_svc)
         await handle_save_command(update, context)
 
-        # Bestaetigung muss gesendet worden sein
+        # Bestätigung muss gesendet worden sein
         update.message.reply_text.assert_called_once()
         reply_text = update.message.reply_text.call_args[0][0]
         assert "gespeichert" in reply_text.lower() or "Bookmark" in reply_text
@@ -134,7 +141,7 @@ class TestHandleSaveCommand:
         update = _make_update(user_id=1, chat_id=10)
         update.message.reply_to_message = None
 
-        context = _make_context()
+        context = _make_context(bookmark_service=self._bookmark_svc)
         await handle_save_command(update, context)
 
         update.message.reply_text.assert_called_once()
@@ -280,7 +287,7 @@ class TestStartCommandHistory:
         assert history[0].content == HELP_TEXT
 
     async def test_help_text_contains_all_commands(self) -> None:
-        """/help Text enthaelt alle tatsaechlich existierenden Commands."""
+        """/help Text enthält alle tatsächlich existierenden Commands."""
         from presentation.handlers import HELP_TEXT
 
         expected_commands = [
@@ -300,7 +307,7 @@ class TestStartCommandHistory:
             assert cmd in HELP_TEXT, f"Command {cmd} fehlt im HELP_TEXT"
 
     async def test_help_text_does_not_contain_nonexistent_commands(self) -> None:
-        """/help Text enthaelt KEINE nicht-existenten Commands."""
+        """/help Text enthält KEINE nicht-existenten Commands."""
         from presentation.handlers import HELP_TEXT
 
         nonexistent = ["/unsave", "/delete", "/clear", "/settings", "/config"]
@@ -454,10 +461,15 @@ class TestAuditLoggingSave:
 
     @pytest.fixture(autouse=True)
     def _isolate_bookmark_storage(self, tmp_path: Path) -> None:
-        """Patcht Bookmark-Storage."""
+        """Patcht Bookmark-Storage und erstellt BookmarkService."""
         bm_path = tmp_path / "bookmarks.jsonl"
         lock_path = str(bm_path) + ".lock"
         new_lock = FileLock(lock_path)
+
+        from application.bookmark_service import BookmarkService
+        from infrastructure.bookmark_storage import JsonlBookmarkStorageAdapter
+
+        self._bookmark_svc = BookmarkService(storage=JsonlBookmarkStorageAdapter())
 
         self._patches = [
             patch("infrastructure.bookmark_storage.BOOKMARKS_PATH", bm_path),
@@ -484,7 +496,7 @@ class TestAuditLoggingSave:
         reply_msg.text = "Bot-Antwort"
         update.message.reply_to_message = reply_msg
 
-        context = _make_context()
+        context = _make_context(bookmark_service=self._bookmark_svc)
 
         await handle_save_command(update, context)
 
@@ -500,10 +512,15 @@ class TestAuditLoggingBookmarks:
 
     @pytest.fixture(autouse=True)
     def _isolate_bookmark_storage(self, tmp_path: Path) -> None:
-        """Patcht Bookmark-Storage."""
+        """Patcht Bookmark-Storage und erstellt BookmarkService."""
         bm_path = tmp_path / "bookmarks.jsonl"
         lock_path = str(bm_path) + ".lock"
         new_lock = FileLock(lock_path)
+
+        from application.bookmark_service import BookmarkService
+        from infrastructure.bookmark_storage import JsonlBookmarkStorageAdapter
+
+        self._bookmark_svc = BookmarkService(storage=JsonlBookmarkStorageAdapter())
 
         self._patches = [
             patch("infrastructure.bookmark_storage.BOOKMARKS_PATH", bm_path),
@@ -525,7 +542,7 @@ class TestAuditLoggingBookmarks:
         from presentation.handlers import handle_bookmarks_command
 
         update = _make_update(user_id=1, chat_id=10)
-        context = _make_context(args=[])
+        context = _make_context(args=[], bookmark_service=self._bookmark_svc)
 
         await handle_bookmarks_command(update, context)
 
@@ -815,11 +832,14 @@ class TestStreamingAuditEntries:
         mock_svc = _make_mock_chat_service()
         mock_svc.save_streaming_result = AsyncMock()
 
-        async def mock_stream(**kwargs):
+        async def _stream_events():
             yield StreamEvent(event_type="content_delta", text="Hallo")
             yield StreamEvent(
                 event_type="result", full_text="Hallo Welt", is_final=True
             )
+
+        async def mock_stream(**kwargs):
+            return _stream_events(), 0
 
         mock_svc.process_user_message_streaming = mock_stream
 
@@ -882,7 +902,12 @@ class TestStreamingAuditEntries:
         mock_svc = _make_mock_chat_service()
 
         async def mock_stream(**kwargs):
-            raise RuntimeError("unexpected crash")
+            async def _crash_gen():
+                if True:
+                    raise RuntimeError("unexpected crash")
+                yield  # pragma: no cover
+
+            return _crash_gen(), 0
 
         mock_svc.process_user_message_streaming = mock_stream
 
@@ -993,11 +1018,11 @@ class TestOuterExceptionCoverage:
 
 
 class TestHandleMessageRateLimit:
-    """Tests fuer Rate-Limiting im handle_message Handler (C-2)."""
+    """Tests für Rate-Limiting im handle_message Handler (C-2)."""
 
     @pytest.fixture(autouse=True)
     def _bypass_whitelist(self) -> None:
-        """Whitelist-Bypass fuer Handler-Tests."""
+        """Whitelist-Bypass für Handler-Tests."""
         self._patches = [
             patch("presentation.decorators.ALLOW_ALL_USERS", True),
         ]
@@ -1034,7 +1059,7 @@ class TestHandleMessageRateLimit:
         # Kein Typing-Indicator gesendet (kein LLM-Call)
         context.bot.send_chat_action.assert_not_called()
 
-        # Audit-Log enthaelt rate_limit_exceeded
+        # Audit-Log enthält rate_limit_exceeded
         mock_audit.assert_called()
         audit_entry = mock_audit.call_args[0][0]
         assert audit_entry["event_type"] == "rate_limit_exceeded"
@@ -1093,14 +1118,14 @@ class TestHandleMessageRateLimit:
         assert "/usage" in reply_text
         assert "/setlimit" in reply_text
 
-        # Audit enthaelt Profil- und Period-Info
+        # Audit enthält Profil- und Period-Info
         audit_entry = mock_audit.call_args[0][0]
         assert audit_entry["profile"] == "normal"
         assert audit_entry["period"] == "minute"
 
 
 class TestHandleUsageCommand:
-    """Tests fuer /usage Command."""
+    """Tests für /usage Command."""
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
@@ -1130,12 +1155,15 @@ class TestHandleUsageCommand:
         assert "Heute" in reply_text
         assert "/setlimit" in reply_text
 
-    async def test_usage_unlimited_profile(self) -> None:
+    async def test_usage_unlimited_profile(self, tmp_path: Path) -> None:
         """/usage zeigt Unlimited-Info wenn Profil unlimited."""
         from application.rate_limiter import RateLimiter
         from presentation.handlers import handle_usage_command
 
-        with patch("application.rate_limiter._PROFILES_PATH", Path("nonexistent")):
+        with patch(
+            "application.rate_limiter._PROFILES_PATH",
+            tmp_path / "user_profiles.jsonl",
+        ):
             limiter = RateLimiter()
             limiter.set_user_profile(user_id=5, chat_id=5, profile="unlimited")
 
@@ -1162,7 +1190,7 @@ class TestHandleUsageCommand:
 
 
 class TestHandleSetlimitCommand:
-    """Tests fuer /setlimit Command."""
+    """Tests für /setlimit Command."""
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:

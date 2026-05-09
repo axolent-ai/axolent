@@ -1,6 +1,6 @@
 # Bridge-Service
 
-Backend von Jarvis-LITE. Telegram-Bot der Claude Code CLI als lokalen Subprozess spawnt (Modus B). Hexagonale Architektur, 220+ Tests, UTF-8 durchgängig.
+Backend von Jarvis-LITE. Telegram-Bot der Claude Code CLI als lokalen Subprozess spawnt (Modus B). Hexagonale Architektur, 526+ Tests, UTF-8 durchgängig.
 
 ## Architektur (Hexagonal)
 
@@ -35,9 +35,9 @@ Backend von Jarvis-LITE. Telegram-Bot der Claude Code CLI als lokalen Subprozess
 | `infrastructure/` | I/O-Adapter: Claude CLI, Storage, Audit, Encoding |
 | `presentation/` | Telegram-Handler, Decorators (Whitelist), Rendering |
 | `config/` | system_prompt.md, user_constitution.md |
-| `data/` | bookmarks.jsonl (Laufzeit-Daten) |
+| `data/` | jarvis.db (SQLite), user_profiles.jsonl (Laufzeit-Daten) |
 | `logs/` | audit.jsonl (mit Rotation) |
-| `tests/` | 220+ pytest-Tests |
+| `tests/` | 526+ pytest-Tests |
 
 ## Setup
 
@@ -109,6 +109,12 @@ Der Bot pollt jetzt Telegram. Jede Nachricht an den Bot wird an Claude Code CLI 
 | `/save` (als Reply) | Bookmark speichern oder entfernen (Toggle) |
 | `/bookmarks` | Liste aller gespeicherten Bookmarks |
 | `/bookmarks search <begriff>` | Bookmarks durchsuchen |
+| `/remember <text>` | Notiz speichern (wird in zukünftigen Antworten berücksichtigt) |
+| `/memory` | Gespeicherte Notizen anzeigen |
+| `/memory search <query>` | Notizen durchsuchen |
+| `/forget <id>` | Notiz löschen |
+| `/usage` | Aktueller Verbrauch und Profil anzeigen |
+| `/setlimit <profil>` | Rate-Limit-Profil wechseln (light, normal, power, unlimited) |
 | `/lang <code>` | Sprache fest setzen (de, en, es, fr, etc.) |
 | `/reset` oder `/new` | Konversation und Sprache zurücksetzen |
 | `/help` | Commands-Übersicht |
@@ -130,7 +136,7 @@ python -m pytest --cov
 python -m pytest tests/test_bookmark.py
 ```
 
-Aktuell: **220+ Tests**, alle grün, Laufzeit ca. 2 Sekunden.
+Aktuell: **526+ Tests**, alle grün, Laufzeit ca. 3 Sekunden.
 
 ## Architektur-Regeln (nicht verhandelbar)
 

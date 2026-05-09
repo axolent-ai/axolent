@@ -33,7 +33,7 @@ class TestProceduralEntry:
         assert entry.importance == 9
 
     def test_to_dict_includes_skill_fields(self) -> None:
-        """to_dict enthaelt skill_name und usage_count."""
+        """to_dict enthält skill_name und usage_count."""
         entry = ProceduralEntry(skill_name="kurze_antworten", usage_count=3)
         d = entry.to_dict()
         assert d["skill_name"] == "kurze_antworten"

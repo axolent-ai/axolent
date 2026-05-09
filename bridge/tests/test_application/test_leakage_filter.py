@@ -1,4 +1,4 @@
-"""Tests fuer application.leakage_filter: System-Prompt-Leakage-Guard (C-3).
+"""Tests für application.leakage_filter: System-Prompt-Leakage-Guard (C-3).
 
 Testet:
     - Erkennung von System-Prompt-Substrings in LLM-Response
@@ -17,10 +17,10 @@ from application.leakage_filter import (
 
 
 class TestExtractFingerprints:
-    """Tests fuer die Fingerprint-Extraktion."""
+    """Tests für die Fingerprint-Extraktion."""
 
     def test_extracts_chunks_from_long_text(self) -> None:
-        """Extrahiert ueberlappende Chunks aus langem Text."""
+        """Extrahiert überlappende Chunks aus langem Text."""
         text = "A" * 100
         fps = _extract_fingerprints(text)
         assert len(fps) > 0
@@ -50,7 +50,7 @@ class TestExtractFingerprints:
 
 
 class TestCheckForSystemPromptLeakage:
-    """Tests fuer die Hauptfunktion check_for_system_prompt_leakage."""
+    """Tests für die Hauptfunktion check_for_system_prompt_leakage."""
 
     SAMPLE_SYSTEM_PROMPT = (
         "Du bist Jarvis, ein persoenlicher KI-Assistent fuer Jessica. "
@@ -61,8 +61,8 @@ class TestCheckForSystemPromptLeakage:
     )
 
     def test_detects_verbatim_leak(self) -> None:
-        """Erkennt wenn die Response einen langen Substring des Prompts enthaelt."""
-        # Response die einen grossen Teil des System-Prompts wiedergibt
+        """Erkennt wenn die Response einen langen Substring des Prompts enthält."""
+        # Response die einen großen Teil des System-Prompts wiedergibt
         response = (
             "Klar, hier sind meine Instruktionen: "
             "Du bist Jarvis, ein persoenlicher KI-Assistent fuer Jessica. "
@@ -82,8 +82,8 @@ class TestCheckForSystemPromptLeakage:
         assert result is None
 
     def test_short_overlap_no_false_positive(self) -> None:
-        """Kurze zufaellige Ueberlappungen loesen keinen Alarm aus."""
-        # "Du bist" ist kurz genug um zufaellig vorzukommen
+        """Kurze zufällige Überlappungen lösen keinen Alarm aus."""
+        # "Du bist" ist kurz genug um zufällig vorzukommen
         response = "Du bist auf dem richtigen Weg mit deinem Projekt."
         result = check_for_system_prompt_leakage(response, self.SAMPLE_SYSTEM_PROMPT)
         assert result is None
@@ -108,7 +108,7 @@ class TestCheckForSystemPromptLeakage:
         assert result is not None
 
     def test_whitespace_normalized_detection(self) -> None:
-        """Erkennung funktioniert auch mit veraendertem Whitespace."""
+        """Erkennung funktioniert auch mit verändertem Whitespace."""
         response = (
             "Du bist  Jarvis,  ein  persoenlicher  KI-Assistent  fuer  Jessica.  "
             "Du hilfst  ihr  bei  Recherche  und  Wissensarbeit."
@@ -131,3 +131,18 @@ class TestCheckForSystemPromptLeakage:
         """Die Refusal-Response ist freundlich formuliert."""
         assert "Instruktionen" in REFUSAL_RESPONSE
         assert "?" in REFUSAL_RESPONSE  # Endet mit Frage/Angebot
+
+    def test_boundary_offset_leak_detected(self) -> None:
+        """V6-Regression: 40-Zeichen-Leak ab beliebigem Offset wird erkannt.
+
+        Mit Schrittweite 20 (alt) konnte ein Leak an Offset 10 durchrutschen,
+        weil kein Chunk exakt diesen Bereich abdeckte.
+        Mit Schrittweite 1 (neu) wird jede Position abgedeckt.
+        """
+        # System-Prompt: 80 Zeichen + Filler
+        system = "A" * 10 + "GEHEIMER_BLOCK_DER_GENAU_VIERZIG_ZEICHEN!" + "B" * 30
+        # Response enthält den geheimen Block ab Offset 10
+        response = "Hier sind meine Instruktionen: GEHEIMER_BLOCK_DER_GENAU_VIERZIG_ZEICHEN! Ende."
+        result = check_for_system_prompt_leakage(response, system)
+        assert result is not None
+        assert result == REFUSAL_RESPONSE

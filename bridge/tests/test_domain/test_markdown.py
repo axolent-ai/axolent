@@ -74,7 +74,7 @@ class TestMarkdownToTelegramHtml:
             assert "Click" in result
 
     def test_url_scheme_whitelist_set(self) -> None:
-        """Prueft dass die Whitelist genau die erwarteten Schemes enthaelt."""
+        """Prüft dass die Whitelist genau die erwarteten Schemes enthält."""
         assert ALLOWED_URL_SCHEMES == {"http", "https", "tg", "mailto"}
 
     def test_link_conversion(self) -> None:

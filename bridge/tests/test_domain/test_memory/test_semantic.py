@@ -30,7 +30,7 @@ class TestSemanticEntry:
         assert entry.content == "User bevorzugt kurze Antworten"
 
     def test_to_dict_includes_category(self) -> None:
-        """to_dict enthaelt category-Feld."""
+        """to_dict enthält category-Feld."""
         entry = SemanticEntry(category="person", content="Jessica, Selbststaendig")
         d = entry.to_dict()
         assert d["category"] == "person"

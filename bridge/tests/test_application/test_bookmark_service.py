@@ -13,13 +13,16 @@ import pytest
 
 from filelock import FileLock
 
+from application.bookmark_service import BookmarkService
+from infrastructure.bookmark_storage import JsonlBookmarkStorageAdapter
+
 
 class TestBookmarkService:
     """Bookmark-Service Use-Case-Tests."""
 
     @pytest.fixture(autouse=True)
     def _isolate_storage(self, tmp_path: Path) -> None:
-        """Patcht Bookmark-Storage auf tmp_path."""
+        """Patcht Bookmark-Storage auf tmp_path und erstellt Service."""
         self.bm_path = tmp_path / "bookmarks.jsonl"
         self.lock_path = str(self.bm_path) + ".lock"
         new_lock = FileLock(self.lock_path)
@@ -32,6 +35,8 @@ class TestBookmarkService:
         for p in self._patches:
             p.start()
 
+        self.svc = BookmarkService(storage=JsonlBookmarkStorageAdapter())
+
         yield  # type: ignore[misc]
 
         for p in self._patches:
@@ -39,17 +44,15 @@ class TestBookmarkService:
 
     def test_save_or_toggle_creates_then_deletes(self) -> None:
         """Erster Aufruf speichert, zweiter Aufruf löscht (Toggle)."""
-        from application.bookmark_service import save_or_toggle_bookmark
-
         # Erster Aufruf: speichern
-        was_saved, msg = save_or_toggle_bookmark(
+        was_saved, msg = self.svc.save_or_toggle_bookmark(
             user_id=1, username="t", chat_id=10, message_id=100, content="Test"
         )
         assert was_saved is True
         assert "gespeichert" in msg.lower()
 
         # Zweiter Aufruf: löschen
-        was_saved, msg = save_or_toggle_bookmark(
+        was_saved, msg = self.svc.save_or_toggle_bookmark(
             user_id=1, username="t", chat_id=10, message_id=100, content="Test"
         )
         assert was_saved is False
@@ -57,66 +60,52 @@ class TestBookmarkService:
 
     def test_list_returns_user_specific(self) -> None:
         """list_bookmarks gibt nur Bookmarks des angegebenen Users zurück."""
-        from application.bookmark_service import list_bookmarks, save_or_toggle_bookmark
-
-        save_or_toggle_bookmark(
+        self.svc.save_or_toggle_bookmark(
             user_id=1, username="a", chat_id=10, message_id=1, content="User 1"
         )
-        save_or_toggle_bookmark(
+        self.svc.save_or_toggle_bookmark(
             user_id=2, username="b", chat_id=10, message_id=2, content="User 2"
         )
 
-        result = list_bookmarks(user_id=1)
+        result = self.svc.list_bookmarks(user_id=1)
         assert len(result) == 1
         assert result[0]["content"] == "User 1"
 
     def test_search_filters_by_query(self) -> None:
         """search() filtert nach Content-Substring."""
-        from application.bookmark_service import save_or_toggle_bookmark, search
-
-        save_or_toggle_bookmark(
+        self.svc.save_or_toggle_bookmark(
             user_id=1, username="t", chat_id=10, message_id=1, content="Python Code"
         )
-        save_or_toggle_bookmark(
+        self.svc.save_or_toggle_bookmark(
             user_id=1, username="t", chat_id=10, message_id=2, content="Rust Guide"
         )
-        save_or_toggle_bookmark(
+        self.svc.save_or_toggle_bookmark(
             user_id=1, username="t", chat_id=10, message_id=3, content="Python ML"
         )
 
-        results = search(user_id=1, query="Python")
+        results = self.svc.search(user_id=1, query="Python")
         assert len(results) == 2
         for r in results:
             assert "Python" in r["content"]
 
     def test_get_bookmark_found(self) -> None:
         """get_bookmark findet einen gespeicherten Bookmark."""
-        from application.bookmark_service import get_bookmark, save_or_toggle_bookmark
-
-        save_or_toggle_bookmark(
+        self.svc.save_or_toggle_bookmark(
             user_id=1, username="t", chat_id=10, message_id=5, content="Find me"
         )
-        result = get_bookmark(user_id=1, chat_id=10, message_id=5)
+        result = self.svc.get_bookmark(user_id=1, chat_id=10, message_id=5)
         assert result is not None
         assert result["content"] == "Find me"
 
     def test_get_bookmark_not_found(self) -> None:
         """get_bookmark gibt None für nicht-existierende Bookmarks."""
-        from application.bookmark_service import get_bookmark
-
-        result = get_bookmark(user_id=1, chat_id=10, message_id=999)
+        result = self.svc.get_bookmark(user_id=1, chat_id=10, message_id=999)
         assert result is None
 
     def test_remove_bookmark(self) -> None:
         """remove_bookmark löscht und gibt True zurück."""
-        from application.bookmark_service import (
-            get_bookmark,
-            remove_bookmark,
-            save_or_toggle_bookmark,
-        )
-
-        save_or_toggle_bookmark(
+        self.svc.save_or_toggle_bookmark(
             user_id=1, username="t", chat_id=10, message_id=7, content="Del"
         )
-        assert remove_bookmark(user_id=1, chat_id=10, message_id=7) is True
-        assert get_bookmark(user_id=1, chat_id=10, message_id=7) is None
+        assert self.svc.remove_bookmark(user_id=1, chat_id=10, message_id=7) is True
+        assert self.svc.get_bookmark(user_id=1, chat_id=10, message_id=7) is None

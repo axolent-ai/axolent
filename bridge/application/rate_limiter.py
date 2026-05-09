@@ -10,8 +10,8 @@ Profile:
     - Unlimited: keine Limits (mit Reminder alle 100 Anfragen)
 
 Architektur: Application-Layer (Business-Regel, kein Telegram-Code).
-In-Memory Storage fuer Buckets (Session-basiert), Profile persistent via JSONL.
-Eviction nach 1h Inaktivitaet.
+In-Memory Storage für Buckets (Session-basiert), Profile persistent via JSONL.
+Eviction nach 1h Inaktivität.
 """
 
 from __future__ import annotations
@@ -25,9 +25,15 @@ from typing import Optional
 
 from infrastructure.encoding import append_jsonl_utf8, open_utf8
 
+# TYPE_CHECKING Guard für SQLite-Backend (optionale Dependency)
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infrastructure.sqlite_storage import SqliteProfileStorage
+
 log = logging.getLogger(__name__)
 
-# Eviction: entferne User-Buckets nach 1h Inaktivitaet
+# Eviction: entferne User-Buckets nach 1h Inaktivität
 _EVICTION_TTL_SECONDS: float = 3600.0
 
 # 70% Warnung: einmalig pro Window
@@ -55,7 +61,7 @@ _PROFILES_PATH: Path = (
 
 
 def _load_user_profiles() -> dict[int, str]:
-    """Laedt User-Profile aus der JSONL-Datei.
+    """Lädt User-Profile aus der JSONL-Datei.
 
     Liest alle Zeilen und nimmt den jeweils letzten Eintrag pro User
     (append-only Log, letzter Eintrag gewinnt).
@@ -107,22 +113,22 @@ def _save_user_profile(user_id: int, chat_id: int, profile: str) -> None:
 
 
 class TokenBucket:
-    """Fixed-Window-Counter fuer ein einzelnes Zeitfenster.
+    """Fixed-Window-Counter für ein einzelnes Zeitfenster.
 
-    Zaehlt Anfragen pro Fenster und blockiert bei Erreichen der Kapazitaet.
-    Das Fenster wird zurueckgesetzt sobald window_seconds vergangen sind.
+    Zählt Anfragen pro Fenster und blockiert bei Erreichen der Kapazität.
+    Das Fenster wird zurückgesetzt sobald window_seconds vergangen sind.
 
     Frueher war hier ein Token-Bucket-Algorithmus mit kontinuierlichem Refill.
     Problem: Tokens flossen zwischen Anfragen nach, sodass z.B. bei capacity=17
-    und 30s Verteilung effektiv ~25 Anfragen moeglich waren statt 17.
+    und 30s Verteilung effektiv ~25 Anfragen möglich waren statt 17.
     Fix (2026-05-09): Umstellung auf Fixed-Window-Counter. Exakt capacity
     Anfragen pro Fenster, kein Refill, kein Drift.
 
     Attributes:
         capacity: Maximale Anzahl Anfragen pro Fenster.
         request_count: Tatsaechliche Anzahl konsumierter Anfragen im aktuellen Fenster.
-        window_seconds: Laenge des Zeitfensters in Sekunden.
-        window_start: Zeitstempel des Fenster-Starts (fuer Counter-Reset).
+        window_seconds: Länge des Zeitfensters in Sekunden.
+        window_start: Zeitstempel des Fenster-Starts (für Counter-Reset).
     """
 
     __slots__ = (
@@ -137,7 +143,7 @@ class TokenBucket:
 
         Args:
             capacity: Maximale Anfragen pro Fenster.
-            window_seconds: Laenge des Zeitfensters in Sekunden.
+            window_seconds: Länge des Zeitfensters in Sekunden.
         """
         self.capacity = capacity
         self.request_count: int = 0
@@ -145,7 +151,7 @@ class TokenBucket:
         self.window_start: float = time.monotonic()
 
     def _maybe_reset_window(self, now: float) -> None:
-        """Setzt den Request-Counter zurueck wenn das Zeitfenster abgelaufen ist.
+        """Setzt den Request-Counter zurück wenn das Zeitfenster abgelaufen ist.
 
         Args:
             now: Aktueller Zeitstempel (time.monotonic).
@@ -157,7 +163,7 @@ class TokenBucket:
     def try_consume(self) -> tuple[bool, float]:
         """Versucht eine Anfrage zu konsumieren.
 
-        Prueft ob das Fenster abgelaufen ist (Reset), dann ob
+        Prüft ob das Fenster abgelaufen ist (Reset), dann ob
         request_count < capacity. Kein Token-Refill, kein Drift.
 
         Returns:
@@ -167,7 +173,7 @@ class TokenBucket:
         """
         now = time.monotonic()
 
-        # Window-Reset pruefen
+        # Window-Reset prüfen
         self._maybe_reset_window(now)
 
         if self.request_count < self.capacity:
@@ -180,7 +186,7 @@ class TokenBucket:
         return False, max(0.0, retry_after)
 
     def usage_fraction(self) -> float:
-        """Gibt den aktuellen Verbrauchsanteil zurueck (0.0 bis 1.0).
+        """Gibt den aktuellen Verbrauchsanteil zurück (0.0 bis 1.0).
 
         0.0 = nichts verbraucht, 1.0 = Limit erreicht.
         """
@@ -191,22 +197,22 @@ class TokenBucket:
         return min(1.0, self.request_count / self.capacity)
 
     def consumed_count(self) -> int:
-        """Gibt die Anzahl konsumierter Anfragen im aktuellen Fenster zurueck."""
+        """Gibt die Anzahl konsumierter Anfragen im aktuellen Fenster zurück."""
         now = time.monotonic()
         self._maybe_reset_window(now)
         return self.request_count
 
     def seconds_until_reset(self) -> float:
-        """Gibt Sekunden bis zum naechsten Window-Reset zurueck."""
+        """Gibt Sekunden bis zum nächsten Window-Reset zurück."""
         now = time.monotonic()
         elapsed_in_window = now - self.window_start
         remaining = self.window_seconds - elapsed_in_window
         return max(0.0, remaining)
 
     def rollback(self) -> None:
-        """Macht die letzte consume-Operation rueckgaengig.
+        """Macht die letzte consume-Operation rückgängig.
 
-        Wird verwendet wenn ein aeusserer Bucket (Hour/Day) die Anfrage
+        Wird verwendet wenn ein äußerer Bucket (Hour/Day) die Anfrage
         ablehnt, nachdem ein innerer Bucket (Minute) schon konsumiert hat.
         """
         if self.request_count > 0:
@@ -214,18 +220,18 @@ class TokenBucket:
 
 
 class _UserBuckets:
-    """Drei Token-Buckets fuer einen einzelnen User.
+    """Drei Token-Buckets für einen einzelnen User.
 
     Attributes:
         minute_bucket: Burst-Schutz.
         hour_bucket: Sustained-Load-Schutz.
         day_bucket: Tages-Budget.
-        last_activity: Zeitstempel der letzten Aktivitaet (fuer Eviction).
+        last_activity: Zeitstempel der letzten Aktivität (für Eviction).
         profile: Aktives Profil.
-        warning_sent_minute: Ob 70%-Warnung fuer Minute gesendet wurde.
-        warning_sent_hour: Ob 70%-Warnung fuer Stunde gesendet wurde.
-        warning_sent_day: Ob 70%-Warnung fuer Tag gesendet wurde.
-        unlimited_counter: Zaehler fuer Unlimited-Reminder.
+        warning_sent_minute: Ob 70%-Warnung für Minute gesendet wurde.
+        warning_sent_hour: Ob 70%-Warnung für Stunde gesendet wurde.
+        warning_sent_day: Ob 70%-Warnung für Tag gesendet wurde.
+        unlimited_counter: Zähler für Unlimited-Reminder.
     """
 
     __slots__ = (
@@ -260,7 +266,7 @@ class _UserBuckets:
 
 
 class RateLimitResult:
-    """Ergebnis einer Rate-Limit-Pruefung.
+    """Ergebnis einer Rate-Limit-Prüfung.
 
     Attributes:
         allowed: Ob die Anfrage erlaubt ist.
@@ -310,7 +316,7 @@ class RateLimitResult:
 
 
 class UsageInfo:
-    """Verbrauchsinformationen fuer /usage.
+    """Verbrauchsinformationen für /usage.
 
     Attributes:
         profile: Aktives Profil.
@@ -377,13 +383,20 @@ class RateLimiter:
             ...
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        profile_storage: "SqliteProfileStorage | None" = None,
+    ) -> None:
         self._users: dict[int, _UserBuckets] = {}
         self._lock = Lock()
-        self._profiles: dict[int, str] = _load_user_profiles()
+        self._profile_storage = profile_storage
+        if profile_storage is not None:
+            self._profiles = profile_storage.load_all()
+        else:
+            self._profiles = _load_user_profiles()
 
     def get_user_profile(self, user_id: int) -> str:
-        """Gibt das aktive Profil eines Users zurueck.
+        """Gibt das aktive Profil eines Users zurück.
 
         Args:
             user_id: Telegram User-ID.
@@ -396,7 +409,7 @@ class RateLimiter:
     def set_user_profile(self, user_id: int, chat_id: int, profile: str) -> bool:
         """Setzt das Profil eines Users.
 
-        Persistiert die Aenderung und erstellt neue Buckets mit den
+        Persistiert die Änderung und erstellt neue Buckets mit den
         neuen Limits.
 
         Args:
@@ -405,26 +418,29 @@ class RateLimiter:
             profile: Profilname (light, normal, power, unlimited).
 
         Returns:
-            True wenn erfolgreich, False wenn Profil ungueltig.
+            True wenn erfolgreich, False wenn Profil ungültig.
         """
         if profile not in PROFILES:
             return False
 
         with self._lock:
             self._profiles[user_id] = profile
-            # Buckets zuruecksetzen mit neuem Profil
+            # Buckets zurücksetzen mit neuem Profil
             if user_id in self._users:
                 self._users[user_id] = _UserBuckets(profile=profile)
 
         # Persistent speichern
-        _save_user_profile(user_id, chat_id, profile)
+        if self._profile_storage is not None:
+            self._profile_storage.save(user_id, chat_id, profile)
+        else:
+            _save_user_profile(user_id, chat_id, profile)
         log.info("User %d: Profil gewechselt zu '%s'", user_id, profile)
         return True
 
     def check_and_consume(self, user_id: int) -> RateLimitResult:
-        """Prueft ob der User eine Anfrage senden darf und konsumiert ein Token.
+        """Prüft ob der User eine Anfrage senden darf und konsumiert ein Token.
 
-        Prueft alle drei Buckets (Minute, Stunde, Tag). Wenn einer davon
+        Prüft alle drei Buckets (Minute, Stunde, Tag). Wenn einer davon
         kein Token hat, wird die Anfrage abgelehnt. Nur wenn alle drei
         erlauben, wird je ein Token konsumiert.
 
@@ -444,7 +460,7 @@ class RateLimiter:
             if user_id not in self._users:
                 self._users[user_id] = _UserBuckets(profile=profile)
             elif self._users[user_id].profile != profile:
-                # Profil hat sich geaendert -> Buckets neu erstellen
+                # Profil hat sich geändert -> Buckets neu erstellen
                 self._users[user_id] = _UserBuckets(profile=profile)
 
             buckets = self._users[user_id]
@@ -476,7 +492,7 @@ class RateLimiter:
 
             hour_ok, hour_retry = buckets.hour_bucket.try_consume()
             if not hour_ok:
-                # Minute-Zaehler zurueckgeben
+                # Minute-Zähler zurückgeben
                 buckets.minute_bucket.rollback()
                 return RateLimitResult(
                     allowed=False,
@@ -489,7 +505,7 @@ class RateLimiter:
 
             day_ok, day_retry = buckets.day_bucket.try_consume()
             if not day_ok:
-                # Minute und Hour zurueckgeben
+                # Minute und Hour zurückgeben
                 buckets.minute_bucket.rollback()
                 buckets.hour_bucket.rollback()
                 return RateLimitResult(
@@ -501,7 +517,7 @@ class RateLimiter:
                     profile=profile,
                 )
 
-            # Erfolgreich: 70%-Warnung pruefen
+            # Erfolgreich: 70%-Warnung prüfen
             warning_70 = False
             warning_period: Optional[str] = None
 
@@ -541,7 +557,7 @@ class RateLimiter:
                 warning_period = "day"
                 buckets.warning_sent_day = True
 
-            # Warnung-Reset: wenn Bucket wieder aufgefuellt hat (< 50%)
+            # Warnung-Reset: wenn Bucket wieder aufgefüllt hat (< 50%)
             if min_cap > 0 and min_consumed < int(min_cap * 0.5):
                 buckets.warning_sent_minute = False
             if hour_cap > 0 and hour_consumed < int(hour_cap * 0.5):
@@ -557,7 +573,7 @@ class RateLimiter:
             )
 
     def get_usage(self, user_id: int) -> UsageInfo:
-        """Gibt aktuelle Verbrauchsinformationen fuer einen User zurueck.
+        """Gibt aktuelle Verbrauchsinformationen für einen User zurück.
 
         Args:
             user_id: Telegram User-ID.
@@ -602,7 +618,7 @@ class RateLimiter:
             )
 
     def _evict_stale(self) -> None:
-        """Entfernt Buckets von Usern die laenger als TTL inaktiv waren.
+        """Entfernt Buckets von Usern die länger als TTL inaktiv waren.
 
         Muss innerhalb von self._lock aufgerufen werden.
         """
@@ -618,7 +634,7 @@ class RateLimiter:
             log.debug("Rate-Limiter: %d inaktive User evicted", len(stale_ids))
 
     def _reset_all_for_tests(self) -> None:
-        """Setzt alle Buckets und Profile zurueck. NUR fuer Tests."""
+        """Setzt alle Buckets und Profile zurück. NUR für Tests."""
         with self._lock:
             self._users.clear()
             self._profiles.clear()

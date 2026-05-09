@@ -1,4 +1,4 @@
-"""Tests fuer application.rate_limiter: Profile-basiertes Rate-Limiting (C-2).
+"""Tests für application.rate_limiter: Profile-basiertes Rate-Limiting (C-2).
 
 Testet:
     - Profil-Limits (Light, Normal, Power, Unlimited)
@@ -30,7 +30,7 @@ from application.rate_limiter import (
 
 
 class TestTokenBucket:
-    """Direkte Tests fuer den TokenBucket-Algorithmus."""
+    """Direkte Tests für den TokenBucket-Algorithmus."""
 
     def test_bucket_allows_up_to_capacity(self) -> None:
         """Bucket erlaubt genau capacity Anfragen."""
@@ -103,7 +103,7 @@ class TestTokenBucket:
 
 
 class TestRateLimiterProfiles:
-    """Tests fuer das Profil-System."""
+    """Tests für das Profil-System."""
 
     def test_default_profile_is_normal(self) -> None:
         """Neuer User bekommt Normal-Profil."""
@@ -177,7 +177,7 @@ class TestRateLimiterProfiles:
 
 
 class TestRateLimiterLimits:
-    """Tests fuer die Limit-Pruefung pro Profil."""
+    """Tests für die Limit-Prüfung pro Profil."""
 
     def test_first_request_allowed(self) -> None:
         """Erste Anfrage ist immer erlaubt."""
@@ -287,7 +287,7 @@ class TestRateLimiterLimits:
                         buckets.hour_bucket.request_count = 0
                         buckets.hour_bucket.window_start = time.monotonic()
 
-            # Minute + Hour resetten fuer den finalen Test
+            # Minute + Hour resetten für den finalen Test
             with limiter._lock:
                 buckets = limiter._users[user_id]
                 buckets.minute_bucket.request_count = 0
@@ -351,7 +351,7 @@ class TestRateLimiterLimits:
         assert result.allowed is True
 
     def test_rollback_minute_when_hour_blocks(self) -> None:
-        """Wenn Hour-Bucket blockiert, wird der Minute-Counter zurueckgesetzt."""
+        """Wenn Hour-Bucket blockiert, wird der Minute-Counter zurückgesetzt."""
         limiter = RateLimiter()
         user_id = 55
 
@@ -367,14 +367,14 @@ class TestRateLimiterLimits:
         result = limiter.check_and_consume(user_id)
         assert result.allowed is False
 
-        # Minute-Counter muss zurueckgesetzt worden sein (rollback)
+        # Minute-Counter muss zurückgesetzt worden sein (rollback)
         with limiter._lock:
             minute_count_after = limiter._users[user_id].minute_bucket.request_count
         assert minute_count_after == minute_count_before
 
 
 class TestWarning70Percent:
-    """Tests fuer die 70%-Warnung."""
+    """Tests für die 70%-Warnung."""
 
     def test_warning_fires_at_70_percent(self) -> None:
         """70%-Warnung feuert bei Erreichen der Schwelle."""
@@ -422,7 +422,7 @@ class TestWarning70Percent:
         with limiter._lock:
             buckets = limiter._users[user_id]
             buckets.minute_bucket.request_count = 0
-            # Window-Start so weit zuruecksetzen dass _maybe_reset_window greift
+            # Window-Start so weit zurücksetzen dass _maybe_reset_window greift
             buckets.minute_bucket.window_start = (
                 time.monotonic() - buckets.minute_bucket.window_seconds - 1.0
             )
@@ -438,7 +438,7 @@ class TestWarning70Percent:
 
 
 class TestUnlimitedReminder:
-    """Tests fuer den Unlimited-Mode-Reminder."""
+    """Tests für den Unlimited-Mode-Reminder."""
 
     def test_reminder_at_100(self, tmp_path: Path) -> None:
         """Reminder feuert bei genau 100 Anfragen."""
@@ -483,7 +483,7 @@ class TestUnlimitedReminder:
 
 
 class TestUsageInfo:
-    """Tests fuer get_usage / /usage Command."""
+    """Tests für get_usage / /usage Command."""
 
     def test_usage_new_user(self) -> None:
         """Neuer User hat 0 Verbrauch."""
@@ -537,7 +537,7 @@ class TestUsageInfo:
         assert usage.day_used == 5
 
     def test_usage_counter_resets_after_window(self) -> None:
-        """Usage-Counter wird zurueckgesetzt wenn das Fenster ablaeuft."""
+        """Usage-Counter wird zurückgesetzt wenn das Fenster abläuft."""
         limiter = RateLimiter()
         user_id = 505
 
@@ -564,7 +564,7 @@ class TestUsageInfo:
 
 
 class TestEviction:
-    """Tests fuer Bucket-Eviction."""
+    """Tests für Bucket-Eviction."""
 
     def test_eviction_removes_stale_users(self) -> None:
         """Inaktive User werden nach TTL entfernt."""
@@ -600,10 +600,10 @@ class TestEviction:
 
 
 class TestRateLimitResult:
-    """Tests fuer RateLimitResult-Felder."""
+    """Tests für RateLimitResult-Felder."""
 
     def test_result_profile_field(self) -> None:
-        """Result enthaelt das aktive Profil."""
+        """Result enthält das aktive Profil."""
         limiter = RateLimiter()
         result = limiter.check_and_consume(user_id=1)
         assert result.profile == "normal"
@@ -634,7 +634,7 @@ class TestRateLimitResult:
 
 
 class TestBugReproduction:
-    """Regression-Tests fuer den Rate-Limit-Counter-Bug (2026-05-09).
+    """Regression-Tests für den Rate-Limit-Counter-Bug (2026-05-09).
 
     Bug: Bei 17 schnellen Anfragen (Light-Profil, 17/min) zaehlte der Counter
     nur ~11 statt 17, weil der Token-Bucket zwischen Anfragen Tokens nachfuellte.

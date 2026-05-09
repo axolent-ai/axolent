@@ -19,7 +19,7 @@ repos:
 
   # Security: Bandit (Python SAST)
   - repo: https://github.com/PyCQA/bandit
-    rev: 1.8.3
+    rev: 1.9.4
     hooks:
       - id: bandit
         args: ['-c', 'bridge/.bandit.yaml', '-r']
@@ -29,7 +29,7 @@ repos:
   # Security: gitleaks (Secrets scanner)
   # HINWEIS: gitleaks pre-commit mirror nutzt wasm-basierte go-re2 die auf
   # Windows mit panic: "wasm error: invalid table access" crasht.
-  # Workaround: gitleaks manuell ausfuehren bis Upstream-Fix verfuegbar.
+  # Workaround: gitleaks manuell ausführen bis Upstream-Fix verfügbar.
   # Tracking: https://github.com/gitleaks/gitleaks/issues
   # - repo: https://github.com/gitleaks/gitleaks
   #   rev: v8.22.1
@@ -40,34 +40,35 @@ repos:
     hooks:
       - id: import-linter
         name: import-linter
-        entry: bash -c 'cd bridge && lint-imports'
+        entry: python scripts/run_with_venv.py lint-imports
         language: system
         pass_filenames: false
         stages: [pre-commit]
 
       - id: pytest
         name: pytest
-        entry: bash -c 'cd bridge && python -m pytest -q --no-header'
+        entry: python scripts/run_with_venv.py pytest -q --no-header
         language: system
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
 
       # Security: pip-audit (Dependency vulnerability scanner)
-      # Nutzt venv-relativen Pfad, funktioniert ohne aktivierte venv.
+      # Nutzt scripts/run_with_venv.py für plattform-portablen venv-Zugriff.
       - id: pip-audit
         name: pip-audit
-        entry: bash -c 'cd bridge && VENV_PY=$( [ -f .venv/Scripts/python.exe ] && echo .venv/Scripts/python.exe || echo .venv/bin/python ) && "$VENV_PY" -m pip_audit'
+        entry: python scripts/run_with_venv.py pip_audit
         language: system
         pass_filenames: false
         stages: [pre-commit]
 
       # Security: semgrep (SAST with 2000+ rules, on changed files only)
-      # Nutzt venv-relativen Pfad, funktioniert ohne aktivierte venv.
+      # Nutzt scripts/run_with_venv.py für plattform-portablen venv-Zugriff.
       - id: semgrep
         name: semgrep
-        entry: bash -c 'cd bridge && SG=$( [ -f .venv/Scripts/semgrep.exe ] && echo .venv/Scripts/semgrep.exe || echo .venv/bin/semgrep ) && "$SG" --config=auto --quiet --error'
+        entry: python scripts/run_with_venv.py semgrep --config=auto --quiet --error
         language: system
+        pass_filenames: false
         files: ^bridge/.*\.py$
         types: [python]
         stages: [pre-commit]

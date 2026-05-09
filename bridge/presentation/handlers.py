@@ -20,11 +20,7 @@ from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 
 from application.audit_service import log_command_audit, write_raw_audit
-from application.bookmark_service import (
-    list_bookmarks,
-    save_or_toggle_bookmark,
-    search,
-)
+from application.bookmark_service import BookmarkService
 from application.chat_service import ChatService
 from application.rate_limiter import PROFILES, RateLimiter, RateLimitResult
 from application.streaming_handler import (
@@ -171,6 +167,28 @@ def _get_memory_service(
         MemoryService-Instanz oder None.
     """
     return context.application.bot_data.get("memory_service")
+
+
+def _get_bookmark_service(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> BookmarkService:
+    """Holt den BookmarkService aus bot_data.
+
+    Args:
+        context: Telegram-Handler-Context.
+
+    Returns:
+        BookmarkService-Instanz.
+
+    Raises:
+        RuntimeError: Wenn BookmarkService nicht in bot_data ist.
+    """
+    svc = context.application.bot_data.get("bookmark_service")
+    if svc is None:
+        raise RuntimeError(
+            "BookmarkService nicht in bot_data. main.py muss BookmarkService initialisieren."
+        )
+    return svc
 
 
 def _get_rate_limiter(
@@ -376,7 +394,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 }
             )
             log.info(
-                "Rate-Limit fuer User %s (%s): %s-Limit, retry_after=%.1fs",
+                "Rate-Limit für User %s (%s): %s-Limit, retry_after=%.1fs",
                 username,
                 user_id,
                 result.period,
@@ -436,7 +454,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 "/setlimit normal"
             )
             await update.message.reply_text(reminder_msg)
-            # Audit fuer Unlimited-Reminder
+            # Audit für Unlimited-Reminder
             from datetime import datetime, timezone
 
             write_raw_audit(
@@ -457,7 +475,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_lock = _get_user_lock(user_id)
     async with user_lock:
         async with GLOBAL_CLAUDE_SEMAPHORE:
-            # R04: Streaming-Pfad wenn PersistentProvider verfuegbar
+            # R04: Streaming-Pfad wenn PersistentProvider verfügbar
             if persistent_provider is not None and persistent_provider.is_available():
                 await _handle_message_streaming(
                     update=update,
@@ -516,6 +534,7 @@ async def _handle_message_streaming(
     had_error = False
     error_id = ""
     session: StreamingSession | None = None
+    memory_entries_loaded = 0
 
     # Audit "started" Eintrag
     audit_started: dict[str, Any] = {
@@ -556,7 +575,10 @@ async def _handle_message_streaming(
         )
 
         try:
-            async for event in chat_service.process_user_message_streaming(
+            (
+                stream_iter,
+                memory_entries_loaded,
+            ) = await chat_service.process_user_message_streaming(
                 text=text,
                 user_id=user_id,
                 chat_id=chat_id,
@@ -564,7 +586,8 @@ async def _handle_message_streaming(
                 system_prompt=_get_system_prompt(context),
                 persistent_provider=persistent_provider,
                 reply_to_text=reply_to_text,
-            ):
+            )
+            async for event in stream_iter:
                 if event.event_type == "content_delta":
                     streaming_chunks += 1
                     await process_streaming_edit(session, event.text)
@@ -626,6 +649,7 @@ async def _handle_message_streaming(
                 was_cold=was_cold,
                 streaming_chunks=streaming_chunks,
                 subprocess_pid=subprocess_pid,
+                memory_entries_loaded=memory_entries_loaded,
                 system_prompt=_get_system_prompt(context),
             )
             # C-3: Wenn Leakage erkannt, finales Edit mit Refusal
@@ -865,7 +889,8 @@ async def handle_save_command(
     if not content:
         content = "(Inhalt nicht verfügbar)"
 
-    was_saved, user_message = save_or_toggle_bookmark(
+    bookmark_service = _get_bookmark_service(context)
+    was_saved, user_message = bookmark_service.save_or_toggle_bookmark(
         user_id=user_id,
         username=username,
         chat_id=chat_id,
@@ -907,10 +932,12 @@ async def handle_bookmarks_command(
 
     username: str | None = user.username if user else None
 
+    bookmark_service = _get_bookmark_service(context)
+
     # /bookmarks search <query>
     if len(args) >= 2 and args[0].lower() == "search":
         query_term = " ".join(args[1:])
-        results = search(user_id, query_term, limit=20)
+        results = bookmark_service.search(user_id, query_term, limit=20)
 
         if not results:
             await update.message.reply_text(
@@ -951,7 +978,7 @@ async def handle_bookmarks_command(
         return
 
     # /bookmarks (keine Argumente) -> letzte anzeigen
-    bookmarks = list_bookmarks(user_id, limit=10)
+    bookmarks = bookmark_service.list_bookmarks(user_id, limit=10)
     bm_chat_id = update.effective_chat.id if update.effective_chat else 0
 
     if not bookmarks:

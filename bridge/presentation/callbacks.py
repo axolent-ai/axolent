@@ -13,7 +13,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from application.audit_service import log_command_audit
-from application.bookmark_service import get_bookmark, remove_bookmark
+from application.bookmark_service import BookmarkService
 from domain.markdown import markdown_to_telegram_html, strip_markdown
 from presentation.decorators import require_private_chat, require_whitelist
 from presentation.render import split_message
@@ -49,7 +49,16 @@ async def handle_bookmark_show_callback(
     user = query.from_user
     user_id: int = user.id if user else 0
 
-    bm = get_bookmark(user_id, bm_chat_id, msg_id)
+    bookmark_service: BookmarkService = context.application.bot_data.get(
+        "bookmark_service"
+    )
+    if bookmark_service is None:
+        await query.answer(
+            text="Bookmark-Service nicht initialisiert", show_alert=False
+        )
+        return
+
+    bm = bookmark_service.get_bookmark(user_id, bm_chat_id, msg_id)
     if bm is None:
         await query.answer(text="Bookmark nicht gefunden", show_alert=False)
         log_command_audit(
@@ -117,14 +126,23 @@ async def handle_bookmark_delete_callback(
     user = query.from_user
     user_id: int = user.id if user else 0
 
-    # Bookmark-Daten VOR dem Loeschen holen (fuer Datum in Bestaetigung)
-    bm_data = get_bookmark(user_id, bm_chat_id, msg_id)
+    bookmark_service: BookmarkService = context.application.bot_data.get(
+        "bookmark_service"
+    )
+    if bookmark_service is None:
+        await query.answer(
+            text="Bookmark-Service nicht initialisiert", show_alert=False
+        )
+        return
 
-    deleted: bool = remove_bookmark(user_id, bm_chat_id, msg_id)
+    # Bookmark-Daten VOR dem Löschen holen (für Datum in Bestätigung)
+    bm_data = bookmark_service.get_bookmark(user_id, bm_chat_id, msg_id)
+
+    deleted: bool = bookmark_service.remove_bookmark(user_id, bm_chat_id, msg_id)
     if deleted:
         await query.answer(text="Entfernt", show_alert=False)
 
-        # Datum formatieren fuer Chat-Bestaetigung
+        # Datum formatieren für Chat-Bestätigung
         date_display = ""
         if bm_data:
             ts = bm_data.get("timestamp", "")

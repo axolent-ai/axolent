@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from datetime import datetime, timezone
 
 os.environ["PYTHONIOENCODING"] = "utf-8"
 
@@ -28,18 +29,24 @@ from telegram.ext import (
 
 from pathlib import Path
 
+from application.bookmark_service import BookmarkService
 from application.chat_service import ChatService
 from application.memory_service import MemoryService
 from application.provider_router import ProviderRouter
 from application.rate_limiter import RateLimiter
 from infrastructure.audit_log import write_audit_log
-from infrastructure.bookmark_storage import migrate_legacy_chat_id, use_sqlite_backend
+from infrastructure.bookmark_storage import (
+    JsonlBookmarkStorageAdapter,
+    migrate_legacy_chat_id,
+    use_sqlite_backend,
+)
 from infrastructure.claude_process_pool import ClaudeProcessPool
 from infrastructure.memory_storage import MemoryStorage
 from infrastructure.sqlite_storage import (
     SqliteBookmarkStorage,
     SqliteConnection,
     SqliteMemoryStorage,
+    SqliteProfileStorage,
     migrate_jsonl_to_sqlite,
 )
 from infrastructure.personality_loader import build_combined_prompt
@@ -108,6 +115,66 @@ def validate_allow_all_users() -> None:
         sys.exit(2)
 
     log.warning("WARNUNG: ALLOW_ALL_USERS aktiv im DEV_MODE. Whitelist deaktiviert.")
+    write_audit_log(
+        {
+            "event_type": "dev_mode_start",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "allow_all_users": True,
+            "jarvis_dev_mode": True,
+        }
+    )
+
+
+def _migrate_profiles_to_sqlite(profile_storage: SqliteProfileStorage) -> None:
+    """Migriert JSONL-Profile in SQLite (einmalig, idempotent).
+
+    Liest data/user_profiles.jsonl, schreibt in SQLite,
+    benennt JSONL in .bak um.
+    """
+    jsonl_path = Path(__file__).resolve().parent / "data" / "user_profiles.jsonl"
+    if not jsonl_path.exists():
+        return
+
+    # Nur migrieren wenn SQLite-Tabelle leer ist
+    existing = profile_storage.load_all()
+    if existing:
+        return
+
+    import json
+
+    from infrastructure.encoding import open_utf8
+
+    migrated = 0
+    profiles: dict[int, tuple[int, str]] = {}  # user_id -> (chat_id, profile)
+    try:
+        with open_utf8(jsonl_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                    uid = entry.get("user_id")
+                    profile = entry.get("profile", "normal")
+                    chat_id = entry.get("chat_id", 0)
+                    if uid is not None:
+                        profiles[int(uid)] = (chat_id, profile)
+                except (json.JSONDecodeError, ValueError, TypeError):
+                    continue
+    except OSError:
+        return
+
+    for uid, (cid, profile) in profiles.items():
+        profile_storage.save(uid, cid, profile)
+        migrated += 1
+
+    if migrated > 0:
+        bak_path = jsonl_path.with_suffix(".jsonl.bak")
+        jsonl_path.rename(bak_path)
+        log.info(
+            "Profil-Migration: %d Profile von JSONL nach SQLite migriert",
+            migrated,
+        )
 
 
 def _build_provider_router(process_pool: ClaudeProcessPool) -> ProviderRouter:
@@ -205,9 +272,7 @@ def main() -> None:
             write_audit_log(
                 {
                     "event_type": "storage_migration",
-                    "timestamp": __import__("datetime")
-                    .datetime.now(__import__("datetime").timezone.utc)
-                    .isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                     "migrated_bookmarks": migration_stats.get("bookmarks", 0),
                     "migrated_memory_episodic": migration_stats.get(
                         "memory_episodic", 0
@@ -226,6 +291,9 @@ def main() -> None:
         bm_storage = SqliteBookmarkStorage(sqlite_conn)
         use_sqlite_backend(bm_storage)
 
+        # BookmarkService mit SQLite-Backend (Konstruktor-Injection)
+        bookmark_svc = BookmarkService(storage=bm_storage)
+
         # Memory-Storage: SQLite
         memory_storage: MemoryStorage | SqliteMemoryStorage = SqliteMemoryStorage(
             sqlite_conn
@@ -233,6 +301,9 @@ def main() -> None:
         log.info("Storage-Backend: SQLite (WAL-Mode, FTS5 aktiv)")
     else:
         memory_storage = MemoryStorage(data_dir=bridge_root / "data")
+
+        # BookmarkService mit JSONL-Adapter (Konstruktor-Injection)
+        bookmark_svc = BookmarkService(storage=JsonlBookmarkStorageAdapter())
         log.info("Storage-Backend: JSONL (Legacy-Modus)")
 
     # R04: Process-Pool initialisieren (für persistent Claude Subprocesses)
@@ -252,8 +323,15 @@ def main() -> None:
 
     log.info("Trinity-Memory-System initialisiert (Auto-Loading aktiv)")
 
-    # C-2: Rate-Limiter initialisieren
-    rate_limiter = RateLimiter()
+    # C-2: Rate-Limiter initialisieren (mit SQLite-Profil-Storage wenn verfügbar)
+    if use_sqlite:
+        profile_storage = SqliteProfileStorage(sqlite_conn)
+        rate_limiter = RateLimiter(profile_storage=profile_storage)
+
+        # JSONL-Profile -> SQLite migrieren (einmalig)
+        _migrate_profiles_to_sqlite(profile_storage)
+    else:
+        rate_limiter = RateLimiter()
 
     # Personality laden
     system_prompt = build_combined_prompt()
@@ -263,11 +341,14 @@ def main() -> None:
 
     # Alle Services via bot_data teilen (für Handler-Zugriff)
     app.bot_data["chat_service"] = chat_service
+    app.bot_data["bookmark_service"] = bookmark_svc
     app.bot_data["system_prompt"] = system_prompt
     app.bot_data["memory_service"] = memory_svc
     app.bot_data["process_pool"] = process_pool
     app.bot_data["persistent_provider"] = router.providers.get("claude_persistent")
     app.bot_data["rate_limiter"] = rate_limiter
+    if use_sqlite:
+        app.bot_data["sqlite_conn"] = sqlite_conn
 
     # Lifecycle-Hooks: ProcessPool starten/stoppen
     async def post_init(application: Application) -> None:
@@ -276,9 +357,14 @@ def main() -> None:
         log.info("R04: ClaudeProcessPool gestartet (persistent stdin-Pipe aktiv)")
 
     async def post_shutdown(application: Application) -> None:
-        """Graceful Shutdown: alle Subprocesses terminieren."""
+        """Graceful Shutdown: Subprocesses terminieren, SQLite-Connection schließen."""
         await process_pool.shutdown()
         log.info("R04: ClaudeProcessPool heruntergefahren")
+        # SQLite-Connection sauber schließen
+        conn = application.bot_data.get("sqlite_conn")
+        if conn is not None:
+            conn.close()
+            log.info("SQLite-Connection geschlossen")
 
     app.post_init = post_init
     app.post_shutdown = post_shutdown

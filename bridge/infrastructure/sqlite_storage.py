@@ -57,6 +57,15 @@ CREATE TABLE IF NOT EXISTS memory_entries (
 CREATE INDEX IF NOT EXISTS idx_memory_user_type_time
     ON memory_entries(user_id, type, timestamp DESC);
 
+-- User-Profile für Rate-Limiting (persistent über Bot-Restart)
+CREATE TABLE IF NOT EXISTS user_profiles (
+    user_id INTEGER NOT NULL,
+    chat_id INTEGER NOT NULL,
+    profile TEXT NOT NULL DEFAULT 'normal',
+    set_at TEXT NOT NULL,
+    PRIMARY KEY (user_id)
+);
+
 -- FTS5 für Volltext-Suche
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
     content,
@@ -543,20 +552,27 @@ class SqliteMemoryStorage:
 
         # Versuche FTS5 zuerst (schneller bei großen Datenmengen)
         try:
-            rows = self._conn.fetchall(
-                """SELECT me.id, me.user_id, me.type, me.content,
-                          me.importance, me.timestamp, me.metadata_json
-                   FROM memory_entries me
-                   JOIN memory_fts fts ON me.rowid = fts.rowid
-                   WHERE me.user_id = ? AND me.type = ?
-                     AND memory_fts MATCH ?
-                   ORDER BY me.timestamp DESC, me.rowid DESC
-                   LIMIT ?""",
-                (user_id, layer, f'"{query}"', limit),
-            )
-            return [self._row_to_entry(r) for r in rows]
+            # Anführungszeichen aus Query entfernen (FTS5-Syntax-Fehler vermeiden)
+            fts_query = query.replace('"', "")
+            if fts_query.strip():
+                rows = self._conn.fetchall(
+                    """SELECT me.id, me.user_id, me.type, me.content,
+                              me.importance, me.timestamp, me.metadata_json
+                       FROM memory_entries me
+                       JOIN memory_fts fts ON me.rowid = fts.rowid
+                       WHERE me.user_id = ? AND me.type = ?
+                         AND memory_fts MATCH ?
+                       ORDER BY me.timestamp DESC, me.rowid DESC
+                       LIMIT ?""",
+                    (user_id, layer, f'"{fts_query}"', limit),
+                )
+                if rows:
+                    return [self._row_to_entry(r) for r in rows]
+                # FTS5 lieferte 0 Treffer: auf LIKE zurückfallen
+                # (FTS5 tokenisiert, findet keine Token-Inneren wie "Super" in "Superword")
+                log.debug("FTS5: 0 Treffer für '%s', Fallback auf LIKE", query)
         except sqlite3.OperationalError:
-            # FTS-Fallback: LIKE-basierte Suche (immer korrekt)
+            # FTS-Tabelle kaputt oder nicht vorhanden: LIKE-Fallback
             log.debug("FTS5-Suche fehlgeschlagen, Fallback auf LIKE")
 
         rows = self._conn.fetchall(
@@ -615,6 +631,48 @@ class SqliteMemoryStorage:
             (entry_id, layer, user_id),
         )
         return self._row_to_entry(row) if row else None
+
+
+# ──────────────────────────────────────────────────────────────
+# Profile Storage (SQLite)
+# ──────────────────────────────────────────────────────────────
+
+
+class SqliteProfileStorage:
+    """SQLite-Adapter für Rate-Limit-Profile.
+
+    Ersetzt JSONL-basierte Profile-Persistierung in rate_limiter.py.
+    Speichert pro user_id das aktive Profil.
+    """
+
+    def __init__(self, conn: SqliteConnection) -> None:
+        self._conn = conn
+
+    def load_all(self) -> dict[int, str]:
+        """Lädt alle User-Profile.
+
+        Returns:
+            Dict: user_id -> profile_name.
+        """
+        rows = self._conn.fetchall("SELECT user_id, profile FROM user_profiles")
+        return {int(row["user_id"]): row["profile"] for row in rows}
+
+    def save(self, user_id: int, chat_id: int, profile: str) -> None:
+        """Speichert oder aktualisiert ein User-Profil.
+
+        Args:
+            user_id: Telegram User-ID.
+            chat_id: Telegram Chat-ID.
+            profile: Profilname (light, normal, power, unlimited).
+        """
+        ts = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """INSERT OR REPLACE INTO user_profiles
+               (user_id, chat_id, profile, set_at)
+               VALUES (?, ?, ?, ?)""",
+            (user_id, chat_id, profile, ts),
+        )
+        log.debug("Profil gespeichert: user_id=%d profile=%s", user_id, profile)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -741,13 +799,16 @@ def _migrate_bookmarks_jsonl(conn: SqliteConnection, path: Path) -> int:
         log.info("Migration: %d korrupte Bookmark-Zeilen übersprungen", corrupt)
 
     if entries:
-        conn.execute(
-            """INSERT OR IGNORE INTO bookmarks
-               (user_id, username, chat_id, message_id, content, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (),
-            many=True,
-            data=entries,
+        conn.execute_in_transaction(
+            [
+                (
+                    """INSERT OR IGNORE INTO bookmarks
+                       (user_id, username, chat_id, message_id, content, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    row,
+                )
+                for row in entries
+            ]
         )
 
     return len(entries)
@@ -804,13 +865,16 @@ def _migrate_memory_jsonl(conn: SqliteConnection, path: Path, layer: str) -> int
         )
 
     if entries:
-        conn.execute(
-            """INSERT OR IGNORE INTO memory_entries
-               (id, user_id, type, content, importance, timestamp, metadata_json)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (),
-            many=True,
-            data=entries,
+        conn.execute_in_transaction(
+            [
+                (
+                    """INSERT OR IGNORE INTO memory_entries
+                       (id, user_id, type, content, importance, timestamp, metadata_json)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    row,
+                )
+                for row in entries
+            ]
         )
 
     return len(entries)

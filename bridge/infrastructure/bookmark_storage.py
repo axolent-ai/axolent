@@ -77,7 +77,7 @@ def migrate_legacy_chat_id() -> int:
                 except json.JSONDecodeError as e:
                     corrupt_count += 1
                     log.warning(
-                        "Migration: korrupte Zeile %d uebersprungen: %s",
+                        "Migration: korrupte Zeile %d übersprungen: %s",
                         line_num,
                         e,
                     )
@@ -313,3 +313,48 @@ def delete_bookmark(user_id: int, chat_id: int, message_id: int) -> bool:
             tmp_path.replace(BOOKMARKS_PATH)
 
     return found
+
+
+class JsonlBookmarkStorageAdapter:
+    """Adapter-Klasse die JSONL-Modul-Funktionen als BookmarkStorage-Protocol bereitstellt.
+
+    Wird nur im JSONL-Legacy-Modus verwendet (USE_SQLITE_STORAGE=false).
+    Delegiert an die Modul-Level-Funktionen in diesem Modul.
+    """
+
+    def save_bookmark(
+        self,
+        user_id: int,
+        username: Optional[str],
+        message_id: int,
+        chat_id: int,
+        content: str,
+    ) -> dict[str, Any]:
+        """Delegiert an Modul-Level save_bookmark."""
+        return save_bookmark(user_id, username, message_id, chat_id, content)
+
+    def list_recent_bookmarks(
+        self, user_id: int, limit: int = 10
+    ) -> list[dict[str, Any]]:
+        """Delegiert an Modul-Level list_recent_bookmarks."""
+        return list_recent_bookmarks(user_id, limit=limit)
+
+    def search_bookmarks(
+        self, user_id: int, query: str, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """Delegiert an Modul-Level search_bookmarks."""
+        return search_bookmarks(user_id, query, limit=limit)
+
+    def get_bookmark_by_message_id(
+        self, user_id: int, chat_id: int, message_id: int
+    ) -> Optional[dict[str, Any]]:
+        """Delegiert an Modul-Level get_bookmark_by_message_id."""
+        return get_bookmark_by_message_id(user_id, chat_id, message_id)
+
+    def bookmark_exists(self, user_id: int, chat_id: int, message_id: int) -> bool:
+        """Delegiert an Modul-Level bookmark_exists."""
+        return bookmark_exists(user_id, chat_id, message_id)
+
+    def delete_bookmark(self, user_id: int, chat_id: int, message_id: int) -> bool:
+        """Delegiert an Modul-Level delete_bookmark."""
+        return delete_bookmark(user_id, chat_id, message_id)

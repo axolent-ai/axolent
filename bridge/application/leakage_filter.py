@@ -1,8 +1,8 @@
-"""Leakage-Filter: Prueft LLM-Responses auf System-Prompt-Leakage (C-3).
+"""Leakage-Filter: Prüft LLM-Responses auf System-Prompt-Leakage (C-3).
 
 Naive Heuristik: Sucht nach signifikanten Substrings des System-Prompts
 (>= MIN_SUBSTRING_LENGTH Zeichen) in der LLM-Response. Wenn gefunden,
-wird eine bereinigte Response zurueckgegeben.
+wird eine bereinigte Response zurückgegeben.
 
 Design-Prinzipien:
     - Konservativ: lieber kein False Positive als zu strikt
@@ -18,16 +18,18 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
-# Minimale Laenge eines Substrings um als Leak zu gelten.
-# Kurze Fragmente (<40 Zeichen) koennten zufaellig in normalen
+# Minimale Länge eines Substrings um als Leak zu gelten.
+# Kurze Fragmente (<40 Zeichen) könnten zufällig in normalen
 # Antworten vorkommen (False Positives).
 MIN_SUBSTRING_LENGTH: int = 40
 
-# Schrittweite fuer die Substring-Extraktion aus dem System-Prompt.
-# Kleinere Schritte = gruendlicher aber langsamer.
-_CHUNK_STEP: int = 20
+# Schrittweite für die Substring-Extraktion aus dem System-Prompt.
+# Schrittweite 1 = lückenlos, keine Boundary-False-Negatives.
+# Performance: Bei 2000-Zeichen-Prompt ca. 2000 Chunks, jeder 40 Zeichen.
+# Substring-in-Checks in CPython sind O(n+m) dank Boyer-Moore.
+_CHUNK_STEP: int = 1
 
-# Replacement-Text fuer gefundene Leaks
+# Replacement-Text für gefundene Leaks
 _REDACTED_TEXT: str = "[Inhalt redacted]"
 
 # Generische Refusal-Antwort wenn ein Leak erkannt wird
@@ -38,14 +40,14 @@ REFUSAL_RESPONSE: str = (
 
 
 def _extract_fingerprints(system_prompt: str) -> list[str]:
-    """Extrahiert ueberlappende Substrings aus dem System-Prompt.
+    """Extrahiert überlappende Substrings aus dem System-Prompt.
 
     Normalisiert den Text (lowercase, Whitespace-Reduktion) und
-    extrahiert Chunks der Laenge MIN_SUBSTRING_LENGTH mit Schrittweite
+    extrahiert Chunks der Länge MIN_SUBSTRING_LENGTH mit Schrittweite
     _CHUNK_STEP.
 
     Args:
-        system_prompt: Der vollstaendige System-Prompt.
+        system_prompt: Der vollständige System-Prompt.
 
     Returns:
         Liste von normalisierten Substring-Fingerprints.
@@ -63,14 +65,14 @@ def _extract_fingerprints(system_prompt: str) -> list[str]:
 
 
 def check_for_system_prompt_leakage(response: str, system_prompt: str) -> Optional[str]:
-    """Prueft ob die LLM-Response Teile des System-Prompts enthaelt.
+    """Prüft ob die LLM-Response Teile des System-Prompts enthält.
 
     Vergleicht normalisierte Substrings des System-Prompts gegen die
     normalisierte Response. Bei Treffer wird die Refusal-Response
-    zurueckgegeben.
+    zurückgegeben.
 
     Args:
-        response: Die LLM-Response die geprueft werden soll.
+        response: Die LLM-Response die geprüft werden soll.
         system_prompt: Der aktive System-Prompt.
 
     Returns:

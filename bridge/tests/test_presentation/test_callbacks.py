@@ -43,9 +43,13 @@ def _make_callback_update(
     return update
 
 
-def _make_context() -> MagicMock:
-    """Erstellt einen gemockten Telegram-Context."""
+def _make_context(bookmark_service: object | None = None) -> MagicMock:
+    """Erstellt einen gemockten Telegram-Context mit bot_data."""
     context = MagicMock()
+    context.application = MagicMock()
+    context.application.bot_data = {
+        "bookmark_service": bookmark_service,
+    }
     return context
 
 
@@ -58,6 +62,11 @@ class TestBookmarkShowCallback:
         bm_path = tmp_path / "bookmarks.jsonl"
         lock_path = str(bm_path) + ".lock"
         new_lock = FileLock(lock_path)
+
+        from application.bookmark_service import BookmarkService
+        from infrastructure.bookmark_storage import JsonlBookmarkStorageAdapter
+
+        self._bookmark_svc = BookmarkService(storage=JsonlBookmarkStorageAdapter())
 
         self._patches = [
             patch("infrastructure.bookmark_storage.BOOKMARKS_PATH", bm_path),
@@ -86,7 +95,7 @@ class TestBookmarkShowCallback:
         )
 
         update = _make_callback_update("bm_show:10:100", user_id=1)
-        context = _make_context()
+        context = _make_context(bookmark_service=self._bookmark_svc)
 
         await handle_bookmark_show_callback(update, context)
 
@@ -103,7 +112,7 @@ class TestBookmarkShowCallback:
         from presentation.callbacks import handle_bookmark_show_callback
 
         update = _make_callback_update("bm_show:10:999", user_id=1)
-        context = _make_context()
+        context = _make_context(bookmark_service=self._bookmark_svc)
 
         await handle_bookmark_show_callback(update, context)
 
@@ -120,7 +129,7 @@ class TestBookmarkShowCallback:
         from presentation.callbacks import handle_bookmark_show_callback
 
         update = _make_callback_update("bm_show:abc:xyz", user_id=1)
-        context = _make_context()
+        context = _make_context(bookmark_service=self._bookmark_svc)
 
         await handle_bookmark_show_callback(update, context)
 
@@ -138,7 +147,7 @@ class TestBookmarkShowCallback:
         from presentation.callbacks import handle_bookmark_show_callback
 
         update = _make_callback_update("bm_del:10:100", user_id=1)
-        context = _make_context()
+        context = _make_context(bookmark_service=self._bookmark_svc)
 
         await handle_bookmark_show_callback(update, context)
 
@@ -156,6 +165,11 @@ class TestBookmarkDeleteCallback:
         bm_path = tmp_path / "bookmarks.jsonl"
         lock_path = str(bm_path) + ".lock"
         new_lock = FileLock(lock_path)
+
+        from application.bookmark_service import BookmarkService
+        from infrastructure.bookmark_storage import JsonlBookmarkStorageAdapter
+
+        self._bookmark_svc = BookmarkService(storage=JsonlBookmarkStorageAdapter())
 
         self._patches = [
             patch("infrastructure.bookmark_storage.BOOKMARKS_PATH", bm_path),
@@ -184,7 +198,7 @@ class TestBookmarkDeleteCallback:
         )
 
         update = _make_callback_update("bm_del:10:200", user_id=1)
-        context = _make_context()
+        context = _make_context(bookmark_service=self._bookmark_svc)
 
         await handle_bookmark_delete_callback(update, context)
 
@@ -200,9 +214,7 @@ class TestBookmarkDeleteCallback:
         assert "entfernt" in confirm_text
 
         # Bookmark sollte wirklich weg sein
-        from application.bookmark_service import get_bookmark
-
-        assert get_bookmark(1, 10, 200) is None
+        assert self._bookmark_svc.get_bookmark(1, 10, 200) is None
 
     async def test_delete_confirmation_includes_date(self) -> None:
         """bm_del Bestätigung enthält Datum des Bookmarks."""
@@ -217,7 +229,7 @@ class TestBookmarkDeleteCallback:
         )
 
         update = _make_callback_update("bm_del:10:201", user_id=1)
-        context = _make_context()
+        context = _make_context(bookmark_service=self._bookmark_svc)
 
         await handle_bookmark_delete_callback(update, context)
 
@@ -232,7 +244,7 @@ class TestBookmarkDeleteCallback:
         from presentation.callbacks import handle_bookmark_delete_callback
 
         update = _make_callback_update("bm_del:10:999", user_id=1)
-        context = _make_context()
+        context = _make_context(bookmark_service=self._bookmark_svc)
 
         await handle_bookmark_delete_callback(update, context)
 
@@ -248,7 +260,7 @@ class TestBookmarkDeleteCallback:
         from presentation.callbacks import handle_bookmark_delete_callback
 
         update = _make_callback_update("bm_del:abc:xyz", user_id=1)
-        context = _make_context()
+        context = _make_context(bookmark_service=self._bookmark_svc)
 
         await handle_bookmark_delete_callback(update, context)
 
@@ -265,7 +277,7 @@ class TestBookmarkDeleteCallback:
         from presentation.callbacks import handle_bookmark_delete_callback
 
         update = _make_callback_update("bm_show:10:100", user_id=1)
-        context = _make_context()
+        context = _make_context(bookmark_service=self._bookmark_svc)
 
         await handle_bookmark_delete_callback(update, context)
 
@@ -328,6 +340,11 @@ class TestAuditLoggingBmShow:
         lock_path = str(bm_path) + ".lock"
         new_lock = FileLock(lock_path)
 
+        from application.bookmark_service import BookmarkService
+        from infrastructure.bookmark_storage import JsonlBookmarkStorageAdapter
+
+        self._bookmark_svc = BookmarkService(storage=JsonlBookmarkStorageAdapter())
+
         self._patches = [
             patch("infrastructure.bookmark_storage.BOOKMARKS_PATH", bm_path),
             patch("infrastructure.bookmark_storage._BM_LOCK_PATH", lock_path),
@@ -356,7 +373,7 @@ class TestAuditLoggingBmShow:
         )
 
         update = _make_callback_update("bm_show:10:100", user_id=1)
-        context = _make_context()
+        context = _make_context(bookmark_service=self._bookmark_svc)
 
         await handle_bookmark_show_callback(update, context)
 
@@ -374,7 +391,7 @@ class TestAuditLoggingBmShow:
         from presentation.callbacks import handle_bookmark_show_callback
 
         update = _make_callback_update("bm_show:10:999", user_id=1)
-        context = _make_context()
+        context = _make_context(bookmark_service=self._bookmark_svc)
 
         await handle_bookmark_show_callback(update, context)
 
@@ -395,6 +412,11 @@ class TestAuditLoggingBmDel:
         bm_path = tmp_path / "bookmarks.jsonl"
         lock_path = str(bm_path) + ".lock"
         new_lock = FileLock(lock_path)
+
+        from application.bookmark_service import BookmarkService
+        from infrastructure.bookmark_storage import JsonlBookmarkStorageAdapter
+
+        self._bookmark_svc = BookmarkService(storage=JsonlBookmarkStorageAdapter())
 
         self._patches = [
             patch("infrastructure.bookmark_storage.BOOKMARKS_PATH", bm_path),
@@ -424,7 +446,7 @@ class TestAuditLoggingBmDel:
         )
 
         update = _make_callback_update("bm_del:10:200", user_id=1)
-        context = _make_context()
+        context = _make_context(bookmark_service=self._bookmark_svc)
 
         await handle_bookmark_delete_callback(update, context)
 
@@ -442,7 +464,7 @@ class TestAuditLoggingBmDel:
         from presentation.callbacks import handle_bookmark_delete_callback
 
         update = _make_callback_update("bm_del:10:999", user_id=1)
-        context = _make_context()
+        context = _make_context(bookmark_service=self._bookmark_svc)
 
         await handle_bookmark_delete_callback(update, context)
 
