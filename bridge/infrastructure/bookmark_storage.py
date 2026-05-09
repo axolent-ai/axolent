@@ -1,7 +1,11 @@
-"""Bookmark-Storage: JSONL-Adapter mit FileLock.
+"""Bookmark-Storage: JSONL-Adapter mit FileLock + SQLite-Backend-Switch.
 
-Persistiert Bookmarks als append-only JSONL-Datei.
-Thread-safe via filelock. Liest/schreibt UTF-8.
+Persistiert Bookmarks als append-only JSONL-Datei (Legacy) oder via SQLite.
+Thread-safe via filelock (JSONL) bzw. threading.Lock (SQLite).
+
+Backend-Switch: Wenn use_sqlite_backend() aufgerufen wird, delegieren
+alle Modul-Level-Funktionen an die SqliteBookmarkStorage-Instanz.
+Application-Layer bleibt unverändert.
 """
 
 from __future__ import annotations
@@ -9,11 +13,14 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from filelock import FileLock
 
 from infrastructure.encoding import append_jsonl_utf8, open_utf8
+
+if TYPE_CHECKING:
+    from infrastructure.sqlite_storage import SqliteBookmarkStorage
 
 log = logging.getLogger(__name__)
 
@@ -22,6 +29,23 @@ BOOKMARKS_PATH: Path = (
 )
 _BM_LOCK_PATH = str(BOOKMARKS_PATH) + ".lock"
 _BM_LOCK = FileLock(_BM_LOCK_PATH)
+
+# Backend-Switch: None = JSONL (Legacy), sonst SQLite-Instanz
+_sqlite_backend: Optional[SqliteBookmarkStorage] = None
+
+
+def use_sqlite_backend(backend: SqliteBookmarkStorage) -> None:
+    """Aktiviert SQLite als Bookmark-Backend.
+
+    Nach diesem Aufruf delegieren alle Modul-Level-Funktionen
+    an die übergebene SqliteBookmarkStorage-Instanz.
+
+    Args:
+        backend: Initialisierte SqliteBookmarkStorage-Instanz.
+    """
+    global _sqlite_backend  # noqa: PLW0603
+    _sqlite_backend = backend
+    log.info("Bookmark-Storage: SQLite-Backend aktiviert")
 
 
 def migrate_legacy_chat_id() -> int:
@@ -80,7 +104,9 @@ def save_bookmark(
     chat_id: int,
     content: str,
 ) -> dict[str, Any]:
-    """Speichert einen Bookmark-Eintrag in bookmarks.jsonl.
+    """Speichert einen Bookmark-Eintrag.
+
+    Delegiert an SQLite-Backend falls aktiviert, sonst JSONL.
 
     Args:
         user_id: Telegram User-ID.
@@ -92,6 +118,11 @@ def save_bookmark(
     Returns:
         Der gespeicherte Bookmark-Eintrag als Dict.
     """
+    if _sqlite_backend is not None:
+        return _sqlite_backend.save_bookmark(
+            user_id, username, message_id, chat_id, content
+        )
+
     from datetime import datetime, timezone
 
     entry: dict[str, Any] = {
@@ -115,7 +146,7 @@ def save_bookmark(
 
 
 def _read_all_bookmarks(user_id: int) -> list[dict[str, Any]]:
-    """Liest alle Bookmarks eines bestimmten Users (stream-basiert).
+    """Liest alle Bookmarks eines bestimmten Users (stream-basiert, JSONL-only).
 
     Args:
         user_id: Telegram User-ID zum Filtern.
@@ -156,6 +187,9 @@ def list_recent_bookmarks(user_id: int, limit: int = 10) -> list[dict[str, Any]]
     Returns:
         Liste von Bookmark-Dicts, neueste zuerst, max `limit` Einträge.
     """
+    if _sqlite_backend is not None:
+        return _sqlite_backend.list_recent_bookmarks(user_id, limit)
+
     all_bm = _read_all_bookmarks(user_id)
     return all_bm[:limit]
 
@@ -171,6 +205,9 @@ def search_bookmarks(user_id: int, query: str, limit: int = 20) -> list[dict[str
     Returns:
         Liste passender Bookmark-Dicts, neueste zuerst.
     """
+    if _sqlite_backend is not None:
+        return _sqlite_backend.search_bookmarks(user_id, query, limit)
+
     query_lower = query.lower()
     all_bm = _read_all_bookmarks(user_id)
     results: list[dict[str, Any]] = []
@@ -195,6 +232,9 @@ def get_bookmark_by_message_id(
     Returns:
         Bookmark-Dict oder None falls nicht gefunden.
     """
+    if _sqlite_backend is not None:
+        return _sqlite_backend.get_bookmark_by_message_id(user_id, chat_id, message_id)
+
     all_bm = _read_all_bookmarks(user_id)
     for bm in all_bm:
         if bm.get("message_id") == message_id and bm.get("chat_id") == chat_id:
@@ -213,11 +253,14 @@ def bookmark_exists(user_id: int, chat_id: int, message_id: int) -> bool:
     Returns:
         True wenn der Bookmark existiert, False sonst.
     """
+    if _sqlite_backend is not None:
+        return _sqlite_backend.bookmark_exists(user_id, chat_id, message_id)
+
     return get_bookmark_by_message_id(user_id, chat_id, message_id) is not None
 
 
 def delete_bookmark(user_id: int, chat_id: int, message_id: int) -> bool:
-    """Löscht einen Bookmark per chat_id + message_id (schreibt JSONL ohne den Eintrag neu).
+    """Löscht einen Bookmark per chat_id + message_id.
 
     Args:
         user_id: Telegram User-ID.
@@ -227,6 +270,9 @@ def delete_bookmark(user_id: int, chat_id: int, message_id: int) -> bool:
     Returns:
         True wenn ein Bookmark gelöscht wurde, False falls nicht gefunden.
     """
+    if _sqlite_backend is not None:
+        return _sqlite_backend.delete_bookmark(user_id, chat_id, message_id)
+
     if not BOOKMARKS_PATH.exists():
         return False
 

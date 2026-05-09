@@ -7,6 +7,7 @@ von der /bookmarks-Ansicht.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -116,9 +117,25 @@ async def handle_bookmark_delete_callback(
     user = query.from_user
     user_id: int = user.id if user else 0
 
+    # Bookmark-Daten VOR dem Loeschen holen (fuer Datum in Bestaetigung)
+    bm_data = get_bookmark(user_id, bm_chat_id, msg_id)
+
     deleted: bool = remove_bookmark(user_id, bm_chat_id, msg_id)
     if deleted:
         await query.answer(text="Entfernt", show_alert=False)
+
+        # Datum formatieren fuer Chat-Bestaetigung
+        date_display = ""
+        if bm_data:
+            ts = bm_data.get("timestamp", "")
+            if ts:
+                try:
+                    dt = datetime.fromisoformat(ts)
+                    date_display = f" vom {dt.strftime('%d.%m.%Y %H:%M')}"
+                except (ValueError, TypeError):
+                    pass
+
+        await query.message.reply_text(f"✓ Bookmark{date_display} entfernt")
         log.info(
             "Bookmark entfernt via Button: user_id=%d message_id=%d", user_id, msg_id
         )

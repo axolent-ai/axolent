@@ -10,12 +10,15 @@ Phase 1+: Auto-Memory-Loading in Chat-Service, Konsolidierung.
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING, Optional, Union
 
 from domain.memory.episodic import EpisodicEntry
 from domain.memory.procedural import ProceduralEntry
 from domain.memory.semantic import SemanticEntry
 from infrastructure.memory_storage import MemoryStorage
+
+if TYPE_CHECKING:
+    from infrastructure.sqlite_storage import SqliteMemoryStorage
 
 log = logging.getLogger(__name__)
 
@@ -27,11 +30,11 @@ class MemoryService:
     Kümmert sich um Entry-Erstellung, Validierung und Storage-Delegation.
     """
 
-    def __init__(self, storage: MemoryStorage) -> None:
+    def __init__(self, storage: Union[MemoryStorage, SqliteMemoryStorage]) -> None:
         """Initialisiert den Service mit einem Storage-Adapter.
 
         Args:
-            storage: MemoryStorage-Instanz (JSONL-Backend).
+            storage: MemoryStorage (JSONL) oder SqliteMemoryStorage (SQLite).
         """
         self.storage = storage
 

@@ -279,6 +279,44 @@ class TestStartCommandHistory:
         assert history[0].role == "assistant"
         assert history[0].content == HELP_TEXT
 
+    async def test_help_text_contains_all_commands(self) -> None:
+        """/help Text enthaelt alle tatsaechlich existierenden Commands."""
+        from presentation.handlers import HELP_TEXT
+
+        expected_commands = [
+            "/save",
+            "/bookmarks",
+            "/remember",
+            "/forget",
+            "/memory",
+            "/usage",
+            "/setlimit",
+            "/reset",
+            "/lang",
+            "/start",
+            "/help",
+        ]
+        for cmd in expected_commands:
+            assert cmd in HELP_TEXT, f"Command {cmd} fehlt im HELP_TEXT"
+
+    async def test_help_text_does_not_contain_nonexistent_commands(self) -> None:
+        """/help Text enthaelt KEINE nicht-existenten Commands."""
+        from presentation.handlers import HELP_TEXT
+
+        nonexistent = ["/unsave", "/delete", "/clear", "/settings", "/config"]
+        for cmd in nonexistent:
+            assert cmd not in HELP_TEXT, f"Nicht-existenter Command {cmd} im HELP_TEXT"
+
+    async def test_help_text_is_structured(self) -> None:
+        """/help Text hat die gewuenschte Struktur mit Kategorien."""
+        from presentation.handlers import HELP_TEXT
+
+        assert "Bookmarks" in HELP_TEXT
+        assert "Memory" in HELP_TEXT
+        assert "Limits" in HELP_TEXT or "Profile" in HELP_TEXT
+        assert "Konversation" in HELP_TEXT
+        assert "Ohne Slash" in HELP_TEXT
+
 
 class TestReplyToContext:
     """Tests: Telegram-Reply-To wird als Kontext extrahiert (Fix B)."""

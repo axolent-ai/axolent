@@ -32,9 +32,16 @@ from application.chat_service import ChatService
 from application.memory_service import MemoryService
 from application.provider_router import ProviderRouter
 from application.rate_limiter import RateLimiter
-from infrastructure.bookmark_storage import migrate_legacy_chat_id
+from infrastructure.audit_log import write_audit_log
+from infrastructure.bookmark_storage import migrate_legacy_chat_id, use_sqlite_backend
 from infrastructure.claude_process_pool import ClaudeProcessPool
 from infrastructure.memory_storage import MemoryStorage
+from infrastructure.sqlite_storage import (
+    SqliteBookmarkStorage,
+    SqliteConnection,
+    SqliteMemoryStorage,
+    migrate_jsonl_to_sqlite,
+)
 from infrastructure.personality_loader import build_combined_prompt
 from infrastructure.providers import (
     ClaudeProvider,
@@ -162,12 +169,71 @@ def main() -> None:
         log.critical("Kein TELEGRAM_BOT_TOKEN in .env gefunden.")
         sys.exit(1)
 
-    # Legacy-Bookmarks migrieren (chat_id nachrüsten)
+    # Legacy-Bookmarks migrieren (chat_id nachrüsten, JSONL)
     migrated_count = migrate_legacy_chat_id()
     if migrated_count:
         log.info(
             "Bookmark-Migration: %d Einträge mit chat_id nachgerüstet", migrated_count
         )
+
+    # C-4: SQLite-Storage initialisieren
+    bridge_root = Path(__file__).resolve().parent
+    use_sqlite = os.getenv("USE_SQLITE_STORAGE", "true").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+
+    if use_sqlite:
+        import time as _time
+
+        _t0 = _time.monotonic()
+        sqlite_conn = SqliteConnection(bridge_root / "data" / "jarvis.db")
+
+        # JSONL -> SQLite Migration (idempotent, nur beim ersten Mal)
+        migration_stats = migrate_jsonl_to_sqlite(sqlite_conn, bridge_root / "data")
+        _duration = _time.monotonic() - _t0
+
+        if migration_stats:
+            total_migrated = sum(migration_stats.values())
+            log.info(
+                "C-4 Migration: %d Einträge migriert in %.2fs %s",
+                total_migrated,
+                _duration,
+                migration_stats,
+            )
+            write_audit_log(
+                {
+                    "event_type": "storage_migration",
+                    "timestamp": __import__("datetime")
+                    .datetime.now(__import__("datetime").timezone.utc)
+                    .isoformat(),
+                    "migrated_bookmarks": migration_stats.get("bookmarks", 0),
+                    "migrated_memory_episodic": migration_stats.get(
+                        "memory_episodic", 0
+                    ),
+                    "migrated_memory_semantic": migration_stats.get(
+                        "memory_semantic", 0
+                    ),
+                    "migrated_memory_procedural": migration_stats.get(
+                        "memory_procedural", 0
+                    ),
+                    "duration_seconds": round(_duration, 3),
+                }
+            )
+
+        # Bookmark-Backend auf SQLite umschalten
+        bm_storage = SqliteBookmarkStorage(sqlite_conn)
+        use_sqlite_backend(bm_storage)
+
+        # Memory-Storage: SQLite
+        memory_storage: MemoryStorage | SqliteMemoryStorage = SqliteMemoryStorage(
+            sqlite_conn
+        )
+        log.info("Storage-Backend: SQLite (WAL-Mode, FTS5 aktiv)")
+    else:
+        memory_storage = MemoryStorage(data_dir=bridge_root / "data")
+        log.info("Storage-Backend: JSONL (Legacy-Modus)")
 
     # R04: Process-Pool initialisieren (für persistent Claude Subprocesses)
     process_pool = ClaudeProcessPool()
@@ -176,8 +242,6 @@ def main() -> None:
     router = _build_provider_router(process_pool)
 
     # Trinity-Memory initialisieren
-    bridge_root = Path(__file__).resolve().parent
-    memory_storage = MemoryStorage(data_dir=bridge_root / "data")
     memory_svc = MemoryService(storage=memory_storage)
 
     # ChatService mit Konstruktor-Injection erstellen
@@ -186,7 +250,7 @@ def main() -> None:
         memory_service=memory_svc,
     )
 
-    log.info("Trinity-Memory-System initialisiert (JSONL-Backend, Auto-Loading aktiv)")
+    log.info("Trinity-Memory-System initialisiert (Auto-Loading aktiv)")
 
     # C-2: Rate-Limiter initialisieren
     rate_limiter = RateLimiter()

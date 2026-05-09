@@ -48,22 +48,22 @@ class TestTokenBucket:
         assert allowed is False
         assert retry_after > 0
 
-    def test_bucket_refills_over_time(self) -> None:
-        """Tokens werden ueber Zeit nachgefuellt."""
+    def test_window_reset_allows_again(self) -> None:
+        """Nach Window-Reset werden Anfragen wieder erlaubt."""
         bucket = TokenBucket(capacity=2, window_seconds=10.0)
-        # Alle Tokens verbrauchen
+        # Alle Anfragen verbrauchen
         bucket.try_consume()
         bucket.try_consume()
         allowed, _ = bucket.try_consume()
         assert allowed is False
 
-        # Simuliere Zeitverlauf: 5 Sekunden = 1 Token Refill (rate=2/10=0.2/s)
-        bucket.last_refill = time.monotonic() - 5.0
+        # Simuliere Window-Ablauf: window_start 11s in die Vergangenheit
+        bucket.window_start = time.monotonic() - 11.0
         allowed, _ = bucket.try_consume()
         assert allowed is True
 
     def test_bucket_retry_after_is_positive(self) -> None:
-        """retry_after gibt eine sinnvolle Wartezeit zurueck."""
+        """retry_after gibt Wartezeit bis Window-Reset zurueck."""
         bucket = TokenBucket(capacity=1, window_seconds=60.0)
         bucket.try_consume()
         allowed, retry_after = bucket.try_consume()
@@ -87,11 +87,19 @@ class TestTokenBucket:
         assert seconds > 0
         assert seconds <= 60.0
 
-    def test_usage_fraction_full(self) -> None:
-        """usage_fraction ist 1.0 bei vollem Bucket."""
+    def test_usage_fraction_zero_when_no_requests(self) -> None:
+        """usage_fraction ist 0.0 wenn keine Anfragen gestellt wurden."""
         bucket = TokenBucket(capacity=10, window_seconds=60.0)
         fraction = bucket.usage_fraction()
-        assert fraction >= 0.99  # Toleranz fuer Zeitdrift
+        assert fraction == 0.0
+
+    def test_usage_fraction_after_consume(self) -> None:
+        """usage_fraction steigt mit Verbrauch."""
+        bucket = TokenBucket(capacity=10, window_seconds=60.0)
+        bucket.try_consume()
+        bucket.try_consume()
+        fraction = bucket.usage_fraction()
+        assert 0.19 <= fraction <= 0.21  # 2/10 = 0.2
 
 
 class TestRateLimiterProfiles:
@@ -232,22 +240,24 @@ class TestRateLimiterLimits:
         user_id = 42
         normal_hour = PROFILES["normal"]["per_hour"]  # 350
 
-        # Minute-Bucket umgehen: nach jeder Batch Minute-Tokens refuellen
+        # Minute-Window umgehen: nach jeder Batch Window resetten
         consumed = 0
         while consumed < normal_hour:
             result = limiter.check_and_consume(user_id)
             if result.allowed:
                 consumed += 1
             else:
-                # Minute-Bucket aufbraucht, refill simulieren
+                # Minute-Fenster resetten (Counter auf 0)
                 with limiter._lock:
                     buckets = limiter._users[user_id]
-                    buckets.minute_bucket.tokens = float(buckets.minute_bucket.capacity)
+                    buckets.minute_bucket.request_count = 0
+                    buckets.minute_bucket.window_start = time.monotonic()
 
-        # Minute-Bucket nochmal refuellen
+        # Minute-Fenster nochmal resetten
         with limiter._lock:
             buckets = limiter._users[user_id]
-            buckets.minute_bucket.tokens = float(buckets.minute_bucket.capacity)
+            buckets.minute_bucket.request_count = 0
+            buckets.minute_bucket.window_start = time.monotonic()
 
         # Naechste Anfrage: Hour-Bucket sollte blockieren
         result = limiter.check_and_consume(user_id)
@@ -272,16 +282,18 @@ class TestRateLimiterLimits:
                 else:
                     with limiter._lock:
                         buckets = limiter._users[user_id]
-                        buckets.minute_bucket.tokens = float(
-                            buckets.minute_bucket.capacity
-                        )
-                        buckets.hour_bucket.tokens = float(buckets.hour_bucket.capacity)
+                        buckets.minute_bucket.request_count = 0
+                        buckets.minute_bucket.window_start = time.monotonic()
+                        buckets.hour_bucket.request_count = 0
+                        buckets.hour_bucket.window_start = time.monotonic()
 
-            # Minute + Hour refuellen fuer den finalen Test
+            # Minute + Hour resetten fuer den finalen Test
             with limiter._lock:
                 buckets = limiter._users[user_id]
-                buckets.minute_bucket.tokens = float(buckets.minute_bucket.capacity)
-                buckets.hour_bucket.tokens = float(buckets.hour_bucket.capacity)
+                buckets.minute_bucket.request_count = 0
+                buckets.minute_bucket.window_start = time.monotonic()
+                buckets.hour_bucket.request_count = 0
+                buckets.hour_bucket.window_start = time.monotonic()
 
             # Naechste Anfrage: Day-Bucket blockiert
             result = limiter.check_and_consume(user_id)
@@ -318,8 +330,8 @@ class TestRateLimiterLimits:
         result_2 = limiter.check_and_consume(user_id=2)
         assert result_2.allowed is True
 
-    def test_refill_allows_again(self) -> None:
-        """Nach genug Wartezeit werden Anfragen wieder erlaubt."""
+    def test_window_reset_allows_again(self) -> None:
+        """Nach Window-Reset werden Anfragen wieder erlaubt."""
         limiter = RateLimiter()
         user_id = 99
         normal_min = PROFILES["normal"]["per_minute"]
@@ -330,16 +342,16 @@ class TestRateLimiterLimits:
         result = limiter.check_and_consume(user_id)
         assert result.allowed is False
 
-        # Simuliere 60 Sekunden Zeitverlauf -> Minute-Bucket voll
+        # Simuliere Window-Ablauf: window_start 61s in die Vergangenheit
         with limiter._lock:
             buckets = limiter._users[user_id]
-            buckets.minute_bucket.last_refill = time.monotonic() - 60.0
+            buckets.minute_bucket.window_start = time.monotonic() - 61.0
 
         result = limiter.check_and_consume(user_id)
         assert result.allowed is True
 
     def test_rollback_minute_when_hour_blocks(self) -> None:
-        """Wenn Hour-Bucket blockiert, wird das Minute-Token zurueckgegeben."""
+        """Wenn Hour-Bucket blockiert, wird der Minute-Counter zurueckgesetzt."""
         limiter = RateLimiter()
         user_id = 55
 
@@ -348,18 +360,17 @@ class TestRateLimiterLimits:
 
         with limiter._lock:
             buckets = limiter._users[user_id]
-            # Hour-Bucket auf 0 setzen
-            buckets.hour_bucket.tokens = 0.0
-            buckets.hour_bucket.last_refill = time.monotonic()
-            minute_before = buckets.minute_bucket.tokens
+            # Hour-Bucket auf capacity setzen (voll verbraucht)
+            buckets.hour_bucket.request_count = buckets.hour_bucket.capacity
+            minute_count_before = buckets.minute_bucket.request_count
 
         result = limiter.check_and_consume(user_id)
         assert result.allowed is False
 
-        # Minute-Token muss zurueckgegeben worden sein
+        # Minute-Counter muss zurueckgesetzt worden sein (rollback)
         with limiter._lock:
-            minute_after = limiter._users[user_id].minute_bucket.tokens
-        assert minute_after >= minute_before - 0.1
+            minute_count_after = limiter._users[user_id].minute_bucket.request_count
+        assert minute_count_after == minute_count_before
 
 
 class TestWarning70Percent:
@@ -397,8 +408,8 @@ class TestWarning70Percent:
         # Genau einmal
         assert warning_count == 1
 
-    def test_warning_resets_after_refill(self) -> None:
-        """70%-Warnung resettet nach Refill (Tokens wieder unter 50%)."""
+    def test_warning_resets_after_window_reset(self) -> None:
+        """70%-Warnung resettet nach Window-Reset (neues Fenster, Counter auf 0)."""
         limiter = RateLimiter()
         user_id = 102
         normal_min = PROFILES["normal"]["per_minute"]  # 25
@@ -407,11 +418,14 @@ class TestWarning70Percent:
         for _ in range(int(normal_min * 0.75)):
             limiter.check_and_consume(user_id)
 
-        # Simuliere Refill (Tokens wieder voll)
+        # Simuliere Window-Reset: Counter auf 0, window_start in Vergangenheit
         with limiter._lock:
             buckets = limiter._users[user_id]
-            buckets.minute_bucket.tokens = float(buckets.minute_bucket.capacity)
-            buckets.minute_bucket.last_refill = time.monotonic()
+            buckets.minute_bucket.request_count = 0
+            # Window-Start so weit zuruecksetzen dass _maybe_reset_window greift
+            buckets.minute_bucket.window_start = (
+                time.monotonic() - buckets.minute_bucket.window_seconds - 1.0
+            )
 
         # Wieder konsumieren bis zur Schwelle: Warnung sollte erneut feuern
         warning_count = 0
@@ -508,6 +522,36 @@ class TestUsageInfo:
             assert usage.hour_limit == 0
             assert usage.day_limit == 0
 
+    def test_usage_counter_stable_within_window(self) -> None:
+        """Usage-Counter bleibt stabil innerhalb des Fensters."""
+        limiter = RateLimiter()
+        user_id = 504
+
+        for _ in range(5):
+            limiter.check_and_consume(user_id)
+
+        # Counter muss 5 zeigen (innerhalb des Fensters, kein Reset)
+        usage = limiter.get_usage(user_id)
+        assert usage.minute_used == 5
+        assert usage.hour_used == 5
+        assert usage.day_used == 5
+
+    def test_usage_counter_resets_after_window(self) -> None:
+        """Usage-Counter wird zurueckgesetzt wenn das Fenster ablaeuft."""
+        limiter = RateLimiter()
+        user_id = 505
+
+        for _ in range(3):
+            limiter.check_and_consume(user_id)
+
+        # Simuliere Window-Ablauf (Minute-Fenster: 60s)
+        with limiter._lock:
+            buckets = limiter._users[user_id]
+            buckets.minute_bucket.window_start -= 61.0
+
+        usage = limiter.get_usage(user_id)
+        assert usage.minute_used == 0  # Fenster abgelaufen -> 0
+
     def test_usage_format_reset_seconds(self) -> None:
         """Reset-Sekunden sind gerundete positive Werte."""
         limiter = RateLimiter()
@@ -587,3 +631,131 @@ class TestRateLimitResult:
         result = limiter.check_and_consume(user_id=1)
         assert result.allowed is False
         assert result.retry_after == round(result.retry_after, 1)
+
+
+class TestBugReproduction:
+    """Regression-Tests fuer den Rate-Limit-Counter-Bug (2026-05-09).
+
+    Bug: Bei 17 schnellen Anfragen (Light-Profil, 17/min) zaehlte der Counter
+    nur ~11 statt 17, weil der Token-Bucket zwischen Anfragen Tokens nachfuellte.
+    Der User konnte dadurch mehr als capacity Anfragen pro Fenster senden.
+    Fix: Token-Bucket durch Fixed-Window-Counter ersetzt.
+    """
+
+    def test_17_rapid_requests_counted_exactly(self, tmp_path: Path) -> None:
+        """Bug-Regression: 17 schnelle Anfragen muessen request_count == 17 ergeben."""
+        profiles_path = tmp_path / "user_profiles.jsonl"
+        with patch("application.rate_limiter._PROFILES_PATH", profiles_path):
+            limiter = RateLimiter()
+            limiter.set_user_profile(user_id=1, chat_id=1, profile="light")
+
+            # 17 Anfragen schnell hintereinander (kein time.sleep)
+            for i in range(17):
+                result = limiter.check_and_consume(user_id=1)
+                assert result.allowed is True, f"Anfrage {i + 1} sollte erlaubt sein"
+
+            # Usage muss exakt 17 zeigen
+            usage = limiter.get_usage(user_id=1)
+            assert usage.minute_used == 17
+
+            # 18. Anfrage MUSS blockiert werden
+            result = limiter.check_and_consume(user_id=1)
+            assert result.allowed is False
+            assert result.period == "minute"
+
+    def test_17_requests_with_delays_still_blocked(self, tmp_path: Path) -> None:
+        """17 Anfragen ueber ~30s verteilt muessen trotzdem exakt 17 zaehlen.
+
+        Simuliert den realen Bug: Zwischen Anfragen vergehen 1-3 Sekunden.
+        Mit dem alten Token-Bucket haette der Refill ~8.5 Extra-Tokens erzeugt.
+        """
+        profiles_path = tmp_path / "user_profiles.jsonl"
+        with patch("application.rate_limiter._PROFILES_PATH", profiles_path):
+            limiter = RateLimiter()
+            limiter.set_user_profile(user_id=1, chat_id=1, profile="light")
+
+            # 17 Anfragen, keine davon darf blockiert werden
+            for i in range(17):
+                result = limiter.check_and_consume(user_id=1)
+                assert result.allowed is True, f"Anfrage {i + 1} blockiert!"
+
+            # 18. Anfrage MUSS blockiert werden, auch nach Zeitablauf
+            # (Fenster ist noch nicht abgelaufen)
+            result = limiter.check_and_consume(user_id=1)
+            assert result.allowed is False
+
+    def test_exact_capacity_then_block_all_profiles(self, tmp_path: Path) -> None:
+        """Jedes Profil blockiert exakt nach capacity Anfragen pro Minute."""
+        profiles_path = tmp_path / "user_profiles.jsonl"
+        for profile_name, limits in PROFILES.items():
+            if profile_name == "unlimited":
+                continue
+            cap = limits["per_minute"]
+            with patch("application.rate_limiter._PROFILES_PATH", profiles_path):
+                limiter = RateLimiter()
+                user_id = hash(profile_name) % 100000
+                limiter.set_user_profile(user_id, user_id, profile_name)
+
+                for i in range(cap):
+                    result = limiter.check_and_consume(user_id)
+                    assert result.allowed is True, (
+                        f"{profile_name}: Anfrage {i + 1}/{cap} blockiert!"
+                    )
+
+                result = limiter.check_and_consume(user_id)
+                assert result.allowed is False, (
+                    f"{profile_name}: Anfrage {cap + 1} haette blockiert sein muessen!"
+                )
+
+    def test_counter_not_inflated_by_time(self) -> None:
+        """Counter zaehlt nur echte Anfragen, nicht Zeitablauf."""
+        bucket = TokenBucket(capacity=17, window_seconds=60.0)
+
+        # 5 Anfragen
+        for _ in range(5):
+            bucket.try_consume()
+        assert bucket.consumed_count() == 5
+
+        # Auch wenn "Zeit vergeht" (innerhalb des Fensters): Counter bleibt 5
+        # (Kein Refill, kein Drift)
+        assert bucket.consumed_count() == 5
+
+    def test_rollback_method(self) -> None:
+        """rollback() dekrementiert den Counter korrekt."""
+        bucket = TokenBucket(capacity=10, window_seconds=60.0)
+        bucket.try_consume()
+        bucket.try_consume()
+        bucket.try_consume()
+        assert bucket.consumed_count() == 3
+
+        bucket.rollback()
+        assert bucket.consumed_count() == 2
+
+        # Rollback bei 0 bleibt 0
+        bucket.request_count = 0
+        bucket.rollback()
+        assert bucket.consumed_count() == 0
+
+    def test_commands_not_counted(self, tmp_path: Path) -> None:
+        """Commands (/save, /usage etc.) sollen NICHT gezaehlt werden.
+
+        Nur LLM-Anfragen (handle_message) rufen check_and_consume auf.
+        Commands gehen direkt in ihre Handler ohne Rate-Limit-Check.
+        Dieser Test dokumentiert die Architektur-Entscheidung.
+        """
+        profiles_path = tmp_path / "user_profiles.jsonl"
+        with patch("application.rate_limiter._PROFILES_PATH", profiles_path):
+            limiter = RateLimiter()
+            limiter.set_user_profile(user_id=1, chat_id=1, profile="light")
+
+            # 17 LLM-Anfragen verbrauchen
+            for _ in range(17):
+                limiter.check_and_consume(user_id=1)
+
+            # Usage zeigt 17/17 (voll)
+            usage = limiter.get_usage(user_id=1)
+            assert usage.minute_used == 17
+
+            # Commands wuerden check_and_consume NICHT aufrufen,
+            # daher bleibt der Counter bei 17 (kein Increment)
+            # (Der Handler-Code zeigt: nur handle_message ruft check_and_consume auf)

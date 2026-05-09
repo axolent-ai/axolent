@@ -172,7 +172,7 @@ class TestBookmarkDeleteCallback:
             p.stop()
 
     async def test_delete_existing_bookmark(self) -> None:
-        """bm_del mit gültiger ID löscht den Bookmark."""
+        """bm_del mit gültiger ID löscht den Bookmark und sendet Bestätigung."""
         from presentation.callbacks import handle_bookmark_delete_callback
 
         save_bookmark(
@@ -193,13 +193,42 @@ class TestBookmarkDeleteCallback:
         answer_call = query.answer.call_args
         assert "Entfernt" in str(answer_call) or "entfernt" in str(answer_call).lower()
 
+        # Chat-Bestätigung muss gesendet worden sein
+        query.message.reply_text.assert_called_once()
+        confirm_text = query.message.reply_text.call_args[0][0]
+        assert "Bookmark" in confirm_text
+        assert "entfernt" in confirm_text
+
         # Bookmark sollte wirklich weg sein
         from application.bookmark_service import get_bookmark
 
         assert get_bookmark(1, 10, 200) is None
 
+    async def test_delete_confirmation_includes_date(self) -> None:
+        """bm_del Bestätigung enthält Datum des Bookmarks."""
+        from presentation.callbacks import handle_bookmark_delete_callback
+
+        save_bookmark(
+            user_id=1,
+            username="testuser",
+            message_id=201,
+            chat_id=10,
+            content="Bookmark mit Datum",
+        )
+
+        update = _make_callback_update("bm_del:10:201", user_id=1)
+        context = _make_context()
+
+        await handle_bookmark_delete_callback(update, context)
+
+        query = update.callback_query
+        confirm_text = query.message.reply_text.call_args[0][0]
+        # Datum im Format DD.MM.YYYY muss enthalten sein
+        assert "vom" in confirm_text
+        assert "2026" in confirm_text or "20" in confirm_text
+
     async def test_delete_nonexistent_bookmark(self) -> None:
-        """bm_del mit nicht-existierender ID meldet 'nicht gefunden'."""
+        """bm_del mit nicht-existierender ID meldet 'nicht gefunden', keine Chat-Nachricht."""
         from presentation.callbacks import handle_bookmark_delete_callback
 
         update = _make_callback_update("bm_del:10:999", user_id=1)
@@ -211,6 +240,8 @@ class TestBookmarkDeleteCallback:
         query.answer.assert_called_once()
         answer_call = query.answer.call_args
         assert "nicht gefunden" in str(answer_call).lower()
+        # Keine Chat-Bestätigung bei nicht-existentem Bookmark
+        query.message.reply_text.assert_not_called()
 
     async def test_delete_invalid_callback_data(self) -> None:
         """bm_del mit ungültigen Daten zeigt 'Ungültige ID'."""

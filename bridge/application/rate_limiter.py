@@ -107,93 +107,110 @@ def _save_user_profile(user_id: int, chat_id: int, profile: str) -> None:
 
 
 class TokenBucket:
-    """Token-Bucket-Algorithmus fuer ein einzelnes Zeitfenster.
+    """Fixed-Window-Counter fuer ein einzelnes Zeitfenster.
 
-    Tokens werden kontinuierlich nachgefuellt basierend auf der
-    verstrichenen Zeit seit dem letzten Check. Maximal `capacity`
-    Tokens koennen akkumuliert werden.
+    Zaehlt Anfragen pro Fenster und blockiert bei Erreichen der Kapazitaet.
+    Das Fenster wird zurueckgesetzt sobald window_seconds vergangen sind.
+
+    Frueher war hier ein Token-Bucket-Algorithmus mit kontinuierlichem Refill.
+    Problem: Tokens flossen zwischen Anfragen nach, sodass z.B. bei capacity=17
+    und 30s Verteilung effektiv ~25 Anfragen moeglich waren statt 17.
+    Fix (2026-05-09): Umstellung auf Fixed-Window-Counter. Exakt capacity
+    Anfragen pro Fenster, kein Refill, kein Drift.
 
     Attributes:
-        capacity: Maximale Anzahl Tokens im Bucket.
-        refill_rate: Tokens pro Sekunde die nachgefuellt werden.
-        tokens: Aktuelle Anzahl verfuegbarer Tokens.
-        last_refill: Zeitstempel des letzten Refills.
+        capacity: Maximale Anzahl Anfragen pro Fenster.
+        request_count: Tatsaechliche Anzahl konsumierter Anfragen im aktuellen Fenster.
+        window_seconds: Laenge des Zeitfensters in Sekunden.
+        window_start: Zeitstempel des Fenster-Starts (fuer Counter-Reset).
     """
 
-    __slots__ = ("capacity", "refill_rate", "tokens", "last_refill")
+    __slots__ = (
+        "capacity",
+        "request_count",
+        "window_seconds",
+        "window_start",
+    )
 
     def __init__(self, capacity: int, window_seconds: float) -> None:
-        """Initialisiert den Bucket.
+        """Initialisiert den Counter.
 
         Args:
-            capacity: Maximale Tokens (= max Anfragen pro Fenster).
+            capacity: Maximale Anfragen pro Fenster.
             window_seconds: Laenge des Zeitfensters in Sekunden.
         """
         self.capacity = capacity
-        self.refill_rate = capacity / window_seconds
-        self.tokens = float(capacity)
-        self.last_refill = time.monotonic()
+        self.request_count: int = 0
+        self.window_seconds = window_seconds
+        self.window_start: float = time.monotonic()
+
+    def _maybe_reset_window(self, now: float) -> None:
+        """Setzt den Request-Counter zurueck wenn das Zeitfenster abgelaufen ist.
+
+        Args:
+            now: Aktueller Zeitstempel (time.monotonic).
+        """
+        if now - self.window_start >= self.window_seconds:
+            self.request_count = 0
+            self.window_start = now
 
     def try_consume(self) -> tuple[bool, float]:
-        """Versucht ein Token zu konsumieren.
+        """Versucht eine Anfrage zu konsumieren.
 
-        Refilled zuerst basierend auf verstrichener Zeit,
-        dann versucht ein Token zu entnehmen.
+        Prueft ob das Fenster abgelaufen ist (Reset), dann ob
+        request_count < capacity. Kein Token-Refill, kein Drift.
 
         Returns:
             Tuple von (allowed, retry_after_seconds).
-            allowed=True wenn Token verfuegbar war.
-            retry_after_seconds > 0 wenn nicht erlaubt (Wartezeit bis naechstes Token).
+            allowed=True wenn Anfrage erlaubt war.
+            retry_after_seconds > 0 wenn nicht erlaubt (Wartezeit bis Window-Reset).
         """
         now = time.monotonic()
-        elapsed = now - self.last_refill
-        self.last_refill = now
 
-        # Tokens nachfuellen (maximal bis capacity)
-        self.tokens = min(self.capacity, self.tokens + elapsed * self.refill_rate)
+        # Window-Reset pruefen
+        self._maybe_reset_window(now)
 
-        if self.tokens >= 1.0:
-            self.tokens -= 1.0
+        if self.request_count < self.capacity:
+            self.request_count += 1
             return True, 0.0
 
-        # Berechne Wartezeit bis naechstes Token verfuegbar
-        deficit = 1.0 - self.tokens
-        retry_after = deficit / self.refill_rate
-        return False, retry_after
+        # Berechne Wartezeit bis Window-Reset
+        elapsed_in_window = now - self.window_start
+        retry_after = self.window_seconds - elapsed_in_window
+        return False, max(0.0, retry_after)
 
     def usage_fraction(self) -> float:
         """Gibt den aktuellen Verbrauchsanteil zurueck (0.0 bis 1.0).
 
-        0.0 = alles verbraucht, 1.0 = voll verfuegbar.
-        Berechnet basierend auf tokens/capacity.
+        0.0 = nichts verbraucht, 1.0 = Limit erreicht.
         """
         if self.capacity == 0:
             return 0.0
-        # Refill berechnen ohne zu konsumieren
         now = time.monotonic()
-        elapsed = now - self.last_refill
-        current_tokens = min(self.capacity, self.tokens + elapsed * self.refill_rate)
-        return current_tokens / self.capacity
+        self._maybe_reset_window(now)
+        return min(1.0, self.request_count / self.capacity)
 
     def consumed_count(self) -> int:
-        """Gibt die Anzahl verbrauchter Tokens zurueck (gerundet).
-
-        Beruecksichtigt Refill seit letztem Check.
-        """
+        """Gibt die Anzahl konsumierter Anfragen im aktuellen Fenster zurueck."""
         now = time.monotonic()
-        elapsed = now - self.last_refill
-        current_tokens = min(self.capacity, self.tokens + elapsed * self.refill_rate)
-        return max(0, self.capacity - int(current_tokens))
+        self._maybe_reset_window(now)
+        return self.request_count
 
     def seconds_until_reset(self) -> float:
-        """Gibt Sekunden bis zur naechsten vollen Auffuellung zurueck."""
+        """Gibt Sekunden bis zum naechsten Window-Reset zurueck."""
         now = time.monotonic()
-        elapsed = now - self.last_refill
-        current_tokens = min(self.capacity, self.tokens + elapsed * self.refill_rate)
-        deficit = self.capacity - current_tokens
-        if deficit <= 0:
-            return 0.0
-        return deficit / self.refill_rate
+        elapsed_in_window = now - self.window_start
+        remaining = self.window_seconds - elapsed_in_window
+        return max(0.0, remaining)
+
+    def rollback(self) -> None:
+        """Macht die letzte consume-Operation rueckgaengig.
+
+        Wird verwendet wenn ein aeusserer Bucket (Hour/Day) die Anfrage
+        ablehnt, nachdem ein innerer Bucket (Minute) schon konsumiert hat.
+        """
+        if self.request_count > 0:
+            self.request_count -= 1
 
 
 class _UserBuckets:
@@ -459,11 +476,8 @@ class RateLimiter:
 
             hour_ok, hour_retry = buckets.hour_bucket.try_consume()
             if not hour_ok:
-                # Minute-Token zurueckgeben
-                buckets.minute_bucket.tokens = min(
-                    buckets.minute_bucket.capacity,
-                    buckets.minute_bucket.tokens + 1.0,
-                )
+                # Minute-Zaehler zurueckgeben
+                buckets.minute_bucket.rollback()
                 return RateLimitResult(
                     allowed=False,
                     retry_after=round(hour_retry, 1),
@@ -476,14 +490,8 @@ class RateLimiter:
             day_ok, day_retry = buckets.day_bucket.try_consume()
             if not day_ok:
                 # Minute und Hour zurueckgeben
-                buckets.minute_bucket.tokens = min(
-                    buckets.minute_bucket.capacity,
-                    buckets.minute_bucket.tokens + 1.0,
-                )
-                buckets.hour_bucket.tokens = min(
-                    buckets.hour_bucket.capacity,
-                    buckets.hour_bucket.tokens + 1.0,
-                )
+                buckets.minute_bucket.rollback()
+                buckets.hour_bucket.rollback()
                 return RateLimitResult(
                     allowed=False,
                     retry_after=round(day_retry, 1),
