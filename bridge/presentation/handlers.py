@@ -476,7 +476,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     async with user_lock:
         async with GLOBAL_CLAUDE_SEMAPHORE:
             # R04: Streaming-Pfad wenn PersistentProvider verfügbar
-            if persistent_provider is not None and persistent_provider.is_available():
+            # Type-Safety: hasattr statt isinstance wegen Layer-Contract
+            # (presentation darf infrastructure.providers.base nicht importieren)
+            if (
+                persistent_provider is not None
+                and hasattr(persistent_provider, "query_streaming")
+                and persistent_provider.is_available()
+            ):
                 await _handle_message_streaming(
                     update=update,
                     context=context,
@@ -1185,7 +1191,12 @@ async def handle_forget_command(
     deleted = memory_service.forget(user_id, entry_id)
 
     if deleted:
-        await update.message.reply_text(f"Vergessen: {entry_id}")
+        forget_msg = (
+            f"Vergessen: {entry_id}\n\n"
+            "Hinweis: Falls der Inhalt in der laufenden Konversation steht, "
+            "nutze /reset für vollständigen Neustart."
+        )
+        await update.message.reply_text(forget_msg)
         log.info("User %d forgot memory: %s", user_id, entry_id)
     else:
         await update.message.reply_text(

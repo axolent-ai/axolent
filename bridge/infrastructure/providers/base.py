@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import AsyncIterator
 
 
 @dataclass(frozen=True)
@@ -160,3 +161,33 @@ class LLMProvider(ABC):
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} name={self.name!r}>"
+
+
+class StreamingProvider(ABC):
+    """Mixin für Provider mit Streaming-Support.
+
+    Provider die Token-Streaming unterstützen sollten dieses Mixin
+    zusätzlich zu LLMProvider implementieren. Ermöglicht Type-Safe
+    isinstance()-Checks statt fragiler hasattr()-Prüfungen.
+    """
+
+    @abstractmethod
+    async def query_streaming(
+        self,
+        prompt: str,
+        system_prompt: str = "",
+        chat_id: int | None = None,
+        user_id: int | None = None,
+    ) -> "AsyncIterator":
+        """Sendet eine Anfrage und streamt die Antwort Token für Token.
+
+        Args:
+            prompt: User-Nachricht.
+            system_prompt: Optionaler System-Prompt.
+            chat_id: Chat-ID für Process-Routing.
+            user_id: User-ID für Process-Routing.
+
+        Yields:
+            StreamEvent-Objekte (content_delta, result, error).
+        """
+        ...

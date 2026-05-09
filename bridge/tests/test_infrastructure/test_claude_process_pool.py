@@ -699,3 +699,28 @@ class TestSendMessageWaitsForReady:
             "auch wenn was_cold=False"
         )
         await pool.shutdown()
+
+
+class TestTTLConfiguration:
+    """Tests für die TTL-Konfiguration via Umgebungsvariable."""
+
+    def test_default_ttl_is_one_hour(self) -> None:
+        """Ohne CLAUDE_SUBPROCESS_TTL_SECONDS gilt 3600s (1 Stunde)."""
+        assert INACTIVITY_TIMEOUT_SECONDS == 3600.0
+
+    def test_ttl_configurable_via_env(self) -> None:
+        """CLAUDE_SUBPROCESS_TTL_SECONDS setzt den TTL-Wert."""
+        import importlib
+
+        import infrastructure.claude_process_pool as mod
+
+        with patch.dict("os.environ", {"CLAUDE_SUBPROCESS_TTL_SECONDS": "1800"}):
+            importlib.reload(mod)
+            assert mod.INACTIVITY_TIMEOUT_SECONDS == 1800.0
+
+        # Restore
+        with patch.dict("os.environ", {}, clear=False):
+            if "CLAUDE_SUBPROCESS_TTL_SECONDS" in __import__("os").environ:
+                del __import__("os").environ["CLAUDE_SUBPROCESS_TTL_SECONDS"]
+            importlib.reload(mod)
+            assert mod.INACTIVITY_TIMEOUT_SECONDS == 3600.0

@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
 import time
 from dataclasses import dataclass, field
@@ -27,8 +28,10 @@ log = logging.getLogger(__name__)
 
 # 1 Stunde Idle-Timeout: bei Solo/kleinen Multi-User-Setups praktischer.
 # Tradeoff: ~150-300 MB RAM pro Subprocess solange er warm gehalten wird.
-# Bei <10 aktiven Usern unkritisch. Phase-1+: konfigurierbar via .env.
-INACTIVITY_TIMEOUT_SECONDS: float = 60 * 60
+# Bei <10 aktiven Usern unkritisch. Konfigurierbar via .env.
+INACTIVITY_TIMEOUT_SECONDS: float = float(
+    os.getenv("CLAUDE_SUBPROCESS_TTL_SECONDS", str(60 * 60))
+)
 
 # Cleanup-Intervall: alle 60 Sekunden auf abgelaufene Processes prüfen
 CLEANUP_INTERVAL_SECONDS: float = 60.0

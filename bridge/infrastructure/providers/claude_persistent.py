@@ -28,6 +28,7 @@ from infrastructure.providers.base import (
     LLMProvider,
     ProviderCapabilities,
     ProviderResponse,
+    StreamingProvider,
 )
 
 log = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ _CAPABILITIES = ProviderCapabilities(
 )
 
 
-class ClaudePersistentProvider(LLMProvider):
+class ClaudePersistentProvider(LLMProvider, StreamingProvider):
     """Claude Code CLI als LLM-Provider mit persistentem Subprocess (Modus B).
 
     Nutzt ClaudeProcessPool für warme Subprocesses pro User.

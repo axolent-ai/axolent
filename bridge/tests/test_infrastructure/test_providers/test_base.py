@@ -20,6 +20,7 @@ from infrastructure.providers.base import (
     ProviderResponse,
     ProviderTimeout,
     ProviderUnavailable,
+    StreamingProvider,
 )
 
 
@@ -179,3 +180,60 @@ class TestLLMProviderInterface:
         assert provider.is_available() is True
         caps = provider.get_capabilities()
         assert caps.max_context_tokens == 8_000
+
+
+class TestStreamingProviderMixin:
+    """Tests für das StreamingProvider-Mixin."""
+
+    def test_cannot_instantiate_abstract(self) -> None:
+        """StreamingProvider kann nicht direkt instanziiert werden."""
+        with pytest.raises(TypeError):
+            StreamingProvider()  # type: ignore
+
+    def test_incomplete_streaming_provider_raises(self) -> None:
+        """Subklasse ohne query_streaming() kann nicht instanziiert werden."""
+
+        class IncompleteStreamingProvider(StreamingProvider):
+            pass
+
+        with pytest.raises(TypeError):
+            IncompleteStreamingProvider()  # type: ignore
+
+    def test_complete_streaming_provider_works(self) -> None:
+        """Vollstaendige StreamingProvider-Subklasse ist instanziierbar."""
+        from typing import AsyncIterator
+
+        class DummyStreamingProvider(LLMProvider, StreamingProvider):
+            name = "streaming_dummy"
+
+            def get_capabilities(self) -> ProviderCapabilities:
+                return ProviderCapabilities(supports_streaming=True)
+
+            def is_available(self) -> bool:
+                return True
+
+            async def query(
+                self, prompt, system_prompt="", timeout_seconds=120, model=None
+            ):
+                return ProviderResponse(
+                    text="response",
+                    duration_seconds=0.1,
+                    provider_name=self.name,
+                )
+
+            async def query_streaming(
+                self, prompt, system_prompt="", chat_id=None, user_id=None
+            ) -> AsyncIterator:
+                yield "token"  # type: ignore
+
+        provider = DummyStreamingProvider()
+        assert isinstance(provider, StreamingProvider)
+        assert isinstance(provider, LLMProvider)
+        assert provider.name == "streaming_dummy"
+
+    def test_isinstance_check_for_streaming(self) -> None:
+        """isinstance(provider, StreamingProvider) ist der korrekte Type-Check."""
+        from infrastructure.providers.claude_persistent import ClaudePersistentProvider
+
+        # ClaudePersistentProvider erweitert StreamingProvider
+        assert issubclass(ClaudePersistentProvider, StreamingProvider)

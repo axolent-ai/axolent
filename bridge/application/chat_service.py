@@ -28,14 +28,16 @@ from domain.language import detect_language
 from domain.personality import build_effective_prompt
 from infrastructure.audit_log import write_audit_log
 from infrastructure.claude_process_pool import StreamEvent
-from infrastructure.providers.base import ProviderError
 from infrastructure.conversation_storage import (
     get_history,
     get_language,
-    reset_conversation as _infra_reset_conversation,
     save_turn,
     set_language,
 )
+from infrastructure.conversation_storage import (
+    reset_conversation as _infra_reset_conversation,
+)
+from infrastructure.providers.base import ProviderError
 
 if TYPE_CHECKING:
     from application.memory_service import MemoryService
@@ -46,7 +48,7 @@ log = logging.getLogger(__name__)
 
 # Memory-Token-Budget: verhindert Prompt-Explosion bei langen /remember Einträgen
 MAX_MEMORY_CHARS_PER_ENTRY = 400
-MAX_MEMORY_TOTAL_CHARS = 4000
+MAX_MEMORY_TOTAL_CHARS = 4000  # Default-Fallback wenn Provider keine Capability meldet
 
 
 def _truncate(text: str, n: int) -> str:
@@ -211,7 +213,38 @@ class ChatService:
         self.provider_router = provider_router
         self.memory_service = memory_service
 
-    def _build_memory_context(self, user_id: int, query: str) -> tuple[str, int]:
+    def _get_memory_budget(self, provider_name: str | None = None) -> int:
+        """Liest das Memory-Budget aus ProviderCapabilities.
+
+        Falls der Provider eine eigene max_memory_chars-Capability definiert,
+        wird diese verwendet. Sonst Fallback auf MAX_MEMORY_TOTAL_CHARS.
+
+        Args:
+            provider_name: Name des Providers (None = Default aus Router).
+
+        Returns:
+            Max. Zeichen für Memory-Block im System-Prompt.
+        """
+        if self.provider_router is None:
+            return MAX_MEMORY_TOTAL_CHARS
+        try:
+            name = provider_name or self.provider_router.default
+            providers_dict = self.provider_router.providers
+            if not isinstance(providers_dict, dict):
+                return MAX_MEMORY_TOTAL_CHARS
+            provider = providers_dict.get(name)
+            if provider:
+                caps = provider.get_capabilities()
+                value = getattr(caps, "max_memory_chars", MAX_MEMORY_TOTAL_CHARS)
+                if isinstance(value, int):
+                    return value
+        except (AttributeError, TypeError):
+            pass
+        return MAX_MEMORY_TOTAL_CHARS
+
+    def _build_memory_context(
+        self, user_id: int, query: str, provider_name: str | None = None
+    ) -> tuple[str, int]:
         """Lädt relevante Memory-Einträge für den User basierend auf Query.
 
         Such-Strategie: Keyword-Extraktion -> Substring-Match über alle Layer.
@@ -220,6 +253,7 @@ class ChatService:
         Args:
             user_id: Telegram-User-ID.
             query: Aktuelle User-Nachricht.
+            provider_name: Optionaler Provider-Name für Memory-Budget-Lookup.
 
         Returns:
             Tuple von (Memory-Context-String, Anzahl geladener Entries).
@@ -296,10 +330,9 @@ class ChatService:
             sections.append("")
 
         memory_block = "\n".join(sections)
-        if len(memory_block) > MAX_MEMORY_TOTAL_CHARS:
-            memory_block = (
-                memory_block[: MAX_MEMORY_TOTAL_CHARS - 200] + "\n[Block gekürzt]"
-            )
+        budget = self._get_memory_budget(provider_name)
+        if len(memory_block) > budget:
+            memory_block = memory_block[: budget - 200] + "\n[Block gekürzt]"
         return memory_block, total_entries
 
     async def process_user_message(

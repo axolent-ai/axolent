@@ -610,6 +610,24 @@ class TestAuditLoggingForget:
         assert entry["success"] is True
 
     @patch("application.audit_service.write_audit_log")
+    async def test_forget_success_shows_reset_hint(self, mock_audit: MagicMock) -> None:
+        """/forget ep_123 zeigt Hinweis auf /reset für History-Bereinigung."""
+        from presentation.handlers import handle_forget_command
+
+        mock_memory = MagicMock()
+        mock_memory.forget = MagicMock(return_value=True)
+
+        update = _make_update(user_id=42, chat_id=99)
+        context = _make_context(args=["ep_123"], memory_service=mock_memory)
+
+        await handle_forget_command(update, context)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "ep_123" in reply_text
+        assert "/reset" in reply_text
+        assert "Hinweis" in reply_text
+
+    @patch("application.audit_service.write_audit_log")
     async def test_forget_not_found_writes_audit(self, mock_audit: MagicMock) -> None:
         """/forget ep_999 (nicht gefunden) schreibt Audit mit success=False."""
         from presentation.handlers import handle_forget_command

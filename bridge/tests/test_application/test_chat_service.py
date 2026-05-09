@@ -593,3 +593,61 @@ class TestExtractKeywords:
         keywords = _extract_keywords("Was ist meine Lieblingssprache?")
         assert "meine" not in keywords
         assert "lieblingssprache" in keywords
+
+
+class TestGetMemoryBudget:
+    """Tests für _get_memory_budget: liest max_memory_chars aus Provider-Capabilities."""
+
+    def test_budget_from_provider_capabilities(self) -> None:
+        """Wenn Provider max_memory_chars definiert, wird dieser Wert genutzt."""
+        from infrastructure.providers.base import ProviderCapabilities
+
+        mock_provider = MagicMock()
+        mock_provider.get_capabilities = MagicMock(
+            return_value=ProviderCapabilities(max_memory_chars=8000)
+        )
+
+        mock_router = MagicMock()
+        mock_router.providers = {"claude": mock_provider}
+        mock_router.default = "claude"
+
+        svc = ChatService(provider_router=mock_router)
+        budget = svc._get_memory_budget("claude")
+        assert budget == 8000
+
+    def test_budget_fallback_when_no_provider(self) -> None:
+        """Wenn Provider nicht gefunden, Fallback auf MAX_MEMORY_TOTAL_CHARS."""
+        from application.chat_service import MAX_MEMORY_TOTAL_CHARS
+
+        mock_router = MagicMock()
+        mock_router.providers = {}
+        mock_router.default = "claude"
+
+        svc = ChatService(provider_router=mock_router)
+        budget = svc._get_memory_budget("nonexistent")
+        assert budget == MAX_MEMORY_TOTAL_CHARS
+
+    def test_budget_uses_default_provider_when_none(self) -> None:
+        """Wenn provider_name=None, wird der Default-Provider genutzt."""
+        from infrastructure.providers.base import ProviderCapabilities
+
+        mock_provider = MagicMock()
+        mock_provider.get_capabilities = MagicMock(
+            return_value=ProviderCapabilities(max_memory_chars=6000)
+        )
+
+        mock_router = MagicMock()
+        mock_router.providers = {"claude": mock_provider}
+        mock_router.default = "claude"
+
+        svc = ChatService(provider_router=mock_router)
+        budget = svc._get_memory_budget(None)
+        assert budget == 6000
+
+    def test_budget_fallback_when_router_is_none(self) -> None:
+        """Wenn provider_router=None, Fallback auf MAX_MEMORY_TOTAL_CHARS."""
+        from application.chat_service import MAX_MEMORY_TOTAL_CHARS
+
+        svc = ChatService(provider_router=None)
+        budget = svc._get_memory_budget()
+        assert budget == MAX_MEMORY_TOTAL_CHARS
