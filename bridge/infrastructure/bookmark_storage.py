@@ -71,7 +71,7 @@ def migrate_legacy_chat_id() -> int:
             tmp_path.replace(BOOKMARKS_PATH)
         if corrupt_count > 0:
             log.info(
-                "Migration: %d korrupte Zeile(n) entfernt, %d Eintraege migriert",
+                "Migration: %d korrupte Zeile(n) entfernt, %d Einträge migriert",
                 corrupt_count,
                 migrated,
             )

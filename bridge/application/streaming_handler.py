@@ -648,7 +648,7 @@ def _is_retry_after(exc: Exception) -> int | None:
     """Prüft ob eine Exception ein Telegram RetryAfter (429) ist.
 
     Erkennt sowohl die python-telegram-bot RetryAfter-Exception als auch
-    generische Exceptions deren Message 'flood control' enthaelt.
+    generische Exceptions deren Message 'flood control' enthält.
 
     Returns:
         retry_after in Sekunden, oder None wenn kein 429.
