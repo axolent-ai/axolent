@@ -585,6 +585,7 @@ class ChatService:
         persistent_provider: "ClaudePersistentProvider",
         language_override: Optional[str] = None,
         reply_to_text: Optional[str] = None,
+        status_session: Optional[Any] = None,
     ) -> tuple[AsyncIterator[StreamEvent], int]:
         """Streaming-Variante von process_user_message.
 
@@ -601,6 +602,7 @@ class ChatService:
             persistent_provider: Der Streaming-fähige Provider.
             language_override: Optionale Sprach-Override.
             reply_to_text: Reply-To-Kontext.
+            status_session: Optionale StatusSession fuer Status-Updates.
 
         Returns:
             Tuple von (StreamEvent-AsyncIterator, memory_entries_loaded).
@@ -614,9 +616,17 @@ class ChatService:
         uid = user_id or 0
         cid = chat_id or 0
 
+        # Status: Memory-Loading
+        if status_session is not None:
+            await status_session.update("memory_loading")
+
         # Prompt vorbereiten (identisch zu process_user_message)
         history = await get_history(uid, cid)
         memory_context, memory_entries_loaded = self._build_memory_context(uid, text)
+
+        # Status: Memory geladen (mit Anzahl)
+        if status_session is not None and memory_entries_loaded > 0:
+            await status_session.update("memory_loaded", n=memory_entries_loaded)
 
         if reply_to_text:
             enriched_text = (
@@ -643,14 +653,24 @@ class ChatService:
         if memory_context:
             effective_prompt = f"{effective_prompt}\n\n{memory_context}"
 
+        # Status: Denke nach (vor Provider-Call)
+        if status_session is not None:
+            await status_session.update("thinking")
+
         # Streaming via persistent Provider
         async def _stream() -> AsyncIterator[StreamEvent]:
+            first_token = True
             async for event in persistent_provider.query_streaming(
                 prompt=context_prompt,
                 system_prompt=effective_prompt,
                 user_id=uid,
                 chat_id=cid,
             ):
+                # Bei erstem Token: Status-Updates stoppen
+                if first_token and event.event_type == "content_delta":
+                    first_token = False
+                    if status_session is not None:
+                        status_session.mark_stream_started()
                 yield event
 
         return _stream(), memory_entries_loaded

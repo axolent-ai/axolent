@@ -567,6 +567,26 @@ async def _handle_message_streaming(
             started_at=time.monotonic(),
         )
 
+        # Status-Session erstellen (R02-B)
+        from application.status_manager import SHOW_STATUS_UPDATES, StatusSession
+
+        status_session: StatusSession | None = None
+        if SHOW_STATUS_UPDATES:
+            # Sprache fuer Status-Texte bestimmen
+            chat_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+
+            async def _status_callback(status_text: str) -> None:
+                """Editiert die Placeholder-Nachricht mit Status-Text."""
+                try:
+                    await streaming_msg.edit_text(status_text)
+                except Exception as e:
+                    log.debug("Status-Edit fehlgeschlagen: %s", e)
+
+            status_session = StatusSession(
+                callback=_status_callback,
+                language=chat_lang,
+            )
+
         # was_cold und subprocess_pid aus dem Pool holen
         if pool is not None:
             managed, was_cold = await pool.get_or_create(user_id, chat_id)
@@ -592,6 +612,7 @@ async def _handle_message_streaming(
                 system_prompt=_get_system_prompt(context),
                 persistent_provider=persistent_provider,
                 reply_to_text=reply_to_text,
+                status_session=status_session,
             )
             async for event in stream_iter:
                 if event.event_type == "content_delta":
