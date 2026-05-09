@@ -1086,7 +1086,7 @@ class TestHandleUsageCommand:
         await handle_usage_command(update, context)
 
         reply_text = update.message.reply_text.call_args[0][0]
-        assert "Normal-Profil" in reply_text
+        assert "Profil: Normal" in reply_text
         assert "Diese Minute" in reply_text
         assert "Diese Stunde" in reply_text
         assert "Heute" in reply_text

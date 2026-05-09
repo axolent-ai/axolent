@@ -1183,7 +1183,8 @@ async def handle_usage_command(
 
     if usage.profile == "unlimited":
         msg = (
-            "\U0001f4ca Deine Nutzung (Unlimited-Profil)\n\n"
+            "\U0001f4ca Deine Nutzung & dein Profil:\n\n"
+            "Profil: Unlimited\n\n"
             "\U0001f513 Keine Limits aktiv.\n\n"
             "Profil ändern: /setlimit normal"
         )
@@ -1210,7 +1211,8 @@ async def handle_usage_command(
         day_bar = _bar(usage.day_used, usage.day_limit)
 
         msg = (
-            f"\U0001f4ca Deine Nutzung ({profile_display}-Profil)\n\n"
+            f"\U0001f4ca Deine Nutzung & dein Profil:\n\n"
+            f"Profil: {profile_display}\n\n"
             f"Diese Minute: {usage.minute_used}/{usage.minute_limit} "
             f"{min_bar} (Reset in {min_reset})\n"
             f"Diese Stunde: {usage.hour_used}/{usage.hour_limit} "
