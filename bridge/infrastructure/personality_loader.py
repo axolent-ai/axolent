@@ -44,7 +44,7 @@ def _load_config_file(path: Path, label: str) -> str:
         log.error("%s konnte nicht gelesen werden: %s: %s", label, path, e)
         raise SystemExit(
             f"{label}-Datei {path} fehlerhaft. Bot-Start abgebrochen. "
-            f"Pruefe Datei-Encoding (UTF-8) und -Rechte. Original-Fehler: {e}"
+            f"Prüfe Datei-Encoding (UTF-8) und -Rechte. Original-Fehler: {e}"
         ) from e
 
 

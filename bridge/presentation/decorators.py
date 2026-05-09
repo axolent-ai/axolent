@@ -15,12 +15,34 @@ from telegram.ext import ContextTypes
 
 log = logging.getLogger(__name__)
 
+
+def _parse_whitelist() -> set[int]:
+    """Parst WHITELIST_USER_IDS, loggt ungültige Einträge als critical.
+
+    Returns:
+        Set von gültigen User-IDs.
+    """
+    raw = os.getenv("WHITELIST_USER_IDS", "")
+    valid: set[int] = set()
+    invalid: list[str] = []
+    for token in raw.split(","):
+        stripped = token.strip()
+        if not stripped:
+            continue
+        if stripped.isdigit():
+            valid.add(int(stripped))
+        else:
+            invalid.append(stripped)
+    if invalid:
+        log.critical(
+            "WHITELIST_USER_IDS enthält ungültige Einträge (ignoriert): %s",
+            invalid,
+        )
+    return valid
+
+
 # Whitelist-Konfiguration (einmal beim Import geladen)
-WHITELIST: set[int] = {
-    int(uid)
-    for uid in os.getenv("WHITELIST_USER_IDS", "").split(",")
-    if uid.strip().isdigit()
-}
+WHITELIST: set[int] = _parse_whitelist()
 ALLOW_ALL_USERS: bool = os.getenv("ALLOW_ALL_USERS", "").lower() in ("true", "1", "yes")
 
 _PRIVATE_ONLY_MSG = (

@@ -1,12 +1,13 @@
 """Tests für presentation.decorators: Whitelist-Guard und Privacy-Guard.
 
-Testet Autorisierung via User-ID-Whitelist, ALLOW_ALL_USERS Bypass
-und require_private_chat Decorator.
+Testet Autorisierung via User-ID-Whitelist, ALLOW_ALL_USERS Bypass,
+require_private_chat Decorator und _parse_whitelist Validation.
 Mockt Telegram Update/Context Objekte.
 """
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
@@ -162,3 +163,57 @@ class TestRequirePrivateChat:
 
         handler.assert_not_called()
         update.message.reply_text.assert_called_once()
+
+
+class TestParseWhitelist:
+    """Tests für _parse_whitelist: Validierung von WHITELIST_USER_IDS."""
+
+    def test_valid_ids_parsed(self) -> None:
+        """Gültige komma-separierte IDs werden korrekt geparst."""
+        with patch.dict("os.environ", {"WHITELIST_USER_IDS": "123,456,789"}):
+            from presentation.decorators import _parse_whitelist
+
+            result = _parse_whitelist()
+            assert result == {123, 456, 789}
+
+    def test_empty_string_returns_empty_set(self) -> None:
+        """Leerer String ergibt leeres Set."""
+        with patch.dict("os.environ", {"WHITELIST_USER_IDS": ""}):
+            from presentation.decorators import _parse_whitelist
+
+            result = _parse_whitelist()
+            assert result == set()
+
+    def test_malformed_entries_logged_and_ignored(self, caplog: object) -> None:
+        """Ungültige Einträge werden als critical geloggt, gültige behalten."""
+        with patch.dict("os.environ", {"WHITELIST_USER_IDS": "123,abc,456,def"}):
+            from presentation.decorators import _parse_whitelist
+
+            with caplog.at_level(logging.CRITICAL):  # type: ignore[union-attr]
+                result = _parse_whitelist()
+
+            assert result == {123, 456}
+            assert any(
+                "abc" in r.message
+                for r in caplog.records  # type: ignore[union-attr]
+            )
+            assert any(
+                "def" in r.message
+                for r in caplog.records  # type: ignore[union-attr]
+            )
+
+    def test_whitespace_handling(self) -> None:
+        """Whitespace um IDs wird korrekt getrimmt."""
+        with patch.dict("os.environ", {"WHITELIST_USER_IDS": " 123 , 456 , "}):
+            from presentation.decorators import _parse_whitelist
+
+            result = _parse_whitelist()
+            assert result == {123, 456}
+
+    def test_single_id(self) -> None:
+        """Einzelne ID (ohne Komma) wird korrekt geparst."""
+        with patch.dict("os.environ", {"WHITELIST_USER_IDS": "999"}):
+            from presentation.decorators import _parse_whitelist
+
+            result = _parse_whitelist()
+            assert result == {999}

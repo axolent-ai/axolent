@@ -839,7 +839,7 @@ class TestStreamingAuditEntries:
             )
 
         async def mock_stream(**kwargs):
-            return _stream_events(), 0
+            return _stream_events(), 3  # 3 Memory-Einträge geladen
 
         mock_svc.process_user_message_streaming = mock_stream
 
@@ -890,6 +890,8 @@ class TestStreamingAuditEntries:
         save_kwargs = mock_svc.save_streaming_result.call_args
         assert save_kwargs.kwargs.get("was_cold") is True
         assert save_kwargs.kwargs.get("subprocess_pid") == 999
+        # memory_entries_loaded muss korrekt durchgereicht werden
+        assert save_kwargs.kwargs.get("memory_entries_loaded") == 3
 
     @patch("presentation.handlers.write_raw_audit")
     async def test_crashed_stream_writes_error_audit(

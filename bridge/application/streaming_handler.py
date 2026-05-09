@@ -809,7 +809,7 @@ async def _do_edit_html(session: StreamingSession) -> None:
     Der User MUSS die fertige Antwort sehen.
 
     Note: Bei langen Texten wird diese Funktion nicht mehr direkt
-    aufgerufen; stattdessen geht der Pfad ueber _finalize_multi_message().
+    aufgerufen; stattdessen geht der Pfad über _finalize_multi_message().
     """
     raw_text = session.accumulated_text
     if not raw_text.strip():

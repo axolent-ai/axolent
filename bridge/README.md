@@ -17,10 +17,11 @@ Backend von Jarvis-LITE. Telegram-Bot der Claude Code CLI als lokalen Subprozess
 [domain/]            [infrastructure/]
   Pure Logic           I/O-Adapter
   bookmark.py          claude_cli.py      (Claude Code CLI Subprozess)
-  language.py          bookmark_storage.py (JSONL Persistenz)
-  conversation.py      conversation_storage.py
-  personality.py       audit_log.py       (Audit mit Rotation)
-  markdown.py          encoding.py        (UTF-8 Helper)
+  language.py          bookmark_storage.py (JSONL Legacy-Backend)
+  conversation.py      sqlite_storage.py   (SQLite: BookmarkService, MemoryService)
+  personality.py       conversation_storage.py
+  markdown.py          audit_log.py       (Audit mit Rotation)
+                       encoding.py        (UTF-8 Helper)
                        personality_loader.py
 ```
 

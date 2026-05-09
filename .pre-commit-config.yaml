@@ -31,6 +31,8 @@ repos:
   # Windows mit panic: "wasm error: invalid table access" crasht.
   # Workaround: gitleaks manuell ausführen bis Upstream-Fix verfügbar.
   # Tracking: https://github.com/gitleaks/gitleaks/issues
+  # gitleaks Binary nicht lokal installiert.
+  # Manueller Aufruf: `scoop install gitleaks` oder `winget install gitleaks/gitleaks`
   # - repo: https://github.com/gitleaks/gitleaks
   #   rev: v8.22.1
   #   hooks:

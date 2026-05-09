@@ -38,7 +38,6 @@ from infrastructure.audit_log import write_audit_log
 from infrastructure.bookmark_storage import (
     JsonlBookmarkStorageAdapter,
     migrate_legacy_chat_id,
-    use_sqlite_backend,
 )
 from infrastructure.claude_process_pool import ClaudeProcessPool
 from infrastructure.memory_storage import MemoryStorage
@@ -287,12 +286,8 @@ def main() -> None:
                 }
             )
 
-        # Bookmark-Backend auf SQLite umschalten
-        bm_storage = SqliteBookmarkStorage(sqlite_conn)
-        use_sqlite_backend(bm_storage)
-
         # BookmarkService mit SQLite-Backend (Konstruktor-Injection)
-        bookmark_svc = BookmarkService(storage=bm_storage)
+        bookmark_svc = BookmarkService(storage=SqliteBookmarkStorage(sqlite_conn))
 
         # Memory-Storage: SQLite
         memory_storage: MemoryStorage | SqliteMemoryStorage = SqliteMemoryStorage(
