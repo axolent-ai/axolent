@@ -31,6 +31,7 @@ from pathlib import Path
 from application.chat_service import ChatService
 from application.memory_service import MemoryService
 from application.provider_router import ProviderRouter
+from application.rate_limiter import RateLimiter
 from infrastructure.bookmark_storage import migrate_legacy_chat_id
 from infrastructure.claude_process_pool import ClaudeProcessPool
 from infrastructure.memory_storage import MemoryStorage
@@ -59,7 +60,9 @@ from presentation.handlers import (
     handle_remember_command,
     handle_reset_command,
     handle_save_command,
+    handle_setlimit_command,
     handle_start_command,
+    handle_usage_command,
 )
 
 logging.basicConfig(
@@ -67,6 +70,37 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 log = logging.getLogger("jarvis-bridge")
+
+# Flag: ob DEV_MODE aktiv ist (nur für ALLOW_ALL_USERS-Safeguard)
+JARVIS_DEV_MODE: bool = os.getenv("JARVIS_DEV_MODE", "").lower() in (
+    "true",
+    "1",
+    "yes",
+)
+
+
+def validate_allow_all_users() -> None:
+    """Prüft ob ALLOW_ALL_USERS sicher konfiguriert ist.
+
+    Blockiert den Bot-Start wenn ALLOW_ALL_USERS aktiv ist ohne
+    JARVIS_DEV_MODE. Verhindert versehentliches öffnen des Bots
+    für alle Telegram-User in Produktion.
+
+    Raises:
+        SystemExit: Wenn ALLOW_ALL_USERS=true ohne JARVIS_DEV_MODE=true.
+    """
+    if not ALLOW_ALL_USERS:
+        return
+
+    if not JARVIS_DEV_MODE:
+        log.critical(
+            "GEFAHR: ALLOW_ALL_USERS ist aktiv, aber JARVIS_DEV_MODE nicht gesetzt. "
+            "Setze JARVIS_DEV_MODE=true wenn das beabsichtigt ist, "
+            "sonst entferne ALLOW_ALL_USERS."
+        )
+        sys.exit(2)
+
+    log.warning("WARNUNG: ALLOW_ALL_USERS aktiv im DEV_MODE. Whitelist deaktiviert.")
 
 
 def _build_provider_router(process_pool: ClaudeProcessPool) -> ProviderRouter:
@@ -119,6 +153,9 @@ def main() -> None:
         )
         sys.exit(1)
 
+    # C-1: ALLOW_ALL_USERS-Safeguard
+    validate_allow_all_users()
+
     # Token laden
     token: str | None = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
@@ -151,6 +188,9 @@ def main() -> None:
 
     log.info("Trinity-Memory-System initialisiert (JSONL-Backend, Auto-Loading aktiv)")
 
+    # C-2: Rate-Limiter initialisieren
+    rate_limiter = RateLimiter()
+
     # Personality laden
     system_prompt = build_combined_prompt()
 
@@ -163,6 +203,7 @@ def main() -> None:
     app.bot_data["memory_service"] = memory_svc
     app.bot_data["process_pool"] = process_pool
     app.bot_data["persistent_provider"] = router.providers.get("claude_persistent")
+    app.bot_data["rate_limiter"] = rate_limiter
 
     # Lifecycle-Hooks: ProcessPool starten/stoppen
     async def post_init(application: Application) -> None:
@@ -189,6 +230,8 @@ def main() -> None:
     app.add_handler(CommandHandler("remember", handle_remember_command))
     app.add_handler(CommandHandler("memory", handle_memory_command))
     app.add_handler(CommandHandler("forget", handle_forget_command))
+    app.add_handler(CommandHandler("usage", handle_usage_command))
+    app.add_handler(CommandHandler("setlimit", handle_setlimit_command))
 
     # Message handler (non-command text)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

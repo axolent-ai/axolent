@@ -22,6 +22,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, AsyncIterator, Optional
 
+from application.leakage_filter import check_for_system_prompt_leakage
 from domain.conversation import ConversationTurn, build_context_block
 from domain.language import detect_language
 from domain.personality import build_effective_prompt
@@ -431,6 +432,19 @@ class ChatService:
                     provider_name=result.provider_name,
                 )
 
+            # C-3: System-Prompt-Leakage-Guard
+            leak_replacement = check_for_system_prompt_leakage(
+                response, effective_prompt
+            )
+            if leak_replacement is not None:
+                log.warning(
+                    "Leakage-Filter hat Response ersetzt (user_id=%s, chat_id=%s)",
+                    user_id,
+                    chat_id,
+                )
+                audit["leakage_attempt"] = True
+                response = leak_replacement
+
             # Save both turns to history (user + assistant)
             user_turn = ConversationTurn(role="user", content=text)
             assistant_turn = ConversationTurn(role="assistant", content=response)
@@ -615,10 +629,13 @@ class ChatService:
         streaming_chunks: int = 0,
         subprocess_pid: int = 0,
         memory_entries_loaded: int = 0,
-    ) -> None:
+        system_prompt: str = "",
+    ) -> str:
         """Speichert das Ergebnis einer Streaming-Session in History + Audit.
 
         Wird vom Presentation-Layer NACH Abschluss des Streams aufgerufen.
+        Prueft Response auf System-Prompt-Leakage (C-3) und gibt die
+        ggf. bereinigte Response zurueck.
 
         Args:
             user_id: Telegram User-ID.
@@ -631,7 +648,29 @@ class ChatService:
             streaming_chunks: Anzahl empfangener Content-Delta-Events.
             subprocess_pid: PID des genutzten Subprocess.
             memory_entries_loaded: Anzahl geladener Memory-Eintraege.
+            system_prompt: Aktiver System-Prompt fuer Leakage-Check (C-3).
+
+        Returns:
+            Die (ggf. bereinigte) Response-Text. Caller muss pruefen ob
+            sich der Text geaendert hat fuer ein finales Telegram-Edit.
         """
+        leakage_detected = False
+
+        # C-3: Leakage-Check auf die finale Response
+        if system_prompt:
+            leak_replacement = check_for_system_prompt_leakage(
+                response_text, system_prompt
+            )
+            if leak_replacement is not None:
+                log.warning(
+                    "Leakage-Filter (Streaming): Response ersetzt "
+                    "(user_id=%s, chat_id=%s)",
+                    user_id,
+                    chat_id,
+                )
+                response_text = leak_replacement
+                leakage_detected = True
+
         # History speichern
         user_turn = ConversationTurn(role="user", content=user_text)
         assistant_turn = ConversationTurn(role="assistant", content=response_text)
@@ -655,7 +694,11 @@ class ChatService:
             "subprocess_pid": subprocess_pid,
             "memory_entries_loaded": memory_entries_loaded,
         }
+        if leakage_detected:
+            audit["leakage_attempt"] = True
         write_audit_log(audit)
+
+        return response_text
 
     async def reset(self, user_id: int, chat_id: int) -> None:
         """Use-Case-Wrapper: setzt Conversation und Sticky-Language zurück."""

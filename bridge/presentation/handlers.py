@@ -26,6 +26,7 @@ from application.bookmark_service import (
     search,
 )
 from application.chat_service import ChatService
+from application.rate_limiter import PROFILES, RateLimiter, RateLimitResult
 from application.streaming_handler import (
     StreamingSession,
     abort_streaming,
@@ -172,6 +173,20 @@ def _get_memory_service(
     return context.application.bot_data.get("memory_service")
 
 
+def _get_rate_limiter(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> "RateLimiter | None":
+    """Holt den RateLimiter aus bot_data (kann None sein).
+
+    Args:
+        context: Telegram-Handler-Context.
+
+    Returns:
+        RateLimiter-Instanz oder None.
+    """
+    return context.application.bot_data.get("rate_limiter")
+
+
 def build_bookmarks_keyboard(bookmarks: list[dict[str, Any]]) -> InlineKeyboardMarkup:
     """Baut ein InlineKeyboard für die /bookmarks-Auflistung.
 
@@ -213,6 +228,8 @@ HELP_TEXT: str = (
     "/forget <id>  Memory-Eintrag löschen\n"
     "/reset  Konversation zurücksetzen (neuer Chat)\n"
     "/lang <code>  Sprache wechseln (de, en, es, fr, ...)\n"
+    "/usage  Aktuellen Verbrauch und Limits anzeigen\n"
+    "/setlimit <profil>  Limit-Profil wechseln (light/normal/power/unlimited)\n"
     "/help  Diese Hilfe anzeigen"
 )
 
@@ -280,6 +297,149 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         len(text),
         " (reply-to)" if reply_to_text else "",
     )
+
+    # C-2: Rate-Limit pruefen (vor LLM-Call, vor Lock)
+    rate_limiter = _get_rate_limiter(context)
+    if rate_limiter is not None:
+        result: RateLimitResult = rate_limiter.check_and_consume(user_id)
+        if not result.allowed:
+            from datetime import datetime, timezone
+
+            # Menschliche Fehlermeldung mit aktiver Lösung
+            period_labels = {"minute": "Minute", "hour": "Stunde", "day": "Tag"}
+            period_label = period_labels.get(result.period or "", "")
+            retry_display = int(result.retry_after) if result.retry_after else 0
+
+            if result.period == "minute":
+                reset_info = f"Reset in {retry_display}s"
+            elif result.period == "hour":
+                reset_info = f"Reset in {retry_display // 60} Minuten"
+            else:
+                reset_info = f"Reset in {retry_display // 3600}h"
+
+            # Profil-spezifische Upgrade-Optionen
+            if result.profile == "light":
+                options = (
+                    "Du kannst dein Limit jederzeit kostenlos ändern:\n"
+                    "• /usage — aktuelle Übersicht\n"
+                    "• /setlimit normal — mehr Spielraum "
+                    "(350/h, 1500/Tag)\n"
+                    "• /setlimit power — viel mehr "
+                    "(900/h, 10.000/Tag)"
+                )
+            elif result.profile == "normal":
+                options = (
+                    "Du kannst dein Limit jederzeit kostenlos ändern:\n"
+                    "• /usage — aktuelle Übersicht\n"
+                    "• /setlimit power — viel mehr Spielraum "
+                    "(900/h, 10.000/Tag)"
+                )
+            else:
+                options = (
+                    "• /usage — aktuelle Übersicht\n"
+                    "• /setlimit unlimited — alle Limits deaktivieren"
+                )
+
+            limit_msg = (
+                f"Du hast dein "
+                f"{'Minuten' if result.period == 'minute' else period_label + 'n' if result.period == 'hour' else 'Tages'}"
+                f"-Limit erreicht "
+                f"({result.current_count}/{result.limit_value} "
+                f"{'in dieser ' + period_label if result.period != 'day' else 'heute'}"
+                f", {result.profile.capitalize()}-Profil).\n\n"
+                f"{reset_info}.\n\n"
+                f"{options}"
+            )
+            await update.message.reply_text(limit_msg)
+
+            write_raw_audit(
+                {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "event_type": "rate_limit_exceeded",
+                    "user_id": user_id,
+                    "chat_id": chat_id,
+                    "username": username,
+                    "profile": result.profile,
+                    "period": result.period,
+                    "count": result.current_count,
+                    "limit": result.limit_value,
+                    "retry_after_seconds": result.retry_after,
+                }
+            )
+            log.info(
+                "Rate-Limit fuer User %s (%s): %s-Limit, retry_after=%.1fs",
+                username,
+                user_id,
+                result.period,
+                result.retry_after or 0,
+            )
+            return
+
+        # 70%-Warnung (einmalig pro Window)
+        if result.warning_70 and result.warning_period:
+            usage = rate_limiter.get_usage(user_id)
+            if result.warning_period == "minute":
+                warn_used = usage.minute_used
+                warn_limit = usage.minute_limit
+                warn_reset = f"Reset in {int(usage.minute_reset_seconds)}s"
+                warn_period_label = "Minute"
+            elif result.warning_period == "hour":
+                warn_used = usage.hour_used
+                warn_limit = usage.hour_limit
+                warn_reset = f"Reset in {int(usage.hour_reset_seconds) // 60} Minuten"
+                warn_period_label = "Stunde"
+            else:
+                warn_used = usage.day_used
+                warn_limit = usage.day_limit
+                warn_reset = f"Reset in {int(usage.day_reset_seconds) // 3600}h"
+                warn_period_label = "Tag"
+
+            # Nächsthöheres Profil als Upgrade-Vorschlag
+            user_profile = result.profile
+            if user_profile == "light":
+                upgrade_hint = (
+                    "Falls du gerne noch mehr machen willst: "
+                    "/setlimit normal hebt das Limit auf 350/h."
+                )
+            elif user_profile == "normal":
+                upgrade_hint = (
+                    "Falls du gerne noch mehr machen willst: "
+                    "/setlimit power hebt das Limit auf 900/h."
+                )
+            else:
+                upgrade_hint = "Profil ändern: /setlimit"
+
+            warn_msg = (
+                f"\U0001f4a1 Du nutzt Jarvis fleißig "
+                f"— schon {warn_used}/{warn_limit} Anfragen "
+                f"diese {warn_period_label}.\n"
+                f"{warn_reset}.\n\n"
+                f"{upgrade_hint}"
+            )
+            await update.message.reply_text(warn_msg)
+
+        # Unlimited-Reminder
+        if result.unlimited_reminder:
+            reminder_msg = (
+                "\U0001f513 Hinweis: Du bist im Unlimited-Modus. "
+                "Keine Limits aktiv.\n"
+                "Falls du wieder strukturierter arbeiten willst: "
+                "/setlimit normal"
+            )
+            await update.message.reply_text(reminder_msg)
+            # Audit fuer Unlimited-Reminder
+            from datetime import datetime, timezone
+
+            write_raw_audit(
+                {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "event_type": "unlimited_mode_warning",
+                    "user_id": user_id,
+                    "chat_id": chat_id,
+                    "username": username,
+                    "profile": "unlimited",
+                }
+            )
 
     # Typing-Indicator
     await context.bot.send_chat_action(update.effective_chat.id, ChatAction.TYPING)
@@ -445,9 +605,9 @@ async def _handle_message_streaming(
             final_text = session.accumulated_text
             await finalize_streaming(session, final_text)
 
-        # History + Audit speichern
+        # History + Audit speichern (+ C-3 Leakage-Check)
         if final_text and not had_error:
-            await chat_service.save_streaming_result(
+            checked_text = await chat_service.save_streaming_result(
                 user_id=user_id,
                 chat_id=chat_id,
                 user_text=text,
@@ -457,7 +617,12 @@ async def _handle_message_streaming(
                 was_cold=was_cold,
                 streaming_chunks=streaming_chunks,
                 subprocess_pid=subprocess_pid,
+                system_prompt=_get_system_prompt(context),
             )
+            # C-3: Wenn Leakage erkannt, finales Edit mit Refusal
+            if checked_text != final_text:
+                await finalize_streaming(session, checked_text)
+                final_text = checked_text
             log.info(
                 "Streaming-Antwort: %d Zeichen, %d Chunks, %.1fs",
                 len(final_text),
@@ -997,4 +1162,155 @@ async def handle_forget_command(
         username=user.username if user else None,
         entry_id=entry_id,
         success=deleted,
+    )
+
+
+@require_whitelist
+@require_private_chat
+async def handle_usage_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Verarbeitet /usage. Zeigt aktuellen Verbrauch und Limits an."""
+    rate_limiter = _get_rate_limiter(context)
+    if rate_limiter is None:
+        await update.message.reply_text("Rate-Limiter nicht initialisiert.")
+        return
+
+    user = update.effective_user
+    user_id: int = user.id if user else 0
+
+    usage = rate_limiter.get_usage(user_id)
+
+    if usage.profile == "unlimited":
+        msg = (
+            "\U0001f4ca Deine Nutzung (Unlimited-Profil)\n\n"
+            "\U0001f513 Keine Limits aktiv.\n\n"
+            "Profil ändern: /setlimit normal"
+        )
+    else:
+        profile_display = usage.profile.capitalize()
+
+        # Reset-Zeiten formatieren
+        min_reset = f"{int(usage.minute_reset_seconds)}s"
+        hour_reset_min = int(usage.hour_reset_seconds) // 60
+        hour_reset = f"{hour_reset_min} Min"
+        day_reset = "00:00"
+
+        # Progress-Bars (10 Zeichen breit)
+        def _bar(used: int, limit: int) -> str:
+            if limit == 0:
+                return "[██████████]"
+            ratio = min(1.0, used / limit)
+            filled = int(ratio * 10)
+            empty = 10 - filled
+            return f"[{'▓' * filled}{'░' * empty}]"
+
+        min_bar = _bar(usage.minute_used, usage.minute_limit)
+        hour_bar = _bar(usage.hour_used, usage.hour_limit)
+        day_bar = _bar(usage.day_used, usage.day_limit)
+
+        msg = (
+            f"\U0001f4ca Deine Nutzung ({profile_display}-Profil)\n\n"
+            f"Diese Minute: {usage.minute_used}/{usage.minute_limit} "
+            f"{min_bar} (Reset in {min_reset})\n"
+            f"Diese Stunde: {usage.hour_used}/{usage.hour_limit} "
+            f"{hour_bar} (Reset in {hour_reset})\n"
+            f"Heute: {usage.day_used}/{usage.day_limit} "
+            f"{day_bar} (Reset um {day_reset})\n\n"
+            f"Profil ändern: /setlimit <light|normal|power|unlimited>"
+        )
+
+    await update.message.reply_text(msg)
+    log_command_audit(
+        action="usage",
+        user_id=user_id,
+        chat_id=update.effective_chat.id if update.effective_chat else 0,
+        username=user.username if user else None,
+        details=f"profile={usage.profile}",
+    )
+
+
+@require_whitelist
+@require_private_chat
+async def handle_setlimit_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Verarbeitet /setlimit <profil>. Wechselt das Rate-Limit-Profil.
+
+    Akzeptiert: light, normal, power, unlimited.
+    Bei unlimited: Zwei-Stufen-Bestätigung erforderlich.
+    """
+    rate_limiter = _get_rate_limiter(context)
+    if rate_limiter is None:
+        await update.message.reply_text("Rate-Limiter nicht initialisiert.")
+        return
+
+    user = update.effective_user
+    user_id: int = user.id if user else 0
+    chat_id: int = update.effective_chat.id if update.effective_chat else 0
+    args: list[str] = context.args or []
+
+    if not args:
+        current = rate_limiter.get_user_profile(user_id)
+        available = ", ".join(PROFILES.keys())
+        await update.message.reply_text(
+            f"Aktuelles Profil: {current.capitalize()}\n\n"
+            f"Benutzung: /setlimit <profil>\n"
+            f"Verfügbar: {available}"
+        )
+        return
+
+    target_profile = args[0].lower().strip()
+
+    # Unlimited: Zwei-Stufen-Bestätigung
+    if target_profile == "unlimited":
+        if len(args) < 2 or args[1].lower() != "confirm":
+            await update.message.reply_text(
+                "⚠️ Du willst alle Limits deaktivieren.\n\n"
+                "Risiko:\n"
+                "• Telegram kann den Bot zeitweise sperren bei zu vielen Edits\n"
+                "• Deine Subscription wird schneller leer\n"
+                "• Du bekommst alle 100 Anfragen einen Reminder\n\n"
+                "Falls du sicher bist: /setlimit unlimited confirm"
+            )
+            return
+
+    if target_profile not in PROFILES:
+        available = ", ".join(PROFILES.keys())
+        await update.message.reply_text(
+            f"Unbekanntes Profil: '{target_profile}'\n\nVerfügbar: {available}"
+        )
+        return
+
+    old_profile = rate_limiter.get_user_profile(user_id)
+    success = rate_limiter.set_user_profile(user_id, chat_id, target_profile)
+
+    if success:
+        limits = PROFILES[target_profile]
+        if target_profile == "unlimited":
+            confirm_msg = (
+                f"\U0001f513 Profil gewechselt: {old_profile.capitalize()} → "
+                f"Unlimited\n\n"
+                f"Keine Limits aktiv. Reminder alle 100 Anfragen.\n"
+                f"Zurück: /setlimit normal"
+            )
+        else:
+            confirm_msg = (
+                f"✓ Profil gewechselt: {old_profile.capitalize()} → "
+                f"{target_profile.capitalize()}\n\n"
+                f"Neue Limits:\n"
+                f"• {limits['per_minute']}/Min\n"
+                f"• {limits['per_hour']}/Stunde\n"
+                f"• {limits['per_day']}/Tag"
+            )
+        await update.message.reply_text(confirm_msg)
+    else:
+        await update.message.reply_text("Fehler beim Profilwechsel.")
+
+    log_command_audit(
+        action="setlimit",
+        user_id=user_id,
+        chat_id=chat_id,
+        username=user.username if user else None,
+        details=f"{old_profile} -> {target_profile}",
     )

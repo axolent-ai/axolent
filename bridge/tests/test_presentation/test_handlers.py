@@ -62,6 +62,7 @@ def _make_context(
     memory_service: object | None = None,
     persistent_provider: object | None = None,
     process_pool: object | None = None,
+    rate_limiter: object | None = None,
 ) -> MagicMock:
     """Erstellt einen gemockten Telegram-Context mit bot_data."""
     context = MagicMock()
@@ -77,6 +78,7 @@ def _make_context(
         "memory_service": memory_service,
         "persistent_provider": persistent_provider,
         "process_pool": process_pool,
+        "rate_limiter": rate_limiter,
     }
     return context
 
@@ -950,3 +952,304 @@ class TestOuterExceptionCoverage:
         event_types = [c[0][0]["event_type"] for c in mock_audit.call_args_list]
         assert "stream_started" in event_types
         assert "stream_error" in event_types
+
+
+class TestHandleMessageRateLimit:
+    """Tests fuer Rate-Limiting im handle_message Handler (C-2)."""
+
+    @pytest.fixture(autouse=True)
+    def _bypass_whitelist(self) -> None:
+        """Whitelist-Bypass fuer Handler-Tests."""
+        self._patches = [
+            patch("presentation.decorators.ALLOW_ALL_USERS", True),
+        ]
+        for p in self._patches:
+            p.start()
+        yield  # type: ignore[misc]
+        for p in self._patches:
+            p.stop()
+
+    async def test_rate_limit_blocks_message(self) -> None:
+        """Rate-Limited User bekommt Meldung, kein LLM-Call."""
+        from application.rate_limiter import PROFILES, RateLimiter
+        from presentation.handlers import handle_message
+
+        limiter = RateLimiter()
+        # Alle Minute-Tokens verbrauchen (Normal: 25/min)
+        normal_min = PROFILES["normal"]["per_minute"]
+        for _ in range(normal_min):
+            limiter.check_and_consume(user_id=1)
+
+        update = _make_update(user_id=1, chat_id=10, text="Hallo")
+        context = _make_context(rate_limiter=limiter)
+
+        with patch("presentation.handlers.write_raw_audit") as mock_audit:
+            await handle_message(update, context)
+
+        # User bekommt Limit-Meldung
+        # Beachte: 70%-Warnung kann vorher reply_text aufrufen
+        calls = update.message.reply_text.call_args_list
+        # Letzter oder einziger Call muss Limit-Meldung sein
+        limit_reply = calls[-1][0][0]
+        assert "Limit" in limit_reply
+
+        # Kein Typing-Indicator gesendet (kein LLM-Call)
+        context.bot.send_chat_action.assert_not_called()
+
+        # Audit-Log enthaelt rate_limit_exceeded
+        mock_audit.assert_called()
+        audit_entry = mock_audit.call_args[0][0]
+        assert audit_entry["event_type"] == "rate_limit_exceeded"
+        assert audit_entry["user_id"] == 1
+        assert audit_entry["profile"] == "normal"
+        assert audit_entry["period"] == "minute"
+
+    async def test_rate_limit_allows_normal_request(self) -> None:
+        """Unter dem Limit: normaler LLM-Call Ablauf."""
+        from application.rate_limiter import RateLimiter
+        from presentation.handlers import handle_message
+
+        limiter = RateLimiter()
+
+        update = _make_update(user_id=2, chat_id=20, text="Test")
+        context = _make_context(rate_limiter=limiter)
+
+        with patch("presentation.handlers.write_raw_audit"):
+            await handle_message(update, context)
+
+        # Typing-Indicator wurde gesendet (= LLM-Call wurde gestartet)
+        context.bot.send_chat_action.assert_called()
+
+    async def test_no_rate_limiter_in_context_allows(self) -> None:
+        """Wenn kein RateLimiter in bot_data: normal durchlassen."""
+        from presentation.handlers import handle_message
+
+        update = _make_update(user_id=3, chat_id=30, text="Test")
+        context = _make_context(rate_limiter=None)
+
+        await handle_message(update, context)
+
+        # Typing-Indicator gesendet = LLM-Pfad betreten
+        context.bot.send_chat_action.assert_called()
+
+    async def test_rate_limit_exceeded_shows_profile_info(self) -> None:
+        """Rate-Limit-Meldung zeigt Profil-Info und Optionen."""
+        from application.rate_limiter import PROFILES, RateLimiter
+        from presentation.handlers import handle_message
+
+        limiter = RateLimiter()
+        normal_min = PROFILES["normal"]["per_minute"]
+
+        # Alle Minute-Tokens verbrauchen
+        for _ in range(normal_min):
+            limiter.check_and_consume(user_id=1)
+
+        update = _make_update(user_id=1, chat_id=10, text="Hallo")
+        context = _make_context(rate_limiter=limiter)
+
+        with patch("presentation.handlers.write_raw_audit") as mock_audit:
+            await handle_message(update, context)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Normal-Profil" in reply_text
+        assert "/usage" in reply_text
+        assert "/setlimit" in reply_text
+
+        # Audit enthaelt Profil- und Period-Info
+        audit_entry = mock_audit.call_args[0][0]
+        assert audit_entry["profile"] == "normal"
+        assert audit_entry["period"] == "minute"
+
+
+class TestHandleUsageCommand:
+    """Tests fuer /usage Command."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        """Whitelist-Bypass."""
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    async def test_usage_shows_profile_and_limits(self) -> None:
+        """/usage zeigt Profil und Limits."""
+        from application.rate_limiter import RateLimiter
+        from presentation.handlers import handle_usage_command
+
+        limiter = RateLimiter()
+        # Ein paar Anfragen machen
+        for _ in range(3):
+            limiter.check_and_consume(user_id=1)
+
+        update = _make_update(user_id=1, chat_id=10)
+        context = _make_context(rate_limiter=limiter)
+
+        await handle_usage_command(update, context)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Normal-Profil" in reply_text
+        assert "Diese Minute" in reply_text
+        assert "Diese Stunde" in reply_text
+        assert "Heute" in reply_text
+        assert "/setlimit" in reply_text
+
+    async def test_usage_unlimited_profile(self) -> None:
+        """/usage zeigt Unlimited-Info wenn Profil unlimited."""
+        from application.rate_limiter import RateLimiter
+        from presentation.handlers import handle_usage_command
+
+        with patch("application.rate_limiter._PROFILES_PATH", Path("nonexistent")):
+            limiter = RateLimiter()
+            limiter.set_user_profile(user_id=5, chat_id=5, profile="unlimited")
+
+        update = _make_update(user_id=5, chat_id=5)
+        context = _make_context(rate_limiter=limiter)
+
+        await handle_usage_command(update, context)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Unlimited" in reply_text
+        assert "Keine Limits" in reply_text
+
+    async def test_usage_no_limiter_shows_error(self) -> None:
+        """/usage ohne Rate-Limiter zeigt Fehlermeldung."""
+        from presentation.handlers import handle_usage_command
+
+        update = _make_update(user_id=1, chat_id=10)
+        context = _make_context(rate_limiter=None)
+
+        await handle_usage_command(update, context)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "nicht initialisiert" in reply_text
+
+
+class TestHandleSetlimitCommand:
+    """Tests fuer /setlimit Command."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        """Whitelist-Bypass."""
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    async def test_setlimit_normal(self, tmp_path: Path) -> None:
+        """/setlimit normal wechselt Profil."""
+        from application.rate_limiter import RateLimiter
+        from presentation.handlers import handle_setlimit_command
+
+        profiles_path = tmp_path / "user_profiles.jsonl"
+        with patch("application.rate_limiter._PROFILES_PATH", profiles_path):
+            limiter = RateLimiter()
+            limiter.set_user_profile(user_id=1, chat_id=10, profile="light")
+
+            update = _make_update(user_id=1, chat_id=10)
+            context = _make_context(args=["normal"], rate_limiter=limiter)
+
+            await handle_setlimit_command(update, context)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Normal" in reply_text
+        assert "350/Stunde" in reply_text or "350" in reply_text
+
+    async def test_setlimit_light(self, tmp_path: Path) -> None:
+        """/setlimit light wechselt Profil."""
+        from application.rate_limiter import RateLimiter
+        from presentation.handlers import handle_setlimit_command
+
+        profiles_path = tmp_path / "user_profiles.jsonl"
+        with patch("application.rate_limiter._PROFILES_PATH", profiles_path):
+            limiter = RateLimiter()
+
+            update = _make_update(user_id=2, chat_id=20)
+            context = _make_context(args=["light"], rate_limiter=limiter)
+
+            await handle_setlimit_command(update, context)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Light" in reply_text
+
+    async def test_setlimit_power(self, tmp_path: Path) -> None:
+        """/setlimit power wechselt Profil."""
+        from application.rate_limiter import RateLimiter
+        from presentation.handlers import handle_setlimit_command
+
+        profiles_path = tmp_path / "user_profiles.jsonl"
+        with patch("application.rate_limiter._PROFILES_PATH", profiles_path):
+            limiter = RateLimiter()
+
+            update = _make_update(user_id=3, chat_id=30)
+            context = _make_context(args=["power"], rate_limiter=limiter)
+
+            await handle_setlimit_command(update, context)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Power" in reply_text
+        assert "900" in reply_text
+
+    async def test_setlimit_unlimited_requires_confirm(self) -> None:
+        """/setlimit unlimited ohne confirm zeigt Warnung."""
+        from application.rate_limiter import RateLimiter
+        from presentation.handlers import handle_setlimit_command
+
+        limiter = RateLimiter()
+
+        update = _make_update(user_id=4, chat_id=40)
+        context = _make_context(args=["unlimited"], rate_limiter=limiter)
+
+        await handle_setlimit_command(update, context)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Bestätigen" in reply_text or "confirm" in reply_text.lower()
+        assert "/setlimit unlimited confirm" in reply_text
+
+        # Profil wurde NICHT gewechselt
+        assert limiter.get_user_profile(4) == "normal"
+
+    async def test_setlimit_unlimited_confirm_works(self, tmp_path: Path) -> None:
+        """/setlimit unlimited confirm wechselt Profil."""
+        from application.rate_limiter import RateLimiter
+        from presentation.handlers import handle_setlimit_command
+
+        profiles_path = tmp_path / "user_profiles.jsonl"
+        with patch("application.rate_limiter._PROFILES_PATH", profiles_path):
+            limiter = RateLimiter()
+
+            update = _make_update(user_id=5, chat_id=50)
+            context = _make_context(args=["unlimited", "confirm"], rate_limiter=limiter)
+
+            await handle_setlimit_command(update, context)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Unlimited" in reply_text
+        assert limiter.get_user_profile(5) == "unlimited"
+
+    async def test_setlimit_invalid_profile(self) -> None:
+        """/setlimit invalid zeigt Fehlermeldung."""
+        from application.rate_limiter import RateLimiter
+        from presentation.handlers import handle_setlimit_command
+
+        limiter = RateLimiter()
+
+        update = _make_update(user_id=6, chat_id=60)
+        context = _make_context(args=["megapower"], rate_limiter=limiter)
+
+        await handle_setlimit_command(update, context)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Unbekanntes Profil" in reply_text
+
+    async def test_setlimit_no_args_shows_current(self) -> None:
+        """/setlimit ohne Argumente zeigt aktuelles Profil."""
+        from application.rate_limiter import RateLimiter
+        from presentation.handlers import handle_setlimit_command
+
+        limiter = RateLimiter()
+
+        update = _make_update(user_id=7, chat_id=70)
+        context = _make_context(args=[], rate_limiter=limiter)
+
+        await handle_setlimit_command(update, context)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Aktuelles Profil" in reply_text
+        assert "Normal" in reply_text
