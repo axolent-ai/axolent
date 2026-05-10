@@ -120,6 +120,7 @@ class FinalVerdict:
     Attributes:
         winner: Provider-Name des Gewinners (oder "tie" bei Gleichstand).
         recommendation: Kurzer Satz mit der finalen Empfehlung.
+        synthesis: Inhaltliche Synthese die das Beste aller Antworten vereint.
         evaluations: Pro/Contra-Bewertung je Provider-Antwort.
         reasoning: 1-2 Sätze warum dieser Winner gewählt wurde.
         judge_provider: Welcher Provider den Judge-Call gemacht hat.
@@ -128,6 +129,7 @@ class FinalVerdict:
 
     winner: str
     recommendation: str
+    synthesis: str = ""
     evaluations: list[ProviderEvaluation] = field(default_factory=list)
     reasoning: str = ""
     judge_provider: str = ""
@@ -333,9 +335,16 @@ class DebateOrchestrator:
             f"Die folgenden Antworten wurden von verschiedenen KI-Modellen generiert.\n"
             f"Bewerte sie neutral und objektiv.\n\n"
             f"{answers_text}\n"
+            f"Deine Aufgabe:\n"
+            f"1. Identifiziere die Staerken und Schwaechen jeder Antwort\n"
+            f"2. Erstelle eine SYNTHESE die das Beste aller Antworten vereint\n"
+            f"3. Die Synthese soll eine eigenstaendige, vollstaendige Antwort sein "
+            f"(nicht nur 'A ist besser')\n\n"
             f"Antworte AUSSCHLIESSLICH mit einem JSON-Objekt (kein Markdown, kein Fliesstext). "
             f"Schema:\n"
             f'{{"winner": "<Buchstabe der besten Antwort oder tie>", '
+            f'"synthesis": "<Vollstaendige synthetisierte Antwort die das Beste vereint, '
+            f'2-5 Saetze>", '
             f'"recommendation": "<1 Satz: klare Empfehlung>", '
             f'"evaluations": ['
             f'{{"label": "<Buchstabe>", "pros": ["..."], "cons": ["..."]}}, ...'
@@ -386,6 +395,7 @@ class DebateOrchestrator:
 
         winner_label = data.get("winner", "")
         recommendation = data.get("recommendation", "")
+        synthesis = data.get("synthesis", "")
         reasoning = data.get("reasoning", "")
         evaluations_raw = data.get("evaluations", [])
 
@@ -419,6 +429,7 @@ class DebateOrchestrator:
         return FinalVerdict(
             winner=winner,
             recommendation=str(recommendation),
+            synthesis=str(synthesis),
             evaluations=evaluations,
             reasoning=str(reasoning),
         )
@@ -514,6 +525,7 @@ class DebateOrchestrator:
             return FinalVerdict(
                 winner=verdict.winner,
                 recommendation=verdict.recommendation,
+                synthesis=verdict.synthesis,
                 evaluations=verdict.evaluations,
                 reasoning=verdict.reasoning,
                 judge_provider=judge_provider,

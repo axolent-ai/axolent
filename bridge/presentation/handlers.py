@@ -1447,8 +1447,16 @@ def _format_debate_result(result: Any) -> str:
     # Final Review (LLM-as-Judge)
     if result.final_verdict is not None:
         lines.append("━" * 20)
-        lines.append("\U0001f3af Final Review\n")
-        lines.append(f"Empfehlung: {result.final_verdict.recommendation}")
+        lines.append("\U0001f3af Synthese\n")
+
+        # Synthese als Hauptelement
+        if result.final_verdict.synthesis:
+            lines.append(result.final_verdict.synthesis)
+            lines.append("")
+
+        # Empfehlung kompakt darunter
+        if result.final_verdict.recommendation:
+            lines.append(f"Empfehlung: {result.final_verdict.recommendation}")
 
         winner_display = _PROVIDER_DISPLAY_NAMES.get(
             result.final_verdict.winner, result.final_verdict.winner
@@ -1456,25 +1464,21 @@ def _format_debate_result(result: Any) -> str:
         if result.final_verdict.winner == "tie":
             lines.append("Ergebnis: Gleichstand")
         else:
-            lines.append(f"Winner: {winner_display}")
+            lines.append(f"Beste Einzelantwort: {winner_display}")
         lines.append("")
 
+        # Pro/Contra kompakt
         for evaluation in result.final_verdict.evaluations:
             eval_display = _PROVIDER_DISPLAY_NAMES.get(
                 evaluation.provider, evaluation.provider
             )
-            if evaluation.pros:
-                lines.append(f"✅ {eval_display} Pro:")
-                for pro in evaluation.pros:
-                    lines.append(f"  • {pro}")
-            if evaluation.cons:
-                lines.append(f"❌ {eval_display} Contra:")
-                for con in evaluation.cons:
-                    lines.append(f"  • {con}")
-            lines.append("")
-
-        if result.final_verdict.reasoning:
-            lines.append(f"Begründung: {result.final_verdict.reasoning}")
+            pros_str = ", ".join(evaluation.pros) if evaluation.pros else ""
+            cons_str = ", ".join(evaluation.cons) if evaluation.cons else ""
+            if pros_str:
+                lines.append(f"✅ {eval_display}: {pros_str}")
+            if cons_str:
+                lines.append(f"❌ {eval_display}: {cons_str}")
+        lines.append("")
 
         if result.final_verdict.judge_quality_warning:
             lines.append(f"\n⚠️ {result.final_verdict.judge_quality_warning}")

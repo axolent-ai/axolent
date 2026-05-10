@@ -1320,6 +1320,99 @@ class TestHandleDebateCommand:
         assert audit_entry["command"] == "debate"
 
 
+class TestFormatDebateSynthesis:
+    """Tests fuer die Synthesis-Anzeige im Debate-Formatter."""
+
+    def test_format_debate_shows_synthesis_prominently(self) -> None:
+        """Synthese wird als prominentes Element im Output angezeigt."""
+        from application.debate_orchestrator import (
+            DebateResult,
+            FinalVerdict,
+            ProviderEvaluation,
+        )
+        from presentation.handlers import _format_debate_result
+
+        verdict = FinalVerdict(
+            winner="claude_persistent",
+            recommendation="Claude liefert die klarere Antwort.",
+            synthesis="Bitcoin ist eine dezentrale digitale Waehrung die Peer-to-Peer-Zahlungen ermoeglicht.",
+            evaluations=[
+                ProviderEvaluation(
+                    provider="claude_persistent", pros=["Klar"], cons=[]
+                ),
+                ProviderEvaluation(
+                    provider="ollama_local", pros=["Ausfuehrlich"], cons=["Vage"]
+                ),
+            ],
+            reasoning="Claude ist praeziser.",
+            judge_provider="claude_persistent",
+        )
+
+        result = DebateResult(
+            question="Was ist Bitcoin?",
+            responses={
+                "claude_persistent": "Bitcoin ist digitales Geld.",
+                "ollama_local": "Bitcoin ist eine Kryptowaehrung.",
+            },
+            errors={},
+            consensus_analysis="Hohe Uebereinstimmung.",
+            final_verdict=verdict,
+            duration_seconds=3.2,
+            providers_queried=["claude_persistent", "ollama_local"],
+        )
+
+        formatted = _format_debate_result(result)
+
+        # Synthese muss im Output sein (prominent)
+        assert "dezentrale digitale Waehrung" in formatted
+        assert "Peer-to-Peer" in formatted
+        # "Synthese" als Ueberschrift
+        assert "Synthese" in formatted
+        # Winner-Label ist jetzt "Beste Einzelantwort" statt "Winner"
+        assert "Beste Einzelantwort" in formatted
+        assert "Winner" not in formatted
+        # Empfehlung ist da
+        assert "Empfehlung:" in formatted
+
+    def test_format_debate_without_synthesis_shows_no_empty_block(self) -> None:
+        """Wenn synthesis leer ist, wird kein leerer Block angezeigt."""
+        from application.debate_orchestrator import DebateResult, FinalVerdict
+        from presentation.handlers import _format_debate_result
+
+        verdict = FinalVerdict(
+            winner="claude_persistent",
+            recommendation="Claude gewinnt.",
+            synthesis="",  # Leer (Backward-Compat / schwacher Judge)
+            evaluations=[],
+            reasoning="Claude ist besser.",
+            judge_provider="ollama_local",
+            judge_quality_warning="Lokaler Judge (Ollama), Bewertungsqualität reduziert",
+        )
+
+        result = DebateResult(
+            question="Test?",
+            responses={
+                "claude_persistent": "Antwort A",
+                "ollama_local": "Antwort B",
+            },
+            errors={},
+            consensus_analysis=None,
+            final_verdict=verdict,
+            duration_seconds=1.0,
+            providers_queried=["claude_persistent", "ollama_local"],
+        )
+
+        formatted = _format_debate_result(result)
+
+        # Synthese-Ueberschrift ist da (weil final_verdict existiert)
+        assert "Synthese" in formatted
+        # Aber kein leerer Absatz zwischen Ueberschrift und Empfehlung
+        # (die Synthese-Zeile selbst fehlt, weil leer)
+        assert "Claude gewinnt." in formatted
+        # Quality warning wird angezeigt
+        assert "Lokaler Judge" in formatted
+
+
 class TestHandleSetlimitCommand:
     """Tests für /setlimit Command."""
 

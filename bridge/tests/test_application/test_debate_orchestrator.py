@@ -398,6 +398,7 @@ class TestFinalReviewParsing:
         raw_json = json.dumps(
             {
                 "winner": "A",
+                "synthesis": "Alpha und Beta ergaenzen sich: A ist praezise, B ausfuehrlich.",
                 "recommendation": "Antwort A ist präziser.",
                 "evaluations": [
                     {"label": "A", "pros": ["Korrekt", "Präzise"], "cons": ["Kurz"]},
@@ -413,6 +414,10 @@ class TestFinalReviewParsing:
         assert result is not None
         assert result.winner == "alpha"
         assert result.recommendation == "Antwort A ist präziser."
+        assert (
+            result.synthesis
+            == "Alpha und Beta ergaenzen sich: A ist praezise, B ausfuehrlich."
+        )
         assert result.reasoning == "A liefert die genauere Antwort."
         assert len(result.evaluations) == 2
         assert result.evaluations[0].provider == "alpha"
@@ -431,6 +436,7 @@ class TestFinalReviewParsing:
         raw_json = json.dumps(
             {
                 "winner": "tie",
+                "synthesis": "Beide Antworten sind gleichwertig und decken denselben Inhalt ab.",
                 "recommendation": "Beide gleichwertig.",
                 "evaluations": [],
                 "reasoning": "Keine signifikanten Unterschiede.",
@@ -440,6 +446,7 @@ class TestFinalReviewParsing:
         result = orchestrator._parse_judge_response(raw_json, {"A": "alpha"})
         assert result is not None
         assert result.winner == "tie"
+        assert "gleichwertig" in result.synthesis
 
     def test_parse_json_in_markdown_codeblock(self) -> None:
         """JSON in Markdown-Codeblock wird korrekt extrahiert."""
@@ -451,7 +458,8 @@ class TestFinalReviewParsing:
 
         raw_text = (
             "```json\n"
-            '{"winner": "A", "recommendation": "A gewinnt.", '
+            '{"winner": "A", "synthesis": "A ist die beste Wahl.", '
+            '"recommendation": "A gewinnt.", '
             '"evaluations": [], "reasoning": "Besser."}\n'
             "```"
         )
@@ -460,6 +468,7 @@ class TestFinalReviewParsing:
         assert result is not None
         assert result.winner == "alpha"
         assert result.recommendation == "A gewinnt."
+        assert result.synthesis == "A ist die beste Wahl."
 
     def test_parse_invalid_json_returns_none(self) -> None:
         """Ungültiges JSON gibt None zurück (graceful fallback)."""
@@ -545,10 +554,11 @@ class TestFinalReviewIntegration:
     """Integration-Tests: Final Review im Debate-Flow."""
 
     async def test_debate_includes_final_verdict(self) -> None:
-        """Debate mit 2 Providern liefert ein FinalVerdict."""
+        """Debate mit 2 Providern liefert ein FinalVerdict mit Synthese."""
         judge_json = json.dumps(
             {
                 "winner": "A",
+                "synthesis": "Bitcoin ist eine dezentrale digitale Waehrung auf Blockchain-Basis.",
                 "recommendation": "Antwort A ist besser.",
                 "evaluations": [
                     {"label": "A", "pros": ["Klar"], "cons": []},
@@ -587,6 +597,9 @@ class TestFinalReviewIntegration:
         assert result.final_verdict is not None
         assert result.final_verdict.winner == "claude_persistent"
         assert result.final_verdict.recommendation == "Antwort A ist besser."
+        assert result.final_verdict.synthesis == (
+            "Bitcoin ist eine dezentrale digitale Waehrung auf Blockchain-Basis."
+        )
         assert len(result.final_verdict.evaluations) == 2
 
     async def test_debate_graceful_when_judge_fails(self) -> None:
@@ -616,6 +629,7 @@ class TestFinalReviewIntegration:
         judge_json = json.dumps(
             {
                 "winner": "A",
+                "synthesis": "A liefert die klarere Antwort mit korrekten Fakten.",
                 "recommendation": "A gewinnt.",
                 "evaluations": [
                     {"label": "A", "pros": ["Gut"], "cons": []},
@@ -657,6 +671,7 @@ class TestFinalReviewIntegration:
         judge_json = json.dumps(
             {
                 "winner": "A",
+                "synthesis": "A bietet die bessere Zusammenfassung.",
                 "recommendation": "A gewinnt.",
                 "evaluations": [],
                 "reasoning": "A ist besser.",
@@ -723,3 +738,107 @@ class TestFinalReviewIntegration:
         )
 
         assert verdict is None
+
+
+class TestSynthesisFeature:
+    """Tests für Phase-1 Synthesis: Judge generiert eine inhaltliche Synthese."""
+
+    def test_parse_synthesis_field_extracted(self) -> None:
+        """Synthesis-Feld wird korrekt aus JSON extrahiert."""
+        providers = {
+            "alpha": _MockProvider("alpha", response_text="A"),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        raw_json = json.dumps(
+            {
+                "winner": "A",
+                "synthesis": (
+                    "Bitcoin ist eine dezentrale digitale Waehrung "
+                    "die auf Blockchain-Technologie basiert und "
+                    "Peer-to-Peer-Transaktionen ohne Mittelsmann ermoeglicht."
+                ),
+                "recommendation": "A ist praeziser.",
+                "evaluations": [
+                    {"label": "A", "pros": ["Korrekt"], "cons": []},
+                ],
+                "reasoning": "A deckt alle Kernpunkte ab.",
+            }
+        )
+
+        label_to_provider = {"A": "alpha"}
+        result = orchestrator._parse_judge_response(raw_json, label_to_provider)
+
+        assert result is not None
+        assert "dezentrale digitale Waehrung" in result.synthesis
+        assert "Peer-to-Peer" in result.synthesis
+
+    def test_parse_missing_synthesis_defaults_empty(self) -> None:
+        """Wenn Judge kein synthesis-Feld liefert: Default ist leerer String."""
+        providers = {
+            "alpha": _MockProvider("alpha", response_text="A"),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        # JSON ohne synthesis-Feld (Backward-Compat)
+        raw_json = json.dumps(
+            {
+                "winner": "A",
+                "recommendation": "A gewinnt.",
+                "evaluations": [],
+                "reasoning": "A ist besser.",
+            }
+        )
+
+        label_to_provider = {"A": "alpha"}
+        result = orchestrator._parse_judge_response(raw_json, label_to_provider)
+
+        assert result is not None
+        assert result.synthesis == ""
+
+    def test_judge_prompt_requests_synthesis(self) -> None:
+        """Der Judge-Prompt fordert explizit eine Synthese an."""
+        providers = {
+            "alpha": _MockProvider("alpha", response_text="A"),
+            "beta": _MockProvider("beta", response_text="B"),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        responses = {"alpha": "Antwort A", "beta": "Antwort B"}
+        prompt, _ = orchestrator._build_judge_prompt("Was ist Bitcoin?", responses)
+
+        # Prompt muss Synthesis-Anweisung enthalten
+        assert "SYNTHESE" in prompt
+        assert "synthesis" in prompt
+        # Prompt muss das neue Schema-Feld beinhalten
+        assert "Vollstaendige synthetisierte Antwort" in prompt
+
+    def test_synthesis_preserved_through_final_review_reconstruction(self) -> None:
+        """Synthesis bleibt erhalten wenn FinalVerdict in final_review() rekonstruiert wird."""
+        from application.debate_orchestrator import FinalVerdict, ProviderEvaluation
+
+        # Simuliere was _parse_judge_response zurueckgibt
+        parsed = FinalVerdict(
+            winner="alpha",
+            recommendation="Alpha ist besser.",
+            synthesis="Die Synthese vereint beide Perspektiven zu einer klaren Antwort.",
+            evaluations=[ProviderEvaluation(provider="alpha", pros=["Gut"], cons=[])],
+            reasoning="Alpha ist praeziser.",
+        )
+
+        # Simuliere was final_review() daraus macht (neues frozen Objekt mit Metadaten)
+        reconstructed = FinalVerdict(
+            winner=parsed.winner,
+            recommendation=parsed.recommendation,
+            synthesis=parsed.synthesis,
+            evaluations=parsed.evaluations,
+            reasoning=parsed.reasoning,
+            judge_provider="claude_persistent",
+            judge_quality_warning=None,
+        )
+
+        assert reconstructed.synthesis == parsed.synthesis
+        assert reconstructed.judge_provider == "claude_persistent"
