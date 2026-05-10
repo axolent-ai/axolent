@@ -649,6 +649,11 @@ class ChatService:
                 lang = detect_language(text)
                 await set_language(uid, cid, lang)
 
+        # Sprache der StatusSession aktualisieren (Bug-Fix: Sticky-Language
+        # wird erst hier bestimmt, aber StatusSession wurde vorher erstellt)
+        if status_session is not None:
+            status_session.set_language(lang)
+
         effective_prompt = build_effective_prompt(system_prompt, lang)
         if memory_context:
             effective_prompt = f"{effective_prompt}\n\n{memory_context}"

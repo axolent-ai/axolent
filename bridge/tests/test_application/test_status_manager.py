@@ -90,7 +90,7 @@ class TestStatusSession:
         assert "Denke nach" in call_text
 
     async def test_rate_limiting(self) -> None:
-        """Schnelle aufeinanderfolgende Updates werden rate-limited."""
+        """Schnelle aufeinanderfolgende Updates mit gleichem Key werden rate-limited."""
         mock_callback = AsyncMock()
         session = StatusSession(callback=mock_callback, language="de")
 
@@ -98,8 +98,8 @@ class TestStatusSession:
         await session.update("thinking")
         assert mock_callback.call_count == 1
 
-        # Zweites Update sofort danach wird geblockt (rate-limit)
-        await session.update("memory_loading")
+        # Zweites Update mit GLEICHEM Key sofort danach wird geblockt (rate-limit)
+        await session.update("thinking")
         assert mock_callback.call_count == 1
 
     async def test_rate_limiting_allows_after_interval(self) -> None:
@@ -167,6 +167,89 @@ class TestStatusSession:
 
         call_text = mock_callback.call_args[0][0]
         assert "7 gefunden" in call_text
+
+
+class TestPhaseChangeBypassesRateLimit:
+    """Bug-Fix-Tests: Phase-Change umgeht Rate-Limit."""
+
+    async def test_different_key_bypasses_rate_limit(self) -> None:
+        """Wechsel des Status-Keys (neue Phase) umgeht das Rate-Limit."""
+        mock_callback = AsyncMock()
+        session = StatusSession(callback=mock_callback, language="de")
+
+        # Erstes Update: memory_loading
+        await session.update("memory_loading")
+        assert mock_callback.call_count == 1
+
+        # Zweites Update SOFORT danach mit anderem Key: muss durchgehen
+        await session.update("thinking")
+        assert mock_callback.call_count == 2
+
+        # Dritter Aufruf mit gleichem Key sofort: wird rate-limited
+        await session.update("thinking")
+        assert mock_callback.call_count == 2
+
+    async def test_same_key_still_rate_limited(self) -> None:
+        """Gleicher Status-Key wird weiterhin rate-limited."""
+        mock_callback = AsyncMock()
+        session = StatusSession(callback=mock_callback, language="de")
+
+        await session.update("memory_loaded", n=3)
+        assert mock_callback.call_count == 1
+
+        # Gleicher Key sofort nochmal: wird geblockt
+        await session.update("memory_loaded", n=5)
+        assert mock_callback.call_count == 1
+
+    async def test_phase_change_sequence_memory_thinking(self) -> None:
+        """Realistischer Flow: memory_loading -> thinking ohne Verzoegerung."""
+        mock_callback = AsyncMock()
+        session = StatusSession(callback=mock_callback, language="de")
+
+        await session.update("memory_loading")
+        await session.update("thinking")
+
+        assert mock_callback.call_count == 2
+        calls = [c[0][0] for c in mock_callback.call_args_list]
+        assert "Lade Notizen" in calls[0]
+        assert "Denke nach" in calls[1]
+
+
+class TestStatusLanguageUpdate:
+    """Bug-Fix-Tests: Status-Sprache respektiert Sticky-Language."""
+
+    async def test_set_language_changes_output(self) -> None:
+        """set_language() aendert die Sprache fuer folgende Updates."""
+        mock_callback = AsyncMock()
+        session = StatusSession(callback=mock_callback, language="de")
+
+        await session.update("memory_loading")
+        first_text = mock_callback.call_args_list[0][0][0]
+        assert "Lade Notizen" in first_text
+
+        # Sprache wechseln
+        session.set_language("en")
+
+        # Naechstes Update muss Englisch sein (Phase-Change -> kein Rate-Limit)
+        await session.update("thinking")
+        second_text = mock_callback.call_args_list[1][0][0]
+        assert "Thinking" in second_text
+
+    async def test_english_user_gets_english_status(self) -> None:
+        """User auf Englisch bekommt englische Status-Texte."""
+        mock_callback = AsyncMock()
+        # Session startet mit Default "de" (wie in handlers.py wenn kein Sticky)
+        session = StatusSession(callback=mock_callback, language="de")
+
+        # Simuliere: chat_service bestimmt Sprache als "en" und ruft set_language auf
+        session.set_language("en")
+
+        await session.update("memory_loading")
+        await session.update("thinking")
+
+        calls = [c[0][0] for c in mock_callback.call_args_list]
+        assert "Loading memory" in calls[0]
+        assert "Thinking" in calls[1]
 
 
 class TestStatusInStreaming:
@@ -264,3 +347,107 @@ class TestStatusInStreaming:
             events.append(event)
         assert len(events) == 1
         assert events[0].event_type == "result"
+
+    async def test_english_user_gets_english_thinking_status(self) -> None:
+        """Bug-Fix: Englischer User bekommt englischen Thinking-Status."""
+        from unittest.mock import MagicMock
+
+        from application.chat_service import ChatService
+        from infrastructure.claude_process_pool import StreamEvent
+        from infrastructure.conversation_storage import _reset_all_for_tests
+
+        _reset_all_for_tests()
+
+        mock_router = MagicMock()
+        mock_router.providers = {}
+        mock_router.default = "claude"
+        svc = ChatService(provider_router=mock_router, memory_service=None)
+
+        mock_provider = MagicMock()
+
+        async def mock_stream(**kwargs):
+            yield StreamEvent(event_type="content_delta", text="Sure")
+            yield StreamEvent(
+                event_type="result", full_text="Sure thing!", is_final=True
+            )
+
+        mock_provider.query_streaming = mock_stream
+
+        # StatusSession mit Default "de" (wie handlers.py bei erstem Turn)
+        mock_callback = AsyncMock()
+        status = StatusSession(callback=mock_callback, language="de")
+
+        # Englische Nachricht: Sprach-Detection erkennt "en"
+        stream_iter, _ = await svc.process_user_message_streaming(
+            text="Hey, what is the weather like today?",
+            user_id=99,
+            chat_id=99,
+            username="english_user",
+            system_prompt="You are a helpful assistant.",
+            persistent_provider=mock_provider,
+            status_session=status,
+        )
+
+        # "thinking" Status muss auf Englisch sein
+        # (chat_service ruft set_language auf der Session auf)
+        thinking_calls = [
+            c[0][0]
+            for c in mock_callback.call_args_list
+            if "Thinking" in c[0][0] or "Denke" in c[0][0]
+        ]
+        assert len(thinking_calls) == 1
+        assert "Thinking" in thinking_calls[0]  # Englisch, nicht Deutsch
+
+        # Session-Sprache muss "en" sein
+        assert status.language == "en"
+
+        # Stream konsumieren
+        async for _ in stream_iter:
+            pass
+
+    async def test_both_status_updates_shown_in_streaming(self) -> None:
+        """Bug-Fix: Sowohl memory_loading ALS AUCH thinking werden angezeigt."""
+        from unittest.mock import MagicMock
+
+        from application.chat_service import ChatService
+        from infrastructure.claude_process_pool import StreamEvent
+        from infrastructure.conversation_storage import _reset_all_for_tests
+
+        _reset_all_for_tests()
+
+        mock_router = MagicMock()
+        mock_router.providers = {}
+        mock_router.default = "claude"
+        svc = ChatService(provider_router=mock_router, memory_service=None)
+
+        mock_provider = MagicMock()
+
+        async def mock_stream(**kwargs):
+            yield StreamEvent(event_type="content_delta", text="Hallo")
+            yield StreamEvent(event_type="result", full_text="Hallo!", is_final=True)
+
+        mock_provider.query_streaming = mock_stream
+
+        mock_callback = AsyncMock()
+        status = StatusSession(callback=mock_callback, language="de")
+
+        stream_iter, _ = await svc.process_user_message_streaming(
+            text="Hallo Welt",
+            user_id=1,
+            chat_id=1,
+            username="test",
+            system_prompt="System.",
+            persistent_provider=mock_provider,
+            status_session=status,
+        )
+
+        # Beide Status-Updates muessen gesendet worden sein
+        # (memory_loading + thinking, weil Phase-Change Rate-Limit umgeht)
+        assert mock_callback.call_count == 2
+        calls = [c[0][0] for c in mock_callback.call_args_list]
+        assert "Lade Notizen" in calls[0]
+        assert "Denke nach" in calls[1]
+
+        # Stream konsumieren
+        async for _ in stream_iter:
+            pass

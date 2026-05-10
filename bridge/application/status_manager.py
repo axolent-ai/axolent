@@ -100,6 +100,7 @@ class StatusSession:
         enabled: Ob Status-Updates aktiv sind.
         last_update_time: Zeitpunkt des letzten Status-Updates (monotonic).
         stream_started: True wenn der Token-Stream begonnen hat.
+        _last_key: Letzter gesendeter Status-Key (fuer Phase-Change-Detection).
     """
 
     callback: StatusCallback
@@ -107,9 +108,14 @@ class StatusSession:
     enabled: bool = field(default_factory=lambda: SHOW_STATUS_UPDATES)
     last_update_time: float = 0.0
     stream_started: bool = False
+    _last_key: str = field(default="", repr=False)
 
     async def update(self, key: str, **kwargs: Any) -> None:
-        """Sendet ein Status-Update (rate-limited).
+        """Sendet ein Status-Update (rate-limited, Phase-Change-Bypass).
+
+        Rate-Limit wird uebersprungen wenn:
+        - Es der allererste Aufruf ist (last_update_time == 0)
+        - Der Status-Key sich aendert (neue Phase, z.B. memory_loading -> thinking)
 
         Args:
             key: Status-Schluessel (z.B. "memory_loading").
@@ -119,15 +125,34 @@ class StatusSession:
             return
 
         now = time.monotonic()
-        if now - self.last_update_time < STATUS_RATE_LIMIT_SECONDS:
+        is_phase_change = key != self._last_key
+
+        # Rate-Limit nur anwenden wenn es KEIN Phase-Wechsel ist
+        if (
+            not is_phase_change
+            and now - self.last_update_time < STATUS_RATE_LIMIT_SECONDS
+        ):
             return
 
         text = get_status_text(key, self.language, **kwargs)
         try:
             await self.callback(text)
             self.last_update_time = now
+            self._last_key = key
         except Exception as e:
             log.debug("Status-Update fehlgeschlagen: %s", e)
+
+    def set_language(self, lang: str) -> None:
+        """Aktualisiert die Sprache der Session.
+
+        Wird aufgerufen sobald die tatsaechliche Sprache bestimmt ist
+        (z.B. nach Sticky-Language-Lookup oder Sprach-Detection).
+        Alle folgenden Status-Updates nutzen die neue Sprache.
+
+        Args:
+            lang: Sprachcode ("de", "en", etc.).
+        """
+        self.language = lang
 
     def mark_stream_started(self) -> None:
         """Markiert dass der Token-Stream begonnen hat.
