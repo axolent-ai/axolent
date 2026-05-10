@@ -22,6 +22,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Optional
@@ -33,6 +34,10 @@ log = logging.getLogger(__name__)
 # Konfiguration via Environment
 DEBATE_TIMEOUT_SECONDS: int = 60
 _DEBATE_PROVIDERS_RAW: str = os.getenv("DEBATE_PROVIDERS", "")
+
+# Sentinel Chat-ID fuer Judge-Calls: separater Konversationskontext
+# damit der Judge nicht die Debate-Antwort im Kontext hat.
+_JUDGE_CHAT_ID_OFFSET: int = 900_000_000
 
 # Provider-Gruppen: Provider die dasselbe Backend-Modell nutzen.
 # Pro Gruppe wird nur der erste verfügbare Provider im Debate verwendet.
@@ -340,19 +345,93 @@ class DebateOrchestrator:
             f"2. Erstelle eine SYNTHESE die das Beste aller Antworten vereint\n"
             f"3. Die Synthese soll eine eigenstaendige, vollstaendige Antwort sein "
             f"(nicht nur 'A ist besser')\n\n"
-            f"Antworte AUSSCHLIESSLICH mit einem JSON-Objekt (kein Markdown, kein Fliesstext). "
-            f"Schema:\n"
+            f"WICHTIG: Deine GESAMTE Antwort muss EIN EINZIGES JSON-Objekt sein.\n"
+            f"Kein Text davor, kein Text danach, kein Markdown, keine Erklaerung.\n"
+            f"Starte direkt mit {{ und ende mit }}.\n\n"
+            f"JSON-Schema (exakt einhalten):\n"
             f'{{"winner": "<Buchstabe der besten Antwort oder tie>", '
             f'"synthesis": "<Vollstaendige synthetisierte Antwort die das Beste vereint, '
-            f'2-5 Saetze>", '
+            f'2-5 Saetze, NIEMALS leer lassen>", '
             f'"recommendation": "<1 Satz: klare Empfehlung>", '
             f'"evaluations": ['
             f'{{"label": "<Buchstabe>", "pros": ["..."], "cons": ["..."]}}, ...'
             f"], "
-            f'"reasoning": "<1-2 Sätze warum dieser Winner>"}}'
+            f'"reasoning": "<1-2 Saetze warum dieser Winner>"}}'
         )
 
         return prompt, label_to_provider
+
+    @staticmethod
+    def _extract_json_object(raw_text: str) -> str | None:
+        """Extrahiert ein JSON-Objekt aus beliebigem Text.
+
+        Strategien (in Reihenfolge):
+        1. Gesamter Text ist valides JSON
+        2. Markdown-Codeblock entfernen (```json ... ``` oder ``` ... ```)
+        3. Erstes { bis letztes } extrahieren (Brace-Matching)
+
+        Args:
+            raw_text: Beliebiger Text der ein JSON-Objekt enthalten kann.
+
+        Returns:
+            Extrahierter JSON-String oder None wenn kein JSON gefunden.
+        """
+        text = raw_text.strip()
+
+        # Strategie 1: Gesamter Text ist bereits valides JSON
+        if text.startswith("{"):
+            try:
+                json.loads(text)
+                return text
+            except json.JSONDecodeError:
+                pass
+
+        # Strategie 2: Markdown-Codeblock (```json\n...\n``` oder ```\n...\n```)
+        # Auch wenn Text VOR dem Codeblock steht
+        codeblock_match = re.search(r"```(?:json)?\s*\n(.*?)\n\s*```", text, re.DOTALL)
+        if codeblock_match:
+            candidate = codeblock_match.group(1).strip()
+            try:
+                json.loads(candidate)
+                return candidate
+            except json.JSONDecodeError:
+                pass
+
+        # Strategie 3: Erstes { bis zum matchenden } (Brace-Counting)
+        first_brace = text.find("{")
+        if first_brace == -1:
+            return None
+
+        depth = 0
+        in_string = False
+        escape_next = False
+        for i in range(first_brace, len(text)):
+            char = text[i]
+            if escape_next:
+                escape_next = False
+                continue
+            if char == "\\":
+                if in_string:
+                    escape_next = True
+                continue
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    candidate = text[first_brace : i + 1]
+                    try:
+                        json.loads(candidate)
+                        return candidate
+                    except json.JSONDecodeError:
+                        return None
+
+        return None
 
     def _parse_judge_response(
         self,
@@ -362,6 +441,8 @@ class DebateOrchestrator:
         """Parst die JSON-Antwort des Judges und mapped Labels zu Provider-Namen.
 
         Graceful: gibt None zurück bei Parse-Fehlern.
+        Robust: extrahiert JSON auch wenn der Judge Prosa drumherum schreibt
+        oder einen Markdown-Codeblock verwendet.
 
         Args:
             raw_text: Roh-Antwort des Judge-LLMs.
@@ -370,22 +451,20 @@ class DebateOrchestrator:
         Returns:
             FinalVerdict oder None wenn Parsing fehlschlägt.
         """
-        # JSON aus dem Text extrahieren (kann in Markdown-Codeblock stecken)
-        text = raw_text.strip()
-        if text.startswith("```"):
-            # Markdown-Codeblock entfernen
-            lines = text.split("\n")
-            # Erste Zeile (```json oder ```) und letzte (```) entfernen
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            text = "\n".join(lines)
+        log.debug("Judge raw response (%d chars): %s", len(raw_text), raw_text[:500])
+
+        json_text = self._extract_json_object(raw_text)
+        if json_text is None:
+            log.warning(
+                "Judge-Response: kein JSON-Objekt extrahierbar. Erste 300 Zeichen: %s",
+                raw_text[:300],
+            )
+            return None
 
         try:
-            data = json.loads(text)
+            data = json.loads(json_text)
         except json.JSONDecodeError:
-            log.warning("Judge-Response ist kein valides JSON: %s", text[:200])
+            log.warning("Judge-Response ist kein valides JSON: %s", json_text[:200])
             return None
 
         # Pflichtfelder prüfen
@@ -498,6 +577,12 @@ class DebateOrchestrator:
 
         log.info("Final Review: Judge-Provider = %s", judge_provider)
 
+        # Isolierter Konversationskontext fuer den Judge:
+        # Offset auf die chat_id damit der Judge-Call NICHT in die
+        # User-Konversation geht (wuerde Bias durch vorherige Debate-Antwort erzeugen
+        # und kann JSON-Output stoeren weil Claude im Chat-Modus antwortet).
+        judge_chat_id = chat_id + _JUDGE_CHAT_ID_OFFSET
+
         try:
             response = await asyncio.wait_for(
                 self.provider_router.route(
@@ -506,19 +591,34 @@ class DebateOrchestrator:
                     provider_name=judge_provider,
                     timeout_seconds=self.timeout_seconds,
                     user_id=user_id,
-                    chat_id=chat_id,
+                    chat_id=judge_chat_id,
                 ),
                 timeout=self.timeout_seconds + 5,
             )
 
             if not response.success:
                 log.warning(
-                    "Judge-Call fehlgeschlagen: %s", response.error or "kein Text"
+                    "Judge-Call fehlgeschlagen: %s (text=%r)",
+                    response.error or "kein Text",
+                    (response.text or "")[:200],
                 )
                 return None
 
+            log.debug(
+                "Judge-Response erhalten (%d chars, %.1fs): %s",
+                len(response.text),
+                response.duration_seconds,
+                response.text[:300],
+            )
+
             verdict = self._parse_judge_response(response.text, label_to_provider)
             if verdict is None:
+                log.warning(
+                    "Judge-Response konnte nicht geparst werden. "
+                    "Vollstaendige Response (%d chars): %s",
+                    len(response.text),
+                    response.text[:500],
+                )
                 return None
 
             # Judge-Metadaten hinzufügen (frozen dataclass, neues Objekt)

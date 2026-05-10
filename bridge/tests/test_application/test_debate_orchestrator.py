@@ -842,3 +842,157 @@ class TestSynthesisFeature:
 
         assert reconstructed.synthesis == parsed.synthesis
         assert reconstructed.judge_provider == "claude_persistent"
+
+
+class TestRobustJsonExtraction:
+    """Tests fuer robuste JSON-Extraktion aus Judge-Responses.
+
+    Bug-Kontext: Im Live-Test lieferte der Judge-Call Text mit umgebendem Prosa
+    oder Markdown-Wrapping, was den alten Parser zum Scheitern brachte und
+    den Konsens-Fallback triggerte statt der Synthese.
+    """
+
+    def _make_orchestrator(self) -> DebateOrchestrator:
+        providers = {"alpha": _MockProvider("alpha", response_text="A")}
+        router = _make_router(providers)
+        return DebateOrchestrator(provider_router=router)
+
+    def test_extract_json_with_prose_before(self) -> None:
+        """JSON mit erklaertendem Text davor wird korrekt extrahiert."""
+        orchestrator = self._make_orchestrator()
+
+        raw_text = (
+            "Here is my evaluation:\n\n"
+            '{"winner": "A", "synthesis": "A bietet die klarere Antwort.", '
+            '"recommendation": "A gewinnt.", '
+            '"evaluations": [{"label": "A", "pros": ["Klar"], "cons": []}], '
+            '"reasoning": "A ist praeziser."}'
+        )
+
+        result = orchestrator._parse_judge_response(raw_text, {"A": "alpha"})
+        assert result is not None
+        assert result.winner == "alpha"
+        assert result.synthesis == "A bietet die klarere Antwort."
+
+    def test_extract_json_with_prose_before_and_after(self) -> None:
+        """JSON mit Text davor UND danach wird korrekt extrahiert."""
+        orchestrator = self._make_orchestrator()
+
+        raw_text = (
+            "Meine Bewertung der Antworten:\n\n"
+            '{"winner": "B", "synthesis": "B liefert die vollstaendigere Antwort.", '
+            '"recommendation": "B gewinnt.", '
+            '"evaluations": [{"label": "B", "pros": ["Detailliert"], "cons": []}], '
+            '"reasoning": "B ist ausfuehrlicher."}\n\n'
+            "Ich hoffe das hilft!"
+        )
+
+        label_map = {"A": "alpha", "B": "beta"}
+        result = orchestrator._parse_judge_response(raw_text, label_map)
+        assert result is not None
+        assert result.winner == "beta"
+        assert "vollstaendigere" in result.synthesis
+
+    def test_extract_json_in_codeblock_with_prose_prefix(self) -> None:
+        """JSON in Markdown-Codeblock, NACH erklaertendem Text."""
+        orchestrator = self._make_orchestrator()
+
+        raw_text = (
+            "Here's my analysis in JSON format:\n\n"
+            "```json\n"
+            '{"winner": "A", "synthesis": "Synthese-Text hier.", '
+            '"recommendation": "Empfehlung.", '
+            '"evaluations": [], "reasoning": "Weil A."}\n'
+            "```\n"
+        )
+
+        result = orchestrator._parse_judge_response(raw_text, {"A": "alpha"})
+        assert result is not None
+        assert result.winner == "alpha"
+        assert result.synthesis == "Synthese-Text hier."
+
+    def test_extract_json_with_nested_braces_in_strings(self) -> None:
+        """JSON das geschweifte Klammern in String-Werten enthaelt."""
+        orchestrator = self._make_orchestrator()
+
+        raw_text = json.dumps(
+            {
+                "winner": "A",
+                "synthesis": "Die Antwort nutzt {Platzhalter} korrekt.",
+                "recommendation": "A gewinnt.",
+                "evaluations": [],
+                "reasoning": "A ist besser.",
+            }
+        )
+
+        result = orchestrator._parse_judge_response(raw_text, {"A": "alpha"})
+        assert result is not None
+        assert "{Platzhalter}" in result.synthesis
+
+    def test_extract_json_multiline_pretty_printed(self) -> None:
+        """Pretty-printed JSON (mehrzeilig mit Einrueckung)."""
+        orchestrator = self._make_orchestrator()
+
+        raw_text = json.dumps(
+            {
+                "winner": "A",
+                "synthesis": "Multi-line synthesis test.",
+                "recommendation": "A gewinnt.",
+                "evaluations": [
+                    {"label": "A", "pros": ["Pro1", "Pro2"], "cons": ["Con1"]},
+                    {"label": "B", "pros": ["Pro3"], "cons": ["Con2", "Con3"]},
+                ],
+                "reasoning": "A deckt mehr ab.",
+            },
+            indent=2,
+        )
+
+        label_map = {"A": "alpha", "B": "beta"}
+        result = orchestrator._parse_judge_response(raw_text, label_map)
+        assert result is not None
+        assert result.winner == "alpha"
+        assert len(result.evaluations) == 2
+        assert "Pro1" in result.evaluations[0].pros
+
+    def test_extract_no_json_at_all(self) -> None:
+        """Kein JSON im Text: gibt None zurueck."""
+        orchestrator = self._make_orchestrator()
+        result = orchestrator._parse_judge_response(
+            "Ich kann das leider nicht bewerten. Bitte versuche es erneut.",
+            {"A": "alpha"},
+        )
+        assert result is None
+
+    def test_extract_json_array_not_object(self) -> None:
+        """JSON-Array mit nur einem Element: Brace-Matcher extrahiert inneres Dict."""
+        orchestrator = self._make_orchestrator()
+        # Der Parser findet das erste { innerhalb des Arrays und extrahiert das Dict.
+        # Das ist akzeptables Verhalten: besser ein Teilresultat als gar keins.
+        result = orchestrator._parse_judge_response('[{"winner": "A"}]', {"A": "alpha"})
+        # Extrahiert das innere Dict, winner wird gemapped
+        assert result is not None
+        assert result.winner == "alpha"
+
+    def test_pure_array_no_dict_gives_none(self) -> None:
+        """Reines JSON-Array ohne brauchbares Dict: gibt None zurueck."""
+        orchestrator = self._make_orchestrator()
+        result = orchestrator._parse_judge_response(
+            '["not", "a", "dict"]', {"A": "alpha"}
+        )
+        assert result is None
+
+    def test_static_extract_json_object_method(self) -> None:
+        """Direkter Test der statischen _extract_json_object Methode."""
+        # Reines JSON
+        assert DebateOrchestrator._extract_json_object('{"a": 1}') == '{"a": 1}'
+
+        # Mit Prefix
+        result = DebateOrchestrator._extract_json_object('Hello\n{"a": 1}')
+        assert result is not None
+        assert json.loads(result) == {"a": 1}
+
+        # Kein JSON
+        assert DebateOrchestrator._extract_json_object("no json here") is None
+
+        # Leerer String
+        assert DebateOrchestrator._extract_json_object("") is None
