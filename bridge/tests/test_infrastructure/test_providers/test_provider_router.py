@@ -136,12 +136,12 @@ class TestProviderRouterListing:
         providers = {
             "claude": _make_mock_provider("claude", available=True),
             "gemini": _make_mock_provider("gemini", available=False),
-            "ollama": _make_mock_provider("ollama", available=True),
+            "ollama_local": _make_mock_provider("ollama_local", available=True),
         }
         router = ProviderRouter(providers=providers, default="claude")
         available = router.list_available()
         assert "claude" in available
-        assert "ollama" in available
+        assert "ollama_local" in available
         assert "gemini" not in available
 
 

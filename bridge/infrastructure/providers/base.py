@@ -123,7 +123,7 @@ class LLMProvider(ABC):
     und implementiert query(), is_available() und get_capabilities().
     """
 
-    name: str  # "claude", "openai", "gemini", "mistral", "ollama"
+    name: str  # "claude", "openai", "gemini", "mistral", "ollama_local"
 
     @abstractmethod
     def get_capabilities(self) -> ProviderCapabilities:

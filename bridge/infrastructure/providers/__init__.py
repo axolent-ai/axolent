@@ -4,7 +4,8 @@ Exportiert das Provider-Interface und alle konkreten Provider-Implementierungen.
 Aktuell aktiv:
     - ClaudePersistentProvider (R04, persistent stdin-Pipe, Streaming)
     - ClaudeProvider (Legacy-Fallback, einzelne Subprozesse)
-Stubs: OpenAI Codex, Gemini, Mistral Vibe, Ollama.
+    - OllamaProvider (lokale Inference via Ollama HTTP-API)
+Stubs: OpenAI Codex, Gemini, Mistral Vibe.
 """
 
 from infrastructure.providers.base import (

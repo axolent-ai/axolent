@@ -62,6 +62,9 @@ class ClaudeProvider(LLMProvider):
         system_prompt: str = "",
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
         model: str | None = None,
+        user_id: int | None = None,
+        chat_id: int | None = None,
+        **kwargs,
     ) -> ProviderResponse:
         """Ruft Claude Code CLI auf und liefert die Antwort.
 
@@ -70,6 +73,9 @@ class ClaudeProvider(LLMProvider):
             system_prompt: Optionaler System-Prompt (via stdin, nicht argv).
             timeout_seconds: Timeout für den Subprozess.
             model: Optionaler Modell-Identifier (aktuell ignoriert, CLI nutzt Default).
+            user_id: Telegram User-ID (akzeptiert fuer Interface-Kompatibilitaet, ignoriert).
+            chat_id: Telegram Chat-ID (akzeptiert fuer Interface-Kompatibilitaet, ignoriert).
+            **kwargs: Safety-Net fuer zukuenftige Provider-Interface-Erweiterungen.
 
         Returns:
             ProviderResponse mit Claude-Antwort oder Fehler.

@@ -280,3 +280,39 @@ class TestDebateProviderConfig:
         assert "online" in result.responses
         assert "offline" not in result.responses
         assert "offline" not in result.errors
+
+
+class TestDebateLegacyAndPersistentTogether:
+    """Tests: Legacy-Claude und claude_persistent gleichzeitig im Debate."""
+
+    async def test_both_claude_providers_succeed(self) -> None:
+        """Legacy-Claude und Persistent-Claude im Debate, beide mit user_id/chat_id."""
+        providers = {
+            "claude_persistent": _MockProvider(
+                "claude_persistent", response_text="Persistent sagt: BTC ist P2P-Geld"
+            ),
+            "claude": _MockProvider(
+                "claude", response_text="Legacy sagt: BTC ist digital cash"
+            ),
+            "ollama_local": _MockProvider(
+                "ollama_local", response_text="Llama sagt: BTC ist Krypto"
+            ),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        result = await orchestrator.debate(
+            question="Was ist Bitcoin?", user_id=42, chat_id=100
+        )
+
+        assert "claude_persistent" in result.responses
+        assert "claude" in result.responses
+        assert "ollama_local" in result.responses
+        assert len(result.errors) == 0
+        assert result.consensus_analysis is not None
+        # Alle drei Provider wurden gefragt
+        assert set(result.providers_queried) == {
+            "claude_persistent",
+            "claude",
+            "ollama_local",
+        }

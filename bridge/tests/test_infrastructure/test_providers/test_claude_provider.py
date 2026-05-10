@@ -98,3 +98,45 @@ class TestClaudeProviderQuery:
 
         assert result.error is not None
         assert "timeout" in result.error
+
+    @pytest.mark.asyncio
+    async def test_query_accepts_user_id_and_chat_id(self) -> None:
+        """Legacy-Provider darf nicht crashen wenn user_id/chat_id uebergeben werden."""
+        provider = ClaudeProvider()
+
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"OK", b""))
+        mock_proc.returncode = 0
+        mock_proc.kill = MagicMock()
+        mock_proc.wait = AsyncMock()
+
+        with patch(
+            "asyncio.create_subprocess_exec",
+            return_value=mock_proc,
+        ):
+            result = await provider.query("Test", user_id=12345, chat_id=67890)
+
+        assert result.text == "OK"
+        assert result.error is None
+
+    @pytest.mark.asyncio
+    async def test_query_accepts_unknown_kwargs(self) -> None:
+        """Legacy-Provider darf nicht crashen bei unbekannten kwargs."""
+        provider = ClaudeProvider()
+
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"Fine", b""))
+        mock_proc.returncode = 0
+        mock_proc.kill = MagicMock()
+        mock_proc.wait = AsyncMock()
+
+        with patch(
+            "asyncio.create_subprocess_exec",
+            return_value=mock_proc,
+        ):
+            result = await provider.query(
+                "Test", user_id=1, chat_id=2, future_param="ignored"
+            )
+
+        assert result.text == "Fine"
+        assert result.error is None

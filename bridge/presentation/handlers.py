@@ -1397,7 +1397,7 @@ async def handle_setlimit_command(
 _PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "claude_persistent": "\U0001f916 Claude",
     "claude": "\U0001f916 Claude",
-    "ollama": "\U0001f999 Llama (lokal)",
+    "ollama_local": "\U0001f999 Llama (lokal)",
     "openai": "\U0001f4a1 OpenAI",
     "gemini": "✨ Gemini",
     "mistral": "\U0001f32c️ Mistral",

@@ -195,7 +195,7 @@ def _build_provider_router(process_pool: ClaudeProcessPool) -> ProviderRouter:
         "openai": OpenAICodexProvider(),
         "gemini": GeminiProvider(),
         "mistral": MistralVibeProvider(),
-        "ollama": OllamaProvider(),
+        "ollama_local": OllamaProvider(),
     }
 
     default = os.getenv("DEFAULT_PROVIDER", "claude_persistent")
