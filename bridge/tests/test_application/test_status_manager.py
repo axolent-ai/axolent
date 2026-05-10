@@ -519,6 +519,6 @@ class TestMinStatusDisplayTime:
         await session.update("thinking")
         after = time.monotonic()
 
-        # Kein Sleep noetig (2s > 800ms)
+        # Kein Sleep noetig (2s > 1100ms)
         elapsed_ms = (after - before) * 1000
         assert elapsed_ms < 50

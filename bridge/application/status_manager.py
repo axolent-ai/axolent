@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 # Konfiguration
 SHOW_STATUS_UPDATES: bool = True
 STATUS_RATE_LIMIT_SECONDS: float = 0.5
-MIN_STATUS_DISPLAY_MS: int = 800  # Minimale Anzeigedauer pro Status-Update (ms)
+MIN_STATUS_DISPLAY_MS: int = 1100  # Minimale Anzeigedauer pro Status-Update (ms)
 
 
 # ---------------------------------------------------------------------------
