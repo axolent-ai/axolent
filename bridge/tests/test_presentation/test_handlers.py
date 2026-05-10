@@ -1368,11 +1368,120 @@ class TestFormatDebateSynthesis:
         assert "Peer-to-Peer" in formatted
         # "Synthese" als Ueberschrift
         assert "Synthese" in formatted
-        # Winner-Label ist jetzt "Beste Einzelantwort" statt "Winner"
-        assert "Beste Einzelantwort" in formatted
+        # Winner-Label ist jetzt "Stärkster Beitrag" (nicht "Beste Einzelantwort")
+        assert "Stärkster Beitrag" in formatted
+        assert "Beste Einzelantwort" not in formatted
         assert "Winner" not in formatted
         # Empfehlung ist da
         assert "Empfehlung:" in formatted
+
+        # BLUF-Reihenfolge: Empfehlung vor Synthese vor Detail-Antworten
+        emp_pos = formatted.index("Empfehlung:")
+        syn_pos = formatted.index("Synthese")
+        detail_pos = formatted.index("Detail-Antworten")
+        assert emp_pos < syn_pos < detail_pos
+
+    def test_format_debate_bluf_order_detail_answers_last(self) -> None:
+        """Detail-Antworten der KIs stehen am Ende (vor Timer)."""
+        from application.debate_orchestrator import (
+            DebateResult,
+            FinalVerdict,
+            ProviderEvaluation,
+        )
+        from presentation.handlers import _format_debate_result
+
+        verdict = FinalVerdict(
+            winner="claude_persistent",
+            recommendation="Claude liefert bessere Antwort.",
+            synthesis="Zusammenfassung beider Antworten.",
+            evaluations=[
+                ProviderEvaluation(
+                    provider="claude_persistent", pros=["Klar"], cons=[]
+                ),
+                ProviderEvaluation(
+                    provider="ollama_local", pros=["Ausfuehrlich"], cons=["Vage"]
+                ),
+            ],
+            reasoning="Claude ist praeziser.",
+            judge_provider="claude_persistent",
+        )
+
+        result = DebateResult(
+            question="Testfrage?",
+            responses={
+                "claude_persistent": "Claude-Antwort hier.",
+                "ollama_local": "Llama-Antwort hier.",
+            },
+            errors={},
+            consensus_analysis="Hohe Uebereinstimmung.",
+            final_verdict=verdict,
+            duration_seconds=2.0,
+            providers_queried=["claude_persistent", "ollama_local"],
+        )
+
+        formatted = _format_debate_result(result)
+
+        # BLUF: Empfehlung -> Staerkster Beitrag -> Synthese -> Pro/Contra -> Details -> Timer
+        emp_pos = formatted.index("Empfehlung:")
+        strongest_pos = formatted.index("Stärkster Beitrag:")
+        syn_pos = formatted.index("Synthese")
+        detail_pos = formatted.index("Detail-Antworten")
+        timer_pos = formatted.index("⏱")
+
+        assert emp_pos < strongest_pos
+        assert strongest_pos < syn_pos
+        assert syn_pos < detail_pos
+        assert detail_pos < timer_pos
+
+        # Detail-Antworten enthalten die Original-Texte
+        assert "Claude-Antwort hier." in formatted
+        assert "Llama-Antwort hier." in formatted
+
+    def test_format_debate_english_labels(self) -> None:
+        """English labels werden korrekt verwendet wenn lang='en'."""
+        from application.debate_orchestrator import (
+            DebateResult,
+            FinalVerdict,
+            ProviderEvaluation,
+        )
+        from presentation.handlers import _format_debate_result
+
+        verdict = FinalVerdict(
+            winner="claude_persistent",
+            recommendation="Claude wins.",
+            synthesis="Combined answer.",
+            evaluations=[
+                ProviderEvaluation(
+                    provider="claude_persistent", pros=["Clear"], cons=[]
+                ),
+            ],
+            reasoning="Better answer.",
+            judge_provider="claude_persistent",
+        )
+
+        result = DebateResult(
+            question="What is AI?",
+            responses={
+                "claude_persistent": "AI is artificial intelligence.",
+                "ollama_local": "AI means smart machines.",
+            },
+            errors={},
+            consensus_analysis=None,
+            final_verdict=verdict,
+            duration_seconds=1.5,
+            providers_queried=["claude_persistent", "ollama_local"],
+        )
+
+        formatted = _format_debate_result(result, lang="en")
+
+        # English labels
+        assert "Recommendation:" in formatted
+        assert "Strongest Contribution:" in formatted
+        assert "Synthesis" in formatted
+        assert "Detail Responses" in formatted
+        # No German labels
+        assert "Empfehlung:" not in formatted
+        assert "Stärkster Beitrag:" not in formatted
 
     def test_format_debate_without_synthesis_shows_no_empty_block(self) -> None:
         """Wenn synthesis leer ist, wird kein leerer Block angezeigt."""
@@ -1404,11 +1513,11 @@ class TestFormatDebateSynthesis:
 
         formatted = _format_debate_result(result)
 
-        # Synthese-Ueberschrift ist da (weil final_verdict existiert)
-        assert "Synthese" in formatted
-        # Aber kein leerer Absatz zwischen Ueberschrift und Empfehlung
-        # (die Synthese-Zeile selbst fehlt, weil leer)
+        # Synthese-Block wird NICHT gerendert wenn synthesis leer ist
+        assert "Synthese" not in formatted
+        # Empfehlung und Staerkster Beitrag sind trotzdem da
         assert "Claude gewinnt." in formatted
+        assert "Stärkster Beitrag" in formatted
         # Quality warning wird angezeigt
         assert "Lokaler Judge" in formatted
 

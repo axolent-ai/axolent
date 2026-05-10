@@ -1409,28 +1409,150 @@ DEBATE_HELP_TEXT: str = (
 )
 
 
-def _format_debate_result(result: Any) -> str:
-    """Formatiert ein DebateResult als Telegram-Text.
+# i18n strings for Debate output (DE default, EN prepared for future activation)
+_DEBATE_STRINGS: dict[str, dict[str, str]] = {
+    "de": {
+        "header": "\U0001f3af Multi-AI-Debate",
+        "question_label": "\U0001f4cc Frage",
+        "no_providers": "Keine Provider konnten antworten.",
+        "errors_label": "Fehler",
+        "recommendation_label": "Empfehlung",
+        "strongest_contribution": "Stärkster Beitrag",
+        "tie_result": "Ergebnis: Gleichstand",
+        "synthesis_header": "\U0001f3af Synthese",
+        "consensus_header": "✨ Konsens / Dissens",
+        "detail_header": "\U0001f4dd Detail-Antworten",
+        "single_provider_hint": (
+            "\U0001f4a1 Nur 1 Provider verfügbar. "
+            "Für echtes Multi-AI-Debate: weitere Provider konfigurieren "
+            "(z.B. Ollama installieren)."
+        ),
+        "quality_warning_prefix": "⚠️",
+        "errors_section": "⚠️ Fehler:",
+    },
+    "en": {
+        "header": "\U0001f3af Multi-AI Debate",
+        "question_label": "\U0001f4cc Question",
+        "no_providers": "No providers could respond.",
+        "errors_label": "Errors",
+        "recommendation_label": "Recommendation",
+        "strongest_contribution": "Strongest Contribution",
+        "tie_result": "Result: Tie",
+        "synthesis_header": "\U0001f3af Synthesis",
+        "consensus_header": "✨ Consensus / Dissent",
+        "detail_header": "\U0001f4dd Detail Responses",
+        "single_provider_hint": (
+            "\U0001f4a1 Only 1 provider available. "
+            "For a real Multi-AI Debate: configure more providers "
+            "(e.g. install Ollama)."
+        ),
+        "quality_warning_prefix": "⚠️",
+        "errors_section": "⚠️ Errors:",
+    },
+}
+
+
+def _get_debate_strings(lang: str = "de") -> dict[str, str]:
+    """Returns debate i18n strings for the given language.
+
+    Falls back to German if language not available.
+
+    Args:
+        lang: ISO-639-1 language code.
+
+    Returns:
+        Dict of string keys to localized values.
+    """
+    return _DEBATE_STRINGS.get(lang, _DEBATE_STRINGS["de"])
+
+
+def _format_debate_result(result: Any, lang: str = "de") -> str:
+    """Formatiert ein DebateResult als Telegram-Text (BLUF-Reihenfolge).
+
+    Block-Reihenfolge (Bottom Line Up Front):
+    1. Frage
+    2. Empfehlung (kompakte Handlungsempfehlung)
+    3. Stärkster Beitrag (bester einzelner Provider)
+    4. Synthese (kombinierte Kern-Antwort)
+    5. Pro/Contra je Provider
+    6. Detail-Antworten der KIs (Claude + Llama als Original)
+    7. Timer
 
     Args:
         result: DebateResult-Instanz.
+        lang: Sprache für Labels (Default: "de").
 
     Returns:
         Formatierter Text für Telegram.
     """
+    s = _get_debate_strings(lang)
     lines: list[str] = []
-    lines.append("\U0001f3af Multi-AI-Debate\n")
-    lines.append(f"\U0001f4cc Frage: {result.question}\n")
+    lines.append(f"{s['header']}\n")
+    lines.append(f"{s['question_label']}: {result.question}\n")
 
     if not result.responses:
-        lines.append("Keine Provider konnten antworten.")
+        lines.append(s["no_providers"])
         if result.errors:
-            lines.append(f"\nFehler: {', '.join(result.errors.keys())}")
+            lines.append(f"\n{s['errors_label']}: {', '.join(result.errors.keys())}")
         return "\n".join(lines)
 
+    # --- Block 2: Empfehlung (BLUF) ---
+    if result.final_verdict is not None:
+        if result.final_verdict.recommendation:
+            lines.append("━" * 20)
+            lines.append(
+                f"{s['recommendation_label']}: {result.final_verdict.recommendation}"
+            )
+            lines.append("")
+
+        # --- Block 3: Stärkster Beitrag ---
+        winner_display = _PROVIDER_DISPLAY_NAMES.get(
+            result.final_verdict.winner, result.final_verdict.winner
+        )
+        if result.final_verdict.winner == "tie":
+            lines.append(s["tie_result"])
+        else:
+            lines.append(f"{s['strongest_contribution']}: {winner_display}")
+        lines.append("")
+
+        # --- Block 4: Synthese ---
+        if result.final_verdict.synthesis:
+            lines.append("━" * 20)
+            lines.append(f"{s['synthesis_header']}\n")
+            lines.append(result.final_verdict.synthesis)
+            lines.append("")
+
+        # --- Block 5: Pro/Contra je Provider ---
+        if result.final_verdict.evaluations:
+            lines.append("━" * 20)
+            for evaluation in result.final_verdict.evaluations:
+                eval_display = _PROVIDER_DISPLAY_NAMES.get(
+                    evaluation.provider, evaluation.provider
+                )
+                pros_str = ", ".join(evaluation.pros) if evaluation.pros else ""
+                cons_str = ", ".join(evaluation.cons) if evaluation.cons else ""
+                if pros_str:
+                    lines.append(f"✅ {eval_display}: {pros_str}")
+                if cons_str:
+                    lines.append(f"❌ {eval_display}: {cons_str}")
+            lines.append("")
+
+        if result.final_verdict.judge_quality_warning:
+            lines.append(
+                f"\n{s['quality_warning_prefix']} "
+                f"{result.final_verdict.judge_quality_warning}"
+            )
+
+    elif result.consensus_analysis:
+        # Fallback: alte Konsens-Heuristik wenn Judge fehlschlägt
+        lines.append("━" * 20)
+        lines.append(f"{s['consensus_header']}:\n{result.consensus_analysis}")
+
+    # --- Block 6: Detail-Antworten der KIs ---
+    lines.append("━" * 20)
+    lines.append(f"{s['detail_header']}\n")
     for provider_name, response_text in result.responses.items():
         display_name = _PROVIDER_DISPLAY_NAMES.get(provider_name, provider_name)
-        lines.append("━" * 20)
         lines.append(f"{display_name}:")
         lines.append(response_text.strip())
         lines.append("")
@@ -1438,64 +1560,17 @@ def _format_debate_result(result: Any) -> str:
     # Fehler anzeigen (falls einige Provider crashed sind)
     if result.errors:
         lines.append("━" * 20)
-        lines.append("⚠️ Fehler:")
+        lines.append(s["errors_section"])
         for provider_name, error_msg in result.errors.items():
             display_name = _PROVIDER_DISPLAY_NAMES.get(provider_name, provider_name)
             lines.append(f"  {display_name}: {error_msg}")
         lines.append("")
 
-    # Final Review (LLM-as-Judge)
-    if result.final_verdict is not None:
-        lines.append("━" * 20)
-        lines.append("\U0001f3af Synthese\n")
-
-        # Synthese als Hauptelement
-        if result.final_verdict.synthesis:
-            lines.append(result.final_verdict.synthesis)
-            lines.append("")
-
-        # Empfehlung kompakt darunter
-        if result.final_verdict.recommendation:
-            lines.append(f"Empfehlung: {result.final_verdict.recommendation}")
-
-        winner_display = _PROVIDER_DISPLAY_NAMES.get(
-            result.final_verdict.winner, result.final_verdict.winner
-        )
-        if result.final_verdict.winner == "tie":
-            lines.append("Ergebnis: Gleichstand")
-        else:
-            lines.append(f"Beste Einzelantwort: {winner_display}")
-        lines.append("")
-
-        # Pro/Contra kompakt
-        for evaluation in result.final_verdict.evaluations:
-            eval_display = _PROVIDER_DISPLAY_NAMES.get(
-                evaluation.provider, evaluation.provider
-            )
-            pros_str = ", ".join(evaluation.pros) if evaluation.pros else ""
-            cons_str = ", ".join(evaluation.cons) if evaluation.cons else ""
-            if pros_str:
-                lines.append(f"✅ {eval_display}: {pros_str}")
-            if cons_str:
-                lines.append(f"❌ {eval_display}: {cons_str}")
-        lines.append("")
-
-        if result.final_verdict.judge_quality_warning:
-            lines.append(f"\n⚠️ {result.final_verdict.judge_quality_warning}")
-    elif result.consensus_analysis:
-        # Fallback: alte Konsens-Heuristik wenn Judge fehlschlägt
-        lines.append("━" * 20)
-        lines.append(f"✨ Konsens / Dissens:\n{result.consensus_analysis}")
-
     # Nur 1 Provider Hinweis
     if len(result.responses) == 1 and not result.errors:
-        lines.append(
-            "\n\U0001f4a1 Nur 1 Provider verfügbar. "
-            "Für echtes Multi-AI-Debate: weitere Provider konfigurieren "
-            "(z.B. Ollama installieren)."
-        )
+        lines.append(f"\n{s['single_provider_hint']}")
 
-    # Dauer
+    # --- Block 7: Timer ---
     lines.append(f"\n⏱ {result.duration_seconds:.1f}s")
 
     return "\n".join(lines)
@@ -1588,8 +1663,11 @@ async def handle_debate_command(
     except Exception:  # nosec B110
         pass
 
+    # Sprache für Debate-Output bestimmen
+    debate_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+
     # Ergebnis formatieren und senden
-    formatted = _format_debate_result(debate_result)
+    formatted = _format_debate_result(debate_result, lang=debate_lang)
     chunks = split_message(formatted)
     for chunk in chunks:
         await update.message.reply_text(chunk)
