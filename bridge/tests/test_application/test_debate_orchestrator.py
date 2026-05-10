@@ -8,10 +8,15 @@ Testet:
 - Konsens-Heuristik gibt sinnvollen Output
 - Kein Provider verfügbar
 - Provider-Deduplizierung (claude_persistent + claude = eine Gruppe)
+- Final Review: JSON-Parse-Erfolg
+- Final Review: JSON-Parse-Fehler -> graceful Fallback
+- Final Review: Provider-Namen anonymisiert im Judge-Prompt (Bias-Mitigation)
+- Final Review: Integration in Debate-Flow
 """
 
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
 from application.debate_orchestrator import (
@@ -376,3 +381,345 @@ class TestProviderDeduplication:
         assert "claude" in result.responses
         assert "claude_persistent" not in result.responses
         assert "ollama_local" in result.responses
+
+
+class TestFinalReviewParsing:
+    """Tests für die JSON-Parsing-Logik des Final Review."""
+
+    def test_parse_valid_json(self) -> None:
+        """Valides JSON wird korrekt zu FinalVerdict geparst."""
+        providers = {
+            "alpha": _MockProvider("alpha", response_text="A"),
+            "beta": _MockProvider("beta", response_text="B"),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        raw_json = json.dumps(
+            {
+                "winner": "A",
+                "recommendation": "Antwort A ist präziser.",
+                "evaluations": [
+                    {"label": "A", "pros": ["Korrekt", "Präzise"], "cons": ["Kurz"]},
+                    {"label": "B", "pros": ["Ausführlich"], "cons": ["Vage"]},
+                ],
+                "reasoning": "A liefert die genauere Antwort.",
+            }
+        )
+
+        label_to_provider = {"A": "alpha", "B": "beta"}
+        result = orchestrator._parse_judge_response(raw_json, label_to_provider)
+
+        assert result is not None
+        assert result.winner == "alpha"
+        assert result.recommendation == "Antwort A ist präziser."
+        assert result.reasoning == "A liefert die genauere Antwort."
+        assert len(result.evaluations) == 2
+        assert result.evaluations[0].provider == "alpha"
+        assert "Korrekt" in result.evaluations[0].pros
+        assert "Kurz" in result.evaluations[0].cons
+        assert result.evaluations[1].provider == "beta"
+
+    def test_parse_tie_winner(self) -> None:
+        """Winner 'tie' wird korrekt erkannt."""
+        providers = {
+            "alpha": _MockProvider("alpha", response_text="A"),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        raw_json = json.dumps(
+            {
+                "winner": "tie",
+                "recommendation": "Beide gleichwertig.",
+                "evaluations": [],
+                "reasoning": "Keine signifikanten Unterschiede.",
+            }
+        )
+
+        result = orchestrator._parse_judge_response(raw_json, {"A": "alpha"})
+        assert result is not None
+        assert result.winner == "tie"
+
+    def test_parse_json_in_markdown_codeblock(self) -> None:
+        """JSON in Markdown-Codeblock wird korrekt extrahiert."""
+        providers = {
+            "alpha": _MockProvider("alpha", response_text="A"),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        raw_text = (
+            "```json\n"
+            '{"winner": "A", "recommendation": "A gewinnt.", '
+            '"evaluations": [], "reasoning": "Besser."}\n'
+            "```"
+        )
+
+        result = orchestrator._parse_judge_response(raw_text, {"A": "alpha"})
+        assert result is not None
+        assert result.winner == "alpha"
+        assert result.recommendation == "A gewinnt."
+
+    def test_parse_invalid_json_returns_none(self) -> None:
+        """Ungültiges JSON gibt None zurück (graceful fallback)."""
+        providers = {
+            "alpha": _MockProvider("alpha", response_text="A"),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        result = orchestrator._parse_judge_response(
+            "Das ist kein JSON, sorry!", {"A": "alpha"}
+        )
+        assert result is None
+
+    def test_parse_non_dict_json_returns_none(self) -> None:
+        """JSON das kein Dict ist gibt None zurück."""
+        providers = {
+            "alpha": _MockProvider("alpha", response_text="A"),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        result = orchestrator._parse_judge_response(
+            '["not", "a", "dict"]', {"A": "alpha"}
+        )
+        assert result is None
+
+
+class TestFinalReviewBiasMitigation:
+    """Tests für Bias-Mitigation: Provider-Namen sind im Judge-Prompt anonymisiert."""
+
+    def test_prompt_contains_no_provider_names(self) -> None:
+        """Der Judge-Prompt enthält keine echten Provider-Namen."""
+        providers = {
+            "claude_persistent": _MockProvider(
+                "claude_persistent", response_text="Claude sagt X"
+            ),
+            "ollama_local": _MockProvider("ollama_local", response_text="Llama sagt Y"),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        responses = {
+            "claude_persistent": "Claude sagt X",
+            "ollama_local": "Llama sagt Y",
+        }
+
+        prompt, label_to_provider = orchestrator._build_judge_prompt(
+            "Was ist Bitcoin?", responses
+        )
+
+        # Provider-Namen dürfen nicht im Prompt vorkommen
+        assert "claude_persistent" not in prompt
+        assert "ollama_local" not in prompt
+        # Aber die anonymen Labels schon
+        assert "Antwort A" in prompt
+        assert "Antwort B" in prompt
+        # Mapping muss korrekt sein
+        assert label_to_provider["A"] == "claude_persistent"
+        assert label_to_provider["B"] == "ollama_local"
+
+    def test_prompt_contains_answer_content(self) -> None:
+        """Der Judge-Prompt enthält den Antworttext."""
+        providers = {
+            "alpha": _MockProvider("alpha", response_text="A"),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        responses = {
+            "alpha": "Bitcoin ist digitales Geld",
+            "beta": "Bitcoin ist eine Kryptowährung",
+        }
+
+        prompt, _ = orchestrator._build_judge_prompt("Was ist Bitcoin?", responses)
+
+        assert "Bitcoin ist digitales Geld" in prompt
+        assert "Bitcoin ist eine Kryptowährung" in prompt
+        assert "Was ist Bitcoin?" in prompt
+
+
+class TestFinalReviewIntegration:
+    """Integration-Tests: Final Review im Debate-Flow."""
+
+    async def test_debate_includes_final_verdict(self) -> None:
+        """Debate mit 2 Providern liefert ein FinalVerdict."""
+        judge_json = json.dumps(
+            {
+                "winner": "A",
+                "recommendation": "Antwort A ist besser.",
+                "evaluations": [
+                    {"label": "A", "pros": ["Klar"], "cons": []},
+                    {"label": "B", "pros": [], "cons": ["Unklar"]},
+                ],
+                "reasoning": "A ist präziser.",
+            }
+        )
+
+        # Spezieller Mock-Provider der als Judge fungiert
+        providers = {
+            "claude_persistent": _MockProvider(
+                "claude_persistent", response_text="Claude Antwort"
+            ),
+            "ollama_local": _MockProvider(
+                "ollama_local", response_text="Llama Antwort"
+            ),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        # Mock: Judge-Call liefert vorbereitetes JSON
+        async def _mock_final_review(question, responses, user_id, chat_id):
+            """Simuliert einen erfolgreichen Final Review."""
+            prompt, label_to_provider = orchestrator._build_judge_prompt(
+                question, responses
+            )
+            return orchestrator._parse_judge_response(judge_json, label_to_provider)
+
+        # Patch final_review um den echten Provider-Call zu umgehen
+        with patch.object(orchestrator, "final_review", side_effect=_mock_final_review):
+            result = await orchestrator.debate(
+                question="Was ist Bitcoin?", user_id=1, chat_id=10
+            )
+
+        assert result.final_verdict is not None
+        assert result.final_verdict.winner == "claude_persistent"
+        assert result.final_verdict.recommendation == "Antwort A ist besser."
+        assert len(result.final_verdict.evaluations) == 2
+
+    async def test_debate_graceful_when_judge_fails(self) -> None:
+        """Wenn der Judge fehlschlägt, hat result trotzdem consensus_analysis."""
+        providers = {
+            "alpha": _MockProvider("alpha", response_text="Antwort Alpha"),
+            "beta": _MockProvider("beta", response_text="Antwort Beta"),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        # Mock: Judge-Call liefert None (Fehler)
+        with patch.object(orchestrator, "final_review", return_value=None):
+            result = await orchestrator.debate(
+                question="Was ist Bitcoin?", user_id=1, chat_id=10
+            )
+
+        # Kein Verdict, aber Konsens-Analyse existiert
+        assert result.final_verdict is None
+        assert result.consensus_analysis is not None
+        # Antworten sind trotzdem da
+        assert "alpha" in result.responses
+        assert "beta" in result.responses
+
+    async def test_final_review_uses_claude_persistent_as_judge(self) -> None:
+        """Final Review bevorzugt claude_persistent als Judge."""
+        judge_json = json.dumps(
+            {
+                "winner": "A",
+                "recommendation": "A gewinnt.",
+                "evaluations": [
+                    {"label": "A", "pros": ["Gut"], "cons": []},
+                    {"label": "B", "pros": [], "cons": ["Schlecht"]},
+                ],
+                "reasoning": "A ist besser.",
+            }
+        )
+
+        providers = {
+            "claude_persistent": _MockProvider(
+                "claude_persistent", response_text=judge_json
+            ),
+            "ollama_local": _MockProvider(
+                "ollama_local", response_text="Sollte nicht als Judge genutzt werden"
+            ),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        responses = {
+            "claude_persistent": "Claude sagt was",
+            "ollama_local": "Llama sagt was",
+        }
+
+        verdict = await orchestrator.final_review(
+            question="Test?",
+            responses=responses,
+            user_id=1,
+            chat_id=10,
+        )
+
+        assert verdict is not None
+        assert verdict.judge_provider == "claude_persistent"
+        assert verdict.judge_quality_warning is None
+
+    async def test_final_review_fallback_to_ollama_with_warning(self) -> None:
+        """Wenn nur ollama_local verfügbar: wird als Judge mit Warnung genutzt."""
+        judge_json = json.dumps(
+            {
+                "winner": "A",
+                "recommendation": "A gewinnt.",
+                "evaluations": [],
+                "reasoning": "A ist besser.",
+            }
+        )
+
+        providers = {
+            "claude_persistent": _MockProvider("claude_persistent", available=False),
+            "ollama_local": _MockProvider("ollama_local", response_text=judge_json),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        responses = {"alpha": "Antwort A", "beta": "Antwort B"}
+
+        verdict = await orchestrator.final_review(
+            question="Test?",
+            responses=responses,
+            user_id=1,
+            chat_id=10,
+        )
+
+        assert verdict is not None
+        assert verdict.judge_provider == "ollama_local"
+        assert verdict.judge_quality_warning is not None
+        assert "Lokaler Judge" in verdict.judge_quality_warning
+
+    async def test_final_review_skipped_with_single_response(self) -> None:
+        """Final Review wird übersprungen wenn weniger als 2 Antworten."""
+        providers = {
+            "alpha": _MockProvider("alpha", response_text="A"),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        verdict = await orchestrator.final_review(
+            question="Test?",
+            responses={"alpha": "Nur eine Antwort"},
+            user_id=1,
+            chat_id=10,
+        )
+
+        assert verdict is None
+
+    async def test_final_review_returns_none_on_invalid_judge_json(self) -> None:
+        """Wenn der Judge ungültiges JSON liefert: None statt Crash."""
+        providers = {
+            "claude_persistent": _MockProvider(
+                "claude_persistent",
+                response_text="Sorry, ich kann das nicht als JSON.",
+            ),
+            "ollama_local": _MockProvider("ollama_local", response_text="X"),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        responses = {"alpha": "Antwort A", "beta": "Antwort B"}
+
+        verdict = await orchestrator.final_review(
+            question="Test?",
+            responses=responses,
+            user_id=1,
+            chat_id=10,
+        )
+
+        assert verdict is None

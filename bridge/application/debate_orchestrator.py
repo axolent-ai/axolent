@@ -2,17 +2,24 @@
 
 Fragt mehrere Provider parallel mit derselben Frage und sammelt Antworten.
 Crash-resilient: ein crashender Provider stoppt nicht die anderen.
-Optional: Konsens/Dissens-Analyse via Heuristik (Phase 1) oder LLM-Judge (Phase 1+).
+Konsens/Dissens-Analyse via Heuristik + LLM-as-Judge Final Review.
 
 Provider-Deduplizierung (seit R10-Fix):
 Wenn mehrere Provider dasselbe Backend-Modell nutzen (z.B. claude_persistent
 und claude nutzen beide die Claude CLI), wird nur einer pro Gruppe im Debate
 verwendet. Das verhindert verzerrte Konsens-Analysen und Token-Verschwendung.
+
+Final-Review-Layer (seit R10-Erweiterung):
+Nach den parallelen Antworten wird ein LLM-as-Judge Call gemacht der alle
+Antworten evaluiert und eine eindeutige Empfehlung mit Pro/Contra abgibt.
+Judge-Provider: claude_persistent (Fallback: ollama_local mit Qualitätswarnung).
+Bias-Mitigation: Provider-Namen werden im Judge-Prompt anonymisiert.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import time
@@ -92,6 +99,42 @@ def deduplicate_providers(available: list[str]) -> list[str]:
 
 
 @dataclass(frozen=True)
+class ProviderEvaluation:
+    """Bewertung einer einzelnen Provider-Antwort durch den Judge.
+
+    Attributes:
+        provider: Provider-Name (realer Name, nach De-Anonymisierung).
+        pros: Liste positiver Aspekte der Antwort.
+        cons: Liste negativer Aspekte der Antwort.
+    """
+
+    provider: str
+    pros: list[str] = field(default_factory=list)
+    cons: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class FinalVerdict:
+    """Ergebnis des LLM-as-Judge Final Reviews.
+
+    Attributes:
+        winner: Provider-Name des Gewinners (oder "tie" bei Gleichstand).
+        recommendation: Kurzer Satz mit der finalen Empfehlung.
+        evaluations: Pro/Contra-Bewertung je Provider-Antwort.
+        reasoning: 1-2 Sätze warum dieser Winner gewählt wurde.
+        judge_provider: Welcher Provider den Judge-Call gemacht hat.
+        judge_quality_warning: Warnung wenn ein schwächerer Judge genutzt wurde.
+    """
+
+    winner: str
+    recommendation: str
+    evaluations: list[ProviderEvaluation] = field(default_factory=list)
+    reasoning: str = ""
+    judge_provider: str = ""
+    judge_quality_warning: str | None = None
+
+
+@dataclass(frozen=True)
 class DebateResult:
     """Ergebnis einer Multi-AI-Debate.
 
@@ -100,6 +143,7 @@ class DebateResult:
         responses: Provider-Name -> Antworttext (erfolgreiche Provider).
         errors: Provider-Name -> Fehlermeldung (gecrashte Provider).
         consensus_analysis: Konsens/Dissens-Analyse (optional).
+        final_verdict: LLM-as-Judge Bewertung (optional, None wenn Judge fehlschlägt).
         duration_seconds: Gesamtdauer der Debate.
         providers_queried: Liste aller angefragten Provider.
     """
@@ -108,6 +152,7 @@ class DebateResult:
     responses: dict[str, str] = field(default_factory=dict)
     errors: dict[str, str] = field(default_factory=dict)
     consensus_analysis: Optional[str] = None
+    final_verdict: Optional[FinalVerdict] = None
     duration_seconds: float = 0.0
     providers_queried: list[str] = field(default_factory=list)
 
@@ -254,6 +299,234 @@ class DebateOrchestrator:
                 f"Vergleiche die Antworten oben für verschiedene Perspektiven."
             )
 
+    def _build_judge_prompt(
+        self,
+        question: str,
+        responses: dict[str, str],
+    ) -> tuple[str, dict[str, str]]:
+        """Baut den Judge-Prompt mit anonymisierten Provider-Namen.
+
+        Bias-Mitigation: Provider-Namen werden durch neutrale Labels ersetzt.
+        Der Judge sieht nur "Antwort A", "Antwort B" etc.
+
+        Args:
+            question: Die Original-Frage.
+            responses: Provider-Name -> Antworttext.
+
+        Returns:
+            Tuple: (prompt_text, label_to_provider_mapping)
+                label_to_provider_mapping: z.B. {"A": "claude_persistent", "B": "ollama_local"}
+        """
+        labels = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        label_to_provider: dict[str, str] = {}
+        answer_blocks: list[str] = []
+
+        for i, (provider_name, text) in enumerate(responses.items()):
+            label = labels[i] if i < len(labels) else f"Z{i}"
+            label_to_provider[label] = provider_name
+            answer_blocks.append(f"--- Antwort {label} ---\n{text.strip()}\n")
+
+        answers_text = "\n".join(answer_blocks)
+
+        prompt = (
+            f"Frage des Users:\n{question}\n\n"
+            f"Die folgenden Antworten wurden von verschiedenen KI-Modellen generiert.\n"
+            f"Bewerte sie neutral und objektiv.\n\n"
+            f"{answers_text}\n"
+            f"Antworte AUSSCHLIESSLICH mit einem JSON-Objekt (kein Markdown, kein Fliesstext). "
+            f"Schema:\n"
+            f'{{"winner": "<Buchstabe der besten Antwort oder tie>", '
+            f'"recommendation": "<1 Satz: klare Empfehlung>", '
+            f'"evaluations": ['
+            f'{{"label": "<Buchstabe>", "pros": ["..."], "cons": ["..."]}}, ...'
+            f"], "
+            f'"reasoning": "<1-2 Sätze warum dieser Winner>"}}'
+        )
+
+        return prompt, label_to_provider
+
+    def _parse_judge_response(
+        self,
+        raw_text: str,
+        label_to_provider: dict[str, str],
+    ) -> FinalVerdict | None:
+        """Parst die JSON-Antwort des Judges und mapped Labels zu Provider-Namen.
+
+        Graceful: gibt None zurück bei Parse-Fehlern.
+
+        Args:
+            raw_text: Roh-Antwort des Judge-LLMs.
+            label_to_provider: Mapping Label -> Provider-Name.
+
+        Returns:
+            FinalVerdict oder None wenn Parsing fehlschlägt.
+        """
+        # JSON aus dem Text extrahieren (kann in Markdown-Codeblock stecken)
+        text = raw_text.strip()
+        if text.startswith("```"):
+            # Markdown-Codeblock entfernen
+            lines = text.split("\n")
+            # Erste Zeile (```json oder ```) und letzte (```) entfernen
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            text = "\n".join(lines)
+
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            log.warning("Judge-Response ist kein valides JSON: %s", text[:200])
+            return None
+
+        # Pflichtfelder prüfen
+        if not isinstance(data, dict):
+            log.warning("Judge-Response ist kein Dict: %s", type(data))
+            return None
+
+        winner_label = data.get("winner", "")
+        recommendation = data.get("recommendation", "")
+        reasoning = data.get("reasoning", "")
+        evaluations_raw = data.get("evaluations", [])
+
+        # Winner-Label -> Provider-Name
+        if winner_label.lower() == "tie":
+            winner = "tie"
+        else:
+            winner = label_to_provider.get(winner_label, winner_label)
+
+        # Evaluations parsen
+        evaluations: list[ProviderEvaluation] = []
+        for eval_item in evaluations_raw:
+            if not isinstance(eval_item, dict):
+                continue
+            label = eval_item.get("label", "")
+            provider_name = label_to_provider.get(label, label)
+            pros = eval_item.get("pros", [])
+            cons = eval_item.get("cons", [])
+            if not isinstance(pros, list):
+                pros = [str(pros)]
+            if not isinstance(cons, list):
+                cons = [str(cons)]
+            evaluations.append(
+                ProviderEvaluation(
+                    provider=provider_name,
+                    pros=pros,
+                    cons=cons,
+                )
+            )
+
+        return FinalVerdict(
+            winner=winner,
+            recommendation=str(recommendation),
+            evaluations=evaluations,
+            reasoning=str(reasoning),
+        )
+
+    async def final_review(
+        self,
+        question: str,
+        responses: dict[str, str],
+        user_id: int,
+        chat_id: int,
+    ) -> FinalVerdict | None:
+        """Führt den LLM-as-Judge Final Review durch.
+
+        Strategie:
+        1. Versuche claude_persistent als Judge (höchste Qualität)
+        2. Fallback auf ollama_local mit Qualitätswarnung
+        3. Bei komplettem Fehler: None (Caller fällt auf Heuristik zurück)
+
+        Bias-Mitigation: Provider-Namen werden anonymisiert im Judge-Prompt.
+
+        Args:
+            question: Die Original-Frage.
+            responses: Provider-Name -> Antworttext (mind. 2 Einträge).
+            user_id: Telegram User-ID.
+            chat_id: Telegram Chat-ID.
+
+        Returns:
+            FinalVerdict oder None wenn Judge komplett fehlschlägt.
+        """
+        if len(responses) < 2:
+            log.debug("Final Review übersprungen: weniger als 2 Antworten")
+            return None
+
+        prompt, label_to_provider = self._build_judge_prompt(question, responses)
+
+        judge_system_prompt = (
+            "Du bist ein neutraler Schiedsrichter der KI-Antworten bewertet. "
+            "Du kennst die Provider-Namen nicht und bewertest rein nach Qualität: "
+            "Korrektheit, Vollständigkeit, Klarheit und Relevanz. "
+            "Antworte IMMER mit validem JSON, niemals mit Fliesstext."
+        )
+
+        # Judge-Provider-Auswahl: claude_persistent > ollama_local
+        judge_candidates = ["claude_persistent", "claude", "ollama_local"]
+        available = set(self.provider_router.list_available())
+
+        # Provider die an der Debate teilgenommen haben ausschliessen
+        # um Selbst-Bewertungs-Bias zu minimieren?
+        # Nein: Bei nur 2 Providern würde keiner übrig bleiben.
+        # Stattdessen: Anonymisierung reicht als Bias-Mitigation.
+
+        judge_provider: str | None = None
+        quality_warning: str | None = None
+
+        for candidate in judge_candidates:
+            if candidate in available:
+                judge_provider = candidate
+                break
+
+        if judge_provider is None:
+            log.warning("Kein Judge-Provider verfügbar, Final Review entfällt")
+            return None
+
+        if judge_provider == "ollama_local":
+            quality_warning = "Lokaler Judge (Ollama), Bewertungsqualität reduziert"
+
+        log.info("Final Review: Judge-Provider = %s", judge_provider)
+
+        try:
+            response = await asyncio.wait_for(
+                self.provider_router.route(
+                    prompt=prompt,
+                    system_prompt=judge_system_prompt,
+                    provider_name=judge_provider,
+                    timeout_seconds=self.timeout_seconds,
+                    user_id=user_id,
+                    chat_id=chat_id,
+                ),
+                timeout=self.timeout_seconds + 5,
+            )
+
+            if not response.success:
+                log.warning(
+                    "Judge-Call fehlgeschlagen: %s", response.error or "kein Text"
+                )
+                return None
+
+            verdict = self._parse_judge_response(response.text, label_to_provider)
+            if verdict is None:
+                return None
+
+            # Judge-Metadaten hinzufügen (frozen dataclass, neues Objekt)
+            return FinalVerdict(
+                winner=verdict.winner,
+                recommendation=verdict.recommendation,
+                evaluations=verdict.evaluations,
+                reasoning=verdict.reasoning,
+                judge_provider=judge_provider,
+                judge_quality_warning=quality_warning,
+            )
+
+        except asyncio.TimeoutError:
+            log.warning("Judge-Call Timeout nach %ds", self.timeout_seconds)
+            return None
+        except Exception as exc:
+            log.warning("Judge-Call Exception: %s", exc)
+            return None
+
     async def debate(
         self,
         question: str,
@@ -320,12 +593,23 @@ class DebateOrchestrator:
         if responses:
             consensus = self._analyze_consensus(responses)
 
+        # Final Review (LLM-as-Judge)
+        verdict: FinalVerdict | None = None
+        if len(responses) >= 2:
+            verdict = await self.final_review(
+                question=question,
+                responses=responses,
+                user_id=user_id,
+                chat_id=chat_id,
+            )
+
         duration = time.monotonic() - t_start
 
         log.info(
-            "Debate abgeschlossen: %d Antworten, %d Fehler, %.1fs",
+            "Debate abgeschlossen: %d Antworten, %d Fehler, verdict=%s, %.1fs",
             len(responses),
             len(errors),
+            verdict.winner if verdict else "none",
             duration,
         )
 
@@ -334,6 +618,7 @@ class DebateOrchestrator:
             responses=responses,
             errors=errors,
             consensus_analysis=consensus,
+            final_verdict=verdict,
             duration_seconds=duration,
             providers_queried=providers,
         )
