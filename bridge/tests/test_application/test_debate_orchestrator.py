@@ -1,19 +1,24 @@
-"""Tests fuer application.debate_orchestrator (R10: Multi-AI-Debate).
+"""Tests für application.debate_orchestrator (R10: Multi-AI-Debate).
 
 Testet:
 - 2 Provider parallel, beide antworten erfolgreich
-- 1 Provider crasht, anderer antwortet (errors-Dict enthaelt ihn)
+- 1 Provider crasht, anderer antwortet (errors-Dict enthält ihn)
 - Alle Provider crashen (DebateResult mit leeren responses)
 - Timeout wird respektiert
 - Konsens-Heuristik gibt sinnvollen Output
-- Kein Provider verfuegbar
+- Kein Provider verfügbar
+- Provider-Deduplizierung (claude_persistent + claude = eine Gruppe)
 """
 
 from __future__ import annotations
 
 from unittest.mock import patch
 
-from application.debate_orchestrator import DebateOrchestrator, DebateResult
+from application.debate_orchestrator import (
+    DebateOrchestrator,
+    DebateResult,
+    deduplicate_providers,
+)
 from application.provider_router import ProviderRouter
 from infrastructure.providers.base import (
     LLMProvider,
@@ -181,22 +186,22 @@ class TestDebateOrchestratorBasic:
 
 
 class TestConsensusHeuristic:
-    """Tests fuer die Konsens-Heuristik."""
+    """Tests für die Konsens-Heuristik."""
 
     async def test_high_overlap_detected(self) -> None:
-        """Aehnliche Antworten -> hohe Uebereinstimmung."""
+        """Ähnliche Antworten -> hohe Übereinstimmung."""
         providers = {
             "a": _MockProvider(
                 "a",
                 response_text=(
-                    "Bitcoin ist eine dezentrale digitale Waehrung "
+                    "Bitcoin ist eine dezentrale digitale Währung "
                     "die auf Blockchain-Technologie basiert"
                 ),
             ),
             "b": _MockProvider(
                 "b",
                 response_text=(
-                    "Bitcoin ist eine digitale dezentrale Kryptowaehrung "
+                    "Bitcoin ist eine digitale dezentrale Kryptowährung "
                     "basierend auf der Blockchain-Technologie"
                 ),
             ),
@@ -209,10 +214,10 @@ class TestConsensusHeuristic:
         )
 
         assert result.consensus_analysis is not None
-        # Bei hohem Overlap sollte "Uebereinstimmung" oder aehnliches stehen
+        # Bei hohem Overlap sollte "überein" oder "Übereinstimmung" stehen
         assert (
-            "ueberein" in result.consensus_analysis.lower()
-            or "uebereinstimmung" in result.consensus_analysis.lower()
+            "überein" in result.consensus_analysis.lower()
+            or "übereinstimmung" in result.consensus_analysis.lower()
         )
 
     async def test_low_overlap_detected(self) -> None:
@@ -282,11 +287,47 @@ class TestDebateProviderConfig:
         assert "offline" not in result.errors
 
 
-class TestDebateLegacyAndPersistentTogether:
-    """Tests: Legacy-Claude und claude_persistent gleichzeitig im Debate."""
+class TestProviderDeduplication:
+    """Tests für Provider-Deduplizierung (R10-Fix).
 
-    async def test_both_claude_providers_succeed(self) -> None:
-        """Legacy-Claude und Persistent-Claude im Debate, beide mit user_id/chat_id."""
+    claude_persistent und claude nutzen beide die Claude CLI.
+    Im Debate soll nur einer der beiden genutzt werden, um verzerrte
+    Konsens-Analysen und Token-Verschwendung zu vermeiden.
+    """
+
+    def test_dedup_both_claude_available(self) -> None:
+        """Beide Claude-Provider verfügbar: nur claude_persistent bleibt."""
+        result = deduplicate_providers(["claude_persistent", "claude", "ollama_local"])
+        assert result == ["claude_persistent", "ollama_local"]
+
+    def test_dedup_only_legacy_claude(self) -> None:
+        """Nur Legacy-Claude verfügbar: wird behalten."""
+        result = deduplicate_providers(["claude", "ollama_local"])
+        assert result == ["claude", "ollama_local"]
+
+    def test_dedup_only_persistent(self) -> None:
+        """Nur claude_persistent verfügbar: wird behalten."""
+        result = deduplicate_providers(["claude_persistent"])
+        assert result == ["claude_persistent"]
+
+    def test_dedup_standalone_providers_untouched(self) -> None:
+        """Standalone-Provider (nicht in einer Gruppe) werden nie entfernt."""
+        result = deduplicate_providers(["ollama_local", "openai", "gemini"])
+        assert result == ["ollama_local", "openai", "gemini"]
+
+    def test_dedup_empty_list(self) -> None:
+        """Leere Liste bleibt leer."""
+        result = deduplicate_providers([])
+        assert result == []
+
+    def test_dedup_order_matters(self) -> None:
+        """Erster Provider der Gruppe gewinnt (basierend auf Input-Reihenfolge)."""
+        # Wenn claude VOR claude_persistent steht, gewinnt claude
+        result = deduplicate_providers(["claude", "claude_persistent", "ollama_local"])
+        assert result == ["claude", "ollama_local"]
+
+    async def test_debate_deduplicates_claude_providers(self) -> None:
+        """Im Debate-Flow: nur claude_persistent (nicht auch Legacy-Claude)."""
         providers = {
             "claude_persistent": _MockProvider(
                 "claude_persistent", response_text="Persistent sagt: BTC ist P2P-Geld"
@@ -305,14 +346,33 @@ class TestDebateLegacyAndPersistentTogether:
             question="Was ist Bitcoin?", user_id=42, chat_id=100
         )
 
+        # claude_persistent vertritt die Gruppe, claude wird übersprungen
         assert "claude_persistent" in result.responses
-        assert "claude" in result.responses
+        assert "claude" not in result.responses
         assert "ollama_local" in result.responses
         assert len(result.errors) == 0
         assert result.consensus_analysis is not None
-        # Alle drei Provider wurden gefragt
+        # Nur 2 Provider wurden tatsächlich gefragt
         assert set(result.providers_queried) == {
             "claude_persistent",
-            "claude",
             "ollama_local",
         }
+
+    async def test_debate_falls_back_to_legacy_claude(self) -> None:
+        """Wenn claude_persistent nicht verfügbar: Legacy-Claude wird genutzt."""
+        providers = {
+            "claude_persistent": _MockProvider("claude_persistent", available=False),
+            "claude": _MockProvider("claude", response_text="Legacy antwortet"),
+            "ollama_local": _MockProvider(
+                "ollama_local", response_text="Llama antwortet"
+            ),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        result = await orchestrator.debate(question="Test?", user_id=42, chat_id=100)
+
+        # claude_persistent ist offline, claude vertritt die Gruppe
+        assert "claude" in result.responses
+        assert "claude_persistent" not in result.responses
+        assert "ollama_local" in result.responses

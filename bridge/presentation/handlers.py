@@ -575,7 +575,7 @@ async def _handle_message_streaming(
 
         status_session: StatusSession | None = None
         if SHOW_STATUS_UPDATES:
-            # Sprache fuer Status-Texte bestimmen
+            # Sprache für Status-Texte bestimmen
             chat_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
 
             async def _status_callback(status_text: str) -> None:
@@ -1416,7 +1416,7 @@ def _format_debate_result(result: Any) -> str:
         result: DebateResult-Instanz.
 
     Returns:
-        Formatierter Text fuer Telegram.
+        Formatierter Text für Telegram.
     """
     lines: list[str] = []
     lines.append("\U0001f3af Multi-AI-Debate\n")
@@ -1452,8 +1452,8 @@ def _format_debate_result(result: Any) -> str:
     # Nur 1 Provider Hinweis
     if len(result.responses) == 1 and not result.errors:
         lines.append(
-            "\n\U0001f4a1 Nur 1 Provider verfuegbar. "
-            "Fuer echtes Multi-AI-Debate: weitere Provider konfigurieren "
+            "\n\U0001f4a1 Nur 1 Provider verfügbar. "
+            "Für echtes Multi-AI-Debate: weitere Provider konfigurieren "
             "(z.B. Ollama installieren)."
         )
 
@@ -1496,7 +1496,7 @@ async def handle_debate_command(
         if not result_rl.allowed:
             await update.message.reply_text(
                 "Du hast dein Limit erreicht. Warte einen Moment oder "
-                "erhoehe dein Profil mit /setlimit."
+                "erhöhe dein Profil mit /setlimit."
             )
             write_raw_audit(
                 {
@@ -1517,7 +1517,7 @@ async def handle_debate_command(
         "\U0001f3af Frage KIs parallel... kann 30-60 Sekunden dauern."
     )
 
-    # Typing-Keepalive waehrend der Debate
+    # Typing-Keepalive während der Debate
     keepalive = asyncio.create_task(
         _typing_keepalive(
             update.effective_chat,
@@ -1544,7 +1544,7 @@ async def handle_debate_command(
         except asyncio.CancelledError:
             pass
 
-    # Status-Nachricht loeschen (best-effort, unkritisch wenn fehlschlaegt)
+    # Status-Nachricht löschen (best-effort, unkritisch wenn fehlschlägt)
     try:
         await status_msg.delete()
     except Exception:  # nosec B110
@@ -1573,7 +1573,7 @@ async def handle_debate_command(
     )
 
     log.info(
-        "Debate abgeschlossen fuer User %s: %d Provider, %.1fs",
+        "Debate abgeschlossen für User %s: %d Provider, %.1fs",
         username,
         len(debate_result.responses),
         debate_result.duration_seconds,

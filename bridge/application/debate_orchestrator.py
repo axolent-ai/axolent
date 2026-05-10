@@ -3,6 +3,11 @@
 Fragt mehrere Provider parallel mit derselben Frage und sammelt Antworten.
 Crash-resilient: ein crashender Provider stoppt nicht die anderen.
 Optional: Konsens/Dissens-Analyse via Heuristik (Phase 1) oder LLM-Judge (Phase 1+).
+
+Provider-Deduplizierung (seit R10-Fix):
+Wenn mehrere Provider dasselbe Backend-Modell nutzen (z.B. claude_persistent
+und claude nutzen beide die Claude CLI), wird nur einer pro Gruppe im Debate
+verwendet. Das verhindert verzerrte Konsens-Analysen und Token-Verschwendung.
 """
 
 from __future__ import annotations
@@ -22,12 +27,68 @@ log = logging.getLogger(__name__)
 DEBATE_TIMEOUT_SECONDS: int = 60
 _DEBATE_PROVIDERS_RAW: str = os.getenv("DEBATE_PROVIDERS", "")
 
+# Provider-Gruppen: Provider die dasselbe Backend-Modell nutzen.
+# Pro Gruppe wird nur der erste verfügbare Provider im Debate verwendet.
+# Reihenfolge = Priorität (erster Eintrag wird bevorzugt).
+PROVIDER_GROUPS: dict[str, list[str]] = {
+    "claude": ["claude_persistent", "claude"],  # beide nutzen Claude CLI
+}
+
+# Reverse-Lookup: provider_name -> group_name (oder None wenn standalone)
+_PROVIDER_TO_GROUP: dict[str, str] = {}
+for _group_name, _members in PROVIDER_GROUPS.items():
+    for _member in _members:
+        _PROVIDER_TO_GROUP[_member] = _group_name
+
 
 def _get_configured_providers() -> list[str] | None:
-    """Parst DEBATE_PROVIDERS env-var. None = alle verfuegbaren nutzen."""
+    """Parst DEBATE_PROVIDERS env-var. None = alle verfügbaren nutzen."""
     if not _DEBATE_PROVIDERS_RAW.strip():
         return None
     return [p.strip() for p in _DEBATE_PROVIDERS_RAW.split(",") if p.strip()]
+
+
+def deduplicate_providers(available: list[str]) -> list[str]:
+    """Dedupliziert Provider die dasselbe Backend-Modell nutzen.
+
+    Pro PROVIDER_GROUPS-Gruppe wird nur der erste verfügbare Provider behalten.
+    Standalone-Provider (nicht in einer Gruppe) werden immer behalten.
+
+    Args:
+        available: Liste verfügbarer Provider-Namen.
+
+    Returns:
+        Deduplizierte Liste (Reihenfolge bleibt erhalten).
+    """
+    selected: list[str] = []
+    used_groups: set[str] = set()
+
+    for provider in available:
+        group = _PROVIDER_TO_GROUP.get(provider)
+        if group:
+            if group not in used_groups:
+                selected.append(provider)
+                used_groups.add(group)
+                log.debug("Provider-Dedup: %s vertritt Gruppe '%s'", provider, group)
+            else:
+                log.debug(
+                    "Provider-Dedup: %s übersprungen (Gruppe '%s' bereits vertreten)",
+                    provider,
+                    group,
+                )
+        else:
+            # Standalone-Provider: immer behalten
+            selected.append(provider)
+
+    if len(selected) < len(available):
+        log.info(
+            "Provider-Dedup: %d -> %d Provider (%s)",
+            len(available),
+            len(selected),
+            selected,
+        )
+
+    return selected
 
 
 @dataclass(frozen=True)
@@ -52,9 +113,9 @@ class DebateResult:
 
 
 class DebateOrchestrator:
-    """Orchestriert Multi-AI-Debates ueber mehrere Provider.
+    """Orchestriert Multi-AI-Debates über mehrere Provider.
 
-    Fragt alle verfuegbaren (oder konfigurierte) Provider parallel,
+    Fragt alle verfügbaren (oder konfigurierte) Provider parallel,
     sammelt Antworten mit Timeout-Schutz und erstellt eine Konsens-Analyse.
 
     Args:
@@ -71,30 +132,34 @@ class DebateOrchestrator:
         self.timeout_seconds = timeout_seconds
 
     def _select_providers(self) -> list[str]:
-        """Bestimmt welche Provider fuer die Debate genutzt werden.
+        """Bestimmt welche Provider für die Debate genutzt werden.
 
-        Prioritaet:
+        Priorität:
         1. DEBATE_PROVIDERS env-var (wenn gesetzt)
-        2. Alle verfuegbaren Provider
+        2. Alle verfügbaren Provider
+
+        In beiden Fällen wird anschließend dedupliziert: Provider die dasselbe
+        Backend-Modell nutzen werden auf einen pro Gruppe reduziert.
 
         Returns:
-            Liste der Provider-Namen die genutzt werden sollen.
+            Deduplizierte Liste der Provider-Namen.
         """
         configured = _get_configured_providers()
         if configured is not None:
-            # Nur konfigurierte Provider die auch verfuegbar sind
+            # Nur konfigurierte Provider die auch verfügbar sind
             available = set(self.provider_router.list_available())
             selected = [p for p in configured if p in available]
             if not selected:
                 log.warning(
-                    "Keine konfigurierten DEBATE_PROVIDERS verfuegbar: %s. "
-                    "Verfuegbar: %s",
+                    "Keine konfigurierten DEBATE_PROVIDERS verfügbar: %s. "
+                    "Verfügbar: %s",
                     configured,
                     list(available),
                 )
-            return selected
+            return deduplicate_providers(selected)
 
-        return self.provider_router.list_available()
+        all_available = self.provider_router.list_available()
+        return deduplicate_providers(all_available)
 
     async def _query_provider(
         self,
@@ -113,8 +178,8 @@ class DebateOrchestrator:
                 self.provider_router.route(
                     prompt=question,
                     system_prompt=(
-                        "Antworte praegnant und informativ. "
-                        "Halte dich an 2-4 Saetze wenn moeglich."
+                        "Antworte prägnant und informativ. "
+                        "Halte dich an 2-4 Sätze wenn möglich."
                     ),
                     provider_name=provider_name,
                     timeout_seconds=self.timeout_seconds,
@@ -135,24 +200,24 @@ class DebateOrchestrator:
     def _analyze_consensus(self, responses: dict[str, str]) -> str:
         """Einfache Konsens-Heuristik (Phase 1, kein LLM-Judge).
 
-        Vergleicht Antwortlaengen und einfache Wort-Overlap-Analyse.
+        Vergleicht Antwortlängen und einfache Wort-Overlap-Analyse.
 
         Args:
             responses: Provider-Name -> Antworttext.
 
         Returns:
-            Kurze Konsens/Dissens-Einschaetzung.
+            Kurze Konsens/Dissens-Einschätzung.
         """
         if len(responses) < 2:
-            return "Nur ein Provider hat geantwortet. Kein Vergleich moeglich."
+            return "Nur ein Provider hat geantwortet. Kein Vergleich möglich."
 
         texts = list(responses.values())
 
-        # Wortmengen fuer Overlap-Analyse
+        # Wortmengen für Overlap-Analyse
         word_sets: list[set[str]] = []
         for text in texts:
             words = set(text.lower().split())
-            # Nur signifikante Woerter (>3 Zeichen)
+            # Nur signifikante Wörter (>3 Zeichen)
             significant = {w for w in words if len(w) > 3}
             word_sets.append(significant)
 
@@ -172,21 +237,21 @@ class DebateOrchestrator:
         # Entscheidungslogik
         if avg_overlap > 0.35:
             return (
-                f"Die Provider stimmen inhaltlich weitgehend ueberein "
+                f"Die Provider stimmen inhaltlich weitgehend überein "
                 f"(Wort-Overlap: {avg_overlap:.0%}). "
-                f"Hohe Uebereinstimmung in den Kernaussagen."
+                f"Hohe Übereinstimmung in den Kernaussagen."
             )
         elif avg_overlap > 0.20:
             return (
-                f"Die Provider zeigen teilweise Uebereinstimmung "
+                f"Die Provider zeigen teilweise Übereinstimmung "
                 f"(Wort-Overlap: {avg_overlap:.0%}). "
-                f"Kernaussagen aehnlich, aber unterschiedliche Schwerpunkte."
+                f"Kernaussagen ähnlich, aber unterschiedliche Schwerpunkte."
             )
         else:
             return (
                 f"Die Provider geben deutlich unterschiedliche Antworten "
                 f"(Wort-Overlap: {avg_overlap:.0%}). "
-                f"Vergleiche die Antworten oben fuer verschiedene Perspektiven."
+                f"Vergleiche die Antworten oben für verschiedene Perspektiven."
             )
 
     async def debate(
@@ -195,9 +260,9 @@ class DebateOrchestrator:
         user_id: int,
         chat_id: int,
     ) -> DebateResult:
-        """Fuehrt eine Multi-AI-Debate durch.
+        """Führt eine Multi-AI-Debate durch.
 
-        1. Identifiziert verfuegbare Provider
+        1. Identifiziert verfügbare Provider (mit Deduplizierung)
         2. Fragt alle parallel (asyncio.gather)
         3. Sammelt Antworten + Fehler
         4. Erstellt Konsens-Analyse
@@ -217,7 +282,7 @@ class DebateOrchestrator:
             return DebateResult(
                 question=question,
                 responses={},
-                errors={"system": "Keine Provider verfuegbar"},
+                errors={"system": "Keine Provider verfügbar"},
                 consensus_analysis=None,
                 duration_seconds=time.monotonic() - t_start,
                 providers_queried=[],
