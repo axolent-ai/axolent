@@ -651,3 +651,118 @@ class TestGetMemoryBudget:
         svc = ChatService(provider_router=None)
         budget = svc._get_memory_budget()
         assert budget == MAX_MEMORY_TOTAL_CHARS
+
+
+class TestSmartLanguageDetection:
+    """Bug-Fix R02-B: Smart-Language-Switch ohne expliziten /lang-Befehl."""
+
+    async def test_implicit_switch_back_to_german(self) -> None:
+        """User wechselt nach /lang en implizit zurueck auf Deutsch.
+
+        Szenario: /lang en -> Bot auf Englisch -> User schreibt Deutsch -> Sticky wird de.
+        """
+        from infrastructure.conversation_storage import get_language, set_language
+
+        svc, _ = _make_chat_service()
+
+        # Simuliere: /lang en hat Sticky auf "en" gesetzt
+        await set_language(1, 10, "en")
+
+        # User schreibt eine klar deutsche Nachricht
+        result = await svc.process_user_message(
+            text="Was ist die Hauptstadt von Frankreich?",
+            user_id=1,
+            chat_id=10,
+            username="test",
+            system_prompt="Du bist hilfreich.",
+        )
+
+        # Sprache muss auf Deutsch gewechselt sein
+        assert result.detected_language == "de"
+        # Sticky muss jetzt "de" sein
+        sticky = await get_language(1, 10)
+        assert sticky == "de"
+
+    async def test_sticky_stays_when_detection_unclear(self) -> None:
+        """Bei kurzer/ambiger Nachricht bleibt Sticky erhalten.
+
+        "ok" hat keine klaren Sprach-Marker -> Confidence niedrig -> Sticky bleibt.
+        """
+        from infrastructure.conversation_storage import get_language, set_language
+
+        svc, _ = _make_chat_service()
+
+        await set_language(1, 10, "en")
+
+        result = await svc.process_user_message(
+            text="ok",
+            user_id=1,
+            chat_id=10,
+            username="test",
+            system_prompt="System.",
+        )
+
+        # Sticky bleibt "en" (Confidence zu niedrig fuer Wechsel)
+        assert result.detected_language == "en"
+        sticky = await get_language(1, 10)
+        assert sticky == "en"
+
+    async def test_explicit_override_still_works(self) -> None:
+        """language_override (von /lang-Command) hat weiterhin Vorrang."""
+        from infrastructure.conversation_storage import set_language
+
+        svc, _ = _make_chat_service()
+
+        await set_language(1, 10, "de")
+
+        # Expliziter Override auf Englisch (wie /lang en)
+        result = await svc.process_user_message(
+            text="Was ist das?",  # Klar Deutsch
+            user_id=1,
+            chat_id=10,
+            username="test",
+            system_prompt="System.",
+            language_override="en",
+        )
+
+        # Override gewinnt
+        assert result.detected_language == "en"
+
+    async def test_first_turn_detection_sets_sticky(self) -> None:
+        """Beim ersten Turn (kein Sticky vorhanden) setzt Detection die Sprache."""
+        from infrastructure.conversation_storage import get_language
+
+        svc, _ = _make_chat_service()
+
+        # Kein vorheriges set_language -> sticky ist None
+        result = await svc.process_user_message(
+            text="Hello, how are you doing today?",
+            user_id=2,
+            chat_id=20,
+            username="test",
+            system_prompt="System.",
+        )
+
+        assert result.detected_language == "en"
+        sticky = await get_language(2, 20)
+        assert sticky == "en"
+
+    async def test_switch_from_german_to_english(self) -> None:
+        """User wechselt von Deutsch auf Englisch durch klare englische Nachricht."""
+        from infrastructure.conversation_storage import get_language, set_language
+
+        svc, _ = _make_chat_service()
+
+        await set_language(1, 10, "de")
+
+        result = await svc.process_user_message(
+            text="Can you please help me with this problem?",
+            user_id=1,
+            chat_id=10,
+            username="test",
+            system_prompt="System.",
+        )
+
+        assert result.detected_language == "en"
+        sticky = await get_language(1, 10)
+        assert sticky == "en"

@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any, AsyncIterator, Optional
 
 from application.leakage_filter import check_for_system_prompt_leakage
 from domain.conversation import ConversationTurn, build_context_block
-from domain.language import detect_language
+from domain.language import detect_language_with_confidence
 from domain.personality import build_effective_prompt
 from infrastructure.audit_log import write_audit_log
 from infrastructure.claude_process_pool import StreamEvent
@@ -394,17 +394,30 @@ class ChatService:
                 enriched_text = text
             context_prompt = build_context_block(history, enriched_text)
 
-            # Language: use sticky language if available, else detect + stick
+            # Language: Smart-Detection bei jeder Nachricht.
+            # Sticky wird überschrieben wenn Detection klar genug ist (Variante 1).
             if language_override:
                 lang = language_override
             else:
                 sticky_lang = await get_language(uid, cid)
-                if sticky_lang:
-                    lang = sticky_lang
-                else:
+                detected_lang, confidence = detect_language_with_confidence(text)
+
+                if not sticky_lang:
                     # First turn: detect and set sticky
-                    lang = detect_language(text)
+                    lang = detected_lang if confidence > 0 else "de"
                     await set_language(uid, cid, lang)
+                elif confidence > 0.7 and detected_lang != sticky_lang:
+                    # User hat implizit die Sprache gewechselt
+                    lang = detected_lang
+                    await set_language(uid, cid, lang)
+                    log.info(
+                        "Smart-Language-Switch: %s -> %s (confidence=%.2f)",
+                        sticky_lang,
+                        lang,
+                        confidence,
+                    )
+                else:
+                    lang = sticky_lang
 
             if lang != "de":
                 log.info("Sprache für Chat: '%s' (sticky)", lang)
@@ -639,15 +652,28 @@ class ChatService:
             enriched_text = text
         context_prompt = build_context_block(history, enriched_text)
 
+        # Language: Smart-Detection bei jeder Nachricht (Variante 1).
         if language_override:
             lang = language_override
         else:
             sticky_lang = await get_language(uid, cid)
-            if sticky_lang:
-                lang = sticky_lang
-            else:
-                lang = detect_language(text)
+            detected_lang, confidence = detect_language_with_confidence(text)
+
+            if not sticky_lang:
+                lang = detected_lang if confidence > 0 else "de"
                 await set_language(uid, cid, lang)
+            elif confidence > 0.7 and detected_lang != sticky_lang:
+                # User hat implizit die Sprache gewechselt
+                lang = detected_lang
+                await set_language(uid, cid, lang)
+                log.info(
+                    "Smart-Language-Switch (streaming): %s -> %s (confidence=%.2f)",
+                    sticky_lang,
+                    lang,
+                    confidence,
+                )
+            else:
+                lang = sticky_lang
 
         # Sprache der StatusSession aktualisieren (Bug-Fix: Sticky-Language
         # wird erst hier bestimmt, aber StatusSession wurde vorher erstellt)

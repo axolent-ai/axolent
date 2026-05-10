@@ -2,6 +2,7 @@
 
 Verifiziert:
     - Status-Update Rate-Limiting (max alle 0.5s)
+    - Mindest-Anzeigedauer (MIN_STATUS_DISPLAY_MS)
     - Status-Updates stoppen wenn Stream beginnt
     - Sprach-Auswahl (Sticky-Language)
     - Status zeigt Memory-Anzahl korrekt
@@ -15,6 +16,7 @@ from unittest.mock import AsyncMock
 
 
 from application.status_manager import (
+    MIN_STATUS_DISPLAY_MS,
     STATUS_RATE_LIMIT_SECONDS,
     StatusSession,
     get_status_text,
@@ -451,3 +453,72 @@ class TestStatusInStreaming:
         # Stream konsumieren
         async for _ in stream_iter:
             pass
+
+
+class TestMinStatusDisplayTime:
+    """Bug-Fix R02-B: Mindest-Anzeigedauer fuer Status-Updates."""
+
+    async def test_min_display_time_enforced_between_updates(self) -> None:
+        """Zwischen zwei Status-Updates liegen mindestens MIN_STATUS_DISPLAY_MS."""
+        mock_callback = AsyncMock()
+        session = StatusSession(callback=mock_callback, language="de")
+
+        # Erstes Update
+        await session.update("memory_loading")
+        first_time = session.last_update_time
+
+        # Zweites Update sofort (Phase-Change)
+        await session.update("thinking")
+        second_time = session.last_update_time
+
+        # Mindestens MIN_STATUS_DISPLAY_MS ms zwischen den beiden Callbacks
+        elapsed_ms = (second_time - first_time) * 1000
+        assert elapsed_ms >= MIN_STATUS_DISPLAY_MS - 50  # 50ms Toleranz fuer Timer
+
+    async def test_min_display_time_not_applied_on_first_update(self) -> None:
+        """Erstes Status-Update hat keine Verzoegerung."""
+        mock_callback = AsyncMock()
+        session = StatusSession(callback=mock_callback, language="de")
+
+        before = time.monotonic()
+        await session.update("memory_loading")
+        after = time.monotonic()
+
+        # Kein Sleep beim allerersten Update (last_update_time war 0)
+        elapsed_ms = (after - before) * 1000
+        assert elapsed_ms < 100  # Sollte quasi instant sein
+
+    async def test_min_display_time_skipped_when_stream_started(self) -> None:
+        """Kein Sleep wenn Stream bereits gestartet ist."""
+        mock_callback = AsyncMock()
+        session = StatusSession(callback=mock_callback, language="de")
+
+        await session.update("memory_loading")
+        session.mark_stream_started()
+
+        # Dieses Update darf nicht blockieren (und wird ohnehin ignoriert)
+        before = time.monotonic()
+        await session.update("thinking")
+        after = time.monotonic()
+
+        elapsed_ms = (after - before) * 1000
+        assert elapsed_ms < 50
+        # Nur 1 Call (zweites wird durch stream_started blockiert)
+        assert mock_callback.call_count == 1
+
+    async def test_no_sleep_when_enough_time_passed(self) -> None:
+        """Kein Sleep wenn bereits genug Zeit vergangen ist."""
+        mock_callback = AsyncMock()
+        session = StatusSession(callback=mock_callback, language="de")
+
+        await session.update("memory_loading")
+        # Simuliere: 2 Sekunden vergangen
+        session.last_update_time = time.monotonic() - 2.0
+
+        before = time.monotonic()
+        await session.update("thinking")
+        after = time.monotonic()
+
+        # Kein Sleep noetig (2s > 800ms)
+        elapsed_ms = (after - before) * 1000
+        assert elapsed_ms < 50

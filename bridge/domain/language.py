@@ -296,23 +296,26 @@ _CHAR_HINTS: dict[str, re.Pattern] = {
 }
 
 
-def detect_language(text: str) -> str:
-    """Erkennt die Sprache eines kurzen Textes via Heuristik.
+def _detect_language_core(text: str) -> tuple[str, float]:
+    """Interne Detection-Logik: gibt (Sprache, Confidence) zurück.
+
+    Confidence ist ein Wert zwischen 0.0 und 1.0 der angibt,
+    wie sicher die Erkennung ist. Höherer Score = mehr Marker-Übereinstimmung.
 
     Args:
         text: User-Nachricht.
 
     Returns:
-        ISO-639-1 Sprachcode ("en", "de", "es", "fr").
-        Fallback: "de".
+        Tuple von (ISO-639-1-Sprachcode, Confidence-Score).
+        Fallback: ("de", 0.0).
     """
     if not text or not text.strip():
-        return "de"
+        return "de", 0.0
 
     text_lower = text.lower().strip()
 
     # Smart-Quotes normalisieren vor Marker-Match
-    text_lower = text_lower.replace("‘", "'").replace("’", "'")
+    text_lower = text_lower.replace("‘", "’").replace("’", "’")
 
     # Schritt 1: Zeichen-basierte Hints (Umlaute = Deutsch, Akzente = Französisch, etc.)
     char_scores: dict[str, int] = {}
@@ -322,11 +325,11 @@ def detect_language(text: str) -> str:
             char_scores[lang] = count
 
     # Schritt 2: Wort-basierte Analyse
-    # Wörter extrahieren (nur alphabetisch + Apostrophe für "don't" etc.)
-    words = re.findall(r"[a-zA-ZäöüßÄÖÜàâéèêëîïôùûüçáéíóúñ']+", text_lower)
+    # Wörter extrahieren (nur alphabetisch + Apostrophe für "don’t" etc.)
+    words = re.findall(r"[a-zA-ZäöüßÄÖÜàâéèêëîïôùûüçáéíóúñ’]+", text_lower)
 
     if not words:
-        return "de"
+        return "de", 0.0
 
     word_set = set(words)
     scores: dict[str, float] = {}
@@ -342,7 +345,7 @@ def detect_language(text: str) -> str:
         scores[lang] = scores.get(lang, 0) + (char_count * 0.1)
 
     if not scores:
-        return "de"
+        return "de", 0.0
 
     # Sprache mit höchstem Score gewinnt
     best_lang = max(scores, key=scores.get)  # type: ignore[arg-type]
@@ -350,6 +353,40 @@ def detect_language(text: str) -> str:
 
     # Mindest-Schwelle: wenn der beste Score sehr niedrig ist, Default Deutsch
     if best_score < 0.05:
-        return "de"
+        return "de", 0.0
 
-    return best_lang
+    # Confidence normalisieren: Score von 0.2+ gilt als sehr sicher (1.0)
+    # Score von 0.05 ist Minimum (knapp über Schwelle) = 0.25
+    confidence = min(1.0, best_score / 0.2)
+
+    return best_lang, confidence
+
+
+def detect_language(text: str) -> str:
+    """Erkennt die Sprache eines kurzen Textes via Heuristik.
+
+    Args:
+        text: User-Nachricht.
+
+    Returns:
+        ISO-639-1 Sprachcode ("en", "de", "es", "fr").
+        Fallback: "de".
+    """
+    lang, _ = _detect_language_core(text)
+    return lang
+
+
+def detect_language_with_confidence(text: str) -> tuple[str, float]:
+    """Erkennt Sprache UND gibt Confidence-Score zurück.
+
+    Wird von der Smart-Language-Detection genutzt um zu entscheiden
+    ob ein Sticky-Language-Override überschrieben werden soll.
+
+    Args:
+        text: User-Nachricht.
+
+    Returns:
+        Tuple von (ISO-639-1-Sprachcode, Confidence 0.0..1.0).
+        Confidence > 0.7 bedeutet: klare Spracherkennung.
+    """
+    return _detect_language_core(text)

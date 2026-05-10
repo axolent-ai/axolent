@@ -10,6 +10,7 @@ Phase 2 (spaeter): Tool-Activity (Web-Suche, Datei-Lesen etc.)
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
@@ -20,6 +21,7 @@ log = logging.getLogger(__name__)
 # Konfiguration
 SHOW_STATUS_UPDATES: bool = True
 STATUS_RATE_LIMIT_SECONDS: float = 0.5
+MIN_STATUS_DISPLAY_MS: int = 800  # Minimale Anzeigedauer pro Status-Update (ms)
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +115,10 @@ class StatusSession:
     async def update(self, key: str, **kwargs: Any) -> None:
         """Sendet ein Status-Update (rate-limited, Phase-Change-Bypass).
 
+        Erzwingt eine Mindest-Anzeigedauer (MIN_STATUS_DISPLAY_MS) zwischen
+        aufeinanderfolgenden Status-Updates, damit der User jeden Status
+        lesen kann bevor er ersetzt wird.
+
         Rate-Limit wird uebersprungen wenn:
         - Es der allererste Aufruf ist (last_update_time == 0)
         - Der Status-Key sich aendert (neue Phase, z.B. memory_loading -> thinking)
@@ -134,10 +140,17 @@ class StatusSession:
         ):
             return
 
+        # Mindest-Anzeigedauer: warten bis vorheriger Status lang genug sichtbar war
+        if self.last_update_time > 0:
+            elapsed_ms = (now - self.last_update_time) * 1000
+            remaining_ms = MIN_STATUS_DISPLAY_MS - elapsed_ms
+            if remaining_ms > 0:
+                await asyncio.sleep(remaining_ms / 1000)
+
         text = get_status_text(key, self.language, **kwargs)
         try:
             await self.callback(text)
-            self.last_update_time = now
+            self.last_update_time = time.monotonic()
             self._last_key = key
         except Exception as e:
             log.debug("Status-Update fehlgeschlagen: %s", e)

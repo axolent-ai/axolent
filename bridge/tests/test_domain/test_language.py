@@ -2,9 +2,10 @@
 
 Testet die korrekte Erkennung der gängigsten Sprachen
 sowie Edge-Cases (kurze Nachrichten, Emojis, exotische Schriften).
+Seit R02-B: auch detect_language_with_confidence().
 """
 
-from domain.language import detect_language
+from domain.language import detect_language, detect_language_with_confidence
 
 
 class TestDetectLanguage:
@@ -74,3 +75,66 @@ class TestDetectLanguage:
         # Überwiegend Englisch mit einem deutschen Wort
         result = detect_language("I think this is a great idea for the team")
         assert result == "en"
+
+
+class TestDetectLanguageWithConfidence:
+    """Tests fuer detect_language_with_confidence() (Smart-Language-Detection)."""
+
+    def test_returns_tuple(self) -> None:
+        """Gibt immer ein Tuple (lang, confidence) zurueck."""
+        result = detect_language_with_confidence("Hello world")
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+
+    def test_clear_german_high_confidence(self) -> None:
+        """Klarer deutscher Text hat hohe Confidence (> 0.7)."""
+        lang, conf = detect_language_with_confidence(
+            "Was ist die Hauptstadt von Frankreich?"
+        )
+        assert lang == "de"
+        assert conf > 0.7
+
+    def test_clear_english_high_confidence(self) -> None:
+        """Klarer englischer Text hat hohe Confidence (> 0.7)."""
+        lang, conf = detect_language_with_confidence("What is the capital of France?")
+        assert lang == "en"
+        assert conf > 0.7
+
+    def test_short_ambiguous_low_confidence(self) -> None:
+        """Sehr kurzer ambiger Text hat niedrige Confidence."""
+        lang, conf = detect_language_with_confidence("ok")
+        # "ok" hat keine klaren Marker
+        assert conf < 0.7
+
+    def test_empty_text_zero_confidence(self) -> None:
+        """Leerer Text gibt Confidence 0.0."""
+        lang, conf = detect_language_with_confidence("")
+        assert lang == "de"
+        assert conf == 0.0
+
+    def test_confidence_range(self) -> None:
+        """Confidence ist immer zwischen 0.0 und 1.0."""
+        texts = [
+            "Hello",
+            "Hallo wie geht es dir?",
+            "I don't know what you mean",
+            "",
+            "ok",
+            "Bonjour comment allez-vous?",
+        ]
+        for text in texts:
+            _, conf = detect_language_with_confidence(text)
+            assert 0.0 <= conf <= 1.0, f"Confidence out of range for: {text}"
+
+    def test_backwards_compatible_with_detect_language(self) -> None:
+        """detect_language() liefert dasselbe Ergebnis wie der lang-Teil."""
+        texts = [
+            "Ich habe heute viel gelernt",
+            "I have learned a lot today",
+            "Hola, como estas?",
+            "",
+        ]
+        for text in texts:
+            simple = detect_language(text)
+            with_conf, _ = detect_language_with_confidence(text)
+            assert simple == with_conf, f"Mismatch for: {text}"
