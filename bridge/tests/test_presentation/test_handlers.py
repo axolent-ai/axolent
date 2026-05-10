@@ -1421,17 +1421,20 @@ class TestFormatDebateSynthesis:
 
         formatted = _format_debate_result(result)
 
-        # BLUF: Empfehlung -> Staerkster Beitrag -> Synthese -> Pro/Contra -> Details -> Timer
+        # BLUF: Empfehlung -> Staerkster Beitrag -> Synthese -> Details -> Pro/Contra -> Timer
         emp_pos = formatted.index("Empfehlung:")
         strongest_pos = formatted.index("Stärkster Beitrag:")
         syn_pos = formatted.index("Synthese")
         detail_pos = formatted.index("Detail-Antworten")
+        # Pro/Contra kommt nach Detail-Antworten (Analyse der Originale)
+        pro_pos = formatted.index("✅")
         timer_pos = formatted.index("⏱")
 
         assert emp_pos < strongest_pos
         assert strongest_pos < syn_pos
         assert syn_pos < detail_pos
-        assert detail_pos < timer_pos
+        assert detail_pos < pro_pos
+        assert pro_pos < timer_pos
 
         # Detail-Antworten enthalten die Original-Texte
         assert "Claude-Antwort hier." in formatted

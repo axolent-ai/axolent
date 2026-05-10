@@ -1474,8 +1474,8 @@ def _format_debate_result(result: Any, lang: str = "de") -> str:
     2. Empfehlung (kompakte Handlungsempfehlung)
     3. Stärkster Beitrag (bester einzelner Provider)
     4. Synthese (kombinierte Kern-Antwort)
-    5. Pro/Contra je Provider
-    6. Detail-Antworten der KIs (Claude + Llama als Original)
+    5. Detail-Antworten der KIs (Claude + Llama als Original)
+    6. Pro/Contra je Provider (Analyse der Originale)
     7. Timer
 
     Args:
@@ -1522,21 +1522,6 @@ def _format_debate_result(result: Any, lang: str = "de") -> str:
             lines.append(result.final_verdict.synthesis)
             lines.append("")
 
-        # --- Block 5: Pro/Contra je Provider ---
-        if result.final_verdict.evaluations:
-            lines.append("━" * 20)
-            for evaluation in result.final_verdict.evaluations:
-                eval_display = _PROVIDER_DISPLAY_NAMES.get(
-                    evaluation.provider, evaluation.provider
-                )
-                pros_str = ", ".join(evaluation.pros) if evaluation.pros else ""
-                cons_str = ", ".join(evaluation.cons) if evaluation.cons else ""
-                if pros_str:
-                    lines.append(f"✅ {eval_display}: {pros_str}")
-                if cons_str:
-                    lines.append(f"❌ {eval_display}: {cons_str}")
-            lines.append("")
-
         if result.final_verdict.judge_quality_warning:
             lines.append(
                 f"\n{s['quality_warning_prefix']} "
@@ -1548,13 +1533,28 @@ def _format_debate_result(result: Any, lang: str = "de") -> str:
         lines.append("━" * 20)
         lines.append(f"{s['consensus_header']}:\n{result.consensus_analysis}")
 
-    # --- Block 6: Detail-Antworten der KIs ---
+    # --- Block 5: Detail-Antworten der KIs ---
     lines.append("━" * 20)
     lines.append(f"{s['detail_header']}\n")
     for provider_name, response_text in result.responses.items():
         display_name = _PROVIDER_DISPLAY_NAMES.get(provider_name, provider_name)
         lines.append(f"{display_name}:")
         lines.append(response_text.strip())
+        lines.append("")
+
+    # --- Block 6: Pro/Contra je Provider (Analyse der Originale) ---
+    if result.final_verdict is not None and result.final_verdict.evaluations:
+        lines.append("━" * 20)
+        for evaluation in result.final_verdict.evaluations:
+            eval_display = _PROVIDER_DISPLAY_NAMES.get(
+                evaluation.provider, evaluation.provider
+            )
+            pros_str = ", ".join(evaluation.pros) if evaluation.pros else ""
+            cons_str = ", ".join(evaluation.cons) if evaluation.cons else ""
+            if pros_str:
+                lines.append(f"✅ {eval_display}: {pros_str}")
+            if cons_str:
+                lines.append(f"❌ {eval_display}: {cons_str}")
         lines.append("")
 
     # Fehler anzeigen (falls einige Provider crashed sind)
