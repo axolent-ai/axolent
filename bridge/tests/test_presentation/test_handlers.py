@@ -302,6 +302,7 @@ class TestStartCommandHistory:
             "/lang",
             "/start",
             "/help",
+            "/debate",
         ]
         for cmd in expected_commands:
             assert cmd in HELP_TEXT, f"Command {cmd} fehlt im HELP_TEXT"
@@ -318,6 +319,7 @@ class TestStartCommandHistory:
         """/help Text hat die gewuenschte Struktur mit Kategorien."""
         from presentation.handlers import HELP_TEXT
 
+        assert "Multi-AI" in HELP_TEXT
         assert "Bookmarks" in HELP_TEXT
         assert "Memory" in HELP_TEXT
         assert "Limits" in HELP_TEXT or "Profile" in HELP_TEXT
@@ -1207,6 +1209,115 @@ class TestHandleUsageCommand:
 
         reply_text = update.message.reply_text.call_args[0][0]
         assert "nicht initialisiert" in reply_text
+
+
+class TestHandleDebateCommand:
+    """Tests fuer /debate Command (R10: Multi-AI-Debate)."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        """Whitelist-Bypass."""
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    async def test_debate_without_args_shows_help(self) -> None:
+        """/debate ohne Argumente zeigt Hilfe-Text."""
+        from presentation.handlers import handle_debate_command
+
+        update = _make_update(user_id=1, chat_id=10)
+        context = _make_context(args=[])
+
+        await handle_debate_command(update, context)
+
+        update.message.reply_text.assert_called_once()
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "/debate" in reply_text
+        assert "Frage" in reply_text
+
+    @patch("presentation.handlers.write_raw_audit")
+    async def test_debate_with_question_calls_orchestrator(
+        self, mock_audit: MagicMock
+    ) -> None:
+        """/debate mit Frage ruft DebateOrchestrator auf."""
+        from application.debate_orchestrator import DebateResult
+        from presentation.handlers import handle_debate_command
+
+        mock_result = DebateResult(
+            question="Was ist KI?",
+            responses={"claude_persistent": "KI ist kuenstliche Intelligenz."},
+            errors={},
+            consensus_analysis="Nur ein Provider hat geantwortet.",
+            duration_seconds=2.5,
+            providers_queried=["claude_persistent"],
+        )
+
+        update = _make_update(user_id=1, chat_id=10, text="/debate Was ist KI?")
+        # Mock: reply_text returns a message with delete method
+        status_msg = MagicMock()
+        status_msg.delete = AsyncMock()
+        update.message.reply_text = AsyncMock(side_effect=[status_msg, None])
+
+        context = _make_context(args=["Was", "ist", "KI?"])
+
+        with patch(
+            "application.debate_orchestrator.DebateOrchestrator.debate",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
+            await handle_debate_command(update, context)
+
+        # Status-Message sollte geloescht werden
+        status_msg.delete.assert_called_once()
+
+        # Mindestens 2 reply_text calls: Status + Ergebnis
+        assert update.message.reply_text.call_count >= 2
+
+        # Audit-Log geschrieben
+        mock_audit.assert_called()
+        audit_entry = mock_audit.call_args[0][0]
+        assert audit_entry["event_type"] == "debate"
+        assert audit_entry["user_id"] == 1
+        assert audit_entry["providers_queried"] == ["claude_persistent"]
+
+    async def test_debate_privacy_guard_blocks_group(self) -> None:
+        """/debate in Gruppe wird blockiert (Privacy-Guard)."""
+        from presentation.handlers import handle_debate_command
+
+        update = _make_update(user_id=1, chat_id=10, text="/debate Test")
+        update.effective_chat.type = "group"
+        context = _make_context(args=["Test"])
+
+        await handle_debate_command(update, context)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "privaten Chat" in reply_text
+
+    @patch("presentation.handlers.write_raw_audit")
+    async def test_debate_rate_limit_blocks(self, mock_audit: MagicMock) -> None:
+        """/debate respektiert Rate-Limiting."""
+        from application.rate_limiter import PROFILES, RateLimiter
+        from presentation.handlers import handle_debate_command
+
+        limiter = RateLimiter()
+        # Alle Minute-Tokens verbrauchen
+        normal_min = PROFILES["normal"]["per_minute"]
+        for _ in range(normal_min):
+            limiter.check_and_consume(user_id=1)
+
+        update = _make_update(user_id=1, chat_id=10, text="/debate Test?")
+        context = _make_context(args=["Test?"], rate_limiter=limiter)
+
+        await handle_debate_command(update, context)
+
+        # User bekommt Limit-Meldung
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Limit" in reply_text
+
+        # Audit: rate_limit_exceeded
+        mock_audit.assert_called()
+        audit_entry = mock_audit.call_args[0][0]
+        assert audit_entry["event_type"] == "rate_limit_exceeded"
+        assert audit_entry["command"] == "debate"
 
 
 class TestHandleSetlimitCommand:

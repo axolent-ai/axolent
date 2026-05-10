@@ -64,6 +64,7 @@ from presentation.callbacks import (
 from presentation.decorators import ALLOW_ALL_USERS, WHITELIST
 from presentation.handlers import (
     handle_bookmarks_command,
+    handle_debate_command,
     handle_forget_command,
     handle_help_command,
     handle_lang_command,
@@ -377,6 +378,7 @@ def main() -> None:
     app.add_handler(CommandHandler("forget", handle_forget_command))
     app.add_handler(CommandHandler("usage", handle_usage_command))
     app.add_handler(CommandHandler("setlimit", handle_setlimit_command))
+    app.add_handler(CommandHandler("debate", handle_debate_command))
 
     # Message handler (non-command text)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

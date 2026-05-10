@@ -237,6 +237,9 @@ def build_bookmarks_keyboard(bookmarks: list[dict[str, Any]]) -> InlineKeyboardM
 
 HELP_TEXT: str = (
     "\U0001f916 Jarvis-LITE Befehlsübersicht\n\n"
+    "Multi-AI:\n"
+    "• /debate <Frage> fragt mehrere KIs parallel und "
+    "vergleicht Antworten (Multi-AI-Debate)\n\n"
     "Bookmarks (Bot-Antworten speichern):\n"
     "• /save als Reply auf eine Bot-Nachricht speichert sie als Bookmark\n"
     "• /bookmarks zeigt deine gespeicherten Bookmarks "
@@ -1383,4 +1386,195 @@ async def handle_setlimit_command(
         chat_id=chat_id,
         username=user.username if user else None,
         details=f"{old_profile} -> {target_profile}",
+    )
+
+
+# ---------------------------------------------------------------------------
+# /debate Command (R10: Multi-AI-Debate)
+# ---------------------------------------------------------------------------
+
+# Provider display names for formatted output
+_PROVIDER_DISPLAY_NAMES: dict[str, str] = {
+    "claude_persistent": "\U0001f916 Claude",
+    "claude": "\U0001f916 Claude",
+    "ollama": "\U0001f999 Llama (lokal)",
+    "openai": "\U0001f4a1 OpenAI",
+    "gemini": "✨ Gemini",
+    "mistral": "\U0001f32c️ Mistral",
+}
+
+DEBATE_HELP_TEXT: str = (
+    "Nutze /debate <Frage> um mehrere KIs parallel zu befragen.\n\n"
+    "Beispiel: /debate Was ist Bitcoin?"
+)
+
+
+def _format_debate_result(result: Any) -> str:
+    """Formatiert ein DebateResult als Telegram-Text.
+
+    Args:
+        result: DebateResult-Instanz.
+
+    Returns:
+        Formatierter Text fuer Telegram.
+    """
+    lines: list[str] = []
+    lines.append("\U0001f3af Multi-AI-Debate\n")
+    lines.append(f"\U0001f4cc Frage: {result.question}\n")
+
+    if not result.responses:
+        lines.append("Keine Provider konnten antworten.")
+        if result.errors:
+            lines.append(f"\nFehler: {', '.join(result.errors.keys())}")
+        return "\n".join(lines)
+
+    for provider_name, response_text in result.responses.items():
+        display_name = _PROVIDER_DISPLAY_NAMES.get(provider_name, provider_name)
+        lines.append("━" * 20)
+        lines.append(f"{display_name}:")
+        lines.append(response_text.strip())
+        lines.append("")
+
+    # Fehler anzeigen (falls einige Provider crashed sind)
+    if result.errors:
+        lines.append("━" * 20)
+        lines.append("⚠️ Fehler:")
+        for provider_name, error_msg in result.errors.items():
+            display_name = _PROVIDER_DISPLAY_NAMES.get(provider_name, provider_name)
+            lines.append(f"  {display_name}: {error_msg}")
+        lines.append("")
+
+    # Konsens-Analyse
+    if result.consensus_analysis:
+        lines.append("━" * 20)
+        lines.append(f"✨ Konsens / Dissens:\n{result.consensus_analysis}")
+
+    # Nur 1 Provider Hinweis
+    if len(result.responses) == 1 and not result.errors:
+        lines.append(
+            "\n\U0001f4a1 Nur 1 Provider verfuegbar. "
+            "Fuer echtes Multi-AI-Debate: weitere Provider konfigurieren "
+            "(z.B. Ollama installieren)."
+        )
+
+    # Dauer
+    lines.append(f"\n⏱ {result.duration_seconds:.1f}s")
+
+    return "\n".join(lines)
+
+
+@require_whitelist
+@require_private_chat
+async def handle_debate_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Verarbeitet /debate <Frage>. Multi-AI-Debate Feature (R10).
+
+    Fragt mehrere Provider parallel und zeigt Antworten side-by-side.
+    """
+    from datetime import datetime, timezone
+
+    from application.debate_orchestrator import DebateOrchestrator
+
+    user = update.effective_user
+    user_id: int = user.id if user else 0
+    username: str | None = user.username if user else None
+    chat_id: int = update.effective_chat.id if update.effective_chat else 0
+
+    # Frage aus Command-Argumenten extrahieren
+    args: list[str] = context.args or []
+    if not args:
+        await update.message.reply_text(DEBATE_HELP_TEXT)
+        return
+
+    question = " ".join(args)
+
+    # Rate-Limit pruefen (gleiche Logik wie handle_message)
+    rate_limiter = _get_rate_limiter(context)
+    if rate_limiter is not None:
+        result_rl: RateLimitResult = rate_limiter.check_and_consume(user_id)
+        if not result_rl.allowed:
+            await update.message.reply_text(
+                "Du hast dein Limit erreicht. Warte einen Moment oder "
+                "erhoehe dein Profil mit /setlimit."
+            )
+            write_raw_audit(
+                {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "event_type": "rate_limit_exceeded",
+                    "user_id": user_id,
+                    "chat_id": chat_id,
+                    "username": username,
+                    "command": "debate",
+                    "profile": result_rl.profile,
+                    "period": result_rl.period,
+                }
+            )
+            return
+
+    # Status-Nachricht senden
+    status_msg = await update.message.reply_text(
+        "\U0001f3af Frage KIs parallel... kann 30-60 Sekunden dauern."
+    )
+
+    # Typing-Keepalive waehrend der Debate
+    keepalive = asyncio.create_task(
+        _typing_keepalive(
+            update.effective_chat,
+            interval=TYPING_KEEPALIVE_INTERVAL_SECONDS,
+        )
+    )
+
+    try:
+        # DebateOrchestrator aus bot_data oder neu erstellen
+        chat_service = _get_chat_service(context)
+        orchestrator = DebateOrchestrator(
+            provider_router=chat_service.provider_router,
+        )
+
+        debate_result = await orchestrator.debate(
+            question=question,
+            user_id=user_id,
+            chat_id=chat_id,
+        )
+    finally:
+        keepalive.cancel()
+        try:
+            await keepalive
+        except asyncio.CancelledError:
+            pass
+
+    # Status-Nachricht loeschen (best-effort, unkritisch wenn fehlschlaegt)
+    try:
+        await status_msg.delete()
+    except Exception:  # nosec B110
+        pass
+
+    # Ergebnis formatieren und senden
+    formatted = _format_debate_result(debate_result)
+    chunks = split_message(formatted)
+    for chunk in chunks:
+        await update.message.reply_text(chunk)
+
+    # Audit-Log
+    write_raw_audit(
+        {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "event_type": "debate",
+            "user_id": user_id,
+            "chat_id": chat_id,
+            "username": username,
+            "question_length": len(question),
+            "providers_queried": debate_result.providers_queried,
+            "providers_responded": list(debate_result.responses.keys()),
+            "providers_errored": list(debate_result.errors.keys()),
+            "duration_seconds": round(debate_result.duration_seconds, 2),
+        }
+    )
+
+    log.info(
+        "Debate abgeschlossen fuer User %s: %d Provider, %.1fs",
+        username,
+        len(debate_result.responses),
+        debate_result.duration_seconds,
     )
