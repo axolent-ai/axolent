@@ -253,7 +253,7 @@ HELP_TEXT: str = (
     "Modell:\n"
     "• /setmodel <modell> wechselt das KI-Modell "
     "(opus, sonnet, haiku)\n"
-    "• /setmodel reset setzt auf Default zurück\n"
+    "• /resetmodel setzt das Modell zurück auf Default\n"
     "• /models zeigt aktuelles Modell und Optionen\n\n"
     "Limits & Profile:\n"
     "• /usage zeigt aktuellen Verbrauch und Profil\n"
@@ -1404,7 +1404,7 @@ _MODEL_STRINGS: dict[str, dict[str, str]] = {
         "set_success": "Modell gewechselt: {display_name} ({model_id})",
         "set_success_note": "Gilt ab der nächsten Nachricht.",
         "reset_success": "Modell auf Default zurückgesetzt ({default_model}).",
-        "reset_nothing": "Kein Modell-Override aktiv. Du nutzt bereits den Default.",
+        "reset_nothing": "Kein Modell-Override aktiv. Du nutzt bereits den Default ({default_model}).",
         "unknown_model": "Unbekanntes Modell: '{input}'",
         "available_aliases": "Verfügbar: {aliases}",
         "usage_hint": "Benutzung: /setmodel <modell>\nBeispiel: /setmodel opus",
@@ -1418,7 +1418,7 @@ _MODEL_STRINGS: dict[str, dict[str, str]] = {
         "set_success": "Model changed: {display_name} ({model_id})",
         "set_success_note": "Takes effect from your next message.",
         "reset_success": "Model reset to default ({default_model}).",
-        "reset_nothing": "No model override active. You are already using the default.",
+        "reset_nothing": "No model override active. You are already using the default ({default_model}).",
         "unknown_model": "Unknown model: '{input}'",
         "available_aliases": "Available: {aliases}",
         "usage_hint": "Usage: /setmodel <model>\nExample: /setmodel opus",
@@ -1484,12 +1484,11 @@ async def handle_setmodel_command(
 
         deleted = model_service.reset_user_model(user_id)
         default_display = model_service.get_model_display_name(DEFAULT_MODEL)
+        default_label = f"{default_display} ({DEFAULT_MODEL})"
         if deleted:
-            msg = s["reset_success"].format(
-                default_model=f"{default_display} ({DEFAULT_MODEL})"
-            )
+            msg = s["reset_success"].format(default_model=default_label)
         else:
-            msg = s["reset_nothing"]
+            msg = s["reset_nothing"].format(default_model=default_label)
         await update.message.reply_text(msg)
         log_command_audit(
             action="setmodel",
@@ -1524,6 +1523,49 @@ async def handle_setmodel_command(
             f"{s['available_aliases'].format(aliases=alias_list)}"
         )
         await update.message.reply_text(msg)
+
+
+@require_whitelist
+@require_private_chat
+async def handle_resetmodel_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Verarbeitet /resetmodel. Shortcut fuer /setmodel reset.
+
+    Eigenstaendiger Command damit Telegram ihn als klickbaren
+    blauen Link im Help-Text anzeigt (Commands mit Argumenten
+    werden nicht verlinkt).
+    """
+    from application.model_service import DEFAULT_MODEL, ModelService
+
+    model_service = _get_model_service(context)
+    if model_service is None or not isinstance(model_service, ModelService):
+        await update.message.reply_text("Modell-System nicht initialisiert.")
+        return
+
+    chat_service = _get_chat_service(context)
+    user = update.effective_user
+    user_id: int = user.id if user else 0
+    chat_id: int = update.effective_chat.id if update.effective_chat else 0
+
+    lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+    s = _get_model_strings(lang)
+
+    deleted = model_service.reset_user_model(user_id)
+    default_display = model_service.get_model_display_name(DEFAULT_MODEL)
+    default_label = f"{default_display} ({DEFAULT_MODEL})"
+    if deleted:
+        msg = s["reset_success"].format(default_model=default_label)
+    else:
+        msg = s["reset_nothing"].format(default_model=default_label)
+    await update.message.reply_text(msg)
+    log_command_audit(
+        action="resetmodel",
+        user_id=user_id,
+        chat_id=chat_id,
+        username=user.username if user else None,
+        details=f"reset (was_active={deleted})",
+    )
 
 
 @require_whitelist

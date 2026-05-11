@@ -76,6 +76,7 @@ from presentation.handlers import (
     handle_new_command,
     handle_remember_command,
     handle_reset_command,
+    handle_resetmodel_command,
     handle_save_command,
     handle_setlimit_command,
     handle_setmodel_command,
@@ -393,6 +394,7 @@ def main() -> None:
     app.add_handler(CommandHandler("usage", handle_usage_command))
     app.add_handler(CommandHandler("setlimit", handle_setlimit_command))
     app.add_handler(CommandHandler("setmodel", handle_setmodel_command))
+    app.add_handler(CommandHandler("resetmodel", handle_resetmodel_command))
     app.add_handler(CommandHandler("models", handle_models_command))
     app.add_handler(CommandHandler("debate", handle_debate_command))
 
