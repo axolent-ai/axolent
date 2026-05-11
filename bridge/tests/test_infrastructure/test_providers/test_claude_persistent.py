@@ -64,7 +64,9 @@ class TestClaudePersistentProviderQuery:
         pool = _make_pool_mock()
         provider = ClaudePersistentProvider(process_pool=pool)
 
-        async def mock_send_message(user_id, chat_id, prompt, system_prompt=""):
+        async def mock_send_message(
+            user_id, chat_id, prompt, system_prompt="", **kwargs
+        ):
             yield StreamEvent(event_type="content_delta", text="Hallo ")
             yield StreamEvent(event_type="content_delta", text="Welt")
             yield StreamEvent(
@@ -92,7 +94,9 @@ class TestClaudePersistentProviderQuery:
         pool = _make_pool_mock()
         provider = ClaudePersistentProvider(process_pool=pool)
 
-        async def mock_send_message(user_id, chat_id, prompt, system_prompt=""):
+        async def mock_send_message(
+            user_id, chat_id, prompt, system_prompt="", **kwargs
+        ):
             yield StreamEvent(
                 event_type="error",
                 text="Rate limited",
@@ -112,7 +116,9 @@ class TestClaudePersistentProviderQuery:
         pool = _make_pool_mock()
         provider = ClaudePersistentProvider(process_pool=pool)
 
-        async def mock_send_message(user_id, chat_id, prompt, system_prompt=""):
+        async def mock_send_message(
+            user_id, chat_id, prompt, system_prompt="", **kwargs
+        ):
             yield StreamEvent(
                 event_type="result",
                 full_text="",
@@ -131,7 +137,9 @@ class TestClaudePersistentProviderQuery:
         pool = _make_pool_mock()
         provider = ClaudePersistentProvider(process_pool=pool)
 
-        async def mock_send_message_raises(user_id, chat_id, prompt, system_prompt=""):
+        async def mock_send_message_raises(
+            user_id, chat_id, prompt, system_prompt="", **kwargs
+        ):
             """Async generator that raises before yielding."""
             if False:
                 yield  # pragma: no cover
@@ -172,7 +180,9 @@ class TestClaudePersistentProviderStreaming:
         pool = _make_pool_mock()
         provider = ClaudePersistentProvider(process_pool=pool)
 
-        async def mock_send_message(user_id, chat_id, prompt, system_prompt=""):
+        async def mock_send_message(
+            user_id, chat_id, prompt, system_prompt="", **kwargs
+        ):
             yield StreamEvent(event_type="content_delta", text="Token1 ")
             yield StreamEvent(event_type="content_delta", text="Token2")
             yield StreamEvent(

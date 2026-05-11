@@ -250,6 +250,11 @@ HELP_TEXT: str = (
     "• /forget <id> löscht eine Notiz "
     "(id steht in der Bestätigung von /remember)\n"
     "• /memory zeigt deine aktiven Notizen\n\n"
+    "Modell:\n"
+    "• /setmodel <modell> wechselt das KI-Modell "
+    "(opus, sonnet, haiku)\n"
+    "• /setmodel reset setzt auf Default zurück\n"
+    "• /models zeigt aktuelles Modell und Optionen\n\n"
     "Limits & Profile:\n"
     "• /usage zeigt aktuellen Verbrauch und Profil\n"
     "• /setlimit <profil> wechselt Profil "
@@ -1386,6 +1391,195 @@ async def handle_setlimit_command(
         chat_id=chat_id,
         username=user.username if user else None,
         details=f"{old_profile} -> {target_profile}",
+    )
+
+
+# ---------------------------------------------------------------------------
+# /setmodel + /models Commands (R18 Phase 1: User-Model-Override)
+# ---------------------------------------------------------------------------
+
+# i18n strings for setmodel/models
+_MODEL_STRINGS: dict[str, dict[str, str]] = {
+    "de": {
+        "set_success": "Modell gewechselt: {display_name} ({model_id})",
+        "set_success_note": "Gilt ab der nächsten Nachricht.",
+        "reset_success": "Modell auf Default zurückgesetzt ({default_model}).",
+        "reset_nothing": "Kein Modell-Override aktiv. Du nutzt bereits den Default.",
+        "unknown_model": "Unbekanntes Modell: '{input}'",
+        "available_aliases": "Verfügbar: {aliases}",
+        "usage_hint": "Benutzung: /setmodel <modell>\nBeispiel: /setmodel opus",
+        "models_header": "Dein aktuelles Modell:",
+        "models_active": "Aktiv: {display_name} ({model_id})",
+        "models_default": "Default: {display_name} ({model_id})",
+        "models_available": "Verfügbare Modelle:",
+        "models_change_hint": "Wechseln: /setmodel <modell>",
+    },
+    "en": {
+        "set_success": "Model changed: {display_name} ({model_id})",
+        "set_success_note": "Takes effect from your next message.",
+        "reset_success": "Model reset to default ({default_model}).",
+        "reset_nothing": "No model override active. You are already using the default.",
+        "unknown_model": "Unknown model: '{input}'",
+        "available_aliases": "Available: {aliases}",
+        "usage_hint": "Usage: /setmodel <model>\nExample: /setmodel opus",
+        "models_header": "Your current model:",
+        "models_active": "Active: {display_name} ({model_id})",
+        "models_default": "Default: {display_name} ({model_id})",
+        "models_available": "Available models:",
+        "models_change_hint": "Switch: /setmodel <model>",
+    },
+}
+
+
+def _get_model_strings(lang: str = "de") -> dict[str, str]:
+    """Returns model i18n strings for the given language."""
+    return _MODEL_STRINGS.get(lang, _MODEL_STRINGS["de"])
+
+
+def _get_model_service(context: ContextTypes.DEFAULT_TYPE) -> Any:
+    """Holt den ModelService aus bot_data (kann None sein)."""
+    return context.application.bot_data.get("model_service")
+
+
+@require_whitelist
+@require_private_chat
+async def handle_setmodel_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Verarbeitet /setmodel <modell> und /setmodel reset.
+
+    Setzt das globale KI-Modell fuer alle Anfragen des Users.
+    Akzeptiert Aliase (opus, sonnet, haiku) oder volle Modell-IDs.
+    """
+    from application.model_service import ModelService
+
+    model_service = _get_model_service(context)
+    if model_service is None or not isinstance(model_service, ModelService):
+        await update.message.reply_text("Modell-System nicht initialisiert.")
+        return
+
+    chat_service = _get_chat_service(context)
+    user = update.effective_user
+    user_id: int = user.id if user else 0
+    chat_id: int = update.effective_chat.id if update.effective_chat else 0
+
+    # Sprache fuer Antwort bestimmen
+    lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+    s = _get_model_strings(lang)
+
+    args: list[str] = context.args or []
+    if not args:
+        aliases = model_service.list_available_aliases()
+        alias_list = ", ".join(sorted(aliases.keys()))
+        await update.message.reply_text(
+            f"{s['usage_hint']}\n\n{s['available_aliases'].format(aliases=alias_list)}"
+        )
+        return
+
+    target = args[0].lower().strip()
+
+    # /setmodel reset
+    if target == "reset":
+        from application.model_service import DEFAULT_MODEL
+
+        deleted = model_service.reset_user_model(user_id)
+        default_display = model_service.get_model_display_name(DEFAULT_MODEL)
+        if deleted:
+            msg = s["reset_success"].format(
+                default_model=f"{default_display} ({DEFAULT_MODEL})"
+            )
+        else:
+            msg = s["reset_nothing"]
+        await update.message.reply_text(msg)
+        log_command_audit(
+            action="setmodel",
+            user_id=user_id,
+            chat_id=chat_id,
+            username=user.username if user else None,
+            details=f"reset (was_active={deleted})",
+        )
+        return
+
+    # /setmodel <alias_or_id>
+    success, result = model_service.set_user_model(user_id, target)
+    if success:
+        display_name = model_service.get_model_display_name(result)
+        msg = (
+            f"{s['set_success'].format(display_name=display_name, model_id=result)}\n"
+            f"{s['set_success_note']}"
+        )
+        await update.message.reply_text(msg)
+        log_command_audit(
+            action="setmodel",
+            user_id=user_id,
+            chat_id=chat_id,
+            username=user.username if user else None,
+            details=f"set {target} -> {result}",
+        )
+    else:
+        aliases = model_service.list_available_aliases()
+        alias_list = ", ".join(sorted(aliases.keys()))
+        msg = (
+            f"{s['unknown_model'].format(input=target)}\n"
+            f"{s['available_aliases'].format(aliases=alias_list)}"
+        )
+        await update.message.reply_text(msg)
+
+
+@require_whitelist
+@require_private_chat
+async def handle_models_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Verarbeitet /models. Zeigt aktuelles Modell und verfuegbare Optionen."""
+    from application.model_service import DEFAULT_MODEL, ModelService
+
+    model_service = _get_model_service(context)
+    if model_service is None or not isinstance(model_service, ModelService):
+        await update.message.reply_text("Modell-System nicht initialisiert.")
+        return
+
+    chat_service = _get_chat_service(context)
+    user = update.effective_user
+    user_id: int = user.id if user else 0
+    chat_id: int = update.effective_chat.id if update.effective_chat else 0
+
+    lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+    s = _get_model_strings(lang)
+
+    # Aktuelles Modell
+    override = model_service.get_user_model(user_id)
+    if override:
+        display = model_service.get_model_display_name(override)
+        active_line = s["models_active"].format(display_name=display, model_id=override)
+    else:
+        display = model_service.get_model_display_name(DEFAULT_MODEL)
+        active_line = s["models_default"].format(
+            display_name=display, model_id=DEFAULT_MODEL
+        )
+
+    # Verfügbare Modelle
+    aliases = model_service.list_available_aliases()
+    model_lines: list[str] = []
+    for alias, model_id in sorted(aliases.items()):
+        d = model_service.get_model_display_name(model_id)
+        marker = " (aktiv)" if model_id == (override or DEFAULT_MODEL) else ""
+        model_lines.append(f"  • {alias} = {d}{marker}")
+
+    msg = (
+        f"{s['models_header']}\n"
+        f"{active_line}\n\n"
+        f"{s['models_available']}\n"
+        + "\n".join(model_lines)
+        + f"\n\n{s['models_change_hint']}"
+    )
+    await update.message.reply_text(msg)
+    log_command_audit(
+        action="models",
+        user_id=user_id,
+        chat_id=chat_id,
+        username=user.username if user else None,
+        details=f"current={override or 'default'}",
     )
 
 

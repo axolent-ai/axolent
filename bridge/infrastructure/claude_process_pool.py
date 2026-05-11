@@ -74,6 +74,7 @@ class ManagedProcess:
         last_used: Timestamp der letzten Nutzung (monotonic).
         pid: Process-ID für Audit-Logging.
         is_ready: True wenn Init-Phase abgeschlossen.
+        model: Modell-ID mit der dieser Subprocess gestartet wurde.
     """
 
     routing_key: tuple[int, int]
@@ -83,6 +84,7 @@ class ManagedProcess:
     pid: int
     is_ready: bool = False
     _accumulated_text: str = ""
+    model: str = ""
 
 
 class ClaudeProcessPool:
@@ -142,16 +144,21 @@ class ClaudeProcessPool:
         )
 
     async def get_or_create(
-        self, user_id: int, chat_id: int
+        self, user_id: int, chat_id: int, model: str | None = None
     ) -> tuple[ManagedProcess, bool]:
         """Holt einen existierenden oder erstellt einen neuen Subprocess.
 
         Verwendet Double-Check-Locking mit Per-Key Creation Lock,
         um Race Conditions bei parallelen Erstanfragen zu verhindern.
 
+        Wenn ein model-Override angegeben wird und der bestehende Subprocess
+        ein anderes Modell nutzt, wird der alte Subprocess terminiert und
+        ein neuer mit dem gewuenschten Modell gestartet.
+
         Args:
             user_id: Telegram-User-ID.
             chat_id: Telegram-Chat-ID.
+            model: Optionale Modell-ID. None = CLAUDE_POOL_MODEL (Default).
 
         Returns:
             Tuple von (ManagedProcess, was_cold: bool).
@@ -163,14 +170,26 @@ class ClaudeProcessPool:
         if self._shutdown:
             raise RuntimeError("ProcessPool ist im Shutdown-Modus")
 
+        effective_model = model or CLAUDE_POOL_MODEL
         key = (user_id, chat_id)
 
-        # Schneller Pfad: existierender, lebendiger Process
+        # Schneller Pfad: existierender, lebendiger Process mit richtigem Modell
         async with self._pool_lock:
             managed = self._processes.get(key)
             if managed is not None and self._is_alive(managed):
-                managed.last_used = time.monotonic()
-                return managed, False
+                if managed.model == effective_model:
+                    managed.last_used = time.monotonic()
+                    return managed, False
+                # Modell-Mismatch: alten Process terminieren
+                log.info(
+                    "Modell-Wechsel für key=%s: %s -> %s, terminiere alten Subprocess",
+                    key,
+                    managed.model,
+                    effective_model,
+                )
+                await self._kill_process(managed)
+                del self._processes[key]
+                managed = None
 
             # Per-Key Creation Lock holen (oder erstellen)
             if key not in self._creation_locks:
@@ -183,8 +202,13 @@ class ClaudeProcessPool:
             async with self._pool_lock:
                 managed = self._processes.get(key)
                 if managed is not None and self._is_alive(managed):
-                    managed.last_used = time.monotonic()
-                    return managed, False
+                    if managed.model == effective_model:
+                        managed.last_used = time.monotonic()
+                        return managed, False
+                    # Modell-Mismatch auch im Double-Check
+                    await self._kill_process(managed)
+                    del self._processes[key]
+                    managed = None
 
                 # Process ist tot: aufräumen
                 if managed is not None:
@@ -196,7 +220,7 @@ class ClaudeProcessPool:
                     await self._kill_process(managed)
 
             # Neuen Subprocess ausserhalb des Pool-Locks starten
-            new_managed = await self._spawn_process(key)
+            new_managed = await self._spawn_process(key, model=effective_model)
 
             async with self._pool_lock:
                 self._processes[key] = new_managed
@@ -209,6 +233,7 @@ class ClaudeProcessPool:
         chat_id: int,
         prompt: str,
         system_prompt: str = "",
+        model: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """Sendet eine Nachricht an den Subprocess und streamt die Antwort.
 
@@ -217,6 +242,7 @@ class ClaudeProcessPool:
             chat_id: Telegram-Chat-ID.
             prompt: User-Nachricht.
             system_prompt: Optionaler System-Prompt (wird in den Content integriert).
+            model: Optionale Modell-ID (None = Pool-Default).
 
         Yields:
             StreamEvent-Objekte mit inkrementellem Text und finalem Result.
@@ -225,7 +251,7 @@ class ClaudeProcessPool:
             RuntimeError: Bei Subprocess-Crash oder Pipe-Fehler.
         """
         key = (user_id, chat_id)
-        managed, was_cold = await self.get_or_create(user_id, chat_id)
+        managed, was_cold = await self.get_or_create(user_id, chat_id, model=model)
 
         # Warte auf Init unabhängig von was_cold (Pre-Warm-Pfad kann
         # was_cold=False liefern obwohl is_ready noch False ist).
@@ -307,17 +333,22 @@ class ClaudeProcessPool:
     # Private Methods
     # -------------------------------------------------------------------------
 
-    async def _spawn_process(self, key: tuple[int, int]) -> ManagedProcess:
+    async def _spawn_process(
+        self, key: tuple[int, int], model: str | None = None
+    ) -> ManagedProcess:
         """Startet einen neuen Claude-CLI-Subprocess.
 
         Args:
             key: (user_id, chat_id) Routing-Key.
+            model: Optionale Modell-ID. None = CLAUDE_POOL_MODEL.
 
         Raises:
             RuntimeError: Wenn CLI nicht verfügbar.
         """
         if not self.is_cli_available():
             raise RuntimeError("claude CLI nicht im PATH gefunden")
+
+        effective_model = model or CLAUDE_POOL_MODEL
 
         cmd = [
             "claude",
@@ -331,7 +362,7 @@ class ClaudeProcessPool:
             "--no-session-persistence",
             "--bare",  # R10-Fix: Skip Hook/Plugin/MCP-Discovery (spart 5000+ System-Prompt-Tokens)
             "--model",
-            CLAUDE_POOL_MODEL,  # R10-Fix: Explizites Modell statt User-Default (Opus = 3-5x langsamer)
+            effective_model,
         ]
 
         proc = await asyncio.create_subprocess_exec(
@@ -355,6 +386,7 @@ class ClaudeProcessPool:
             last_used=time.monotonic(),
             pid=pid,
             is_ready=False,
+            model=effective_model,
         )
 
         return managed

@@ -41,6 +41,7 @@ from infrastructure.providers.base import ProviderError
 
 if TYPE_CHECKING:
     from application.memory_service import MemoryService
+    from application.model_service import ModelService
     from application.provider_router import ProviderRouter
     from infrastructure.providers.claude_persistent import ClaudePersistentProvider
 
@@ -209,9 +210,11 @@ class ChatService:
         self,
         provider_router: "ProviderRouter",
         memory_service: "MemoryService | None" = None,
+        model_service: "ModelService | None" = None,
     ) -> None:
         self.provider_router = provider_router
         self.memory_service = memory_service
+        self.model_service = model_service
 
     def _get_memory_budget(self, provider_name: str | None = None) -> int:
         """Liest das Memory-Budget aus ProviderCapabilities.
@@ -429,6 +432,11 @@ class ChatService:
             if memory_context:
                 effective_prompt = f"{effective_prompt}\n\n{memory_context}"
 
+            # User-Modell-Override laden (Phase 1: globaler Slot)
+            user_model: str | None = None
+            if self.model_service is not None:
+                user_model = self.model_service.get_user_model(uid)
+
             # Provider-Router aufrufen (ersetzt direkten claude_cli Aufruf)
             result = await self.provider_router.route(
                 prompt=context_prompt,
@@ -436,6 +444,7 @@ class ChatService:
                 provider_name=provider_name,
                 user_id=uid,
                 chat_id=cid,
+                model=user_model,
             )
 
             audit.update(
@@ -684,6 +693,11 @@ class ChatService:
         if memory_context:
             effective_prompt = f"{effective_prompt}\n\n{memory_context}"
 
+        # User-Modell-Override laden (Phase 1: globaler Slot)
+        user_model: str | None = None
+        if self.model_service is not None:
+            user_model = self.model_service.get_user_model(uid)
+
         # Status: Denke nach (vor Provider-Call)
         if status_session is not None:
             await status_session.update("thinking")
@@ -696,6 +710,7 @@ class ChatService:
                 system_prompt=effective_prompt,
                 user_id=uid,
                 chat_id=cid,
+                model=user_model,
             ):
                 # Bei erstem Token: Status-Updates stoppen
                 if first_token and event.event_type == "content_delta":

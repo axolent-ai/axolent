@@ -66,6 +66,15 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     PRIMARY KEY (user_id)
 );
 
+-- User-Modell-Overrides (Phase 1: slot='global', Phase 2+: 'chat', 'code', etc.)
+CREATE TABLE IF NOT EXISTS user_slot_models (
+    user_id INTEGER NOT NULL,
+    slot TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    set_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, slot)
+);
+
 -- FTS5 für Volltext-Suche
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
     content,
@@ -673,6 +682,79 @@ class SqliteProfileStorage:
             (user_id, chat_id, profile, ts),
         )
         log.debug("Profil gespeichert: user_id=%d profile=%s", user_id, profile)
+
+
+# ──────────────────────────────────────────────────────────────
+# Model Storage (SQLite)
+# ──────────────────────────────────────────────────────────────
+
+
+class SqliteModelStorage:
+    """SQLite-Adapter für User-Modell-Overrides.
+
+    Speichert pro (user_id, slot) das gewählte Modell.
+    Phase 1: nur slot='global'. Phase 2+: 'chat', 'code', etc.
+    """
+
+    def __init__(self, conn: SqliteConnection) -> None:
+        self._conn = conn
+
+    def get_model(self, user_id: int, slot: str = "global") -> Optional[str]:
+        """Liest das aktive Modell-Override für einen User und Slot.
+
+        Args:
+            user_id: Telegram-User-ID.
+            slot: Slot-Name (default: 'global').
+
+        Returns:
+            Modell-ID als String oder None wenn kein Override gesetzt.
+        """
+        row = self._conn.fetchone(
+            "SELECT model_id FROM user_slot_models WHERE user_id = ? AND slot = ?",
+            (user_id, slot),
+        )
+        return row["model_id"] if row else None
+
+    def set_model(self, user_id: int, model_id: str, slot: str = "global") -> None:
+        """Setzt oder aktualisiert das Modell-Override.
+
+        Args:
+            user_id: Telegram-User-ID.
+            model_id: Volle Modell-ID (z.B. 'claude-opus-4-20250514').
+            slot: Slot-Name (default: 'global').
+        """
+        ts = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """INSERT OR REPLACE INTO user_slot_models
+               (user_id, slot, model_id, set_at)
+               VALUES (?, ?, ?, ?)""",
+            (user_id, slot, model_id, ts),
+        )
+        log.debug(
+            "Modell-Override gespeichert: user_id=%d slot=%s model=%s",
+            user_id,
+            slot,
+            model_id,
+        )
+
+    def delete_model(self, user_id: int, slot: str = "global") -> bool:
+        """Entfernt ein Modell-Override (Reset auf Default).
+
+        Args:
+            user_id: Telegram-User-ID.
+            slot: Slot-Name (default: 'global').
+
+        Returns:
+            True wenn ein Override gelöscht wurde.
+        """
+        cursor = self._conn.execute(
+            "DELETE FROM user_slot_models WHERE user_id = ? AND slot = ?",
+            (user_id, slot),
+        )
+        deleted = cursor.rowcount > 0
+        if deleted:
+            log.debug("Modell-Override gelöscht: user_id=%d slot=%s", user_id, slot)
+        return deleted
 
 
 # ──────────────────────────────────────────────────────────────

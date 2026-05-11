@@ -32,6 +32,7 @@ from pathlib import Path
 from application.bookmark_service import BookmarkService
 from application.chat_service import ChatService
 from application.memory_service import MemoryService
+from application.model_service import ModelService
 from application.provider_router import ProviderRouter
 from application.rate_limiter import RateLimiter
 from infrastructure.audit_log import write_audit_log
@@ -45,6 +46,7 @@ from infrastructure.sqlite_storage import (
     SqliteBookmarkStorage,
     SqliteConnection,
     SqliteMemoryStorage,
+    SqliteModelStorage,
     SqliteProfileStorage,
     migrate_jsonl_to_sqlite,
 )
@@ -70,11 +72,13 @@ from presentation.handlers import (
     handle_lang_command,
     handle_memory_command,
     handle_message,
+    handle_models_command,
     handle_new_command,
     handle_remember_command,
     handle_reset_command,
     handle_save_command,
     handle_setlimit_command,
+    handle_setmodel_command,
     handle_start_command,
     handle_usage_command,
 )
@@ -311,10 +315,18 @@ def main() -> None:
     # Trinity-Memory initialisieren
     memory_svc = MemoryService(storage=memory_storage)
 
+    # R18 Phase 1: Model-Service initialisieren (nur mit SQLite)
+    model_svc: ModelService | None = None
+    if use_sqlite:
+        model_storage = SqliteModelStorage(sqlite_conn)
+        model_svc = ModelService(storage=model_storage)
+        log.info("R18: Model-Service initialisiert (User-Model-Override aktiv)")
+
     # ChatService mit Konstruktor-Injection erstellen
     chat_service = ChatService(
         provider_router=router,
         memory_service=memory_svc,
+        model_service=model_svc,
     )
 
     log.info("Trinity-Memory-System initialisiert (Auto-Loading aktiv)")
@@ -343,6 +355,8 @@ def main() -> None:
     app.bot_data["process_pool"] = process_pool
     app.bot_data["persistent_provider"] = router.providers.get("claude_persistent")
     app.bot_data["rate_limiter"] = rate_limiter
+    if model_svc is not None:
+        app.bot_data["model_service"] = model_svc
     if use_sqlite:
         app.bot_data["sqlite_conn"] = sqlite_conn
 
@@ -378,6 +392,8 @@ def main() -> None:
     app.add_handler(CommandHandler("forget", handle_forget_command))
     app.add_handler(CommandHandler("usage", handle_usage_command))
     app.add_handler(CommandHandler("setlimit", handle_setlimit_command))
+    app.add_handler(CommandHandler("setmodel", handle_setmodel_command))
+    app.add_handler(CommandHandler("models", handle_models_command))
     app.add_handler(CommandHandler("debate", handle_debate_command))
 
     # Message handler (non-command text)

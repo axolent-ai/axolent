@@ -61,6 +61,7 @@ class ProviderRouter:
         timeout_seconds: int = 120,
         user_id: int | None = None,
         chat_id: int | None = None,
+        model: str | None = None,
     ) -> ProviderResponse:
         """Sendet eine Anfrage an den gewünschten Provider (oder Default).
 
@@ -71,6 +72,7 @@ class ProviderRouter:
             timeout_seconds: Timeout für den Provider-Aufruf.
             user_id: Optionale Telegram-User-ID (benötigt von claude_persistent).
             chat_id: Optionale Telegram-Chat-ID (benötigt von claude_persistent).
+            model: Optionale Modell-ID (None = Provider-Default).
 
         Returns:
             ProviderResponse mit Antwort oder Fehler.
@@ -96,7 +98,9 @@ class ProviderRouter:
                 reason="CLI nicht installiert oder kein API-Key gesetzt",
             )
 
-        log.info("Routing an Provider '%s'", target)
+        log.info(
+            "Routing an Provider '%s'%s", target, f" (model={model})" if model else ""
+        )
 
         # Provider-spezifische kwargs zusammenbauen.
         # claude_persistent braucht user_id/chat_id, andere Provider ignorieren sie.
@@ -109,6 +113,8 @@ class ProviderRouter:
             kwargs["user_id"] = user_id
         if chat_id is not None:
             kwargs["chat_id"] = chat_id
+        if model is not None:
+            kwargs["model"] = model
 
         return await provider.query(**kwargs)
 

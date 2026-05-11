@@ -111,6 +111,7 @@ class ClaudePersistentProvider(LLMProvider, StreamingProvider):
                 chat_id=chat_id,
                 prompt=prompt,
                 system_prompt=system_prompt,
+                model=model,
             ):
                 if event.event_type == "result":
                     full_text = event.full_text
@@ -156,6 +157,7 @@ class ClaudePersistentProvider(LLMProvider, StreamingProvider):
         system_prompt: str = "",
         user_id: int | None = None,
         chat_id: int | None = None,
+        model: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """Sendet eine Anfrage und streamt die Antwort Token für Token.
 
@@ -164,6 +166,7 @@ class ClaudePersistentProvider(LLMProvider, StreamingProvider):
             system_prompt: Optionaler System-Prompt.
             user_id: Telegram-User-ID (Pflicht).
             chat_id: Telegram-Chat-ID (Pflicht).
+            model: Optionale Modell-ID (None = Pool-Default).
 
         Yields:
             StreamEvent-Objekte (content_delta, result, error).
@@ -181,5 +184,6 @@ class ClaudePersistentProvider(LLMProvider, StreamingProvider):
             chat_id=chat_id,
             prompt=prompt,
             system_prompt=system_prompt,
+            model=model,
         ):
             yield event
