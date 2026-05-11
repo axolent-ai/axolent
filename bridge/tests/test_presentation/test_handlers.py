@@ -853,6 +853,8 @@ class TestStreamingAuditEntries:
         mock_svc.save_streaming_result = AsyncMock()
 
         async def _stream_events():
+            # init-Event liefert was_cold/subprocess_pid (Fix fuer Model-Switch-Bug)
+            yield StreamEvent(event_type="init", was_cold=True, subprocess_pid=999)
             yield StreamEvent(event_type="content_delta", text="Hallo")
             yield StreamEvent(
                 event_type="result", full_text="Hallo Welt", is_final=True

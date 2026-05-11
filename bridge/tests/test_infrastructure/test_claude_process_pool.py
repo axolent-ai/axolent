@@ -749,6 +749,182 @@ class TestSendMessageWaitsForReady:
         await pool.shutdown()
 
 
+class TestModelSwitchViaPool:
+    """Regression-Tests für den Modell-Wechsel-Bug.
+
+    Bug: Nach /setmodel opus kam die erste Antwort noch vom alten
+    Sonnet-Subprocess, weil der Handler get_or_create() OHNE model-Argument
+    aufgerufen hat (Zeile 600 in handlers.py). Dadurch wurde der alte
+    Subprocess wiederverwendet und was_cold/subprocess_pid waren falsch.
+
+    Fix: Handler nutzt jetzt das init-Event aus send_message() statt
+    einen separaten vorab-get_or_create() Call.
+    """
+
+    @pytest.mark.asyncio
+    async def test_model_switch_terminates_old_subprocess(self) -> None:
+        """Wenn ein Sonnet-Subprocess läuft und model=opus übergeben wird,
+        muss get_or_create den alten Subprocess terminieren und einen neuen
+        Opus-Subprocess starten (was_cold=True, neuer pid)."""
+        pool = ClaudeProcessPool()
+        sonnet_proc = _make_mock_process(pid=11940)
+        opus_proc = _make_mock_process(pid=18184)
+
+        call_count = 0
+
+        async def mock_create(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return sonnet_proc if call_count == 1 else opus_proc
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
+                # 1. Sonnet-Subprocess starten (Default-Modell)
+                managed_sonnet, cold_sonnet = await pool.get_or_create(
+                    user_id=1, chat_id=100, model="claude-sonnet-4-6"
+                )
+                assert cold_sonnet is True
+                assert managed_sonnet.pid == 11940
+                assert managed_sonnet.model == "claude-sonnet-4-6"
+
+                # 2. Jetzt mit Opus aufrufen: alten Subprocess terminieren
+                managed_opus, cold_opus = await pool.get_or_create(
+                    user_id=1, chat_id=100, model="claude-opus-4-7"
+                )
+                assert cold_opus is True, (
+                    "Model-Wechsel MUSS was_cold=True liefern, da der alte "
+                    "Subprocess terminiert und ein neuer gestartet werden muss"
+                )
+                assert managed_opus.pid == 18184, (
+                    "Model-Wechsel MUSS neuen Subprocess mit neuem pid starten"
+                )
+                assert managed_opus.model == "claude-opus-4-7"
+
+        # Alter Sonnet-Subprocess muss terminiert worden sein
+        sonnet_proc.terminate.assert_called()
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_same_model_reuses_subprocess(self) -> None:
+        """Wenn das angeforderte Modell dem laufenden Subprocess entspricht,
+        wird der Subprocess wiederverwendet (was_cold=False)."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process(pid=11940)
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ):
+                # Sonnet starten
+                managed1, cold1 = await pool.get_or_create(
+                    user_id=1, chat_id=100, model="claude-sonnet-4-6"
+                )
+                assert cold1 is True
+
+                # Sonnet nochmal anfordern: Reuse
+                managed2, cold2 = await pool.get_or_create(
+                    user_id=1, chat_id=100, model="claude-sonnet-4-6"
+                )
+                assert cold2 is False
+                assert managed2.pid == managed1.pid
+
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_send_message_init_event_reflects_model_switch(self) -> None:
+        """send_message() muss ein init-Event yielden das was_cold=True und
+        den neuen pid enthält, wenn ein Modell-Wechsel stattfindet.
+
+        Dies ist der End-to-End-Regressionstest für den Bug aus Phase 1:
+        Nach /setmodel opus muss die ERSTE Anfrage den neuen Opus-Subprocess
+        nutzen, nicht den alten Sonnet-Subprocess.
+        """
+        pool = ClaudeProcessPool()
+        sonnet_proc = _make_mock_process(pid=11940)
+        opus_proc = _make_mock_process(pid=18184)
+
+        call_count = 0
+
+        async def mock_create(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return sonnet_proc if call_count == 1 else opus_proc
+
+        # Patch _wait_for_init to skip init-phase (wir testen Pool-Routing,
+        # nicht die Init-Sequenz des Subprocess)
+        async def noop_wait(m: ManagedProcess) -> None:
+            m.is_ready = True
+
+        pool._wait_for_init = noop_wait  # type: ignore[assignment]
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
+                # 1. Sonnet-Subprocess starten und ready machen
+                managed_sonnet, _ = await pool.get_or_create(
+                    user_id=1, chat_id=100, model="claude-sonnet-4-6"
+                )
+                managed_sonnet.is_ready = True
+
+                # 2. send_message mit Opus-Modell: muss Model-Switch triggern
+                # Mock stdout für Opus-Response
+                result_line = json.dumps({"type": "result", "result": "OK"}) + "\n"
+                opus_proc.stdout.readline = AsyncMock(
+                    side_effect=[
+                        result_line.encode("utf-8"),
+                        b"",
+                    ]
+                )
+
+                events = []
+                async for event in pool.send_message(
+                    user_id=1,
+                    chat_id=100,
+                    prompt="Hallo",
+                    model="claude-opus-4-7",
+                ):
+                    events.append(event)
+
+        # Erstes Event muss init sein mit korrekten Metadata
+        assert len(events) >= 1
+        init_event = events[0]
+        assert init_event.event_type == "init", (
+            "Erstes Event von send_message muss 'init' sein"
+        )
+        assert init_event.was_cold is True, (
+            "Model-Wechsel muss was_cold=True im init-Event setzen"
+        )
+        assert init_event.subprocess_pid == 18184, (
+            "init-Event muss den pid des NEUEN Opus-Subprocess enthalten, "
+            "nicht den alten Sonnet-pid"
+        )
+
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_no_model_arg_uses_pool_default(self) -> None:
+        """Ohne model-Argument nutzt get_or_create den CLAUDE_POOL_MODEL Default.
+
+        Dieser Test dokumentiert das alte Bug-Verhalten: wenn der Handler
+        get_or_create() ohne model aufruft, wird der Pool-Default (Sonnet)
+        verwendet, NICHT das User-Override. Das init-Event im send_message
+        löst dieses Problem, weil send_message das model korrekt weitergibt.
+        """
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process(pid=11940)
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ):
+                # Ohne model: CLAUDE_POOL_MODEL (sonnet) wird verwendet
+                managed, _ = await pool.get_or_create(user_id=1, chat_id=100)
+                assert managed.model == "claude-sonnet-4-6"
+
+        await pool.shutdown()
+
+
 class TestTTLConfiguration:
     """Tests für die TTL-Konfiguration via Umgebungsvariable."""
 

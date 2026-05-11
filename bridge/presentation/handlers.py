@@ -562,8 +562,9 @@ async def _handle_message_streaming(
     }
     write_raw_audit(audit_started)
 
-    # Process-Info vorab holen (für was_cold)
-    pool = context.application.bot_data.get("process_pool")
+    # Process-Info wird aus dem init-Event des Streams geholt (nicht vorab,
+    # da ein vorab-get_or_create ohne model-Argument den Modell-Wechsel
+    # nicht erkennt und den alten Subprocess wiederverwendet).
     was_cold = False
     subprocess_pid = 0
 
@@ -595,11 +596,6 @@ async def _handle_message_streaming(
                 language=chat_lang,
             )
 
-        # was_cold und subprocess_pid aus dem Pool holen
-        if pool is not None:
-            managed, was_cold = await pool.get_or_create(user_id, chat_id)
-            subprocess_pid = managed.pid
-
         # Typing-Keepalive parallel zum Stream
         keepalive = asyncio.create_task(
             _typing_keepalive(
@@ -623,7 +619,13 @@ async def _handle_message_streaming(
                 status_session=status_session,
             )
             async for event in stream_iter:
-                if event.event_type == "content_delta":
+                if event.event_type == "init":
+                    # Process-Metadata aus dem init-Event des Pools
+                    was_cold = event.was_cold
+                    subprocess_pid = event.subprocess_pid
+                    continue
+
+                elif event.event_type == "content_delta":
                     streaming_chunks += 1
                     await process_streaming_edit(session, event.text)
 

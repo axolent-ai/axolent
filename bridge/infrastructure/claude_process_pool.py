@@ -54,6 +54,8 @@ class StreamEvent:
         full_text: Vollständige Antwort (bei result).
         raw: Rohes JSON-Event (für Debugging).
         is_final: True wenn dies das letzte Event der Antwort ist.
+        was_cold: True wenn ein neuer Subprocess gestartet wurde (nur bei init).
+        subprocess_pid: PID des genutzten Subprocess (nur bei init).
     """
 
     event_type: str
@@ -61,6 +63,8 @@ class StreamEvent:
     full_text: str = ""
     raw: dict = field(default_factory=dict)
     is_final: bool = False
+    was_cold: bool = False
+    subprocess_pid: int = 0
 
 
 @dataclass
@@ -257,6 +261,14 @@ class ClaudeProcessPool:
         # was_cold=False liefern obwohl is_ready noch False ist).
         if not managed.is_ready:
             await self._wait_for_init(managed)
+
+        # Init-Event mit Process-Metadata yielden (vor dem Lock,
+        # damit der Caller was_cold/pid sofort kennt)
+        yield StreamEvent(
+            event_type="init",
+            was_cold=was_cold,
+            subprocess_pid=managed.pid,
+        )
 
         async with managed.lock:
             managed.last_used = time.monotonic()
