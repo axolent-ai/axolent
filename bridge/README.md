@@ -116,6 +116,9 @@ Der Bot pollt jetzt Telegram. Jede Nachricht an den Bot wird an Claude Code CLI 
 | `/forget <id>` | Notiz löschen |
 | `/usage` | Aktueller Verbrauch und Profil anzeigen |
 | `/setlimit <profil>` | Rate-Limit-Profil wechseln (light, normal, power, unlimited) |
+| `/setmodel <modell>` | KI-Modell wechseln (opus, sonnet, haiku oder volle ID) |
+| `/resetmodel` | Modell auf Default zurücksetzen |
+| `/models` | Aktuelles Modell und verfügbare Optionen anzeigen |
 | `/lang <code>` | Sprache fest setzen (de, en, es, fr, etc.) |
 | `/reset` oder `/new` | Konversation und Sprache zurücksetzen |
 | `/help` | Commands-Übersicht |

@@ -208,3 +208,15 @@ class TestProviderRouterUserChatId:
         call_kwargs = mock_claude.query.call_args[1]
         assert call_kwargs["user_id"] == 42
         assert "chat_id" not in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_route_passes_model_to_provider(self) -> None:
+        """model-Parameter wird an provider.query() durchgereicht."""
+        mock_claude = _make_mock_provider("claude", with_async_query=True)
+        providers = {"claude": mock_claude}
+        router = ProviderRouter(providers=providers, default="claude")
+
+        await router.route("Hallo", model="claude-opus-4-7")
+
+        call_kwargs = mock_claude.query.call_args[1]
+        assert call_kwargs["model"] == "claude-opus-4-7"

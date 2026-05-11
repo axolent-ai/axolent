@@ -35,7 +35,7 @@ log = logging.getLogger(__name__)
 DEBATE_TIMEOUT_SECONDS: int = 60
 _DEBATE_PROVIDERS_RAW: str = os.getenv("DEBATE_PROVIDERS", "")
 
-# Sentinel Chat-ID fuer Judge-Calls: separater Konversationskontext
+# Sentinel Chat-ID für Judge-Calls: separater Konversationskontext
 # damit der Judge nicht die Debate-Antwort im Kontext hat.
 _JUDGE_CHAT_ID_OFFSET: int = 900_000_000
 
@@ -581,7 +581,7 @@ class DebateOrchestrator:
 
         log.info("Final Review: Judge-Provider = %s", judge_provider)
 
-        # Isolierter Konversationskontext fuer den Judge:
+        # Isolierter Konversationskontext für den Judge:
         # Offset auf die chat_id damit der Judge-Call NICHT in die
         # User-Konversation geht (wuerde Bias durch vorherige Debate-Antwort erzeugen
         # und kann JSON-Output stoeren weil Claude im Chat-Modus antwortet).

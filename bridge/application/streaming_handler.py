@@ -115,7 +115,7 @@ async def create_streaming_message(chat: Any) -> "Message":
         chat: Telegram Chat-Objekt.
 
     Returns:
-        Die gesendete Message (wird spaeter editiert).
+        Die gesendete Message (wird später editiert).
     """
     # Platzhalter der signalisiert dass gearbeitet wird
     return await chat.send_message("...")

@@ -39,7 +39,7 @@ CLEANUP_INTERVAL_SECONDS: float = 60.0
 # Maximale Init-Wartezeit beim ersten Start
 INIT_TIMEOUT_SECONDS: float = 30.0
 
-# Modell fuer den Process-Pool. Default: Sonnet (schnell, guenstig).
+# Modell für den Process-Pool. Default: Sonnet (schnell, günstig).
 # Ohne explizites --model nutzt die CLI das User-Default (oft Opus = 3-5x langsamer).
 CLAUDE_POOL_MODEL: str = os.getenv("CLAUDE_POOL_MODEL", "claude-sonnet-4-6")
 
@@ -178,20 +178,28 @@ class ClaudeProcessPool:
         key = (user_id, chat_id)
 
         # Schneller Pfad: existierender, lebendiger Process mit richtigem Modell
+        old_managed_to_kill: ManagedProcess | None = None
         async with self._pool_lock:
             managed = self._processes.get(key)
             if managed is not None and self._is_alive(managed):
                 if managed.model == effective_model:
                     managed.last_used = time.monotonic()
                     return managed, False
-                # Modell-Mismatch: alten Process terminieren
+                # Modell-Mismatch: aus Pool entfernen, Kill NACH Lock-Release
                 log.info(
                     "Modell-Wechsel für key=%s: %s -> %s, terminiere alten Subprocess",
                     key,
                     managed.model,
                     effective_model,
                 )
-                await self._kill_process(managed)
+                if managed.lock.locked():
+                    log.warning(
+                        "Modell-Wechsel für key=%s: aktiver Stream auf pid=%d, "
+                        "Kill wird trotzdem durchgeführt",
+                        key,
+                        managed.pid,
+                    )
+                old_managed_to_kill = managed
                 del self._processes[key]
                 managed = None
 
@@ -200,7 +208,12 @@ class ClaudeProcessPool:
                 self._creation_locks[key] = asyncio.Lock()
             creation_lock = self._creation_locks[key]
 
+        # Kill außerhalb des Pool-Locks (blockiert nicht den gesamten Pool)
+        if old_managed_to_kill is not None:
+            await self._kill_process(old_managed_to_kill)
+
         # Per-Key Lock: nur ein Spawn pro Key gleichzeitig
+        old_managed_to_kill = None
         async with creation_lock:
             # Double-Check: vielleicht hat ein anderer Task inzwischen gespawnt
             async with self._pool_lock:
@@ -210,7 +223,7 @@ class ClaudeProcessPool:
                         managed.last_used = time.monotonic()
                         return managed, False
                     # Modell-Mismatch auch im Double-Check
-                    await self._kill_process(managed)
+                    old_managed_to_kill = managed
                     del self._processes[key]
                     managed = None
 
@@ -221,7 +234,11 @@ class ClaudeProcessPool:
                         key,
                         managed.pid,
                     )
-                    await self._kill_process(managed)
+                    old_managed_to_kill = managed
+
+            # Kill außerhalb des Pool-Locks
+            if old_managed_to_kill is not None:
+                await self._kill_process(old_managed_to_kill)
 
             # Neuen Subprocess ausserhalb des Pool-Locks starten
             new_managed = await self._spawn_process(key, model=effective_model)
@@ -375,7 +392,7 @@ class ClaudeProcessPool:
             # NOTE: --bare hier bewusst NICHT gesetzt.
             # R10 hatte --bare eingefuehrt um ~5000 Token Init-Overhead zu sparen,
             # aber --bare verursacht "authentication_failed" bei Subscription-Usern
-            # (getestet mit claude-code 2.1.126). Ohne --bare laeuft Auth korrekt.
+            # (getestet mit claude-code 2.1.126). Ohne --bare läuft Auth korrekt.
             "--model",
             effective_model,
         ]

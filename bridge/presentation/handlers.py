@@ -22,6 +22,7 @@ from telegram.ext import ContextTypes
 from application.audit_service import log_command_audit, write_raw_audit
 from application.bookmark_service import BookmarkService
 from application.chat_service import ChatService
+from application.model_service import DEFAULT_MODEL, ModelService
 from application.rate_limiter import PROFILES, RateLimiter, RateLimitResult
 from application.streaming_handler import (
     StreamingSession,
@@ -1450,11 +1451,9 @@ async def handle_setmodel_command(
 ) -> None:
     """Verarbeitet /setmodel <modell> und /setmodel reset.
 
-    Setzt das globale KI-Modell fuer alle Anfragen des Users.
+    Setzt das globale KI-Modell für alle Anfragen des Users.
     Akzeptiert Aliase (opus, sonnet, haiku) oder volle Modell-IDs.
     """
-    from application.model_service import ModelService
-
     model_service = _get_model_service(context)
     if model_service is None or not isinstance(model_service, ModelService):
         await update.message.reply_text("Modell-System nicht initialisiert.")
@@ -1465,7 +1464,7 @@ async def handle_setmodel_command(
     user_id: int = user.id if user else 0
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
-    # Sprache fuer Antwort bestimmen
+    # Sprache für Antwort bestimmen
     lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
     s = _get_model_strings(lang)
 
@@ -1482,8 +1481,6 @@ async def handle_setmodel_command(
 
     # /setmodel reset
     if target == "reset":
-        from application.model_service import DEFAULT_MODEL
-
         deleted = model_service.reset_user_model(user_id)
         default_display = model_service.get_model_display_name(DEFAULT_MODEL)
         default_label = f"{default_display} ({DEFAULT_MODEL})"
@@ -1532,14 +1529,12 @@ async def handle_setmodel_command(
 async def handle_resetmodel_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /resetmodel. Shortcut fuer /setmodel reset.
+    """Verarbeitet /resetmodel. Shortcut für /setmodel reset.
 
-    Eigenstaendiger Command damit Telegram ihn als klickbaren
+    Eigenständiger Command damit Telegram ihn als klickbaren
     blauen Link im Help-Text anzeigt (Commands mit Argumenten
     werden nicht verlinkt).
     """
-    from application.model_service import DEFAULT_MODEL, ModelService
-
     model_service = _get_model_service(context)
     if model_service is None or not isinstance(model_service, ModelService):
         await update.message.reply_text("Modell-System nicht initialisiert.")
@@ -1575,9 +1570,7 @@ async def handle_resetmodel_command(
 async def handle_models_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /models. Zeigt aktuelles Modell und verfuegbare Optionen."""
-    from application.model_service import DEFAULT_MODEL, ModelService
-
+    """Verarbeitet /models. Zeigt aktuelles Modell und verfügbare Optionen."""
     model_service = _get_model_service(context)
     if model_service is None or not isinstance(model_service, ModelService):
         await update.message.reply_text("Modell-System nicht initialisiert.")

@@ -1,11 +1,11 @@
-"""Status-Manager: koordiniert Status-Updates waehrend Processing.
+"""Status-Manager: koordiniert Status-Updates während Processing.
 
 Zeigt dem User was Jarvis gerade macht, statt nur "..." als Placeholder.
 Sprach-aware (DE + EN basierend auf Sticky-Language).
 Rate-limited: max alle 0.5s ein Status-Update.
 
 Phase 1: Interne Schritte (Memory, Prompt, Streaming)
-Phase 2 (spaeter): Tool-Activity (Web-Suche, Datei-Lesen etc.)
+Phase 2 (später): Tool-Activity (Web-Suche, Datei-Lesen etc.)
 """
 
 from __future__ import annotations
@@ -49,18 +49,18 @@ _STATUS_TEXTS: dict[str, dict[str, str]] = {
 
 
 def get_status_text(key: str, lang: str = "de", **kwargs: Any) -> str:
-    """Gibt den lokalisierten Status-Text zurueck.
+    """Gibt den lokalisierten Status-Text zurück.
 
     Args:
         key: Status-Schluessel (z.B. "memory_loading", "thinking").
         lang: Sprachcode ("de", "en", etc.). Fallback auf "de".
-        **kwargs: Format-Parameter (z.B. n=3 fuer Memory-Count).
+        **kwargs: Format-Parameter (z.B. n=3 für Memory-Count).
 
     Returns:
         Formatierter Status-Text.
     """
     texts = _STATUS_TEXTS.get(key, {})
-    # Nur DE und EN unterstuetzt, Rest faellt auf DE zurueck
+    # Nur DE und EN unterstützt, Rest fällt auf DE zurück
     template = texts.get(lang, texts.get("de", key))
     try:
         return template.format(**kwargs)
@@ -69,12 +69,12 @@ def get_status_text(key: str, lang: str = "de", **kwargs: Any) -> str:
 
 
 # ---------------------------------------------------------------------------
-# StatusUpdate Protocol (fuer Presentation-Layer-Integration)
+# StatusUpdate Protocol (für Presentation-Layer-Integration)
 # ---------------------------------------------------------------------------
 
 
 class StatusCallback(Protocol):
-    """Protocol fuer Status-Update-Callbacks.
+    """Protocol für Status-Update-Callbacks.
 
     Der Presentation-Layer implementiert dieses Protocol
     um Status-Updates als Telegram-Edits zu senden.
@@ -98,11 +98,11 @@ class StatusSession:
 
     Attributes:
         callback: Async-Callable das den Status-Text an den User sendet.
-        language: Aktive Sprache fuer diese Session.
+        language: Aktive Sprache für diese Session.
         enabled: Ob Status-Updates aktiv sind.
         last_update_time: Zeitpunkt des letzten Status-Updates (monotonic).
         stream_started: True wenn der Token-Stream begonnen hat.
-        _last_key: Letzter gesendeter Status-Key (fuer Phase-Change-Detection).
+        _last_key: Letzter gesendeter Status-Key (für Phase-Change-Detection).
     """
 
     callback: StatusCallback

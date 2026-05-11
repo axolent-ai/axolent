@@ -756,6 +756,13 @@ class SqliteModelStorage:
             log.debug("Modell-Override gelöscht: user_id=%d slot=%s", user_id, slot)
         return deleted
 
+    def _reset_all_for_tests(self) -> None:
+        """Löscht alle Modell-Overrides (nur für Tests).
+
+        Konsistenz-Pattern: analog zu conversation_storage._reset_all_for_tests.
+        """
+        self._conn.execute("DELETE FROM user_slot_models", ())
+
 
 # ──────────────────────────────────────────────────────────────
 # JSONL → SQLite Migration

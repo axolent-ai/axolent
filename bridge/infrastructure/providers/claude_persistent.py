@@ -87,7 +87,7 @@ class ClaudePersistentProvider(LLMProvider, StreamingProvider):
             prompt: User-Nachricht.
             system_prompt: Optionaler System-Prompt.
             timeout_seconds: Timeout (wird vom Process-Pool intern gehandled).
-            model: Optionaler Modell-Identifier (aktuell ignoriert).
+            model: Optionaler Modell-Identifier (wird an den Process-Pool durchgereicht).
             user_id: Telegram-User-ID (Pflicht).
             chat_id: Telegram-Chat-ID (Pflicht).
 

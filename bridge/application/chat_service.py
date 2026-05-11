@@ -624,7 +624,7 @@ class ChatService:
             persistent_provider: Der Streaming-fähige Provider.
             language_override: Optionale Sprach-Override.
             reply_to_text: Reply-To-Kontext.
-            status_session: Optionale StatusSession fuer Status-Updates.
+            status_session: Optionale StatusSession für Status-Updates.
 
         Returns:
             Tuple von (StreamEvent-AsyncIterator, memory_entries_loaded).

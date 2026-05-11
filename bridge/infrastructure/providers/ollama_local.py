@@ -1,7 +1,7 @@
 """Ollama Local Provider.
 
-Nutzt Ollama HTTP-API (localhost:11434) fuer lokale LLM-Inference.
-Modus-B-konform: Ollama laeuft lokal, keine Cloud-API, kein Token-Hijacking.
+Nutzt Ollama HTTP-API (localhost:11434) für lokale LLM-Inference.
+Modus-B-konform: Ollama läuft lokal, keine Cloud-API, kein Token-Hijacking.
 
 Default-Modell konfigurierbar via OLLAMA_MODEL env-var (Default: llama3.2:3b).
 Host konfigurierbar via OLLAMA_HOST env-var (Default: http://localhost:11434).
@@ -42,7 +42,7 @@ _CAPABILITIES = ProviderCapabilities(
 
 
 def _get_host() -> str:
-    """Gibt den konfigurierten Ollama-Host zurueck.
+    """Gibt den konfigurierten Ollama-Host zurück.
 
     Validiert das URL-Scheme: nur http:// und https:// sind erlaubt.
     Verhindert file:// oder andere potentiell gefaehrliche Schemes.
@@ -59,7 +59,7 @@ def _get_host() -> str:
 
 
 def _get_default_model() -> str:
-    """Gibt das konfigurierte Default-Modell zurueck."""
+    """Gibt das konfigurierte Default-Modell zurück."""
     return os.getenv("OLLAMA_MODEL", DEFAULT_MODEL)
 
 
@@ -107,11 +107,11 @@ class OllamaProvider(LLMProvider):
         Args:
             prompt: User-Nachricht / Prompt.
             system_prompt: Optionaler System-Prompt.
-            timeout_seconds: Timeout fuer den Request.
+            timeout_seconds: Timeout für den Request.
             model: Modell-Identifier (None = OLLAMA_MODEL env oder llama3.2:3b).
-            user_id: Akzeptiert fuer Interface-Kompatibilitaet, ignoriert.
-            chat_id: Akzeptiert fuer Interface-Kompatibilitaet, ignoriert.
-            **kwargs: Safety-Net fuer zukuenftige Provider-Interface-Erweiterungen.
+            user_id: Akzeptiert für Interface-Kompatibilität, ignoriert.
+            chat_id: Akzeptiert für Interface-Kompatibilität, ignoriert.
+            **kwargs: Safety-Net für zukünftige Provider-Interface-Erweiterungen.
 
         Returns:
             ProviderResponse mit Ollama-Antwort oder Fehler.

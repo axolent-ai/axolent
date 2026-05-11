@@ -509,6 +509,52 @@ class TestAutoMemoryLoading:
         assert "GESPEICHERTE NOTIZEN" not in system_sent
 
 
+class TestChatServiceModelOverride:
+    """Tests fuer User-Modell-Override-Durchreichung an ProviderRouter."""
+
+    async def test_chat_service_passes_user_model_to_router(self) -> None:
+        """ChatService reicht User-Override als model= an ProviderRouter.route() weiter."""
+        from application.model_service import ModelService
+        from infrastructure.sqlite_storage import SqliteConnection, SqliteModelStorage
+        from pathlib import Path
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "test_model_override.db"
+            conn = SqliteConnection(db_path)
+            try:
+                storage = SqliteModelStorage(conn)
+                model_service = ModelService(storage=storage)
+                model_service.set_user_model(user_id=1, alias_or_id="opus")
+
+                mock_router = MagicMock()
+                mock_router.route = AsyncMock(
+                    return_value=ProviderResponse(
+                        text="Antwort",
+                        duration_seconds=1.0,
+                        provider_name="claude",
+                    )
+                )
+
+                svc = ChatService(
+                    provider_router=mock_router,
+                    model_service=model_service,
+                )
+
+                await svc.process_user_message(
+                    text="Hallo",
+                    user_id=1,
+                    chat_id=10,
+                    username="test",
+                    system_prompt="System.",
+                )
+
+                call_kwargs = mock_router.route.call_args[1]
+                assert call_kwargs.get("model") == "claude-opus-4-7"
+            finally:
+                conn.close()
+
+
 class TestExtractKeywords:
     """Tests für _extract_keywords (Interpunktions-Bug Regression)."""
 

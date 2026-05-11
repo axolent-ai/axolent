@@ -221,3 +221,105 @@ class TestResetmodelCommand:
         assert "reset" in reply_text.lower() or "default" in reply_text.lower()
         default_display = ModelService.get_model_display_name(DEFAULT_MODEL)
         assert default_display in reply_text
+
+
+# ──────────────────────────────────────────────────────────────
+# /setmodel <alias>: Happy-Path und Error-Path
+# ──────────────────────────────────────────────────────────────
+
+
+class TestSetmodelHappyAndErrorPath:
+    """Tests fuer /setmodel mit gueltigem und ungueltigem Alias."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        """Whitelist-Bypass."""
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    async def test_setmodel_opus_happy_path(self, model_service: ModelService) -> None:
+        """/setmodel opus setzt Modell und bestaetigt mit Display-Name."""
+        from presentation.handlers import handle_setmodel_command
+
+        update = _make_update()
+        context = _make_context(args=["opus"], model_service=model_service)
+
+        await handle_setmodel_command(update, context)
+
+        # Modell muss gesetzt sein
+        assert model_service.get_user_model(user_id=1) == "claude-opus-4-7"
+
+        # Antwort muss den Display-Name enthalten
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Opus 4.7" in reply_text
+        assert "claude-opus-4-7" in reply_text
+
+    async def test_setmodel_invalid_model_error(
+        self, model_service: ModelService
+    ) -> None:
+        """/setmodel ungueltigeswort zeigt Fehlermeldung mit verfuegbaren Aliassen."""
+        from presentation.handlers import handle_setmodel_command
+
+        update = _make_update()
+        context = _make_context(args=["ungueltigeswort"], model_service=model_service)
+
+        await handle_setmodel_command(update, context)
+
+        # Modell darf NICHT gesetzt sein
+        assert model_service.get_user_model(user_id=1) is None
+
+        # Antwort muss Fehlermeldung mit verfuegbaren Aliassen enthalten
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "ungueltigeswort" in reply_text.lower()
+        assert "opus" in reply_text or "sonnet" in reply_text
+
+
+# ──────────────────────────────────────────────────────────────
+# /models: Zeigt aktives Modell und verfuegbare Optionen
+# ──────────────────────────────────────────────────────────────
+
+
+class TestModelsCommand:
+    """/models zeigt aktuelles Modell und Optionen."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        """Whitelist-Bypass."""
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    async def test_models_shows_default_and_options(
+        self, model_service: ModelService
+    ) -> None:
+        """/models ohne Override zeigt Default und alle Aliase."""
+        from presentation.handlers import handle_models_command
+
+        update = _make_update()
+        context = _make_context(model_service=model_service)
+
+        await handle_models_command(update, context)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        # Muss Default-Modell anzeigen
+        assert DEFAULT_MODEL in reply_text or "Sonnet" in reply_text
+        # Muss alle Aliase anzeigen
+        assert "opus" in reply_text.lower()
+        assert "sonnet" in reply_text.lower()
+        assert "haiku" in reply_text.lower()
+
+    async def test_models_shows_active_override(
+        self, model_service: ModelService
+    ) -> None:
+        """/models mit Override zeigt das aktive Override-Modell."""
+        from presentation.handlers import handle_models_command
+
+        model_service.set_user_model(user_id=1, alias_or_id="opus")
+
+        update = _make_update()
+        context = _make_context(model_service=model_service)
+
+        await handle_models_command(update, context)
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Opus 4.7" in reply_text
+        assert "claude-opus-4-7" in reply_text

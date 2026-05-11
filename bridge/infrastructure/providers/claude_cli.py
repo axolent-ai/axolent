@@ -72,16 +72,18 @@ class ClaudeProvider(LLMProvider):
             prompt: User-Nachricht.
             system_prompt: Optionaler System-Prompt (via stdin, nicht argv).
             timeout_seconds: Timeout für den Subprozess.
-            model: Optionaler Modell-Identifier (aktuell ignoriert, CLI nutzt Default).
-            user_id: Telegram User-ID (akzeptiert fuer Interface-Kompatibilitaet, ignoriert).
-            chat_id: Telegram Chat-ID (akzeptiert fuer Interface-Kompatibilitaet, ignoriert).
-            **kwargs: Safety-Net fuer zukuenftige Provider-Interface-Erweiterungen.
+            model: Optionaler Modell-Identifier (wird als --model an CLI übergeben).
+            user_id: Telegram User-ID (akzeptiert für Interface-Kompatibilität, ignoriert).
+            chat_id: Telegram Chat-ID (akzeptiert für Interface-Kompatibilität, ignoriert).
+            **kwargs: Safety-Net für zukünftige Provider-Interface-Erweiterungen.
 
         Returns:
             ProviderResponse mit Claude-Antwort oder Fehler.
         """
         start = time.monotonic()
         cmd: list[str] = ["claude", "-p"]
+        if model is not None:
+            cmd.extend(["--model", model])
 
         # Privacy: kompletten Prompt via stdin senden, nicht als argv.
         # --append-system-prompt würde Memory-Inhalte in Prozesslisten zeigen.

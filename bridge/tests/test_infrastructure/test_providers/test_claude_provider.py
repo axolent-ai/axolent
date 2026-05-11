@@ -140,3 +140,50 @@ class TestClaudeProviderQuery:
 
         assert result.text == "Fine"
         assert result.error is None
+
+    @pytest.mark.asyncio
+    async def test_query_passes_model_flag(self) -> None:
+        """Legacy-Provider nutzt --model wenn model-Parameter gesetzt ist."""
+        provider = ClaudeProvider()
+
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"Opus response", b""))
+        mock_proc.returncode = 0
+        mock_proc.kill = MagicMock()
+        mock_proc.wait = AsyncMock()
+
+        with patch(
+            "asyncio.create_subprocess_exec",
+            return_value=mock_proc,
+        ) as mock_exec:
+            result = await provider.query("Test", model="claude-opus-4-7")
+
+        assert result.text == "Opus response"
+        assert result.error is None
+
+        # Verify --model flag was passed to subprocess
+        call_args = mock_exec.call_args[0]
+        assert "--model" in call_args
+        model_idx = list(call_args).index("--model")
+        assert call_args[model_idx + 1] == "claude-opus-4-7"
+
+    @pytest.mark.asyncio
+    async def test_query_without_model_no_flag(self) -> None:
+        """Legacy-Provider ohne model-Parameter uebergibt kein --model Flag."""
+        provider = ClaudeProvider()
+
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"Default", b""))
+        mock_proc.returncode = 0
+        mock_proc.kill = MagicMock()
+        mock_proc.wait = AsyncMock()
+
+        with patch(
+            "asyncio.create_subprocess_exec",
+            return_value=mock_proc,
+        ) as mock_exec:
+            result = await provider.query("Test")
+
+        assert result.text == "Default"
+        call_args = mock_exec.call_args[0]
+        assert "--model" not in call_args
