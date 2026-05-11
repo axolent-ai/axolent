@@ -1372,11 +1372,11 @@ class TestFormatDebateSynthesis:
         assert "Stärkster Beitrag" in formatted
         assert "Beste Einzelantwort" not in formatted
         assert "Winner" not in formatted
-        # Empfehlung ist da
-        assert "Empfehlung:" in formatted
+        # Kernaussage ist da
+        assert "Kernaussage:" in formatted
 
-        # BLUF-Reihenfolge: Empfehlung vor Synthese vor Detail-Antworten
-        emp_pos = formatted.index("Empfehlung:")
+        # BLUF-Reihenfolge: Kernaussage vor Synthese vor Detail-Antworten
+        emp_pos = formatted.index("Kernaussage:")
         syn_pos = formatted.index("Synthese")
         detail_pos = formatted.index("Detail-Antworten")
         assert emp_pos < syn_pos < detail_pos
@@ -1421,8 +1421,8 @@ class TestFormatDebateSynthesis:
 
         formatted = _format_debate_result(result)
 
-        # BLUF: Empfehlung -> Staerkster Beitrag -> Synthese -> Details -> Pro/Contra -> Timer
-        emp_pos = formatted.index("Empfehlung:")
+        # BLUF: Kernaussage -> Staerkster Beitrag -> Synthese -> Details -> Pro/Contra -> Timer
+        emp_pos = formatted.index("Kernaussage:")
         strongest_pos = formatted.index("Stärkster Beitrag:")
         syn_pos = formatted.index("Synthese")
         detail_pos = formatted.index("Detail-Antworten")
@@ -1478,12 +1478,12 @@ class TestFormatDebateSynthesis:
         formatted = _format_debate_result(result, lang="en")
 
         # English labels
-        assert "Recommendation:" in formatted
+        assert "Key Takeaway:" in formatted
         assert "Strongest Contribution:" in formatted
         assert "Synthesis" in formatted
         assert "Detail Responses" in formatted
         # No German labels
-        assert "Empfehlung:" not in formatted
+        assert "Kernaussage:" not in formatted
         assert "Stärkster Beitrag:" not in formatted
 
     def test_format_debate_without_synthesis_shows_no_empty_block(self) -> None:
@@ -1518,7 +1518,7 @@ class TestFormatDebateSynthesis:
 
         # Synthese-Block wird NICHT gerendert wenn synthesis leer ist
         assert "Synthese" not in formatted
-        # Empfehlung und Staerkster Beitrag sind trotzdem da
+        # Kernaussage und Staerkster Beitrag sind trotzdem da
         assert "Claude gewinnt." in formatted
         assert "Stärkster Beitrag" in formatted
         # Quality warning wird angezeigt

@@ -996,3 +996,155 @@ class TestRobustJsonExtraction:
 
         # Leerer String
         assert DebateOrchestrator._extract_json_object("") is None
+
+
+class TestMultiQuestionCoverage:
+    """Regressions-Tests: Multi-Fragen muessen alle Aspekte in der Kernaussage abdecken.
+
+    Bug-Kontext: Bei Fragen wie 'Was ist Bitcoin UND sollte ich einsteigen?'
+    deckte die Kernaussage bisher nur den Handlungs-Aspekt ab. Der Definitions-Teil
+    fiel hinten runter. Der geschaerfte Judge-Prompt verlangt jetzt explizit dass
+    alle Teilaspekte adressiert werden.
+    """
+
+    def _make_orchestrator(self) -> DebateOrchestrator:
+        providers = {
+            "alpha": _MockProvider("alpha", response_text="A"),
+            "beta": _MockProvider("beta", response_text="B"),
+        }
+        router = _make_router(providers)
+        return DebateOrchestrator(provider_router=router)
+
+    def test_judge_prompt_contains_multi_question_instruction(self) -> None:
+        """Der Judge-Prompt enthaelt die Multi-Fragen-Anweisung."""
+        orchestrator = self._make_orchestrator()
+
+        responses = {
+            "alpha": "Bitcoin ist eine digitale Waehrung.",
+            "beta": "Du solltest vorsichtig investieren.",
+        }
+        prompt, _ = orchestrator._build_judge_prompt(
+            "Was ist Bitcoin und sollte ich einsteigen?", responses
+        )
+
+        assert "ALLE Aspekte der Frage abdecken" in prompt
+        assert "Multi-Fragen" in prompt
+        assert "Teilaspekt" in prompt
+
+    def test_judge_prompt_requests_2_4_sentences(self) -> None:
+        """Das JSON-Schema verlangt 2-4 Saetze fuer die Kernaussage."""
+        orchestrator = self._make_orchestrator()
+
+        responses = {"alpha": "A", "beta": "B"}
+        prompt, _ = orchestrator._build_judge_prompt("Test?", responses)
+
+        assert "2-4 Saetze" in prompt
+
+    def test_multi_question_verdict_covers_both_aspects(self) -> None:
+        """Mock-Judge-Response zu Multi-Frage deckt beide Aspekte ab."""
+        orchestrator = self._make_orchestrator()
+
+        # Simuliere eine gute Judge-Response die beide Aspekte abdeckt
+        raw_json = json.dumps(
+            {
+                "winner": "A",
+                "synthesis": (
+                    "Bitcoin ist eine dezentrale digitale Waehrung auf Blockchain-Basis. "
+                    "Ein Einstieg ist mit Risiken verbunden, kleine Positionen als Start "
+                    "sind empfehlenswert."
+                ),
+                "recommendation": (
+                    "Bitcoin ist eine dezentrale Kryptowaehrung die auf "
+                    "Blockchain-Technologie basiert. Ein Investment ist moeglich, "
+                    "aber nur mit Geld das man bereit ist zu verlieren."
+                ),
+                "evaluations": [
+                    {
+                        "label": "A",
+                        "pros": ["Gute Definition"],
+                        "cons": ["Kein Investment-Rat"],
+                    },
+                    {
+                        "label": "B",
+                        "pros": ["Guter Rat"],
+                        "cons": ["Keine Definition"],
+                    },
+                ],
+                "reasoning": "A liefert die bessere Basis-Erklaerung.",
+            }
+        )
+
+        label_to_provider = {"A": "alpha", "B": "beta"}
+        verdict = orchestrator._parse_judge_response(raw_json, label_to_provider)
+
+        assert verdict is not None
+        # Kernaussage deckt Definition ab (Bitcoin/Kryptowaehrung/Blockchain)
+        assert "Bitcoin" in verdict.recommendation
+        assert (
+            "Blockchain" in verdict.recommendation or "Krypto" in verdict.recommendation
+        )
+        # Kernaussage deckt Investment-Aspekt ab
+        assert (
+            "Investment" in verdict.recommendation
+            or "verlieren" in verdict.recommendation
+        )
+
+    async def test_multi_question_debate_integration(self) -> None:
+        """Integration: Multi-Frage Debate mit Mock-Judge liefert vollstaendige Kernaussage."""
+        judge_json = json.dumps(
+            {
+                "winner": "A",
+                "synthesis": (
+                    "Bitcoin ist dezentrales digitales Geld. "
+                    "Ein Einstieg sollte mit kleinen Betraegen beginnen."
+                ),
+                "recommendation": (
+                    "Bitcoin ist eine dezentrale Kryptowaehrung auf Blockchain-Basis. "
+                    "Ein Einstieg kann sinnvoll sein, aber nur mit Risikokapital."
+                ),
+                "evaluations": [
+                    {"label": "A", "pros": ["Praezise"], "cons": []},
+                    {"label": "B", "pros": ["Praktisch"], "cons": []},
+                ],
+                "reasoning": "A ist praeziser.",
+            }
+        )
+
+        providers = {
+            "claude_persistent": _MockProvider(
+                "claude_persistent",
+                response_text=(
+                    "Bitcoin ist eine dezentrale digitale Waehrung "
+                    "die auf Blockchain-Technologie basiert."
+                ),
+            ),
+            "ollama_local": _MockProvider(
+                "ollama_local",
+                response_text=(
+                    "Du solltest vorsichtig einsteigen, nur mit Geld "
+                    "das du bereit bist zu verlieren."
+                ),
+            ),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        async def _mock_final_review(question, responses, user_id, chat_id):
+            prompt, label_to_provider = orchestrator._build_judge_prompt(
+                question, responses
+            )
+            return orchestrator._parse_judge_response(judge_json, label_to_provider)
+
+        with patch.object(orchestrator, "final_review", side_effect=_mock_final_review):
+            result = await orchestrator.debate(
+                question="Was ist Bitcoin und sollte ich einsteigen?",
+                user_id=1,
+                chat_id=10,
+            )
+
+        assert result.final_verdict is not None
+        key_takeaway = result.final_verdict.recommendation
+        # Beide Aspekte muessen in der Kernaussage auftauchen
+        assert "Bitcoin" in key_takeaway
+        assert "Blockchain" in key_takeaway or "Krypto" in key_takeaway
+        assert "Einstieg" in key_takeaway or "Risikokapital" in key_takeaway

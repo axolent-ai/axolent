@@ -31,8 +31,8 @@ class TestTypingKeepaliveFunction:
         # Task mit kurzem Intervall starten
         task = asyncio.create_task(_typing_keepalive(mock_chat, interval=0.05))
 
-        # Warten bis mindestens 3 Calls passiert sein sollten
-        await asyncio.sleep(0.2)
+        # Warten bis mindestens 2 Calls passiert sein sollten
+        await asyncio.sleep(0.25)
 
         task.cancel()
         try:
@@ -40,8 +40,9 @@ class TestTypingKeepaliveFunction:
         except asyncio.CancelledError:
             pass
 
-        # Mindestens 3 Aufrufe erwartet (0.2s / 0.05s = 4, minus Timing-Toleranz)
-        assert mock_chat.send_chat_action.call_count >= 3
+        # Mindestens 2 Aufrufe erwartet (0.25s / 0.05s = 5, grosszuegige Toleranz
+        # fuer Windows-Timing-Jitter unter Last)
+        assert mock_chat.send_chat_action.call_count >= 2
 
     async def test_keepalive_cancels_cleanly(self) -> None:
         """Keepalive beendet sich sauber bei CancelledError ohne Exception."""

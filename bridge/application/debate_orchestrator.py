@@ -11,7 +11,7 @@ verwendet. Das verhindert verzerrte Konsens-Analysen und Token-Verschwendung.
 
 Final-Review-Layer (seit R10-Erweiterung):
 Nach den parallelen Antworten wird ein LLM-as-Judge Call gemacht der alle
-Antworten evaluiert und eine eindeutige Empfehlung mit Pro/Contra abgibt.
+Antworten evaluiert und eine Kernaussage mit Pro/Contra abgibt.
 Judge-Provider: claude_persistent (Fallback: ollama_local mit Qualitätswarnung).
 Bias-Mitigation: Provider-Namen werden im Judge-Prompt anonymisiert.
 """
@@ -124,7 +124,7 @@ class FinalVerdict:
 
     Attributes:
         winner: Provider-Name des Gewinners (oder "tie" bei Gleichstand).
-        recommendation: Kurzer Satz mit der finalen Empfehlung.
+        recommendation: Kernaussage die alle Aspekte der Frage abdeckt.
         synthesis: Inhaltliche Synthese die das Beste aller Antworten vereint.
         evaluations: Pro/Contra-Bewertung je Provider-Antwort.
         reasoning: 1-2 Sätze warum dieser Winner gewählt wurde.
@@ -344,7 +344,10 @@ class DebateOrchestrator:
             f"1. Identifiziere die Staerken und Schwaechen jeder Antwort\n"
             f"2. Erstelle eine SYNTHESE die das Beste aller Antworten vereint\n"
             f"3. Die Synthese soll eine eigenstaendige, vollstaendige Antwort sein "
-            f"(nicht nur 'A ist besser')\n\n"
+            f"(nicht nur 'A ist besser')\n"
+            f"4. Die Kernaussage (key_takeaway) muss ALLE Aspekte der Frage abdecken. "
+            f"Bei Multi-Fragen (z.B. 'Was ist X und sollte ich Y tun?') strukturiere "
+            f"die Kernaussage so dass jeder Teilaspekt adressiert wird.\n\n"
             f"WICHTIG: Deine GESAMTE Antwort muss EIN EINZIGES JSON-Objekt sein.\n"
             f"Kein Text davor, kein Text danach, kein Markdown, keine Erklaerung.\n"
             f"Starte direkt mit {{ und ende mit }}.\n\n"
@@ -352,7 +355,8 @@ class DebateOrchestrator:
             f'{{"winner": "<Buchstabe der besten Antwort oder tie>", '
             f'"synthesis": "<Vollstaendige synthetisierte Antwort die das Beste vereint, '
             f'2-5 Saetze, NIEMALS leer lassen>", '
-            f'"recommendation": "<1 Satz: klare Empfehlung>", '
+            f'"recommendation": "<Vollstaendige Kernaussage die alle Frage-Aspekte abdeckt, '
+            f'2-4 Saetze>", '
             f'"evaluations": ['
             f'{{"label": "<Buchstabe>", "pros": ["..."], "cons": ["..."]}}, ...'
             f"], "

@@ -1416,7 +1416,7 @@ _DEBATE_STRINGS: dict[str, dict[str, str]] = {
         "question_label": "\U0001f4cc Frage",
         "no_providers": "Keine Provider konnten antworten.",
         "errors_label": "Fehler",
-        "recommendation_label": "Empfehlung",
+        "recommendation_label": "Kernaussage",
         "strongest_contribution": "Stärkster Beitrag",
         "tie_result": "Ergebnis: Gleichstand",
         "synthesis_header": "\U0001f3af Synthese",
@@ -1435,7 +1435,7 @@ _DEBATE_STRINGS: dict[str, dict[str, str]] = {
         "question_label": "\U0001f4cc Question",
         "no_providers": "No providers could respond.",
         "errors_label": "Errors",
-        "recommendation_label": "Recommendation",
+        "recommendation_label": "Key Takeaway",
         "strongest_contribution": "Strongest Contribution",
         "tie_result": "Result: Tie",
         "synthesis_header": "\U0001f3af Synthesis",
@@ -1471,7 +1471,7 @@ def _format_debate_result(result: Any, lang: str = "de") -> str:
 
     Block-Reihenfolge (Bottom Line Up Front):
     1. Frage
-    2. Empfehlung (kompakte Handlungsempfehlung)
+    2. Kernaussage (kompakte Antwort auf die Frage)
     3. Stärkster Beitrag (bester einzelner Provider)
     4. Synthese (kombinierte Kern-Antwort)
     5. Detail-Antworten der KIs (Claude + Llama als Original)
@@ -1496,7 +1496,7 @@ def _format_debate_result(result: Any, lang: str = "de") -> str:
             lines.append(f"\n{s['errors_label']}: {', '.join(result.errors.keys())}")
         return "\n".join(lines)
 
-    # --- Block 2: Empfehlung (BLUF) ---
+    # --- Block 2: Kernaussage (BLUF) ---
     if result.final_verdict is not None:
         if result.final_verdict.recommendation:
             lines.append("━" * 20)
