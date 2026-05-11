@@ -680,11 +680,13 @@ class DebateOrchestrator:
             question[:80],
         )
 
-        # Alle Provider parallel abfragen
+        # Phase 1: Alle Provider parallel abfragen
+        t_providers_start = time.monotonic()
         tasks = [
             self._query_provider(name, question, user_id, chat_id) for name in providers
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
+        t_providers_elapsed = time.monotonic() - t_providers_start
 
         responses: dict[str, str] = {}
         errors: dict[str, str] = {}
@@ -700,29 +702,46 @@ class DebateOrchestrator:
             elif error is not None:
                 errors[provider_name] = error
 
+        log.info(
+            "Debate Phase 1 (Provider-Calls): %.1fs, %d OK, %d Fehler",
+            t_providers_elapsed,
+            len(responses),
+            len(errors),
+        )
+
         # Konsens-Analyse
         consensus: str | None = None
         if responses:
             consensus = self._analyze_consensus(responses)
 
-        # Final Review (LLM-as-Judge)
+        # Phase 2: Final Review (LLM-as-Judge)
         verdict: FinalVerdict | None = None
+        t_judge_elapsed: float = 0.0
         if len(responses) >= 2:
+            t_judge_start = time.monotonic()
             verdict = await self.final_review(
                 question=question,
                 responses=responses,
                 user_id=user_id,
                 chat_id=chat_id,
             )
+            t_judge_elapsed = time.monotonic() - t_judge_start
+            log.info(
+                "Debate Phase 2 (Judge-Call): %.1fs, verdict=%s",
+                t_judge_elapsed,
+                verdict.winner if verdict else "failed",
+            )
 
         duration = time.monotonic() - t_start
 
         log.info(
-            "Debate abgeschlossen: %d Antworten, %d Fehler, verdict=%s, %.1fs",
+            "Debate abgeschlossen: %.1fs total (providers=%.1fs, judge=%.1fs), "
+            "%d Antworten, %d Fehler",
+            duration,
+            t_providers_elapsed,
+            t_judge_elapsed,
             len(responses),
             len(errors),
-            verdict.winner if verdict else "none",
-            duration,
         )
 
         return DebateResult(

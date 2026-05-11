@@ -401,6 +401,54 @@ class TestSpawnProcessFlags:
         assert "stream-json" in captured_cmd
         await pool.shutdown()
 
+    @pytest.mark.asyncio
+    async def test_bare_flag_present(self) -> None:
+        """--bare MUSS gesetzt sein um Tool/Plugin/MCP-Overhead zu vermeiden."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process()
+        captured_cmd: list[str] = []
+
+        async def capture_cmd(*args, **kwargs):
+            captured_cmd.extend(args)
+            return mock_proc
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                side_effect=capture_cmd,
+            ):
+                await pool.get_or_create(user_id=1, chat_id=902)
+
+        assert "--bare" in captured_cmd, (
+            "CLI-Flags muessen --bare enthalten um System-Prompt-Overhead "
+            "(Tools, Plugins, MCP-Server) zu eliminieren"
+        )
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_model_flag_present(self) -> None:
+        """--model MUSS explizit gesetzt sein (verhindert User-Default wie Opus)."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process()
+        captured_cmd: list[str] = []
+
+        async def capture_cmd(*args, **kwargs):
+            captured_cmd.extend(args)
+            return mock_proc
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                side_effect=capture_cmd,
+            ):
+                await pool.get_or_create(user_id=1, chat_id=903)
+
+        assert "--model" in captured_cmd, (
+            "CLI-Flags muessen --model enthalten um nicht das User-Default-Modell "
+            "(oft Opus = 3-5x langsamer) zu verwenden"
+        )
+        await pool.shutdown()
+
 
 class TestReadResponseParsing:
     """Tests für _read_response: verifiziert Parsing des echten CLI-Event-Formats.

@@ -39,6 +39,10 @@ CLEANUP_INTERVAL_SECONDS: float = 60.0
 # Maximale Init-Wartezeit beim ersten Start
 INIT_TIMEOUT_SECONDS: float = 30.0
 
+# Modell fuer den Process-Pool. Default: Sonnet (schnell, guenstig).
+# Ohne explizites --model nutzt die CLI das User-Default (oft Opus = 3-5x langsamer).
+CLAUDE_POOL_MODEL: str = os.getenv("CLAUDE_POOL_MODEL", "claude-sonnet-4-20250514")
+
 
 @dataclass
 class StreamEvent:
@@ -325,6 +329,9 @@ class ClaudeProcessPool:
             "--include-partial-messages",  # R04 Round 1: ohne dieses Flag emittiert die CLI keine content_block_delta-Events
             "--verbose",
             "--no-session-persistence",
+            "--bare",  # R10-Fix: Skip Hook/Plugin/MCP-Discovery (spart 5000+ System-Prompt-Tokens)
+            "--model",
+            CLAUDE_POOL_MODEL,  # R10-Fix: Explizites Modell statt User-Default (Opus = 3-5x langsamer)
         ]
 
         proc = await asyncio.create_subprocess_exec(
