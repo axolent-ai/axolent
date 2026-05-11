@@ -720,7 +720,7 @@ class SqliteModelStorage:
 
         Args:
             user_id: Telegram-User-ID.
-            model_id: Volle Modell-ID (z.B. 'claude-opus-4-20250514').
+            model_id: Volle Modell-ID (z.B. 'claude-opus-4-7').
             slot: Slot-Name (default: 'global').
         """
         ts = datetime.now(timezone.utc).isoformat()

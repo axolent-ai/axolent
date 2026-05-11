@@ -66,17 +66,17 @@ class TestResolveAlias:
     def test_opus_alias(self) -> None:
         """'opus' wird korrekt aufgeloest."""
         result = resolve_alias("opus")
-        assert result == "claude-opus-4-20250514"
+        assert result == "claude-opus-4-7"
 
     def test_sonnet_alias(self) -> None:
         """'sonnet' wird korrekt aufgeloest."""
         result = resolve_alias("sonnet")
-        assert result == "claude-sonnet-4-20250514"
+        assert result == "claude-sonnet-4-6"
 
     def test_haiku_alias(self) -> None:
         """'haiku' wird korrekt aufgeloest."""
         result = resolve_alias("haiku")
-        assert result == "claude-haiku-3-5-20241022"
+        assert result == "claude-haiku-4-5-20251001"
 
     def test_case_insensitive(self) -> None:
         """Aliase sind case-insensitive."""
@@ -86,7 +86,7 @@ class TestResolveAlias:
 
     def test_full_model_id_accepted(self) -> None:
         """Volle Modell-IDs werden direkt akzeptiert."""
-        full_id = "claude-opus-4-20250514"
+        full_id = "claude-opus-4-7"
         assert resolve_alias(full_id) == full_id
 
     def test_unknown_returns_none(self) -> None:
@@ -112,13 +112,13 @@ class TestModelServiceSet:
         """Modell per Alias setzen funktioniert."""
         success, result = service.set_user_model(user_id=1, alias_or_id="opus")
         assert success is True
-        assert result == "claude-opus-4-20250514"
+        assert result == "claude-opus-4-7"
 
     def test_set_persists(self, service: ModelService) -> None:
         """Gesetztes Modell wird persistent gespeichert."""
         service.set_user_model(user_id=1, alias_or_id="haiku")
         model = service.get_user_model(user_id=1)
-        assert model == "claude-haiku-3-5-20241022"
+        assert model == "claude-haiku-4-5-20251001"
 
     def test_set_unknown_fails(self, service: ModelService) -> None:
         """Unbekanntes Modell wird abgelehnt."""
@@ -131,7 +131,7 @@ class TestModelServiceSet:
         service.set_user_model(user_id=1, alias_or_id="opus")
         service.set_user_model(user_id=1, alias_or_id="haiku")
         model = service.get_user_model(user_id=1)
-        assert model == "claude-haiku-3-5-20241022"
+        assert model == "claude-haiku-4-5-20251001"
 
 
 class TestModelServiceGet:
@@ -150,7 +150,7 @@ class TestModelServiceGet:
         """Mit Override wird das Override-Modell zurueckgegeben."""
         service.set_user_model(user_id=1, alias_or_id="opus")
         effective = service.get_effective_model(user_id=1)
-        assert effective == "claude-opus-4-20250514"
+        assert effective == "claude-opus-4-7"
 
     def test_user_isolation(self, service: ModelService) -> None:
         """Override eines Users beeinflusst andere User nicht."""
@@ -191,12 +191,11 @@ class TestModelServiceUtilities:
 
     def test_display_name_for_alias(self) -> None:
         """Display-Name fuer bekannte Modelle."""
-        assert ModelService.get_model_display_name("claude-opus-4-20250514") == "Opus"
+        assert ModelService.get_model_display_name("claude-opus-4-7") == "Opus 4.7"
+        assert ModelService.get_model_display_name("claude-sonnet-4-6") == "Sonnet 4.6"
         assert (
-            ModelService.get_model_display_name("claude-sonnet-4-20250514") == "Sonnet"
-        )
-        assert (
-            ModelService.get_model_display_name("claude-haiku-3-5-20241022") == "Haiku"
+            ModelService.get_model_display_name("claude-haiku-4-5-20251001")
+            == "Haiku 4.5"
         )
 
     def test_display_name_unknown_returns_id(self) -> None:
@@ -225,9 +224,9 @@ class TestSqliteModelStorage:
 
     def test_set_and_get(self, storage: SqliteModelStorage) -> None:
         """set_model + get_model roundtrip."""
-        storage.set_model(user_id=1, model_id="claude-opus-4-20250514")
+        storage.set_model(user_id=1, model_id="claude-opus-4-7")
         result = storage.get_model(user_id=1)
-        assert result == "claude-opus-4-20250514"
+        assert result == "claude-opus-4-7"
 
     def test_get_nonexistent(self, storage: SqliteModelStorage) -> None:
         """get_model fuer nicht-existierenden User gibt None zurueck."""
@@ -235,7 +234,7 @@ class TestSqliteModelStorage:
 
     def test_delete(self, storage: SqliteModelStorage) -> None:
         """delete_model entfernt den Override."""
-        storage.set_model(user_id=1, model_id="claude-opus-4-20250514")
+        storage.set_model(user_id=1, model_id="claude-opus-4-7")
         assert storage.delete_model(user_id=1) is True
         assert storage.get_model(user_id=1) is None
 

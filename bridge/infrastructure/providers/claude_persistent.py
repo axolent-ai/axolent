@@ -41,9 +41,9 @@ _CAPABILITIES = ProviderCapabilities(
     cost_class="subscription",
     privacy_class="cloud",
     available_models=[
-        "claude-sonnet-4-20250514",
-        "claude-opus-4-20250514",
-        "claude-haiku-3-5-20241022",
+        "claude-sonnet-4-6",
+        "claude-opus-4-7",
+        "claude-haiku-4-5-20251001",
     ],
 )
 

@@ -41,7 +41,7 @@ INIT_TIMEOUT_SECONDS: float = 30.0
 
 # Modell fuer den Process-Pool. Default: Sonnet (schnell, guenstig).
 # Ohne explizites --model nutzt die CLI das User-Default (oft Opus = 3-5x langsamer).
-CLAUDE_POOL_MODEL: str = os.getenv("CLAUDE_POOL_MODEL", "claude-sonnet-4-20250514")
+CLAUDE_POOL_MODEL: str = os.getenv("CLAUDE_POOL_MODEL", "claude-sonnet-4-6")
 
 
 @dataclass

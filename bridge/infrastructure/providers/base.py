@@ -47,7 +47,7 @@ class ProviderResponse:
         text: Die generierte Antwort (leer bei Fehler).
         duration_seconds: Dauer des Aufrufs in Sekunden.
         provider_name: Name des Providers der geantwortet hat.
-        model: Optionaler Modell-Identifier (z.B. "claude-sonnet-4-20250514").
+        model: Optionaler Modell-Identifier (z.B. "claude-sonnet-4-6").
         error: Fehlerbeschreibung wenn der Aufruf fehlgeschlagen ist.
     """
 

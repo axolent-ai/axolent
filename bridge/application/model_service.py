@@ -1,6 +1,6 @@
 """Model-Service: Verwaltet User-Modell-Overrides.
 
-Alias-Resolution: 'opus' -> 'claude-opus-4-20250514', etc.
+Alias-Resolution: 'opus' -> 'claude-opus-4-7', etc.
 Phase 1: nur globaler Slot (gilt fuer alle Anfragen).
 Phase 2+: per-Slot (chat, code, etc.).
 
@@ -21,13 +21,13 @@ log = logging.getLogger(__name__)
 # Alias -> volle Modell-ID. Aktuell nur Anthropic-Modelle.
 # Erweiterbar fuer OpenAI, Gemini, etc. in Phase 2+.
 MODEL_ALIASES: dict[str, str] = {
-    "opus": "claude-opus-4-20250514",
-    "sonnet": "claude-sonnet-4-20250514",
-    "haiku": "claude-haiku-3-5-20241022",
+    "opus": "claude-opus-4-7",
+    "sonnet": "claude-sonnet-4-6",
+    "haiku": "claude-haiku-4-5-20251001",
 }
 
 # Default-Modell aus Environment (Fallback wenn kein Override)
-DEFAULT_MODEL: str = os.getenv("CLAUDE_POOL_MODEL", "claude-sonnet-4-20250514")
+DEFAULT_MODEL: str = os.getenv("CLAUDE_POOL_MODEL", "claude-sonnet-4-6")
 
 # Alle akzeptierten Modell-IDs (fuer Validierung)
 VALID_MODEL_IDS: set[str] = set(MODEL_ALIASES.values())
@@ -138,12 +138,17 @@ class ModelService:
             model_id: Volle Modell-ID.
 
         Returns:
-            Display-Name (z.B. 'Opus' fuer 'claude-opus-4-20250514').
+            Display-Name (z.B. 'Opus 4.7' fuer 'claude-opus-4-7').
         """
-        # Reverse-Lookup: model_id -> alias
+        # Reverse-Lookup: model_id -> alias mit Versionsnummer
+        _DISPLAY_NAMES: dict[str, str] = {
+            "opus": "Opus 4.7",
+            "sonnet": "Sonnet 4.6",
+            "haiku": "Haiku 4.5",
+        }
         for alias, full_id in MODEL_ALIASES.items():
             if full_id == model_id:
-                return alias.capitalize()
+                return _DISPLAY_NAMES.get(alias, alias.capitalize())
         return model_id
 
     @staticmethod
