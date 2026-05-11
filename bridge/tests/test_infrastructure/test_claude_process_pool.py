@@ -402,8 +402,8 @@ class TestSpawnProcessFlags:
         await pool.shutdown()
 
     @pytest.mark.asyncio
-    async def test_bare_flag_present(self) -> None:
-        """--bare MUSS gesetzt sein um Tool/Plugin/MCP-Overhead zu vermeiden."""
+    async def test_bare_flag_absent(self) -> None:
+        """--bare darf NICHT gesetzt sein: verursacht authentication_failed bei Subscription-Usern."""
         pool = ClaudeProcessPool()
         mock_proc = _make_mock_process()
         captured_cmd: list[str] = []
@@ -419,9 +419,9 @@ class TestSpawnProcessFlags:
             ):
                 await pool.get_or_create(user_id=1, chat_id=902)
 
-        assert "--bare" in captured_cmd, (
-            "CLI-Flags muessen --bare enthalten um System-Prompt-Overhead "
-            "(Tools, Plugins, MCP-Server) zu eliminieren"
+        assert "--bare" not in captured_cmd, (
+            "--bare verursacht 'authentication_failed' bei Subscription-Usern "
+            "(claude-code >= 2.1.126) und darf nicht im CLI-Spawn stehen"
         )
         await pool.shutdown()
 

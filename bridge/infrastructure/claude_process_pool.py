@@ -360,7 +360,10 @@ class ClaudeProcessPool:
             "--include-partial-messages",  # R04 Round 1: ohne dieses Flag emittiert die CLI keine content_block_delta-Events
             "--verbose",
             "--no-session-persistence",
-            "--bare",  # R10-Fix: Skip Hook/Plugin/MCP-Discovery (spart 5000+ System-Prompt-Tokens)
+            # NOTE: --bare hier bewusst NICHT gesetzt.
+            # R10 hatte --bare eingefuehrt um ~5000 Token Init-Overhead zu sparen,
+            # aber --bare verursacht "authentication_failed" bei Subscription-Usern
+            # (getestet mit claude-code 2.1.126). Ohne --bare laeuft Auth korrekt.
             "--model",
             effective_model,
         ]
