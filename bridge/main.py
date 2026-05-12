@@ -32,7 +32,7 @@ from pathlib import Path
 from application.bookmark_service import BookmarkService
 from application.chat_service import ChatService
 from application.memory_service import MemoryService
-from application.model_service import ModelService
+from application.model_service import ModelService, resolve_alias
 from application.provider_router import ProviderRouter
 from application.rate_limiter import RateLimiter
 from infrastructure.audit_log import write_audit_log
@@ -318,17 +318,27 @@ def main() -> None:
     # Trinity-Memory initialisieren
     memory_svc = MemoryService(storage=memory_storage)
 
-    # R18 Phase 1: Model-Service initialisieren (nur mit SQLite)
-    model_svc: ModelService | None = None
-    if use_sqlite:
-        model_storage = SqliteModelStorage(sqlite_conn)
-        model_svc = ModelService(storage=model_storage)
-        log.info("R18: Model-Service initialisiert (User-Model-Override aktiv)")
-
-    # R18 Phase 2a: TaskRouter initialisieren
+    # R18 Phase 2a: SlotConfigs laden (benötigt für ModelService Slot-Defaults)
     from application.task_router import TaskRouter, load_slot_configs
 
     slot_configs = load_slot_configs()
+
+    # Slot-Defaults extrahieren: slot_name -> resolved model_id
+    _slot_defaults: dict[str, str] = {}
+    for cfg in slot_configs:
+        if cfg.default_model:
+            resolved = resolve_alias(cfg.default_model)
+            if resolved:
+                _slot_defaults[cfg.slot.value] = resolved
+
+    # R18 Phase 1: Model-Service initialisieren (mit Slot-Defaults für impliziten Reset)
+    model_svc: ModelService | None = None
+    if use_sqlite:
+        model_storage = SqliteModelStorage(sqlite_conn)
+        model_svc = ModelService(storage=model_storage, slot_defaults=_slot_defaults)
+        log.info("R18: Model-Service initialisiert (User-Model-Override aktiv)")
+
+    # R18 Phase 2a: TaskRouter initialisieren
     task_router = TaskRouter(slot_configs=slot_configs, model_service=model_svc)
     log.info("R18 Phase 2a: TaskRouter initialisiert (%d Slots)", len(slot_configs))
 

@@ -393,3 +393,100 @@ class TestStaleStorageRevalidation:
         assert result == "claude-opus-4-7", (
             "Gültiges Anthropic-Modell darf nicht als stale behandelt werden"
         )
+
+
+# ──────────────────────────────────────────────────────────────
+# Implicit Reset Tests (R18 Phase 2 Bug-Fix)
+# ──────────────────────────────────────────────────────────────
+
+
+class TestImplicitReset:
+    """R18 Phase 2 Bug-Fix: Wenn ein User das Modell wählt das bereits
+    der Slot-Default ist, darf kein Override gespeichert werden.
+    Bestehende Overrides werden entfernt (impliziter Reset).
+    """
+
+    @pytest.fixture
+    def service_with_defaults(self, storage: SqliteModelStorage) -> ModelService:
+        """ModelService mit Slot-Defaults (wie in Produktion)."""
+        slot_defaults = {
+            "code": "claude-opus-4-7",
+            "chat": "claude-sonnet-4-6",
+            "quick": "claude-haiku-4-5-20251001",
+            "reason": "claude-opus-4-7",
+            "research": "claude-opus-4-7",
+            "creative": "claude-sonnet-4-6",
+        }
+        return ModelService(storage=storage, slot_defaults=slot_defaults)
+
+    def test_set_default_model_no_override_stored(
+        self, service_with_defaults: ModelService
+    ) -> None:
+        """Opus fuer CODE (= Slot-Default): kein Override gespeichert."""
+        success, result = service_with_defaults.set_user_model(
+            user_id=1, alias_or_id="opus", slot="code"
+        )
+        assert success is True
+        assert result == "claude-opus-4-7"
+
+        # Kein Override darf existieren
+        override = service_with_defaults.get_user_model(user_id=1, slot="code")
+        assert override is None, (
+            f"Override sollte None sein (impliziter Reset), ist aber: {override}"
+        )
+
+    def test_set_default_clears_existing_override(
+        self, service_with_defaults: ModelService
+    ) -> None:
+        """Erst Haiku setzen, dann Opus (= Default): Override wird entfernt."""
+        # Erst einen Override setzen
+        service_with_defaults.set_user_model(
+            user_id=1, alias_or_id="haiku", slot="code"
+        )
+        assert service_with_defaults.get_user_model(user_id=1, slot="code") is not None
+
+        # Dann den Default wählen
+        success, result = service_with_defaults.set_user_model(
+            user_id=1, alias_or_id="opus", slot="code"
+        )
+        assert success is True
+
+        # Override muss jetzt weg sein
+        override = service_with_defaults.get_user_model(user_id=1, slot="code")
+        assert override is None, (
+            f"Bestehender Override hätte entfernt werden müssen, ist aber: {override}"
+        )
+
+    def test_non_default_still_creates_override(
+        self, service_with_defaults: ModelService
+    ) -> None:
+        """Haiku fuer CODE (nicht der Default): Override wird gespeichert."""
+        success, result = service_with_defaults.set_user_model(
+            user_id=1, alias_or_id="haiku", slot="code"
+        )
+        assert success is True
+
+        override = service_with_defaults.get_user_model(user_id=1, slot="code")
+        assert override == "claude-haiku-4-5-20251001"
+
+    def test_global_slot_unaffected(self, service_with_defaults: ModelService) -> None:
+        """Global-Slot hat keinen impliziten Reset (kein Slot-Default)."""
+        success, result = service_with_defaults.set_user_model(
+            user_id=1, alias_or_id="opus", slot="global"
+        )
+        assert success is True
+
+        override = service_with_defaults.get_user_model(user_id=1, slot="global")
+        assert override == "claude-opus-4-7"
+
+    def test_service_without_slot_defaults_unaffected(
+        self, service: ModelService
+    ) -> None:
+        """Service ohne Slot-Defaults (Legacy): kein impliziter Reset."""
+        success, result = service.set_user_model(
+            user_id=1, alias_or_id="opus", slot="code"
+        )
+        assert success is True
+
+        override = service.get_user_model(user_id=1, slot="code")
+        assert override == "claude-opus-4-7"

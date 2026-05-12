@@ -446,6 +446,89 @@ class TestSettingsMessageEditing:
         query.message.reply_text.assert_not_called()
 
 
+class TestSettingsImplicitReset:
+    """R18 Phase 2 Bug-Fix: Settings-UI zeigt (Default) nach implizitem Reset."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    @pytest.fixture
+    def model_service_with_defaults(self, conn: SqliteConnection) -> ModelService:
+        """ModelService mit Slot-Defaults (Produktions-Config)."""
+        slot_defaults = {
+            "code": "claude-opus-4-7",
+            "chat": "claude-sonnet-4-6",
+            "quick": "claude-haiku-4-5-20251001",
+            "reason": "claude-opus-4-7",
+            "research": "claude-opus-4-7",
+            "creative": "claude-sonnet-4-6",
+        }
+        return ModelService(
+            storage=SqliteModelStorage(conn), slot_defaults=slot_defaults
+        )
+
+    async def test_settings_shows_default_after_implicit_reset(
+        self, model_service_with_defaults: ModelService
+    ) -> None:
+        """Nach Wahl des Slot-Default-Modells zeigt Hauptmenü (Default)."""
+        from presentation.settings_callbacks import handle_settings_callback
+
+        svc = model_service_with_defaults
+        uid = 1
+
+        # 1. Haiku als Override fuer CODE setzen
+        svc.set_user_model(uid, "haiku", slot="code")
+        assert svc.get_user_model(uid, "code") is not None
+
+        # 2. Opus waehlen (= CODE Default) -> impliziter Reset
+        svc.set_user_model(uid, "opus", slot="code")
+        assert svc.get_user_model(uid, "code") is None
+
+        # 3. Settings-Hauptmenü aufrufen
+        update = _make_callback_update("settings_back")
+        context = _make_context(model_service=svc)
+
+        await handle_settings_callback(update, context)
+
+        keyboard = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
+
+        # CODE ist der zweite Slot (Index 1)
+        code_btn = keyboard.inline_keyboard[1][0]
+        assert "CODE:" in code_btn.text
+        assert "(Default)" in code_btn.text, (
+            f"Nach implizitem Reset muss (Default) angezeigt werden, "
+            f"Button-Text war: '{code_btn.text}'"
+        )
+
+    async def test_model_click_default_triggers_implicit_reset(
+        self, model_service_with_defaults: ModelService
+    ) -> None:
+        """Klick auf Default-Modell in Ebene B loest impliziten Reset aus."""
+        from presentation.settings_callbacks import handle_settings_callback
+
+        svc = model_service_with_defaults
+        uid = 1
+
+        # Erst Haiku als Override setzen
+        svc.set_user_model(uid, "haiku", slot="code")
+
+        # Dann via Callback Opus waehlen (= Default fuer CODE)
+        update = _make_callback_update("settings_model:code:opus")
+        context = _make_context(model_service=svc)
+
+        await handle_settings_callback(update, context)
+
+        # Override muss weg sein
+        assert svc.get_user_model(uid, "code") is None
+
+        # Hauptmenü muss (Default) zeigen
+        keyboard = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
+        code_btn = keyboard.inline_keyboard[1][0]
+        assert "(Default)" in code_btn.text
+
+
 class TestSettingsI18n:
     """Tests: EN-Strings funktionieren korrekt."""
 

@@ -57,8 +57,15 @@ class ModelService:
     Bietet Alias-Resolution und Validierung.
     """
 
-    def __init__(self, storage: "SqliteModelStorage") -> None:
+    def __init__(
+        self,
+        storage: "SqliteModelStorage",
+        slot_defaults: dict[str, str] | None = None,
+    ) -> None:
         self._storage = storage
+        # Slot-Defaults: slot_name -> resolved model_id (z.B. "code" -> "claude-opus-4-7")
+        # Wird von main.py aus SlotConfigs extrahiert und uebergeben.
+        self._slot_defaults: dict[str, str] = slot_defaults or {}
 
     def get_user_model(self, user_id: int, slot: str = "global") -> Optional[str]:
         """Liest das aktive Modell für einen User.
@@ -179,6 +186,22 @@ class ModelService:
                 f"'{metadata.provider}'. Aktuell wird nur Anthropic Claude "
                 f"unterstützt. Verfügbar: {available}",
             )
+
+        # Impliziter Reset: Wenn das gewaehlte Modell dem Slot-Default entspricht,
+        # wird kein Override gespeichert (bzw. ein bestehender entfernt).
+        # Damit zeigt die UI korrekt "(Default)" an.
+        if slot != "global" and slot in self._slot_defaults:
+            slot_default_id = self._slot_defaults[slot]
+            if resolved == slot_default_id:
+                self._storage.delete_model(user_id, slot)
+                log.info(
+                    "User %d hat Modell '%s' gewählt das dem Slot-Default "
+                    "für '%s' entspricht. Override entfernt (impliziter Reset).",
+                    user_id,
+                    resolved,
+                    slot,
+                )
+                return True, resolved
 
         self._storage.set_model(user_id, resolved, slot=slot)
         log.info(
