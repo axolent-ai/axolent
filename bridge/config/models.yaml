@@ -1,0 +1,201 @@
+# Jarvis-LITE Model Registry
+# Stand: 2026-05-12, manuelle Pflege (Phase 2c wird das durch Scraping ersetzen)
+#
+# Schema:
+#   id:                     Offizielle Modell-ID (API-Identifier)
+#   display_name:           Menschenlesbarer Name fuer UI
+#   provider:               Provider-Key (anthropic, openai, google, moonshot, ollama)
+#   aliases:                Liste von Kurzbezeichnungen fuer User-Input
+#   context_window:         Max. Tokens im Kontext
+#   pricing_input_per_mtok: Kosten pro Million Input-Tokens (USD)
+#   pricing_output_per_mtok: Kosten pro Million Output-Tokens (USD)
+#   scores:                 Leistungswerte (0-100)
+#     coding:               Code-Generierung und -Verstaendnis
+#     reasoning:            Logisches Denken und Problemloesung
+#     knowledge:            Allgemeinwissen und Faktentreue
+#     speed:                Relative Geschwindigkeit (hoeher = schneller)
+#   supports_thinking:      Extended Thinking / Chain-of-Thought nativ
+#   supports_effort:        Effort/Budget-Parameter unterstuetzt
+#   is_open_source:         Open-Source-Modell (Weights verfuegbar)
+
+models:
+  # === Anthropic Claude ===
+  - id: claude-opus-4-7
+    display_name: Opus 4.7
+    provider: anthropic
+    aliases: [opus]
+    context_window: 1000000
+    pricing_input_per_mtok: 5.0
+    pricing_output_per_mtok: 25.0
+    scores:
+      coding: 87.6
+      reasoning: 94.2
+      knowledge: 80.0
+      speed: 42
+    supports_thinking: true
+    supports_effort: true
+    is_open_source: false
+
+  - id: claude-sonnet-4-6
+    display_name: Sonnet 4.6
+    provider: anthropic
+    aliases: [sonnet]
+    context_window: 200000
+    pricing_input_per_mtok: 3.0
+    pricing_output_per_mtok: 15.0
+    scores:
+      coding: 79.6
+      reasoning: 75.0
+      knowledge: 76.0
+      speed: 50
+    supports_thinking: true
+    supports_effort: true
+    is_open_source: false
+
+  - id: claude-haiku-4-5-20251001
+    display_name: Haiku 4.5
+    provider: anthropic
+    aliases: [haiku]
+    context_window: 200000
+    pricing_input_per_mtok: 1.0
+    pricing_output_per_mtok: 5.0
+    scores:
+      coding: 64.0
+      reasoning: 60.0
+      knowledge: 68.0
+      speed: 100
+    supports_thinking: false
+    supports_effort: false
+    is_open_source: false
+
+  # === OpenAI ===
+  - id: gpt-5-5
+    display_name: GPT-5.5
+    provider: openai
+    aliases: [gpt55, gpt5.5]
+    context_window: 1000000
+    pricing_input_per_mtok: 5.0
+    pricing_output_per_mtok: 30.0
+    scores:
+      coding: 59.0
+      reasoning: 82.0
+      knowledge: 70.0
+      speed: 55
+    supports_thinking: false
+    supports_effort: true
+    is_open_source: false
+
+  - id: gpt-5-3-codex
+    display_name: GPT-5.3-Codex
+    provider: openai
+    aliases: [codex, gpt53codex]
+    context_window: 400000
+    pricing_input_per_mtok: 1.75
+    pricing_output_per_mtok: 14.0
+    scores:
+      coding: 63.0
+      reasoning: 70.0
+      knowledge: 60.0
+      speed: 70
+    supports_thinking: false
+    supports_effort: true
+    is_open_source: false
+
+  - id: o3
+    display_name: o3
+    provider: openai
+    aliases: [o3]
+    context_window: 200000
+    pricing_input_per_mtok: 15.0
+    pricing_output_per_mtok: 60.0
+    scores:
+      coding: 75.0
+      reasoning: 87.7
+      knowledge: 76.0
+      speed: 50
+    supports_thinking: true
+    supports_effort: true
+    is_open_source: false
+
+  - id: o4-mini
+    display_name: o4-mini
+    provider: openai
+    aliases: [o4mini]
+    context_window: 200000
+    pricing_input_per_mtok: 1.10
+    pricing_output_per_mtok: 4.40
+    scores:
+      coding: 65.0
+      reasoning: 80.0
+      knowledge: 65.0
+      speed: 80
+    supports_thinking: true
+    supports_effort: false
+    is_open_source: false
+
+  # === Google Gemini ===
+  - id: gemini-3-1-pro
+    display_name: Gemini 3.1 Pro
+    provider: google
+    aliases: [gemini, gemini31pro]
+    context_window: 1000000
+    pricing_input_per_mtok: 2.0
+    pricing_output_per_mtok: 12.0
+    scores:
+      coding: 77.0
+      reasoning: 94.3
+      knowledge: 83.0
+      speed: 109
+    supports_thinking: true
+    supports_effort: true
+    is_open_source: false
+
+  # === Moonshot Kimi ===
+  - id: kimi-k2-6
+    display_name: Kimi K2.6
+    provider: moonshot
+    aliases: [kimi, kimi26]
+    context_window: 256000
+    pricing_input_per_mtok: 0.95
+    pricing_output_per_mtok: 4.0
+    scores:
+      coding: 72.0
+      reasoning: 73.0
+      knowledge: 54.0
+      speed: 70
+    supports_thinking: true
+    supports_effort: false
+    is_open_source: false
+
+  # === Ollama (lokal, kostenlos) ===
+  - id: llama4-scout
+    display_name: Llama 4 Scout
+    provider: ollama
+    aliases: [llama, llama4]
+    context_window: 10000000
+    pricing_input_per_mtok: 0.0
+    pricing_output_per_mtok: 0.0
+    scores:
+      coding: 50.0
+      reasoning: 55.0
+      knowledge: 60.0
+      speed: 35
+    supports_thinking: false
+    supports_effort: false
+    is_open_source: true
+
+  - id: qwen3-32b
+    display_name: Qwen3 32B
+    provider: ollama
+    aliases: [qwen, qwen3]
+    context_window: 128000
+    pricing_input_per_mtok: 0.0
+    pricing_output_per_mtok: 0.0
+    scores:
+      coding: 55.0
+      reasoning: 58.0
+      knowledge: 55.0
+      speed: 45
+    supports_thinking: true
+    supports_effort: false
+    is_open_source: true

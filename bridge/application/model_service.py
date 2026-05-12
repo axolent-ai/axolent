@@ -1,10 +1,13 @@
 """Model-Service: Verwaltet User-Modell-Overrides.
 
 Alias-Resolution: 'opus' -> 'claude-opus-4-7', etc.
-Phase 1: nur globaler Slot (gilt für alle Anfragen).
+Phase 1: nur globaler Slot (gilt fuer alle Anfragen).
 Phase 2+: per-Slot (chat, code, etc.).
 
 Backward-kompatibel: kein Override -> CLAUDE_POOL_MODEL Env-Variable.
+
+Phase 2b: MODEL_ALIASES und VALID_MODEL_IDS werden dynamisch aus der
+ModelRegistry geladen. Die oeffentliche Schnittstelle bleibt identisch.
 """
 
 from __future__ import annotations
@@ -13,28 +16,30 @@ import logging
 import os
 from typing import TYPE_CHECKING, Optional
 
+from application.model_registry import ModelRegistry
+
 if TYPE_CHECKING:
     from infrastructure.sqlite_storage import SqliteModelStorage
 
 log = logging.getLogger(__name__)
 
-# Alias -> volle Modell-ID. Aktuell nur Anthropic-Modelle.
-# Erweiterbar für OpenAI, Gemini, etc. in Phase 2+.
-MODEL_ALIASES: dict[str, str] = {
-    "opus": "claude-opus-4-7",
-    "sonnet": "claude-sonnet-4-6",
-    "haiku": "claude-haiku-4-5-20251001",
-}
+# ModelRegistry als zentrale Datenquelle (Phase 2b)
+_registry = ModelRegistry()
+
+# Backward-compatible module-level exports (populated from Registry)
+MODEL_ALIASES: dict[str, str] = _registry.all_aliases()
 
 # Default-Modell aus Environment (Fallback wenn kein Override)
 DEFAULT_MODEL: str = os.getenv("CLAUDE_POOL_MODEL", "claude-sonnet-4-6")
 
-# Alle akzeptierten Modell-IDs (für Validierung)
-VALID_MODEL_IDS: set[str] = set(MODEL_ALIASES.values())
+# Alle akzeptierten Modell-IDs (fuer Validierung, dynamisch aus Registry)
+VALID_MODEL_IDS: set[str] = _registry.all_ids()
 
 
 def resolve_alias(alias_or_id: str) -> Optional[str]:
-    """Löst einen Alias oder eine volle Modell-ID auf.
+    """Loest einen Alias oder eine volle Modell-ID auf.
+
+    Delegiert an ModelRegistry fuer zentrales Lookup.
 
     Args:
         alias_or_id: Alias ('opus', 'sonnet', 'haiku') oder volle Modell-ID.
@@ -42,17 +47,7 @@ def resolve_alias(alias_or_id: str) -> Optional[str]:
     Returns:
         Volle Modell-ID oder None wenn nicht erkannt.
     """
-    lower = alias_or_id.lower().strip()
-
-    # Alias-Lookup
-    if lower in MODEL_ALIASES:
-        return MODEL_ALIASES[lower]
-
-    # Direkte Modell-ID (schon vollqualifiziert)
-    if lower in VALID_MODEL_IDS:
-        return lower
-
-    return None
+    return _registry.resolve_id(alias_or_id)
 
 
 class ModelService:
@@ -157,24 +152,17 @@ class ModelService:
 
     @staticmethod
     def get_model_display_name(model_id: str) -> str:
-        """Gibt einen menschenlesbaren Namen für eine Modell-ID zurück.
+        """Gibt einen menschenlesbaren Namen fuer eine Modell-ID zurueck.
+
+        Delegiert an ModelRegistry fuer zentrales Display-Name-Lookup.
 
         Args:
             model_id: Volle Modell-ID.
 
         Returns:
-            Display-Name (z.B. 'Opus 4.7' für 'claude-opus-4-7').
+            Display-Name (z.B. 'Opus 4.7' fuer 'claude-opus-4-7').
         """
-        # Reverse-Lookup: model_id -> alias mit Versionsnummer
-        _DISPLAY_NAMES: dict[str, str] = {
-            "opus": "Opus 4.7",
-            "sonnet": "Sonnet 4.6",
-            "haiku": "Haiku 4.5",
-        }
-        for alias, full_id in MODEL_ALIASES.items():
-            if full_id == model_id:
-                return _DISPLAY_NAMES.get(alias, alias.capitalize())
-        return model_id
+        return _registry.get_display_name(model_id)
 
     @staticmethod
     def list_available_aliases() -> dict[str, str]:
