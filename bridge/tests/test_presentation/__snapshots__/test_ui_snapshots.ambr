@@ -1,0 +1,202 @@
+# serializer version: 1
+# name: TestModelsCommandSnapshots.test_models_output_no_overrides
+  '''
+  Aktuelle Modell-Belegung:
+    CHAT: Sonnet 4.6 (Default)
+    CODE: Opus 4.7 (Default)
+    REASON: Opus 4.7 (Default)
+    CREATIVE: Sonnet 4.6 (Default)
+    QUICK: Haiku 4.5 (Default)
+    RESEARCH: Opus 4.7 (Default)
+  
+  Wechseln: /setmodel <slot> <modell>
+  Beispiel: /setmodel code opus
+  '''
+# ---
+# name: TestModelsCommandSnapshots.test_models_output_with_overrides
+  '''
+  Aktuelle Modell-Belegung:
+    CHAT: Opus 4.7 (Override)
+    CODE: Haiku 4.5 (Override)
+    REASON: Opus 4.7 (Override)
+    CREATIVE: Opus 4.7 (Override)
+    QUICK: Opus 4.7 (Override)
+    RESEARCH: Opus 4.7 (Override)
+  
+  Wechseln: /setmodel <slot> <modell>
+  Beispiel: /setmodel code opus
+  '''
+# ---
+# name: TestSettingsMenuSnapshots.test_settings_main_menu_no_overrides
+  dict({
+    'keyboard': list([
+      list([
+        dict({
+          'callback_data': 'settings_slot:chat',
+          'text': 'CHAT: Sonnet 4.6 (Default)',
+        }),
+      ]),
+      list([
+        dict({
+          'callback_data': 'settings_slot:code',
+          'text': 'CODE: Opus 4.7 (Default)',
+        }),
+      ]),
+      list([
+        dict({
+          'callback_data': 'settings_slot:reason',
+          'text': 'REASON: Opus 4.7 (Default)',
+        }),
+      ]),
+      list([
+        dict({
+          'callback_data': 'settings_slot:creative',
+          'text': 'CREATIVE: Sonnet 4.6 (Default)',
+        }),
+      ]),
+      list([
+        dict({
+          'callback_data': 'settings_slot:quick',
+          'text': 'QUICK: Haiku 4.5 (Default)',
+        }),
+      ]),
+      list([
+        dict({
+          'callback_data': 'settings_slot:research',
+          'text': 'RESEARCH: Opus 4.7 (Default)',
+        }),
+      ]),
+      list([
+        dict({
+          'callback_data': 'settings_lang_menu',
+          'text': 'Sprache: Deutsch',
+        }),
+      ]),
+    ]),
+    'text': '''
+      ⚙️ Einstellungen
+      
+      Modelle pro Slot:
+    ''',
+  })
+# ---
+# name: TestSettingsMenuSnapshots.test_settings_main_menu_with_global_override
+  dict({
+    'keyboard': list([
+      list([
+        dict({
+          'callback_data': 'settings_reset_global',
+          'text': '🔄 Globalen Override aufheben',
+        }),
+      ]),
+      list([
+        dict({
+          'callback_data': 'settings_slot:chat',
+          'text': 'CHAT: Opus 4.7 (global)',
+        }),
+      ]),
+      list([
+        dict({
+          'callback_data': 'settings_slot:code',
+          'text': 'CODE: Opus 4.7 (global)',
+        }),
+      ]),
+      list([
+        dict({
+          'callback_data': 'settings_slot:reason',
+          'text': 'REASON: Opus 4.7 (global)',
+        }),
+      ]),
+      list([
+        dict({
+          'callback_data': 'settings_slot:creative',
+          'text': 'CREATIVE: Opus 4.7 (global)',
+        }),
+      ]),
+      list([
+        dict({
+          'callback_data': 'settings_slot:quick',
+          'text': 'QUICK: Opus 4.7 (global)',
+        }),
+      ]),
+      list([
+        dict({
+          'callback_data': 'settings_slot:research',
+          'text': 'RESEARCH: Opus 4.7 (global)',
+        }),
+      ]),
+      list([
+        dict({
+          'callback_data': 'settings_lang_menu',
+          'text': 'Sprache: Deutsch',
+        }),
+      ]),
+    ]),
+    'text': '''
+      ⚙️ Einstellungen
+      
+      ⚡ <b>Globaler Override aktiv: Opus 4.7 (alle Slots)</b>
+      
+      Modelle pro Slot:
+    ''',
+  })
+# ---
+# name: TestSettingsMenuSnapshots.test_settings_main_menu_with_slot_overrides
+  dict({
+    'keyboard': list([
+      list([
+        dict({
+          'callback_data': 'settings_slot:chat',
+          'text': 'CHAT: Opus 4.7',
+        }),
+      ]),
+      list([
+        dict({
+          'callback_data': 'settings_slot:code',
+          'text': 'CODE: Haiku 4.5',
+        }),
+      ]),
+      list([
+        dict({
+          'callback_data': 'settings_slot:reason',
+          'text': 'REASON: Opus 4.7 (Default)',
+        }),
+      ]),
+      list([
+        dict({
+          'callback_data': 'settings_slot:creative',
+          'text': 'CREATIVE: Sonnet 4.6 (Default)',
+        }),
+      ]),
+      list([
+        dict({
+          'callback_data': 'settings_slot:quick',
+          'text': 'QUICK: Haiku 4.5 (Default)',
+        }),
+      ]),
+      list([
+        dict({
+          'callback_data': 'settings_slot:research',
+          'text': 'RESEARCH: Opus 4.7 (Default)',
+        }),
+      ]),
+      list([
+        dict({
+          'callback_data': 'settings_lang_menu',
+          'text': 'Sprache: Deutsch',
+        }),
+      ]),
+      list([
+        dict({
+          'callback_data': 'settings_reset_all',
+          'text': '🔄 Alle zurücksetzen',
+        }),
+      ]),
+    ]),
+    'text': '''
+      ⚙️ Einstellungen
+      
+      Modelle pro Slot:
+    ''',
+  })
+# ---

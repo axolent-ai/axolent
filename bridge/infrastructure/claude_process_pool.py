@@ -1,10 +1,12 @@
 """Claude Process Pool: verwaltet persistente Claude-CLI-Subprocesses.
 
-Pro (user_id, chat_id)-Tuple wird ein eigener Subprocess gehalten.
+Pro (user_id, chat_id, model)-Tuple wird ein eigener Subprocess gehalten.
 Niemals werden Subprocesses zwischen Users geteilt (Context-Leak-Risiko).
 
 Features:
-    - Process-per-User Isolation via (user_id, chat_id) Routing-Key
+    - Process-per-User Isolation via (user_id, chat_id, model) 3-Tuple-Routing-Key
+    - Alle 6 Modelle gleichzeitig warm halten (kein Cold-Start beim Slot-Wechsel)
+    - LRU-Eviction bei Max-Pool-Size (Default: 20, konfigurierbar via CLAUDE_POOL_MAX_SIZE)
     - 60-Minuten Inaktivitätstimeout mit automatischer Terminierung
     - Health-Check vor jedem Send
     - Crash-Recovery: bei totem Subprocess wird ein neuer gestartet
@@ -43,6 +45,14 @@ INIT_TIMEOUT_SECONDS: float = 30.0
 # Ohne explizites --model nutzt die CLI das User-Default (oft Opus = 3-5x langsamer).
 CLAUDE_POOL_MODEL: str = os.getenv("CLAUDE_POOL_MODEL", "claude-sonnet-4-6")
 
+# Maximale Anzahl gleichzeitiger Subprocesses im Pool.
+# Default 20: bei 6 Modellen pro User und ~3 Usern komfortabel.
+# RAM-Budget: ~150-300 MB pro Subprocess, d.h. ~3-6 GB bei Vollauslastung.
+POOL_MAX_SIZE: int = int(os.getenv("CLAUDE_POOL_MAX_SIZE", "20"))
+
+# Routing-Key-Typ: (user_id, chat_id, model)
+PoolKey = tuple[int, int, str]
+
 
 @dataclass
 class StreamEvent:
@@ -69,10 +79,10 @@ class StreamEvent:
 
 @dataclass
 class ManagedProcess:
-    """Ein verwalteter Claude-Subprocess für einen bestimmten User.
+    """Ein verwalteter Claude-Subprocess für einen bestimmten User/Modell-Kombination.
 
     Attributes:
-        routing_key: (user_id, chat_id) Tuple als Routing-Key.
+        routing_key: (user_id, chat_id, model) 3-Tuple als Routing-Key.
         process: Der asyncio-Subprocess.
         lock: Exclusive-Lock für Zugriff auf stdin/stdout.
         last_used: Timestamp der letzten Nutzung (monotonic).
@@ -81,7 +91,7 @@ class ManagedProcess:
         model: Modell-ID mit der dieser Subprocess gestartet wurde.
     """
 
-    routing_key: tuple[int, int]
+    routing_key: PoolKey
     process: asyncio.subprocess.Process
     lock: asyncio.Lock
     last_used: float
@@ -92,11 +102,14 @@ class ManagedProcess:
 
 
 class ClaudeProcessPool:
-    """Verwaltet persistente Claude-CLI-Subprocesses pro User.
+    """Verwaltet persistente Claude-CLI-Subprocesses pro User/Modell.
 
-    Jeder User (identifiziert durch (user_id, chat_id) Tuple) bekommt
-    einen eigenen Subprocess der wiederverwendet wird. Nach 60 Minuten
-    Inaktivität wird der Subprocess terminiert.
+    Jede Kombination (user_id, chat_id, model) bekommt einen eigenen
+    Subprocess der wiederverwendet wird. Dadurch kann ein User alle 6
+    Modelle gleichzeitig warm halten (kein Cold-Start beim Slot-Wechsel).
+
+    Bei Erreichen der Max-Pool-Size (Default: 20) wird der am längsten
+    inaktive Subprocess per LRU-Eviction terminiert.
 
     Thread-Safety: Alle Methoden sind async-safe. Jeder ManagedProcess
     hat seinen eigenen asyncio.Lock. Per-Key Creation Locks verhindern
@@ -104,9 +117,9 @@ class ClaudeProcessPool:
     """
 
     def __init__(self) -> None:
-        self._processes: dict[tuple[int, int], ManagedProcess] = {}
+        self._processes: dict[PoolKey, ManagedProcess] = {}
         self._pool_lock = asyncio.Lock()
-        self._creation_locks: dict[tuple[int, int], asyncio.Lock] = {}
+        self._creation_locks: dict[PoolKey, asyncio.Lock] = {}
         self._cleanup_task: asyncio.Task | None = None
         self._shutdown = False
 
@@ -152,12 +165,12 @@ class ClaudeProcessPool:
     ) -> tuple[ManagedProcess, bool]:
         """Holt einen existierenden oder erstellt einen neuen Subprocess.
 
-        Verwendet Double-Check-Locking mit Per-Key Creation Lock,
-        um Race Conditions bei parallelen Erstanfragen zu verhindern.
+        Phase 2c: Routing-Key ist (user_id, chat_id, model). Jedes Modell
+        bekommt seinen eigenen Subprocess. Kein Modell-Mismatch mehr,
+        kein Kill bei Slot-Wechsel: alle Modelle bleiben warm.
 
-        Wenn ein model-Override angegeben wird und der bestehende Subprocess
-        ein anderes Modell nutzt, wird der alte Subprocess terminiert und
-        ein neuer mit dem gewünschten Modell gestartet.
+        Bei Pool-Überlauf (> POOL_MAX_SIZE) wird der am längsten
+        inaktive Subprocess per LRU-Eviction terminiert.
 
         Args:
             user_id: Telegram-User-ID.
@@ -175,81 +188,31 @@ class ClaudeProcessPool:
             raise RuntimeError("ProcessPool ist im Shutdown-Modus")
 
         effective_model = model or CLAUDE_POOL_MODEL
-        key = (user_id, chat_id)
+        key: PoolKey = (user_id, chat_id, effective_model)
 
-        # Schneller Pfad: existierender, lebendiger Process mit richtigem Modell
-        old_managed_to_kill: ManagedProcess | None = None
-        wait_for_locked: ManagedProcess | None = None
-
+        # Schneller Pfad: existierender, lebendiger Process
         async with self._pool_lock:
             managed = self._processes.get(key)
             if managed is not None and self._is_alive(managed):
-                if managed.model == effective_model:
-                    managed.last_used = time.monotonic()
-                    return managed, False
-                # Modell-Mismatch: prüfen ob aktiver Stream läuft
-                if managed.lock.locked():
-                    log.info(
-                        "Modell-Mismatch (alt=%s, neu=%s) während aktivem Stream "
-                        "auf pid=%d. Warte bis Stream fertig ist.",
-                        managed.model,
-                        effective_model,
-                        managed.pid,
-                    )
-                    wait_for_locked = managed
-                else:
-                    # Kein aktiver Stream: aus Pool entfernen, Kill NACH Lock-Release
-                    log.info(
-                        "Modell-Wechsel für key=%s: %s -> %s, terminiere alten Subprocess",
-                        key,
-                        managed.model,
-                        effective_model,
-                    )
-                    old_managed_to_kill = managed
-                    del self._processes[key]
-                    managed = None
+                managed.last_used = time.monotonic()
+                return managed, False
 
             # Per-Key Creation Lock holen (oder erstellen)
             if key not in self._creation_locks:
                 self._creation_locks[key] = asyncio.Lock()
             creation_lock = self._creation_locks[key]
 
-        # Warte-Pfad: aktiver Stream blockiert Modell-Wechsel (DRY-Helper).
-        if wait_for_locked is not None:
-            return await self._handle_locked_mismatch(
-                key, wait_for_locked, effective_model
-            )
-
-        # Kill außerhalb des Pool-Locks (blockiert nicht den gesamten Pool)
-        if old_managed_to_kill is not None:
-            await self._kill_process(old_managed_to_kill)
-
         # Per-Key Lock: nur ein Spawn pro Key gleichzeitig
-        old_managed_to_kill = None
         async with creation_lock:
             # Double-Check: vielleicht hat ein anderer Task inzwischen gespawnt
             async with self._pool_lock:
                 managed = self._processes.get(key)
                 if managed is not None and self._is_alive(managed):
-                    if managed.model == effective_model:
-                        managed.last_used = time.monotonic()
-                        return managed, False
-                    # Modell-Mismatch auch im Double-Check: Locked-Guard (DRY-Helper)
-                    if managed.lock.locked():
-                        double_check_wait = managed
-                    else:
-                        double_check_wait = None
-                        old_managed_to_kill = managed
-                        del self._processes[key]
-                        managed = None
-
-                    if double_check_wait is not None:
-                        # Muss außerhalb des Pool-Locks warten
-                        pass
-                else:
-                    double_check_wait = None
+                    managed.last_used = time.monotonic()
+                    return managed, False
 
                 # Process ist tot: aufräumen
+                old_managed_to_kill: ManagedProcess | None = None
                 if managed is not None and not self._is_alive(managed):
                     log.warning(
                         "Subprocess für key=%s ist tot (pid=%d), starte neu",
@@ -257,18 +220,16 @@ class ClaudeProcessPool:
                         managed.pid,
                     )
                     old_managed_to_kill = managed
-
-            # Double-Check Locked-Mismatch: warte und wechsle (DRY-Helper)
-            if double_check_wait is not None:
-                return await self._handle_locked_mismatch(
-                    key, double_check_wait, effective_model
-                )
+                    del self._processes[key]
 
             # Kill außerhalb des Pool-Locks
             if old_managed_to_kill is not None:
                 await self._kill_process(old_managed_to_kill)
 
-            # Neuen Subprocess außerhalb des Pool-Locks starten
+            # LRU-Eviction wenn Pool-Limit erreicht
+            await self._evict_if_needed()
+
+            # Neuen Subprocess starten
             new_managed = await self._spawn_process(key, model=effective_model)
 
             async with self._pool_lock:
@@ -299,7 +260,8 @@ class ClaudeProcessPool:
         Raises:
             RuntimeError: Bei Subprocess-Crash oder Pipe-Fehler.
         """
-        key = (user_id, chat_id)
+        effective_model = model or CLAUDE_POOL_MODEL
+        key: PoolKey = (user_id, chat_id, effective_model)
         managed, was_cold = await self.get_or_create(user_id, chat_id, model=model)
 
         # Warte auf Init unabhängig von was_cold (Pre-Warm-Pfad kann
@@ -354,17 +316,37 @@ class ClaudeProcessPool:
                 managed.last_used = time.monotonic()
                 yield event
 
-    async def terminate_session(self, user_id: int, chat_id: int) -> bool:
-        """Terminiert den Subprocess einer bestimmten User-Session.
+    async def terminate_session(
+        self, user_id: int, chat_id: int, model: str | None = None
+    ) -> bool:
+        """Terminiert Subprocess(e) einer bestimmten User-Session.
+
+        Wenn model angegeben: nur den spezifischen Subprocess terminieren.
+        Wenn model=None: alle Subprocesses dieses User/Chat terminieren.
 
         Args:
             user_id: Telegram-User-ID.
             chat_id: Telegram-Chat-ID.
+            model: Optionale Modell-ID. None = alle Modelle dieses Chats.
 
         Returns:
-            True wenn ein Subprocess terminiert wurde.
+            True wenn mindestens ein Subprocess terminiert wurde.
         """
-        return await self._terminate_process((user_id, chat_id), reason="user_request")
+        if model is not None:
+            effective_model = model or CLAUDE_POOL_MODEL
+            return await self._terminate_process(
+                (user_id, chat_id, effective_model), reason="user_request"
+            )
+        # Alle Subprocesses für diesen User/Chat terminieren
+        async with self._pool_lock:
+            keys_to_kill = [
+                k for k in self._processes if k[0] == user_id and k[1] == chat_id
+            ]
+        terminated = False
+        for key in keys_to_kill:
+            if await self._terminate_process(key, reason="user_request"):
+                terminated = True
+        return terminated
 
     def get_stats(self) -> dict:
         """Gibt Pool-Statistiken zurück (für Monitoring/Audit)."""
@@ -375,6 +357,7 @@ class ClaudeProcessPool:
                 {
                     "user_id": key[0],
                     "chat_id": key[1],
+                    "model": key[2],
                     "pid": mp.pid,
                     "idle_seconds": round(now - mp.last_used, 1),
                     "is_alive": self._is_alive(mp),
@@ -383,6 +366,7 @@ class ClaudeProcessPool:
             )
         return {
             "active_processes": len(self._processes),
+            "max_pool_size": POOL_MAX_SIZE,
             "processes": active,
         }
 
@@ -390,67 +374,54 @@ class ClaudeProcessPool:
     # Private Methods
     # -------------------------------------------------------------------------
 
-    async def _handle_locked_mismatch(
-        self,
-        key: tuple[int, int],
-        locked_managed: ManagedProcess,
-        effective_model: str,
-    ) -> tuple[ManagedProcess, bool]:
-        """Wartet bis ein gelockter Subprocess frei wird und wechselt dann das Modell.
+    async def _evict_if_needed(self) -> None:
+        """LRU-Eviction: terminiert den am längsten inaktiven Subprocess wenn Pool voll.
 
-        Wird sowohl im Fast-Path als auch im Double-Check-Pfad genutzt (DRY).
-        Wartet maximal 60s auf Lock-Freigabe, dann ProviderError.
-
-        Args:
-            key: (user_id, chat_id) Routing-Key.
-            locked_managed: Der gelockte ManagedProcess mit falschem Modell.
-            effective_model: Das gewünschte Modell.
-
-        Returns:
-            Tuple von (neuer ManagedProcess, was_cold=True).
-
-        Raises:
-            ProviderError: Bei Timeout (Stream dauert zu lang).
+        Übersprungen wenn der älteste Subprocess gerade gelockt ist (aktiver Stream).
+        In dem Fall wird kein Eviction durchgeführt (Pool darf kurzzeitig POOL_MAX_SIZE+1 haben).
         """
-        try:
-            await asyncio.wait_for(
-                locked_managed.lock.acquire(),
-                timeout=60.0,
-            )
-        except asyncio.TimeoutError:
-            from infrastructure.providers.base import ProviderError
-
-            raise ProviderError(
-                provider_name="claude_persistent",
-                retryable=True,
-                message=(
-                    "Modell-Wechsel blockiert: aktiver Stream dauert zu lang. "
-                    "Bitte warte bis die aktuelle Antwort fertig ist."
-                ),
-            )
-        try:
-            # Lock erworben: Stream ist fertig. Jetzt terminieren + neu spawnen.
-            async with self._pool_lock:
-                current = self._processes.get(key)
-                if current is locked_managed:
-                    del self._processes[key]
-            await self._kill_process(locked_managed)
-        finally:
-            locked_managed.lock.release()
-
-        # Neuen Subprocess mit gewünschtem Modell starten
-        new_managed = await self._spawn_process(key, model=effective_model)
         async with self._pool_lock:
-            self._processes[key] = new_managed
-        return new_managed, True
+            if len(self._processes) < POOL_MAX_SIZE:
+                return
+
+            # Finde den am längsten inaktiven, nicht-gelockten Process
+            candidate_key: PoolKey | None = None
+            oldest_time = float("inf")
+
+            for key, mp in self._processes.items():
+                if mp.lock.locked():
+                    continue  # Aktiver Stream, nicht evicten
+                if mp.last_used < oldest_time:
+                    oldest_time = mp.last_used
+                    candidate_key = key
+
+            if candidate_key is None:
+                log.warning(
+                    "Pool voll (%d/%d) aber alle Processes sind gelockt. "
+                    "Kein Eviction möglich.",
+                    len(self._processes),
+                    POOL_MAX_SIZE,
+                )
+                return
+
+            evict_managed = self._processes.pop(candidate_key)
+
+        # Kill außerhalb des Pool-Locks
+        log.info(
+            "LRU-Eviction: key=%s, pid=%d (idle %.1fs)",
+            candidate_key,
+            evict_managed.pid,
+            time.monotonic() - evict_managed.last_used,
+        )
+        await self._kill_process(evict_managed)
 
     async def _spawn_process(
-        self, key: tuple[int, int], model: str | None = None
+        self, key: PoolKey, model: str | None = None
     ) -> ManagedProcess:
         """Startet einen neuen Claude-CLI-Subprocess.
 
         Args:
-            key: (user_id, chat_id) Routing-Key.
+            key: (user_id, chat_id, model) 3-Tuple Routing-Key.
             model: Optionale Modell-ID. None = CLAUDE_POOL_MODEL.
 
         Raises:
@@ -664,11 +635,11 @@ class ClaudeProcessPool:
         """Prüft ob der Subprocess noch läuft."""
         return managed.process.returncode is None
 
-    async def _terminate_process(self, key: tuple[int, int], reason: str = "") -> bool:
+    async def _terminate_process(self, key: PoolKey, reason: str = "") -> bool:
         """Terminiert einen Subprocess sauber.
 
         Args:
-            key: (user_id, chat_id) Routing-Key.
+            key: (user_id, chat_id, model) 3-Tuple Routing-Key.
             reason: Grund für die Terminierung (für Logging).
 
         Returns:
@@ -723,7 +694,7 @@ class ClaudeProcessPool:
         Cleanup-Zyklus erneut geprüft.
         """
         now = time.monotonic()
-        expired_keys: list[tuple[int, int]] = []
+        expired_keys: list[PoolKey] = []
 
         async with self._pool_lock:
             for key, managed in self._processes.items():

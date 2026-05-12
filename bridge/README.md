@@ -133,14 +133,30 @@ python -m pytest
 # Mit Verbose-Output (default via pyproject.toml)
 python -m pytest -v
 
-# Mit Coverage
-python -m pytest --cov
-
 # Einzelnes Modul
 python -m pytest tests/test_bookmark.py
+
+# Snapshots aktualisieren (nach UI-Änderungen)
+python -m pytest --snapshot-update
 ```
 
-Aktuell: **526+ Tests**, alle grün, Laufzeit ca. 3 Sekunden.
+Aktuell: **540+ Tests**, alle grün, Laufzeit ca. 3 Sekunden.
+
+## Coverage-Report generieren
+
+```bash
+# Via Script (generiert Terminal + HTML Report)
+python scripts/pytest_coverage.py
+
+# Oder via pre-commit (manuell, nicht bei jedem Commit)
+pre-commit run pytest-coverage-report --hook-stage manual
+
+# Oder direkt
+python -m pytest --cov=bridge --cov-config=.coveragerc --cov-report=term-missing --cov-report=html:htmlcov
+```
+
+HTML-Report liegt danach in `bridge/htmlcov/index.html`.
+Konfiguration: `bridge/.coveragerc` (excludiert .venv und tests).
 
 ## Architektur-Regeln (nicht verhandelbar)
 

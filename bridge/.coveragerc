@@ -1,0 +1,23 @@
+[run]
+source = .
+omit =
+    .venv/*
+    tests/*
+    setup.py
+    conftest.py
+    */__pycache__/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    if __name__ == .__main__
+    raise NotImplementedError
+    pass
+    if TYPE_CHECKING
+
+show_missing = true
+precision = 1
+
+[html]
+directory = htmlcov

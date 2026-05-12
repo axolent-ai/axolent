@@ -29,6 +29,12 @@ Cargo.lock
 bridge/logs/
 bridge/data/
 
+# Coverage
+htmlcov/
+.coverage
+bridge/htmlcov/
+bridge/.coverage
+
 # OS
 .DS_Store
 Thumbs.db

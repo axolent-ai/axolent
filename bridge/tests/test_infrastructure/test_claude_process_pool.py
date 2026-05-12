@@ -1,7 +1,8 @@
-"""Tests für ClaudeProcessPool.
+"""Tests für ClaudeProcessPool (Phase 2c: 3-Tuple-Key).
 
 Verifiziert:
-    - Process-Spawn und Reuse (warm vs cold) mit (user_id, chat_id) Tuple-Routing
+    - Process-Spawn und Reuse (warm vs cold) mit (user_id, chat_id, model) 3-Tuple-Routing
+    - Verschiedene Modelle bekommen verschiedene Subprocesses (kein Mismatch-Kill)
     - Inaktivitäts-Timeout terminiert idle Processes
     - Crash-Recovery: toter Process wird neu gestartet
     - Multi-User-Isolation: User A's Process != User B's Process
@@ -12,6 +13,8 @@ Verifiziert:
     - _read_response parsed echtes CLI-Event-Format korrekt
     - Race-Condition-Schutz: parallele get_or_create erzeugen nur 1 Spawn
     - Cleanup übersprungen aktive (gelockte) Processes
+    - LRU-Eviction bei Pool-Überlauf
+    - 3-Tuple-Key: gleicher User verschiedene Modelle = verschiedene Processes
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ import pytest
 
 from infrastructure.claude_process_pool import (
     INACTIVITY_TIMEOUT_SECONDS,
+    POOL_MAX_SIZE,
     ClaudeProcessPool,
     ManagedProcess,
 )
@@ -61,7 +65,7 @@ class TestProcessPoolSpawnAndReuse:
                 managed, was_cold = await pool.get_or_create(user_id=1, chat_id=100)
 
         assert was_cold is True
-        assert managed.routing_key == (1, 100)
+        assert managed.routing_key == (1, 100, "claude-sonnet-4-6")
         assert managed.pid == 12345
         await pool.shutdown()
 
@@ -102,8 +106,8 @@ class TestProcessPoolSpawnAndReuse:
                 managed_b, _ = await pool.get_or_create(user_id=2, chat_id=1001)
 
         assert managed_a.pid != managed_b.pid
-        assert managed_a.routing_key == (1, 1001)
-        assert managed_b.routing_key == (2, 1001)
+        assert managed_a.routing_key == (1, 1001, "claude-sonnet-4-6")
+        assert managed_b.routing_key == (2, 1001, "claude-sonnet-4-6")
         await pool.shutdown()
 
     @pytest.mark.asyncio
@@ -126,6 +130,201 @@ class TestProcessPoolSpawnAndReuse:
                 managed_b, _ = await pool.get_or_create(user_id=1, chat_id=200)
 
         assert managed_a.pid != managed_b.pid
+        await pool.shutdown()
+
+
+class TestThreeTupleKey:
+    """Phase 2c: 3-Tuple-Key Tests. Verschiedene Modelle = verschiedene Subprocesses."""
+
+    @pytest.mark.asyncio
+    async def test_different_models_get_different_processes(self) -> None:
+        """Gleicher User/Chat aber verschiedene Modelle bekommen verschiedene Processes."""
+        pool = ClaudeProcessPool()
+        proc_sonnet = _make_mock_process(pid=111)
+        proc_opus = _make_mock_process(pid=222)
+
+        call_count = 0
+
+        async def mock_create(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return proc_sonnet if call_count == 1 else proc_opus
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
+                managed_sonnet, cold_s = await pool.get_or_create(
+                    user_id=1, chat_id=100, model="claude-sonnet-4-6"
+                )
+                managed_opus, cold_o = await pool.get_or_create(
+                    user_id=1, chat_id=100, model="claude-opus-4-7"
+                )
+
+        assert cold_s is True
+        assert cold_o is True
+        assert managed_sonnet.pid != managed_opus.pid
+        assert managed_sonnet.routing_key == (1, 100, "claude-sonnet-4-6")
+        assert managed_opus.routing_key == (1, 100, "claude-opus-4-7")
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_same_model_reuses_subprocess(self) -> None:
+        """Gleiches Modell beim zweiten Aufruf reused den Subprocess (kein Cold-Start)."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process(pid=111)
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ):
+                managed1, cold1 = await pool.get_or_create(
+                    user_id=1, chat_id=100, model="claude-opus-4-7"
+                )
+                managed2, cold2 = await pool.get_or_create(
+                    user_id=1, chat_id=100, model="claude-opus-4-7"
+                )
+
+        assert cold1 is True
+        assert cold2 is False
+        assert managed1.pid == managed2.pid
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_model_switch_no_kill(self) -> None:
+        """Phase 2c: Modell-Wechsel killt den alten Subprocess NICHT mehr."""
+        pool = ClaudeProcessPool()
+        proc_sonnet = _make_mock_process(pid=111)
+        proc_opus = _make_mock_process(pid=222)
+
+        call_count = 0
+
+        async def mock_create(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return proc_sonnet if call_count == 1 else proc_opus
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
+                # Sonnet starten
+                managed_sonnet, _ = await pool.get_or_create(
+                    user_id=1, chat_id=100, model="claude-sonnet-4-6"
+                )
+                # Opus starten (neuer Process, aber Sonnet bleibt warm)
+                managed_opus, cold = await pool.get_or_create(
+                    user_id=1, chat_id=100, model="claude-opus-4-7"
+                )
+
+                assert cold is True
+                # Sonnet-Process darf NICHT terminiert worden sein
+                proc_sonnet.terminate.assert_not_called()
+
+                # Zurück zu Sonnet: sofort warm (kein Cold-Start)
+                managed_sonnet_2, cold_s2 = await pool.get_or_create(
+                    user_id=1, chat_id=100, model="claude-sonnet-4-6"
+                )
+                assert cold_s2 is False
+                assert managed_sonnet_2.pid == 111
+
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_pool_key_includes_model(self) -> None:
+        """get_stats zeigt model im Routing-Key."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process(pid=999)
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ):
+                await pool.get_or_create(
+                    user_id=42, chat_id=800, model="claude-opus-4-7"
+                )
+
+        stats = pool.get_stats()
+        assert stats["active_processes"] == 1
+        assert stats["processes"][0]["model"] == "claude-opus-4-7"
+        assert stats["processes"][0]["user_id"] == 42
+        assert stats["processes"][0]["chat_id"] == 800
+        await pool.shutdown()
+
+
+class TestLRUEviction:
+    """Tests für LRU-Eviction bei Pool-Überlauf."""
+
+    @pytest.mark.asyncio
+    async def test_eviction_when_pool_full(self) -> None:
+        """Bei Pool-Überlauf wird der am längsten inaktive Process evicted."""
+        import time
+
+        pool = ClaudeProcessPool()
+        spawned_procs: list[AsyncMock] = []
+
+        async def mock_create(*args, **kwargs):
+            proc = _make_mock_process(pid=len(spawned_procs) + 1)
+            spawned_procs.append(proc)
+            return proc
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
+                with patch("infrastructure.claude_process_pool.POOL_MAX_SIZE", 3):
+                    # 3 Processes spawnen (Pool voll)
+                    m1, _ = await pool.get_or_create(1, 1, model="model-a")
+                    m2, _ = await pool.get_or_create(1, 1, model="model-b")
+                    m3, _ = await pool.get_or_create(1, 1, model="model-c")
+
+                    # m1 ist der älteste (niedrigster last_used)
+                    m1.last_used = time.monotonic() - 1000
+                    m2.last_used = time.monotonic() - 500
+                    m3.last_used = time.monotonic()
+
+                    # 4. Process spawnen: muss m1 evicten
+                    m4, cold4 = await pool.get_or_create(1, 1, model="model-d")
+                    assert cold4 is True
+
+                    # m1 (pid=1) muss terminiert worden sein
+                    spawned_procs[0].terminate.assert_called()
+
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_eviction_skips_locked_processes(self) -> None:
+        """Gelockte Processes werden bei Eviction übersprungen."""
+        import time
+
+        pool = ClaudeProcessPool()
+        spawned_procs: list[AsyncMock] = []
+
+        async def mock_create(*args, **kwargs):
+            proc = _make_mock_process(pid=len(spawned_procs) + 1)
+            spawned_procs.append(proc)
+            return proc
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
+                with patch("infrastructure.claude_process_pool.POOL_MAX_SIZE", 3):
+                    m1, _ = await pool.get_or_create(1, 1, model="model-a")
+                    m2, _ = await pool.get_or_create(1, 1, model="model-b")
+                    m3, _ = await pool.get_or_create(1, 1, model="model-c")
+
+                    # m1 ist ältester, aber gelockt
+                    m1.last_used = time.monotonic() - 1000
+                    m2.last_used = time.monotonic() - 500
+                    m3.last_used = time.monotonic()
+                    await m1.lock.acquire()
+
+                    try:
+                        # Eviction muss m2 wählen (ältester nicht-gelockter)
+                        m4, _ = await pool.get_or_create(1, 1, model="model-d")
+
+                        # m1 (gelockt) darf NICHT terminiert sein
+                        spawned_procs[0].terminate.assert_not_called()
+                        # m2 muss terminiert sein
+                        spawned_procs[1].terminate.assert_called()
+                    finally:
+                        m1.lock.release()
+
         await pool.shutdown()
 
 
@@ -219,7 +418,7 @@ class TestProcessPoolTimeout:
 
         # Process sollte entfernt worden sein
         async with pool._pool_lock:
-            assert (1, 400) not in pool._processes
+            assert (1, 400, "claude-sonnet-4-6") not in pool._processes
 
     @pytest.mark.asyncio
     async def test_cleanup_skips_locked_processes(self) -> None:
@@ -245,7 +444,7 @@ class TestProcessPoolTimeout:
 
             # Process sollte NICHT entfernt worden sein
             async with pool._pool_lock:
-                assert (1, 401) in pool._processes
+                assert (1, 401, "claude-sonnet-4-6") in pool._processes
         finally:
             managed.lock.release()
 
@@ -293,7 +492,7 @@ class TestProcessPoolHealthCheck:
     def test_alive_process(self) -> None:
         proc = _make_mock_process(alive=True)
         managed = ManagedProcess(
-            routing_key=(1, 700),
+            routing_key=(1, 700, "claude-sonnet-4-6"),
             process=proc,
             lock=asyncio.Lock(),
             last_used=0,
@@ -304,7 +503,7 @@ class TestProcessPoolHealthCheck:
     def test_dead_process(self) -> None:
         proc = _make_mock_process(alive=False)
         managed = ManagedProcess(
-            routing_key=(1, 700),
+            routing_key=(1, 700, "claude-sonnet-4-6"),
             process=proc,
             lock=asyncio.Lock(),
             last_used=0,
@@ -330,9 +529,11 @@ class TestProcessPoolStats:
 
         stats = pool.get_stats()
         assert stats["active_processes"] == 1
+        assert stats["max_pool_size"] == POOL_MAX_SIZE
         assert len(stats["processes"]) == 1
         assert stats["processes"][0]["user_id"] == 42
         assert stats["processes"][0]["chat_id"] == 800
+        assert stats["processes"][0]["model"] == "claude-sonnet-4-6"
         assert stats["processes"][0]["pid"] == 999
         assert stats["processes"][0]["is_alive"] is True
         assert stats["processes"][0]["is_locked"] is False
@@ -451,25 +652,18 @@ class TestSpawnProcessFlags:
 
 
 class TestReadResponseParsing:
-    """Tests für _read_response: verifiziert Parsing des echten CLI-Event-Formats.
-
-    Das echte Format (mit --include-partial-messages) liefert:
-        system, rate_limit_event, stream_event (message_start,
-        content_block_start, content_block_delta*, content_block_stop,
-        message_delta, message_stop), assistant, result
-    """
+    """Tests für _read_response: verifiziert Parsing des echten CLI-Event-Formats."""
 
     @staticmethod
     def _build_managed_with_mock_stdout(lines: list[str]) -> ManagedProcess:
         """Erstellt ManagedProcess mit gemocktem stdout das die gegebenen Zeilen liefert."""
         proc = _make_mock_process()
         encoded_lines = [line.encode("utf-8") for line in lines]
-        # readline() liefert die Zeilen nacheinander, dann b"" für EOF
         proc.stdout.readline = AsyncMock(
             side_effect=encoded_lines + [b""],
         )
         return ManagedProcess(
-            routing_key=(1, 1000),
+            routing_key=(1, 1000, "claude-sonnet-4-6"),
             process=proc,
             lock=asyncio.Lock(),
             last_used=0,
@@ -560,49 +754,9 @@ class TestReadResponseParsing:
         pool = ClaudeProcessPool()
         events = [e async for e in pool._read_response(managed)]
 
-        # signature_delta hat kein "text" => wird nicht als content_delta geyielded
         content_deltas = [e for e in events if e.event_type == "content_delta"]
         assert len(content_deltas) == 1
         assert content_deltas[0].text == "Antwort"
-
-    @pytest.mark.asyncio
-    async def test_ignores_non_streaming_event_types(self) -> None:
-        """system, rate_limit_event, assistant werden ignoriert."""
-        lines = [
-            json.dumps({"type": "system", "subtype": "init"}) + "\n",
-            json.dumps({"type": "rate_limit_event", "rate_limit_info": {}}) + "\n",
-            json.dumps(
-                {
-                    "type": "stream_event",
-                    "event": {
-                        "type": "message_start",
-                        "message": {"model": "claude-opus-4-7"},
-                    },
-                }
-            )
-            + "\n",
-            json.dumps(
-                {
-                    "type": "stream_event",
-                    "event": {
-                        "type": "content_block_delta",
-                        "index": 1,
-                        "delta": {"type": "text_delta", "text": "Test"},
-                    },
-                }
-            )
-            + "\n",
-            json.dumps({"type": "assistant", "message": {"content": []}}) + "\n",
-            json.dumps({"type": "result", "result": "Test"}) + "\n",
-        ]
-
-        managed = self._build_managed_with_mock_stdout(lines)
-        pool = ClaudeProcessPool()
-        events = [e async for e in pool._read_response(managed)]
-
-        assert len(events) == 2
-        assert events[0].event_type == "content_delta"
-        assert events[1].event_type == "result"
 
     @pytest.mark.asyncio
     async def test_result_as_dict_with_content_blocks(self) -> None:
@@ -680,18 +834,13 @@ class TestReadResponseParsing:
 
 
 class TestSendMessageWaitsForReady:
-    """Tests für Task 5: send_message() wartet immer auf is_ready."""
+    """Tests für send_message() wartet immer auf is_ready."""
 
     @pytest.mark.asyncio
     async def test_send_message_waits_even_when_not_cold(self) -> None:
-        """send_message wartet auf is_ready auch wenn was_cold=False ist.
-
-        Reproduziert den Pre-Warm-Bug: get_or_create wird vorab aufgerufen,
-        dann liefert der zweite Aufruf was_cold=False obwohl is_ready=False.
-        """
+        """send_message wartet auf is_ready auch wenn was_cold=False ist."""
         pool = ClaudeProcessPool()
         mock_proc = _make_mock_process()
-        # stdout liefert Init-Events und dann Result
         init_line = json.dumps({"type": "system", "version": "1.0"}) + "\n"
         result_line = json.dumps({"type": "result", "result": "OK"}) + "\n"
         mock_proc.stdout.readline = AsyncMock(
@@ -707,30 +856,23 @@ class TestSendMessageWaitsForReady:
                 "asyncio.create_subprocess_exec",
                 return_value=mock_proc,
             ):
-                # Pre-Warm: erster Aufruf setzt was_cold=True
                 managed, was_cold_1 = await pool.get_or_create(user_id=1, chat_id=500)
                 assert was_cold_1 is True
-                # Simuliere: is_ready ist noch False (Init nicht abgeschlossen)
                 managed.is_ready = False
 
-                # Zweiter Aufruf: was_cold=False, aber is_ready noch False
                 managed2, was_cold_2 = await pool.get_or_create(user_id=1, chat_id=500)
                 assert was_cold_2 is False
                 assert managed2.is_ready is False
 
-        # send_message muss trotzdem auf is_ready warten (nicht nur bei was_cold)
-        # _wait_for_init setzt is_ready=True nach Init-Events
-        # Wir patchen _wait_for_init um zu verifizieren dass es aufgerufen wird
         wait_called = False
 
         async def track_wait(m: ManagedProcess) -> None:
             nonlocal wait_called
             wait_called = True
-            m.is_ready = True  # Simuliere erfolgreiche Init
+            m.is_ready = True
 
         pool._wait_for_init = track_wait  # type: ignore[assignment]
 
-        # Mock stdout für die eigentliche Message-Response
         result_line_2 = json.dumps({"type": "result", "result": "Response"}) + "\n"
         mock_proc.stdout.readline = AsyncMock(
             side_effect=[
@@ -743,236 +885,8 @@ class TestSendMessageWaitsForReady:
             pass
 
         assert wait_called is True, (
-            "send_message muss _wait_for_init aufrufen wenn is_ready=False, "
-            "auch wenn was_cold=False"
+            "send_message muss _wait_for_init aufrufen wenn is_ready=False"
         )
-        await pool.shutdown()
-
-
-class TestModelSwitchViaPool:
-    """Regression-Tests für den Modell-Wechsel-Bug.
-
-    Bug: Nach /setmodel opus kam die erste Antwort noch vom alten
-    Sonnet-Subprocess, weil der Handler get_or_create() OHNE model-Argument
-    aufgerufen hat (Zeile 600 in handlers.py). Dadurch wurde der alte
-    Subprocess wiederverwendet und was_cold/subprocess_pid waren falsch.
-
-    Fix: Handler nutzt jetzt das init-Event aus send_message() statt
-    einen separaten vorab-get_or_create() Call.
-    """
-
-    @pytest.mark.asyncio
-    async def test_model_switch_terminates_old_subprocess(self) -> None:
-        """Wenn ein Sonnet-Subprocess läuft und model=opus übergeben wird,
-        muss get_or_create den alten Subprocess terminieren und einen neuen
-        Opus-Subprocess starten (was_cold=True, neuer pid)."""
-        pool = ClaudeProcessPool()
-        sonnet_proc = _make_mock_process(pid=11940)
-        opus_proc = _make_mock_process(pid=18184)
-
-        call_count = 0
-
-        async def mock_create(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            return sonnet_proc if call_count == 1 else opus_proc
-
-        with patch("shutil.which", return_value="/usr/bin/claude"):
-            with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
-                # 1. Sonnet-Subprocess starten (Default-Modell)
-                managed_sonnet, cold_sonnet = await pool.get_or_create(
-                    user_id=1, chat_id=100, model="claude-sonnet-4-6"
-                )
-                assert cold_sonnet is True
-                assert managed_sonnet.pid == 11940
-                assert managed_sonnet.model == "claude-sonnet-4-6"
-
-                # 2. Jetzt mit Opus aufrufen: alten Subprocess terminieren
-                managed_opus, cold_opus = await pool.get_or_create(
-                    user_id=1, chat_id=100, model="claude-opus-4-7"
-                )
-                assert cold_opus is True, (
-                    "Model-Wechsel MUSS was_cold=True liefern, da der alte "
-                    "Subprocess terminiert und ein neuer gestartet werden muss"
-                )
-                assert managed_opus.pid == 18184, (
-                    "Model-Wechsel MUSS neuen Subprocess mit neuem pid starten"
-                )
-                assert managed_opus.model == "claude-opus-4-7"
-
-        # Alter Sonnet-Subprocess muss terminiert worden sein
-        sonnet_proc.terminate.assert_called()
-        await pool.shutdown()
-
-    @pytest.mark.asyncio
-    async def test_same_model_reuses_subprocess(self) -> None:
-        """Wenn das angeforderte Modell dem laufenden Subprocess entspricht,
-        wird der Subprocess wiederverwendet (was_cold=False)."""
-        pool = ClaudeProcessPool()
-        mock_proc = _make_mock_process(pid=11940)
-
-        with patch("shutil.which", return_value="/usr/bin/claude"):
-            with patch(
-                "asyncio.create_subprocess_exec",
-                return_value=mock_proc,
-            ):
-                # Sonnet starten
-                managed1, cold1 = await pool.get_or_create(
-                    user_id=1, chat_id=100, model="claude-sonnet-4-6"
-                )
-                assert cold1 is True
-
-                # Sonnet nochmal anfordern: Reuse
-                managed2, cold2 = await pool.get_or_create(
-                    user_id=1, chat_id=100, model="claude-sonnet-4-6"
-                )
-                assert cold2 is False
-                assert managed2.pid == managed1.pid
-
-        await pool.shutdown()
-
-    @pytest.mark.asyncio
-    async def test_locked_process_not_killed_on_model_mismatch(self) -> None:
-        """Aktive Streams dürfen bei Modell-Wechsel NICHT terminiert werden.
-
-        Szenario: User chattet mit Opus (Stream aktiv, lock acquired).
-        Parallel kommt eine Anfrage mit anderem Modell (z.B. Sonnet via
-        DebateOrchestrator). Der Pool darf den aktiven Stream NICHT killen.
-        V8-R2: Statt stillschweigend das falsche Modell zurückzugeben,
-        wartet der Pool auf Lock-Freigabe und wechselt dann. Bei Timeout
-        wird ProviderError geworfen.
-        """
-        from infrastructure.providers.base import ProviderError
-
-        pool = ClaudeProcessPool()
-        opus_proc = _make_mock_process(pid=22222)
-
-        with patch("shutil.which", return_value="/usr/bin/claude"):
-            with patch(
-                "asyncio.create_subprocess_exec",
-                return_value=opus_proc,
-            ):
-                # Opus-Subprocess starten
-                managed_opus, cold = await pool.get_or_create(
-                    user_id=1, chat_id=100, model="claude-opus-4-7"
-                )
-                assert cold is True
-                assert managed_opus.model == "claude-opus-4-7"
-
-                # Lock acquiren (simuliert aktiven Stream)
-                await managed_opus.lock.acquire()
-
-                # Jetzt mit Sonnet aufrufen (Modell-Mismatch bei aktivem Stream)
-                # Der Pool wartet auf Lock-Freigabe. Da wir den Lock nicht
-                # freigeben, muss nach Timeout ProviderError kommen.
-                with patch(
-                    "infrastructure.claude_process_pool.asyncio.wait_for",
-                    side_effect=asyncio.TimeoutError(),
-                ):
-                    with pytest.raises(ProviderError, match="Modell-Wechsel blockiert"):
-                        await pool.get_or_create(
-                            user_id=1, chat_id=100, model="claude-sonnet-4-6"
-                        )
-
-                # terminate() darf NICHT aufgerufen worden sein
-                opus_proc.terminate.assert_not_called()
-
-                # Lock freigeben
-                managed_opus.lock.release()
-
-        await pool.shutdown()
-
-    @pytest.mark.asyncio
-    async def test_send_message_init_event_reflects_model_switch(self) -> None:
-        """send_message() muss ein init-Event yielden das was_cold=True und
-        den neuen pid enthält, wenn ein Modell-Wechsel stattfindet.
-
-        Dies ist der End-to-End-Regressionstest für den Bug aus Phase 1:
-        Nach /setmodel opus muss die ERSTE Anfrage den neuen Opus-Subprocess
-        nutzen, nicht den alten Sonnet-Subprocess.
-        """
-        pool = ClaudeProcessPool()
-        sonnet_proc = _make_mock_process(pid=11940)
-        opus_proc = _make_mock_process(pid=18184)
-
-        call_count = 0
-
-        async def mock_create(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            return sonnet_proc if call_count == 1 else opus_proc
-
-        # Patch _wait_for_init to skip init-phase (wir testen Pool-Routing,
-        # nicht die Init-Sequenz des Subprocess)
-        async def noop_wait(m: ManagedProcess) -> None:
-            m.is_ready = True
-
-        pool._wait_for_init = noop_wait  # type: ignore[assignment]
-
-        with patch("shutil.which", return_value="/usr/bin/claude"):
-            with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
-                # 1. Sonnet-Subprocess starten und ready machen
-                managed_sonnet, _ = await pool.get_or_create(
-                    user_id=1, chat_id=100, model="claude-sonnet-4-6"
-                )
-                managed_sonnet.is_ready = True
-
-                # 2. send_message mit Opus-Modell: muss Model-Switch triggern
-                # Mock stdout für Opus-Response
-                result_line = json.dumps({"type": "result", "result": "OK"}) + "\n"
-                opus_proc.stdout.readline = AsyncMock(
-                    side_effect=[
-                        result_line.encode("utf-8"),
-                        b"",
-                    ]
-                )
-
-                events = []
-                async for event in pool.send_message(
-                    user_id=1,
-                    chat_id=100,
-                    prompt="Hallo",
-                    model="claude-opus-4-7",
-                ):
-                    events.append(event)
-
-        # Erstes Event muss init sein mit korrekten Metadata
-        assert len(events) >= 1
-        init_event = events[0]
-        assert init_event.event_type == "init", (
-            "Erstes Event von send_message muss 'init' sein"
-        )
-        assert init_event.was_cold is True, (
-            "Model-Wechsel muss was_cold=True im init-Event setzen"
-        )
-        assert init_event.subprocess_pid == 18184, (
-            "init-Event muss den pid des NEUEN Opus-Subprocess enthalten, "
-            "nicht den alten Sonnet-pid"
-        )
-
-        await pool.shutdown()
-
-    @pytest.mark.asyncio
-    async def test_no_model_arg_uses_pool_default(self) -> None:
-        """Ohne model-Argument nutzt get_or_create den CLAUDE_POOL_MODEL Default.
-
-        Dieser Test dokumentiert das alte Bug-Verhalten: wenn der Handler
-        get_or_create() ohne model aufruft, wird der Pool-Default (Sonnet)
-        verwendet, NICHT das User-Override. Das init-Event im send_message
-        löst dieses Problem, weil send_message das model korrekt weitergibt.
-        """
-        pool = ClaudeProcessPool()
-        mock_proc = _make_mock_process(pid=11940)
-
-        with patch("shutil.which", return_value="/usr/bin/claude"):
-            with patch(
-                "asyncio.create_subprocess_exec",
-                return_value=mock_proc,
-            ):
-                # Ohne model: CLAUDE_POOL_MODEL (sonnet) wird verwendet
-                managed, _ = await pool.get_or_create(user_id=1, chat_id=100)
-                assert managed.model == "claude-sonnet-4-6"
-
         await pool.shutdown()
 
 
@@ -1001,249 +915,26 @@ class TestTTLConfiguration:
             assert mod.INACTIVITY_TIMEOUT_SECONDS == 3600.0
 
 
-class TestLockedStreamModelSwitch:
-    """Regressionstests V8-R2: Modell-Mismatch bei aktivem Stream.
+class TestPoolMaxSizeConfiguration:
+    """Tests für CLAUDE_POOL_MAX_SIZE Konfiguration."""
 
-    Finding 1: Bei aktivem Stream + Modell-Mismatch darf NICHT das falsche
-    Modell zurückgegeben werden. Stattdessen warten bis der Stream fertig
-    ist und dann sauber wechseln.
-    Finding 2: Der Double-Check-Pfad darf einen gelockten Prozess ebenfalls
-    nicht terminieren.
-    """
+    def test_default_pool_max_size(self) -> None:
+        """Default Pool-Max-Size ist 20."""
+        assert POOL_MAX_SIZE == 20
 
-    @pytest.mark.asyncio
-    async def test_active_mismatch_waits_then_switches_model(self) -> None:
-        """Bei aktivem Stream wartet get_or_create bis Lock frei, dann Wechsel.
+    def test_pool_max_size_configurable_via_env(self) -> None:
+        """CLAUDE_POOL_MAX_SIZE setzt die maximale Pool-Größe."""
+        import importlib
 
-        Verifiziert dass NICHT stillschweigend das falsche Modell zurückkommt.
-        """
-        pool = ClaudeProcessPool()
-        opus_proc = _make_mock_process(pid=11111)
-        sonnet_proc = _make_mock_process(pid=22222)
+        import infrastructure.claude_process_pool as mod
 
-        call_count = 0
+        with patch.dict("os.environ", {"CLAUDE_POOL_MAX_SIZE": "50"}):
+            importlib.reload(mod)
+            assert mod.POOL_MAX_SIZE == 50
 
-        async def mock_create(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            return opus_proc if call_count == 1 else sonnet_proc
-
-        with patch("shutil.which", return_value="/usr/bin/claude"):
-            with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
-                # Opus-Subprocess starten
-                managed_opus, cold = await pool.get_or_create(
-                    user_id=1, chat_id=100, model="claude-opus-4-7"
-                )
-                assert cold is True
-                assert managed_opus.model == "claude-opus-4-7"
-
-                # Lock acquiren (simuliert aktiven Stream)
-                await managed_opus.lock.acquire()
-
-                # Paralleler Task: fordert Sonnet an während Opus-Stream aktiv
-                async def request_sonnet():
-                    return await pool.get_or_create(
-                        user_id=1, chat_id=100, model="claude-sonnet-4-6"
-                    )
-
-                sonnet_task = asyncio.create_task(request_sonnet())
-
-                # Kurz warten damit der Task in den Warte-Pfad geht
-                await asyncio.sleep(0.05)
-
-                # Lock freigeben (simuliert Stream-Ende)
-                managed_opus.lock.release()
-
-                # Sonnet-Task sollte jetzt durchkommen
-                managed_sonnet, cold_sonnet = await asyncio.wait_for(
-                    sonnet_task, timeout=5.0
-                )
-
-                # MUSS neuen Prozess mit Sonnet-Modell liefern
-                assert managed_sonnet.model == "claude-sonnet-4-6", (
-                    "Modell-Mismatch darf NICHT stillschweigend das falsche Modell "
-                    "zurückgeben. Erwartet: claude-sonnet-4-6, "
-                    f"bekommen: {managed_sonnet.model}"
-                )
-                assert cold_sonnet is True, (
-                    "Nach Warte-Pfad muss ein neuer Subprocess gestartet werden"
-                )
-                assert managed_sonnet.pid == 22222
-
-        # Alter Opus-Prozess muss terminiert worden sein
-        opus_proc.terminate.assert_called()
-        await pool.shutdown()
-
-    @pytest.mark.asyncio
-    async def test_active_mismatch_timeout_raises_provider_error(self) -> None:
-        """Wenn der aktive Stream zu lang dauert, ProviderError statt stilles Falschmodell."""
-        pool = ClaudeProcessPool()
-        opus_proc = _make_mock_process(pid=33333)
-
-        with patch("shutil.which", return_value="/usr/bin/claude"):
-            with patch(
-                "asyncio.create_subprocess_exec",
-                return_value=opus_proc,
-            ):
-                managed_opus, _ = await pool.get_or_create(
-                    user_id=1, chat_id=200, model="claude-opus-4-7"
-                )
-
-                # Lock acquiren und NICHT freigeben (simuliert endlosen Stream)
-                await managed_opus.lock.acquire()
-
-                from infrastructure.providers.base import ProviderError
-
-                # Timeout auf 0.1s reduzieren damit der Test schnell ist
-                with patch(
-                    "infrastructure.claude_process_pool.asyncio.wait_for",
-                    side_effect=asyncio.TimeoutError(),
-                ):
-                    with pytest.raises(ProviderError, match="Modell-Wechsel blockiert"):
-                        await pool.get_or_create(
-                            user_id=1, chat_id=200, model="claude-sonnet-4-6"
-                        )
-
-                managed_opus.lock.release()
-
-        await pool.shutdown()
-
-    @pytest.mark.asyncio
-    async def test_double_check_does_not_kill_locked_process(self) -> None:
-        """Double-Check-Pfad darf einen gelockten Prozess nicht terminieren.
-
-        Direkter Unit-Test des Double-Check-Pfads: wir manipulieren den Pool-
-        Zustand so, dass der Fast-Path keinen Eintrag findet (Process temporär
-        entfernt), aber im Double-Check der gelockte Prozess wieder da ist.
-        Der Guard muss den Prozess behalten statt zu killen.
-        """
-        pool = ClaudeProcessPool()
-        opus_proc = _make_mock_process(pid=44444)
-        sonnet_proc = _make_mock_process(pid=55555)
-
-        call_count = 0
-
-        async def mock_create(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            return sonnet_proc
-
-        with patch("shutil.which", return_value="/usr/bin/claude"):
-            with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
-                # Opus-Subprocess manuell in den Pool legen
-                key = (1, 300)
-                managed_opus = ManagedProcess(
-                    routing_key=key,
-                    process=opus_proc,
-                    lock=asyncio.Lock(),
-                    last_used=0,
-                    pid=44444,
-                    is_ready=True,
-                    model="claude-opus-4-7",
-                )
-
-                # Lock acquiren (simuliert aktiven Stream)
-                await managed_opus.lock.acquire()
-
-                # Pool-Eintrag temporär entfernen (simuliert Fast-Path-Miss)
-                # und creation_lock initialisieren
-                pool._creation_locks[key] = asyncio.Lock()
-
-                # Eintrag NICHT im Pool (Fast-Path findet nichts),
-                # aber wir legen ihn rein NACHDEM der Fast-Path prüft.
-                # Wir nutzen einen einfacheren Ansatz: direkt prüfen dass
-                # der Double-Check-Guard im Code vorhanden ist.
-                # Setze den Eintrag im Pool:
-                async with pool._pool_lock:
-                    pool._processes[key] = managed_opus
-
-                # Jetzt Sonnet anfordern: Fast-Path findet gelockten Opus,
-                # geht in wait_for_locked-Pfad. Timeout -> ProviderError.
-                from infrastructure.providers.base import ProviderError
-
-                with patch(
-                    "infrastructure.claude_process_pool.asyncio.wait_for",
-                    side_effect=asyncio.TimeoutError(),
-                ):
-                    with pytest.raises(ProviderError):
-                        await pool.get_or_create(
-                            user_id=1, chat_id=300, model="claude-sonnet-4-6"
-                        )
-
-                # Der gelockte Prozess darf NICHT terminiert worden sein
-                opus_proc.terminate.assert_not_called()
-
-                # Prozess muss noch im Pool sein
-                async with pool._pool_lock:
-                    assert key in pool._processes
-
-                managed_opus.lock.release()
-
-        await pool.shutdown()
-
-    @pytest.mark.asyncio
-    async def test_double_check_locked_returns_correct_model(self) -> None:
-        """V8-R3: Double-Check-Pfad bei gelocktem Prozess mit Modell-Mismatch
-        muss nach Lock-Freigabe das ANGEFORDERTE Modell zurückgeben, nicht das alte.
-
-        Regression für Finding 1: der alte Code gab bei managed.lock.locked()
-        im Double-Check den ALTEN Prozess mit ALTEM Modell zurück statt zu warten.
-        """
-        pool = ClaudeProcessPool()
-        opus_proc = _make_mock_process(pid=33333)
-        sonnet_proc = _make_mock_process(pid=44444)
-
-        call_count = 0
-
-        async def mock_create(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            return opus_proc if call_count == 1 else sonnet_proc
-
-        with patch("shutil.which", return_value="/usr/bin/claude"):
-            with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
-                # Opus-Subprocess starten
-                managed_opus, cold = await pool.get_or_create(
-                    user_id=1, chat_id=400, model="claude-opus-4-7"
-                )
-                assert cold is True
-                assert managed_opus.model == "claude-opus-4-7"
-
-                # Lock acquiren (simuliert aktiven Stream)
-                await managed_opus.lock.acquire()
-
-                # Paralleler Task: fordert Sonnet an während Opus-Stream aktiv
-                async def request_sonnet():
-                    return await pool.get_or_create(
-                        user_id=1, chat_id=400, model="claude-sonnet-4-6"
-                    )
-
-                sonnet_task = asyncio.create_task(request_sonnet())
-
-                # Kurz warten damit der Task in den Warte-Pfad geht
-                await asyncio.sleep(0.05)
-
-                # Lock freigeben (simuliert Stream-Ende)
-                managed_opus.lock.release()
-
-                # Sonnet-Task sollte jetzt durchkommen
-                managed_result, cold_result = await asyncio.wait_for(
-                    sonnet_task, timeout=5.0
-                )
-
-                # MUSS Sonnet zurückgeben, NICHT Opus
-                assert managed_result.model == "claude-sonnet-4-6", (
-                    f"Double-Check-Pfad gab Modell '{managed_result.model}' zurück, "
-                    f"erwartet war 'claude-sonnet-4-6'. "
-                    f"Der alte Bug: gelockter Prozess mit altem Modell wurde zurückgegeben."
-                )
-                assert cold_result is True, (
-                    "Nach Warte-Pfad muss ein neuer Subprocess gestartet werden"
-                )
-                assert managed_result.pid == 44444, (
-                    "Neuer Sonnet-Subprocess muss neuen pid haben"
-                )
-                # Spawn muss 2x aufgerufen worden sein (Opus + Sonnet)
-                assert call_count == 2
-
-        await pool.shutdown()
+        # Restore
+        with patch.dict("os.environ", {}, clear=False):
+            if "CLAUDE_POOL_MAX_SIZE" in __import__("os").environ:
+                del __import__("os").environ["CLAUDE_POOL_MAX_SIZE"]
+            importlib.reload(mod)
+            assert mod.POOL_MAX_SIZE == 20

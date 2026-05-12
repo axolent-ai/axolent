@@ -3,6 +3,7 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        exclude: '__snapshots__/'
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-added-large-files
@@ -70,6 +71,14 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-commit]
+
+      - id: pytest-coverage-report
+        name: Test-Coverage-Report generieren
+        entry: python scripts/pytest_coverage.py
+        language: python
+        pass_filenames: false
+        always_run: true
+        stages: [manual]  # Nur manuell, nicht bei jedem Commit
 
       # Security: semgrep (SAST with 2000+ rules, on changed files only)
       # Nutzt scripts/run_with_venv.py für plattform-portablen venv-Zugriff.

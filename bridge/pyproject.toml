@@ -19,6 +19,8 @@ test = [
     "pytest-asyncio>=0.23",
     "pytest-mock>=3.12",
     "pytest-cov>=4.0",
+    "syrupy>=4.0",
+    "hypothesis>=6.0",
 ]
 dev = [
     "pre-commit>=4.0",
