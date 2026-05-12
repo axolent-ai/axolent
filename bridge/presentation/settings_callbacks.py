@@ -39,6 +39,7 @@ _SETTINGS_STRINGS: dict[str, dict[str, str]] = {
         "default_suffix": "(Default)",
         "global_override_suffix": "(global)",
         "global_override_headline": "Globaler Override: {display_name} (alle Slots)",
+        "global_override_text": "⚡ Globaler Override aktiv: {display_name} (alle Slots)",
         "reset_global_btn": "Globalen Override aufheben",
         "slot_select_title": "{slot} — Modell wählen",
         "current_marker": "●",
@@ -65,6 +66,7 @@ _SETTINGS_STRINGS: dict[str, dict[str, str]] = {
         "default_suffix": "(Default)",
         "global_override_suffix": "(global)",
         "global_override_headline": "Global override: {display_name} (all slots)",
+        "global_override_text": "⚡ Global Override active: {display_name} (all slots)",
         "reset_global_btn": "Remove global override",
         "slot_select_title": "{slot} — Choose model",
         "current_marker": "●",
@@ -161,18 +163,8 @@ def build_main_menu_keyboard(
 
     buttons: list[list[InlineKeyboardButton]] = []
 
-    # Globaler Override: Headline + Reset-Button wenn aktiv
+    # Globaler Override: nur Reset-Button im Keyboard (Headline geht in den Text)
     if global_override:
-        global_display = model_service.get_model_display_name(global_override)
-        headline = s["global_override_headline"].format(display_name=global_display)
-        buttons.append(
-            [
-                InlineKeyboardButton(
-                    f"⚡ {headline}",
-                    callback_data="settings_noop",
-                )
-            ]
-        )
         buttons.append(
             [
                 InlineKeyboardButton(
@@ -223,7 +215,13 @@ def build_main_menu_keyboard(
         ]
     )
 
-    text = f"⚙️ {s['main_title']}\n\n{s['models_section']}"
+    # Message-Text: Headline für globalen Override im Text (nicht im Keyboard)
+    if global_override:
+        global_display = model_service.get_model_display_name(global_override)
+        override_line = s["global_override_text"].format(display_name=global_display)
+        text = f"⚙️ {s['main_title']}\n\n{override_line}\n\n{s['models_section']}"
+    else:
+        text = f"⚙️ {s['main_title']}\n\n{s['models_section']}"
     return text, InlineKeyboardMarkup(buttons)
 
 

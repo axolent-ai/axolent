@@ -572,10 +572,10 @@ class TestGlobalOverrideShownInSettings:
         with patch("presentation.decorators.ALLOW_ALL_USERS", True):
             yield  # type: ignore[misc]
 
-    async def test_global_override_shows_headline(
+    async def test_global_override_shows_headline_in_text(
         self, model_service: ModelService
     ) -> None:
-        """Nach /setmodel opus zeigt /settings eine globale Override-Headline."""
+        """Nach /setmodel opus zeigt /settings die Override-Headline im Message-Text."""
         from presentation.settings_callbacks import handle_settings_callback
 
         # Globalen Override setzen (slot="global" ist Default)
@@ -586,11 +586,16 @@ class TestGlobalOverrideShownInSettings:
 
         await handle_settings_callback(update, context)
 
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        # Headline muss im Message-Text stehen
+        assert "Globaler Override aktiv:" in text
+        assert "Opus" in text
+
+        # Keyboard darf KEINEN Button mit "Globaler Override" enthalten
         keyboard = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
-        # Erster Button muss die Headline sein
-        headline_btn = keyboard.inline_keyboard[0][0]
-        assert "Globaler Override" in headline_btn.text
-        assert "Opus" in headline_btn.text
+        for row in keyboard.inline_keyboard:
+            for btn in row:
+                assert "Globaler Override" not in btn.text
 
     async def test_global_override_shows_reset_button(
         self, model_service: ModelService
@@ -606,8 +611,8 @@ class TestGlobalOverrideShownInSettings:
         await handle_settings_callback(update, context)
 
         keyboard = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
-        # Zweiter Button muss der Reset-Global-Button sein
-        reset_btn = keyboard.inline_keyboard[1][0]
+        # Erster Button muss der Reset-Global-Button sein (Headline ist jetzt im Text)
+        reset_btn = keyboard.inline_keyboard[0][0]
         assert "settings_reset_global" in reset_btn.callback_data
 
     async def test_global_override_slots_show_global_suffix(
@@ -624,24 +629,27 @@ class TestGlobalOverrideShownInSettings:
         await handle_settings_callback(update, context)
 
         keyboard = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
-        # Slots starten ab Index 2 (nach Headline + Reset-Global)
-        for i in range(2, 8):  # 6 Slots
+        # Slots starten ab Index 1 (nach Reset-Global, Headline ist jetzt im Text)
+        for i in range(1, 7):  # 6 Slots
             btn = keyboard.inline_keyboard[i][0]
             assert "(global)" in btn.text, (
                 f"Slot-Button '{btn.text}' muss '(global)' enthalten"
             )
             assert "(Default)" not in btn.text
 
-    async def test_no_global_override_no_headline(
+    async def test_no_global_override_no_headline_in_text(
         self, model_service: ModelService
     ) -> None:
-        """Ohne globalen Override: keine Headline, 8 Rows (6 Slots + Sprache + Reset)."""
+        """Ohne globalen Override: keine Headline im Text, 8 Rows (6 Slots + Sprache + Reset)."""
         from presentation.settings_callbacks import handle_settings_callback
 
         update = _make_callback_update("settings_back")
         context = _make_context(model_service=model_service)
 
         await handle_settings_callback(update, context)
+
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Globaler Override aktiv:" not in text
 
         keyboard = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
         assert len(keyboard.inline_keyboard) == 8
@@ -662,14 +670,14 @@ class TestGlobalOverrideShownInSettings:
         await handle_settings_callback(update, context)
 
         keyboard = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
-        # CODE (Index 3, nach Headline + Reset-Global + CHAT) zeigt Haiku ohne "(global)"
-        code_btn = keyboard.inline_keyboard[3][0]
+        # CODE (Index 2, nach Reset-Global + CHAT) zeigt Haiku ohne "(global)"
+        code_btn = keyboard.inline_keyboard[2][0]
         assert "CODE:" in code_btn.text
         assert "Haiku" in code_btn.text
         assert "(global)" not in code_btn.text
 
-        # CHAT (Index 2) zeigt Opus mit "(global)"
-        chat_btn = keyboard.inline_keyboard[2][0]
+        # CHAT (Index 1) zeigt Opus mit "(global)"
+        chat_btn = keyboard.inline_keyboard[1][0]
         assert "CHAT:" in chat_btn.text
         assert "Opus" in chat_btn.text
         assert "(global)" in chat_btn.text
@@ -677,7 +685,7 @@ class TestGlobalOverrideShownInSettings:
     async def test_global_override_en_strings(
         self, model_service: ModelService
     ) -> None:
-        """Globaler Override in EN zeigt englische Strings."""
+        """Globaler Override in EN zeigt englische Strings im Message-Text."""
         from presentation.settings_callbacks import handle_settings_callback
 
         model_service.set_user_model(1, "opus")
@@ -689,9 +697,16 @@ class TestGlobalOverrideShownInSettings:
 
         await handle_settings_callback(update, context)
 
+        text = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Global Override active:" in text
+        assert "Opus" in text
+
+        # Keyboard darf KEINEN Headline-Button enthalten
         keyboard = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
-        headline_btn = keyboard.inline_keyboard[0][0]
-        assert "Global override" in headline_btn.text
+        for row in keyboard.inline_keyboard:
+            for btn in row:
+                assert "Global override" not in btn.text
+                assert "Global Override" not in btn.text
 
 
 class TestSettingsResetGlobalCallback:
