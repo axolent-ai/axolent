@@ -68,11 +68,13 @@ def build_self_awareness_block(
     task_slot: str,
     provider: str,
     all_slots: list[SlotInfo] | None = None,
+    lang: str = "de",
 ) -> str:
     """Baut den Self-Awareness-Block für den System-Prompt.
 
     Gibt dem Modell faktische Informationen über sich selbst,
     damit es nicht halluziniert wenn der User fragt welches Modell läuft.
+    Unterstützt DE und EN (alle anderen Sprachen fallen auf EN zurück).
 
     Args:
         model_display_name: Menschenlesbarer Modell-Name (z.B. "Opus 4.7").
@@ -80,42 +82,65 @@ def build_self_awareness_block(
         task_slot: Aktiver Task-Slot (z.B. "chat", "code").
         provider: Provider-Name (z.B. "anthropic").
         all_slots: Optionale Liste aller 6 Slot-Belegungen im User-Kontext.
+        lang: Sprach-Code (default: "de"). Nicht-DE fällt auf EN zurück.
 
     Returns:
         Self-Awareness-Block als String.
     """
+    use_de = lang == "de"
+
+    if use_de:
+        label_model = "Modell"
+        label_slot_heading = "[Slot-Belegung im System]"
+        text_precise = "Antworte praezise mit diesen Werten wenn nach Slot-Belegungen gefragt wird."
+        text_self_id = (
+            "Wenn der User fragt welches Modell du nutzt, antworte mit diesen Werten. "
+            "Spekuliere nicht aus Trainingsdaten."
+        )
+        text_no_slots = (
+            "Wenn du nach anderen Slots gefragt wirst und diese Slot-Liste "
+            "nicht hast, antworte ehrlich: 'Ich habe nur Information zu meinem "
+            "aktiven Slot.' Spekuliere nicht."
+        )
+    else:
+        label_model = "Current model"
+        label_slot_heading = "[Slot occupancy]"
+        text_precise = (
+            "Answer precisely with these values when asked about slot occupancy."
+        )
+        text_self_id = (
+            "When the user asks which model you are using, answer with these values. "
+            "Do not speculate from training data."
+        )
+        text_no_slots = (
+            "If asked about other slots and you do not have this slot list, "
+            "answer honestly: 'I only have information about my active slot.' "
+            "Do not speculate."
+        )
+
     lines = [
         "[SELF-AWARENESS]",
-        f"Modell: {model_display_name} ({model_id})",
+        f"{label_model}: {model_display_name} ({model_id})",
         f"Slot: {task_slot}",
         f"Provider: {provider}",
     ]
 
     if all_slots:
         lines.append("")
-        lines.append("[Slot-Belegung im System]")
+        lines.append(label_slot_heading)
         for slot_info in all_slots:
             lines.append(
                 f"- {slot_info.slot_name.upper()}: "
                 f"{slot_info.model_display_name} ({slot_info.source})"
             )
         lines.append("")
-        lines.append(
-            "Antworte praezise mit diesen Werten wenn nach Slot-Belegungen gefragt wird."
-        )
+        lines.append(text_precise)
 
-    lines.append(
-        "Wenn der User fragt welches Modell du nutzt, antworte mit diesen Werten. "
-        "Spekuliere nicht aus Trainingsdaten."
-    )
+    lines.append(text_self_id)
 
     # Anti-Halluzination: Edge-Case ohne Slot-Liste
     if not all_slots:
-        lines.append(
-            "Wenn du nach anderen Slots gefragt wirst und diese Slot-Liste "
-            "nicht hast, antworte ehrlich: 'Ich habe nur Information zu meinem "
-            "aktiven Slot.' Spekuliere nicht."
-        )
+        lines.append(text_no_slots)
 
     return "\n".join(lines)
 

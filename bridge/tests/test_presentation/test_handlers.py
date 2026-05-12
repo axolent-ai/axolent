@@ -714,13 +714,16 @@ class TestStreamingErrorRedaction:
         # Mock chat_service.process_user_message_streaming
         mock_svc = _make_mock_chat_service()
 
-        async def mock_stream(**kwargs):
+        async def _error_events():
             yield StreamEvent(
                 event_type="error",
                 text="/secret/path/to/file.py: PermissionError traceback",
                 raw={"error": {"message": "secret stacktrace"}},
                 is_final=True,
             )
+
+        async def mock_stream(**kwargs):
+            return _error_events(), 0, {}
 
         mock_svc.process_user_message_streaming = mock_stream
 
@@ -784,10 +787,10 @@ class TestStreamingErrorRedaction:
         mock_provider = MagicMock()
         mock_svc = _make_mock_chat_service()
 
-        async def mock_stream(**kwargs):
+        async def mock_stream_raise(**kwargs):
             raise RuntimeError("C:\\Users\\secret\\pipe_broken.txt")
 
-        mock_svc.process_user_message_streaming = mock_stream
+        mock_svc.process_user_message_streaming = mock_stream_raise
 
         mock_pool = MagicMock()
         mock_managed = MagicMock()
@@ -862,7 +865,7 @@ class TestStreamingAuditEntries:
             )
 
         async def mock_stream(**kwargs):
-            return _stream_events(), 3  # 3 Memory-Einträge geladen
+            return _stream_events(), 3, {}  # 3 Memory-Einträge geladen
 
         mock_svc.process_user_message_streaming = mock_stream
 
@@ -926,15 +929,15 @@ class TestStreamingAuditEntries:
         mock_provider = MagicMock()
         mock_svc = _make_mock_chat_service()
 
-        async def mock_stream(**kwargs):
+        async def mock_stream_crash(**kwargs):
             async def _crash_gen():
                 if True:
                     raise RuntimeError("unexpected crash")
                 yield  # pragma: no cover
 
-            return _crash_gen(), 0
+            return _crash_gen(), 0, {}
 
-        mock_svc.process_user_message_streaming = mock_stream
+        mock_svc.process_user_message_streaming = mock_stream_crash
 
         mock_pool = MagicMock()
         mock_managed = MagicMock()

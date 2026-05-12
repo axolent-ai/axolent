@@ -490,3 +490,45 @@ class TestImplicitReset:
 
         override = service.get_user_model(user_id=1, slot="code")
         assert override == "claude-opus-4-7"
+
+    def test_global_override_prevents_implicit_reset(
+        self, service_with_defaults: ModelService
+    ) -> None:
+        """V9 Fix 3: Global=Opus, User wählt Sonnet für CHAT (= Slot-Default).
+        Implicit-Reset darf NICHT greifen, da der User den Slot
+        explizit vom Global entkoppeln will."""
+        # Global-Override auf Opus setzen
+        service_with_defaults.set_user_model(
+            user_id=1, alias_or_id="opus", slot="global"
+        )
+
+        # User wählt Sonnet für CHAT (= Slot-Default)
+        success, result = service_with_defaults.set_user_model(
+            user_id=1, alias_or_id="sonnet", slot="chat"
+        )
+        assert success is True
+        assert result == "claude-sonnet-4-6"
+
+        # Slot-Override MUSS existieren (nicht gelöscht!)
+        override = service_with_defaults.get_user_model(user_id=1, slot="chat")
+        assert override == "claude-sonnet-4-6", (
+            f"Bei aktivem Global-Override darf Implicit-Reset nicht greifen. "
+            f"Slot-Override sollte 'claude-sonnet-4-6' sein, ist aber: {override}"
+        )
+
+    def test_no_global_still_does_implicit_reset(
+        self, service_with_defaults: ModelService
+    ) -> None:
+        """V9 Fix 3: Ohne Global-Override greift Implicit-Reset weiterhin."""
+        # Kein Global-Override aktiv
+        success, result = service_with_defaults.set_user_model(
+            user_id=1, alias_or_id="sonnet", slot="chat"
+        )
+        assert success is True
+
+        # Slot-Override darf NICHT existieren (Implicit-Reset)
+        override = service_with_defaults.get_user_model(user_id=1, slot="chat")
+        assert override is None, (
+            f"Ohne Global-Override muss Implicit-Reset greifen. "
+            f"Override sollte None sein, ist aber: {override}"
+        )

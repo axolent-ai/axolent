@@ -56,7 +56,7 @@ def full_configs() -> list[SlotConfig]:
                 "vergleich",
                 "pro und contra",
                 "step by step",
-                "schritt fuer schritt",
+                "schritt für schritt",
                 "berechn",
                 "kalkulier",
                 "strategie",
@@ -88,7 +88,7 @@ def full_configs() -> list[SlotConfig]:
             keywords=(
                 "brainstorm",
                 "ideen",
-                "vorschlaege",
+                "vorschläge",
                 "varianten",
                 "alternativen",
                 "schreib",
@@ -112,7 +112,7 @@ def full_configs() -> list[SlotConfig]:
                 "extrahier",
                 "ist das",
                 "ja oder nein",
-                "uebersetz",
+                "übersetz",
                 "formatier",
                 "konvertier",
             ),
@@ -256,8 +256,8 @@ class TestCreativeSlotClassification:
         assert result.slot == TaskSlot.CREATIVE
 
     def test_creative_varianten(self, router: TaskRouter) -> None:
-        """Varianten + Vorschlaege ergibt CREATIVE."""
-        result = router.classify("Gib mir 5 Varianten und Vorschlaege fuer den Slogan")
+        """Varianten + Vorschläge ergibt CREATIVE."""
+        result = router.classify("Gib mir 5 Varianten und Vorschläge für den Slogan")
         assert result.slot == TaskSlot.CREATIVE
 
 
@@ -275,8 +275,8 @@ class TestQuickSlotClassification:
         assert result.slot == TaskSlot.QUICK
 
     def test_quick_uebersetze(self, router: TaskRouter) -> None:
-        """Uebersetze in kurzem Text ergibt QUICK."""
-        result = router.classify("Uebersetz das ins Englische")
+        """Übersetze in kurzem Text ergibt QUICK."""
+        result = router.classify("Übersetz das ins Englische")
         assert result.slot == TaskSlot.QUICK
 
     def test_quick_too_long(self, router: TaskRouter) -> None:
@@ -417,27 +417,35 @@ class TestModelResolution:
     """Tests fuer resolve_model (ohne ModelService)."""
 
     def test_slot_default_code(self, router: TaskRouter) -> None:
-        """CODE-Slot Default ist 'opus'."""
+        """CODE-Slot Default ist kanonisch 'claude-opus-4-7'."""
         model = router.resolve_model(user_id=1, slot=TaskSlot.CODE)
-        assert model == "opus"
+        assert model == "claude-opus-4-7"
 
     def test_slot_default_chat(self, router: TaskRouter) -> None:
-        """CHAT-Slot Default ist 'sonnet'."""
+        """CHAT-Slot Default ist kanonisch 'claude-sonnet-4-6'."""
         model = router.resolve_model(user_id=1, slot=TaskSlot.CHAT)
-        assert model == "sonnet"
+        assert model == "claude-sonnet-4-6"
 
     def test_slot_default_quick(self, router: TaskRouter) -> None:
-        """QUICK-Slot Default ist 'haiku'."""
+        """QUICK-Slot Default ist kanonisch 'claude-haiku-4-5-...'."""
         model = router.resolve_model(user_id=1, slot=TaskSlot.QUICK)
-        assert model == "haiku"
+        assert model == "claude-haiku-4-5-20251001"
 
     def test_get_slot_defaults(self, router: TaskRouter) -> None:
-        """get_slot_defaults gibt alle 6 Slot-Defaults."""
+        """get_slot_defaults gibt alle 6 Slot-Defaults (Aliase)."""
         defaults = router.get_slot_defaults()
         assert len(defaults) == 6
         assert defaults[TaskSlot.CODE] == "opus"
         assert defaults[TaskSlot.CHAT] == "sonnet"
         assert defaults[TaskSlot.QUICK] == "haiku"
+
+    def test_get_default_for_slot_canonical(self, router: TaskRouter) -> None:
+        """get_default_for_slot gibt kanonische Model-IDs."""
+        assert router.get_default_for_slot(TaskSlot.CODE) == "claude-opus-4-7"
+        assert router.get_default_for_slot(TaskSlot.CHAT) == "claude-sonnet-4-6"
+        assert (
+            router.get_default_for_slot(TaskSlot.QUICK) == "claude-haiku-4-5-20251001"
+        )
 
 
 # ──────────────────────────────────────────────────────────────
@@ -554,6 +562,6 @@ class TestModelResolutionWithService:
         assert model == "claude-haiku-4-5-20251001"
 
     def test_no_override_uses_default(self, router_with_service: TaskRouter) -> None:
-        """Ohne Override wird Slot-Default verwendet."""
+        """Ohne Override wird kanonischer Slot-Default verwendet."""
         model = router_with_service.resolve_model(user_id=999, slot=TaskSlot.CODE)
-        assert model == "opus"
+        assert model == "claude-opus-4-7"

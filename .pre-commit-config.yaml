@@ -45,8 +45,8 @@ repos:
         name: Keine ASCII-Umlaute (ae/oe/ue/ss) in deutschem Production-Text
         entry: python scripts/check_no_fake_umlauts.py
         language: python
-        types: [python]
-        exclude: '^(bridge/tests/|\.venv/|scripts/check_no_fake_umlauts\.py)'
+        files: ^bridge/(application|domain|infrastructure|presentation|config)/.*\.(py|ya?ml)$
+        exclude: ^bridge/tests/
 
       - id: import-linter
         name: import-linter

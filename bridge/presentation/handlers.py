@@ -553,6 +553,7 @@ async def _handle_message_streaming(
     error_id = ""
     session: StreamingSession | None = None
     memory_entries_loaded = 0
+    task_meta: dict[str, Any] = {}
 
     # Audit "started" Eintrag
     audit_started: dict[str, Any] = {
@@ -612,6 +613,7 @@ async def _handle_message_streaming(
             (
                 stream_iter,
                 memory_entries_loaded,
+                task_meta,
             ) = await chat_service.process_user_message_streaming(
                 text=text,
                 user_id=user_id,
@@ -692,6 +694,7 @@ async def _handle_message_streaming(
                 subprocess_pid=subprocess_pid,
                 memory_entries_loaded=memory_entries_loaded,
                 system_prompt=_get_system_prompt(context),
+                task_meta=task_meta,
             )
             # C-3: Wenn Leakage erkannt, finales Edit mit Refusal
             if checked_text != final_text:

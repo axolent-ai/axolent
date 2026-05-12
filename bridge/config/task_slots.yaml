@@ -1,4 +1,4 @@
-# Task-Slot-Konfiguration fuer automatisches Modell-Routing
+# Task-Slot-Konfiguration für automatisches Modell-Routing
 # Jeder Slot hat: default_model, patterns, keywords, thresholds
 #
 # Score-Berechnung:
@@ -6,7 +6,7 @@
 #   - Jedes gematchtes Keyword: +1 Punkt
 #   - Code-Block (```): +100 Punkte (direkt CODE-Slot)
 #
-# Bei Score-Gleichstand gilt Prioritaet: CODE > REASON > RESEARCH > CREATIVE > QUICK > CHAT
+# Bei Score-Gleichstand gilt Priorität: CODE > REASON > RESEARCH > CREATIVE > QUICK > CHAT
 
 slots:
   code:
@@ -49,7 +49,7 @@ slots:
       - vergleich
       - pro und contra
       - step by step
-      - schritt fuer schritt
+      - schritt für schritt
       - berechn
       - kalkulier
       - strategie
@@ -89,7 +89,7 @@ slots:
     keywords:
       - brainstorm
       - ideen
-      - vorschlaege
+      - vorschläge
       - varianten
       - alternativen
       - schreib
@@ -113,10 +113,10 @@ slots:
       - extrahier
       - ist das
       - ja oder nein
-      - uebersetz
+      - übersetz
       - formatier
       - konvertier
-      - uebersetze
+      - übersetze
     min_keyword_matches: 1
     max_word_count: 50
 

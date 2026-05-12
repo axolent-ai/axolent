@@ -187,23 +187,39 @@ class ModelService:
                 f"unterstützt. Verfügbar: {available}",
             )
 
-        # Impliziter Reset: Wenn das gewaehlte Modell dem Slot-Default entspricht,
-        # wird kein Override gespeichert (bzw. ein bestehender entfernt).
-        # Damit zeigt die UI korrekt "(Default)" an.
+        # Impliziter Reset: Wenn das gewaehlte Modell dem Slot-Default entspricht
+        # UND kein globaler Override aktiv ist, wird kein Override gespeichert
+        # (bzw. ein bestehender entfernt). Damit zeigt die UI korrekt "(Default)" an.
+        #
+        # Wenn ein globaler Override aktiv ist, ist die Slot-Default-Wahl ein
+        # expliziter Override (User will den Slot vom Global entkoppeln) und
+        # MUSS als Slot-Override gespeichert werden.
         self._last_was_implicit_reset = False
         if slot != "global" and slot in self._slot_defaults:
             slot_default_id = self._slot_defaults[slot]
             if resolved == slot_default_id:
-                self._storage.delete_model(user_id, slot)
-                self._last_was_implicit_reset = True
+                # Globalen Override prüfen: nur implicit-reset wenn KEIN global aktiv
+                global_override = self._storage.get_model(user_id, "global")
+                if global_override is None:
+                    self._storage.delete_model(user_id, slot)
+                    self._last_was_implicit_reset = True
+                    log.info(
+                        "User %d hat Modell '%s' gewählt das dem Slot-Default "
+                        "für '%s' entspricht. Override entfernt (impliziter Reset).",
+                        user_id,
+                        resolved,
+                        slot,
+                    )
+                    return True, resolved
+                # Global aktiv: expliziter Override, weiter zum normalen Speichern
                 log.info(
-                    "User %d hat Modell '%s' gewählt das dem Slot-Default "
-                    "für '%s' entspricht. Override entfernt (impliziter Reset).",
+                    "User %d hat Modell '%s' gewählt (= Slot-Default für '%s'), "
+                    "aber globaler Override '%s' ist aktiv. Speichere als Slot-Override.",
                     user_id,
                     resolved,
                     slot,
+                    global_override,
                 )
-                return True, resolved
 
         self._storage.set_model(user_id, resolved, slot=slot)
         log.info(

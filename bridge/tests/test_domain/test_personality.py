@@ -198,3 +198,84 @@ class TestBuildSelfAwarenessBlock:
         assert "CODE: Haiku 4.5 (user-override)" in block
         assert "REASON: Sonnet 4.6 (default)" in block
         assert "CHAT: Opus 4.7 (global)" in block
+
+    # ── i18n Tests (Fix 6: Self-Awareness EN) ──
+
+    def test_en_block_uses_english_labels(self) -> None:
+        """EN-Block nutzt englische Labels statt deutscher."""
+        block = build_self_awareness_block(
+            model_display_name="Opus 4.7",
+            model_id="claude-opus-4-7",
+            task_slot="code",
+            provider="anthropic",
+            lang="en",
+        )
+        assert "[SELF-AWARENESS]" in block
+        assert "Current model: Opus 4.7" in block
+        assert "Do not speculate from training data" in block
+        # Deutsche Texte duerfen NICHT drin sein
+        assert "Modell:" not in block
+        assert "Spekuliere nicht" not in block
+
+    def test_en_block_with_slots(self) -> None:
+        """EN-Block mit Slot-Belegung nutzt englische Texte."""
+        all_slots = [
+            SlotInfo(
+                slot_name="chat", model_display_name="Sonnet 4.6", source="default"
+            ),
+            SlotInfo(slot_name="code", model_display_name="Opus 4.7", source="default"),
+        ]
+        block = build_self_awareness_block(
+            model_display_name="Opus 4.7",
+            model_id="claude-opus-4-7",
+            task_slot="code",
+            provider="anthropic",
+            all_slots=all_slots,
+            lang="en",
+        )
+        assert "[Slot occupancy]" in block
+        assert "Answer precisely with these values" in block
+        # Deutsche Slot-Heading darf NICHT drin sein
+        assert "[Slot-Belegung im System]" not in block
+
+    def test_en_block_without_slots_anti_hallucination(self) -> None:
+        """EN-Block ohne Slot-Liste hat englische Anti-Halluzination."""
+        block = build_self_awareness_block(
+            model_display_name="Opus 4.7",
+            model_id="claude-opus-4-7",
+            task_slot="chat",
+            provider="anthropic",
+            all_slots=None,
+            lang="en",
+        )
+        assert "I only have information about my active slot" in block
+        assert "Ich habe nur Information" not in block
+
+    def test_de_is_default(self) -> None:
+        """Ohne lang-Parameter wird Deutsch verwendet (Abwärtskompatibilität)."""
+        block = build_self_awareness_block(
+            model_display_name="Opus 4.7",
+            model_id="claude-opus-4-7",
+            task_slot="code",
+            provider="anthropic",
+        )
+        assert "Modell: Opus 4.7" in block
+        assert "Spekuliere nicht" in block
+
+    def test_non_de_falls_back_to_en(self) -> None:
+        """Nicht-DE-Sprachen fallen auf EN zurück."""
+        block_fr = build_self_awareness_block(
+            model_display_name="Opus 4.7",
+            model_id="claude-opus-4-7",
+            task_slot="code",
+            provider="anthropic",
+            lang="fr",
+        )
+        block_en = build_self_awareness_block(
+            model_display_name="Opus 4.7",
+            model_id="claude-opus-4-7",
+            task_slot="code",
+            provider="anthropic",
+            lang="en",
+        )
+        assert block_fr == block_en

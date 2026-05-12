@@ -229,8 +229,7 @@ class ChatService:
         Prioritaet pro Slot:
           1. Slot-spezifischer Override
           2. Globaler Override
-          3. Slot-Default (aus TaskRouter)
-          4. System-Default
+          3. Slot-Default (via TaskRouter.get_default_for_slot, Single Source of Truth)
 
         Args:
             user_id: Telegram-User-ID.
@@ -239,7 +238,7 @@ class ChatService:
             Liste von SlotInfo für alle 6 Slots.
         """
         from application.model_registry import ModelRegistry
-        from application.model_service import DEFAULT_MODEL, resolve_alias
+        from application.model_service import DEFAULT_MODEL
         from domain.task_slot import TaskSlot
 
         registry = ModelRegistry()
@@ -251,15 +250,6 @@ class ChatService:
 
         global_override = overrides.get("global")
 
-        slot_defaults: dict[str, str] = {}
-        if self.task_router is not None and hasattr(
-            self.task_router, "get_slot_defaults"
-        ):
-            for slot_enum, alias in self.task_router.get_slot_defaults().items():
-                resolved = resolve_alias(alias)
-                if resolved:
-                    slot_defaults[slot_enum.value] = resolved
-
         for slot in TaskSlot:
             slot_override = overrides.get(slot.value)
             if slot_override:
@@ -269,7 +259,11 @@ class ChatService:
                 model_id = global_override
                 source = "global"
             else:
-                model_id = slot_defaults.get(slot.value) or DEFAULT_MODEL
+                # Single Source of Truth: TaskRouter.get_default_for_slot
+                if self.task_router is not None:
+                    model_id = self.task_router.get_default_for_slot(slot)
+                else:
+                    model_id = DEFAULT_MODEL
                 source = "default"
 
             meta = registry.get(model_id)
@@ -289,6 +283,7 @@ class ChatService:
         user_model: str | None,
         task_slot_name: str | None,
         user_id: int | None = None,
+        lang: str = "de",
     ) -> str:
         """Baut den Self-Awareness-Block für den System-Prompt.
 
@@ -300,6 +295,7 @@ class ChatService:
             user_model: Resolved Modell-ID oder None.
             task_slot_name: Name des Task-Slots oder None.
             user_id: Telegram-User-ID für Slot-Belegungsliste (optional).
+            lang: Sprach-Code für i18n des Blocks (default: "de").
 
         Returns:
             Self-Awareness-Block als String, oder leerer String bei Fehler.
@@ -332,6 +328,7 @@ class ChatService:
                     task_slot=slot,
                     provider=metadata.provider,
                     all_slots=all_slots,
+                    lang=lang,
                 )
             # Fallback: ID direkt verwenden wenn nicht in Registry
             return build_self_awareness_block(
@@ -340,6 +337,7 @@ class ChatService:
                 task_slot=slot,
                 provider="unknown",
                 all_slots=all_slots,
+                lang=lang,
             )
         except Exception:
             log.debug("Self-Awareness-Block konnte nicht gebaut werden", exc_info=True)
@@ -582,7 +580,9 @@ class ChatService:
                 user_model = self.model_service.get_user_model(uid)
 
             # Self-Awareness-Block: Modell-Info in System-Prompt injizieren
-            self_awareness = self._build_self_awareness(user_model, task_slot_name, uid)
+            self_awareness = self._build_self_awareness(
+                user_model, task_slot_name, uid, lang=lang
+            )
             if self_awareness:
                 effective_prompt = f"{effective_prompt}\n\n{self_awareness}"
 
@@ -766,7 +766,7 @@ class ChatService:
         language_override: Optional[str] = None,
         reply_to_text: Optional[str] = None,
         status_session: Optional[Any] = None,
-    ) -> tuple[AsyncIterator[StreamEvent], int]:
+    ) -> tuple[AsyncIterator[StreamEvent], int, dict[str, Any]]:
         """Streaming-Variante von process_user_message.
 
         Bereitet Prompt identisch vor (Memory, History, Language),
@@ -785,9 +785,12 @@ class ChatService:
             status_session: Optionale StatusSession für Status-Updates.
 
         Returns:
-            Tuple von (StreamEvent-AsyncIterator, memory_entries_loaded).
+            Tuple von (StreamEvent-AsyncIterator, memory_entries_loaded, task_meta).
             memory_entries_loaded: Anzahl Memory-Einträge die in den Prompt
             eingefügt wurden (für Audit-Log).
+            task_meta: Dict mit TaskRouter-Klassifikationsdaten
+            (task_slot, task_score, task_matched_patterns, task_matched_keywords,
+            resolved_model). Leer wenn kein TaskRouter aktiv.
 
         Note:
             Der Aufrufer muss nach dem Stream selbst:
@@ -854,16 +857,35 @@ class ChatService:
         # Phase 2a: TaskRouter-Klassifikation + Modell-Resolution
         user_model: str | None = None
         task_slot_name: str | None = None
+        task_score: int = 0
+        task_matched_patterns: tuple[str, ...] = ()
+        task_matched_keywords: tuple[str, ...] = ()
+
         if self.task_router is not None:
             classification = self.task_router.classify(text)
             task_slot_name = classification.slot.value
+            task_score = classification.score
+            task_matched_patterns = classification.matched_patterns
+            task_matched_keywords = classification.matched_keywords
             user_model = self.task_router.resolve_model(uid, classification.slot)
         elif self.model_service is not None:
             # Fallback: Phase 1 Verhalten (nur globaler Override)
             user_model = self.model_service.get_user_model(uid)
 
-        # Self-Awareness-Block: Modell-Info in System-Prompt injizieren
-        self_awareness = self._build_self_awareness(user_model, task_slot_name, uid)
+        # Task-Metadaten für Audit (an Caller durchreichen)
+        task_meta: dict[str, Any] = {}
+        if task_slot_name is not None:
+            task_meta["task_slot"] = task_slot_name
+            task_meta["task_score"] = task_score
+            task_meta["task_matched_patterns"] = list(task_matched_patterns)
+            task_meta["task_matched_keywords"] = list(task_matched_keywords)
+            if user_model:
+                task_meta["resolved_model"] = user_model
+
+        # Self-Awareness-Block: Modell-Info in System-Prompt injizieren (i18n)
+        self_awareness = self._build_self_awareness(
+            user_model, task_slot_name, uid, lang=lang
+        )
         if self_awareness:
             effective_prompt = f"{effective_prompt}\n\n{self_awareness}"
 
@@ -888,7 +910,7 @@ class ChatService:
                         status_session.mark_stream_started()
                 yield event
 
-        return _stream(), memory_entries_loaded
+        return _stream(), memory_entries_loaded, task_meta
 
     async def save_streaming_result(
         self,
@@ -903,6 +925,7 @@ class ChatService:
         subprocess_pid: int = 0,
         memory_entries_loaded: int = 0,
         system_prompt: str = "",
+        task_meta: dict[str, Any] | None = None,
     ) -> str:
         """Speichert das Ergebnis einer Streaming-Session in History + Audit.
 
@@ -922,6 +945,9 @@ class ChatService:
             subprocess_pid: PID des genutzten Subprocess.
             memory_entries_loaded: Anzahl geladener Memory-Einträge.
             system_prompt: Aktiver System-Prompt für Leakage-Check (C-3).
+            task_meta: TaskRouter-Klassifikationsdaten für Audit
+                (task_slot, task_score, task_matched_patterns,
+                task_matched_keywords, resolved_model). Optional.
 
         Returns:
             Die (ggf. bereinigte) Response-Text. Caller muss prüfen ob
@@ -969,6 +995,9 @@ class ChatService:
         }
         if leakage_detected:
             audit["leakage_attempt"] = True
+        # TaskRouter-Metadaten ins Audit (Phase 2a Konfidenz-Logging)
+        if task_meta:
+            audit.update(task_meta)
         write_audit_log(audit)
 
         return response_text

@@ -23,6 +23,20 @@ from domain.task_slot import SLOT_PRIORITY, TaskSlot
 if TYPE_CHECKING:
     from application.model_service import ModelService
 
+# Lazy import helper to avoid circular import at module level
+_resolve_alias = None
+
+
+def _get_resolve_alias():
+    """Lazy-load resolve_alias from model_service to avoid circular imports."""
+    global _resolve_alias
+    if _resolve_alias is None:
+        from application.model_service import resolve_alias
+
+        _resolve_alias = resolve_alias
+    return _resolve_alias
+
+
 log = logging.getLogger(__name__)
 
 # Default YAML path
@@ -189,33 +203,62 @@ class TaskRouter:
         Prioritaet:
           1. User-Override pro Slot (via ModelService/SQLite)
           2. User-Override global
-          3. Slot-Default (aus YAML)
+          3. Slot-Default (aus YAML, kanonisch aufgelöst)
           4. None (caller nutzt System-Default)
+
+        Alle Rückgaben sind kanonische Model-IDs (z.B. 'claude-opus-4-7'),
+        nie Aliase. Das verhindert Pool-Key-Duplikate.
 
         Args:
             user_id: Telegram-User-ID.
             slot: Erkannter Task-Slot.
 
         Returns:
-            Modell-Alias (z.B. 'opus', 'sonnet', 'haiku') oder None.
+            Kanonische Modell-ID oder None.
         """
         if self._model_service is not None:
-            # 1. Slot-spezifischer Override
+            # 1. Slot-spezifischer Override (bereits kanonisch aus ModelService)
             slot_override = self._model_service.get_user_model(user_id, slot=slot.value)
             if slot_override is not None:
                 return slot_override
 
-            # 2. Globaler Override
+            # 2. Globaler Override (bereits kanonisch aus ModelService)
             global_override = self._model_service.get_user_model(user_id, slot="global")
             if global_override is not None:
                 return global_override
 
-        # 3. Slot-Default aus Config
+        # 3. Slot-Default aus Config (Alias -> kanonische ID)
         cfg = self._slots.get(slot)
         if cfg is not None and cfg.default_model:
+            resolve = _get_resolve_alias()
+            canonical = resolve(cfg.default_model)
+            if canonical is not None:
+                return canonical
+            # Fallback: default_model ist bereits eine volle ID oder unbekannt
             return cfg.default_model
 
         return None
+
+    def get_default_for_slot(self, slot: TaskSlot) -> str:
+        """Liefert die kanonische Model-ID für den Slot-Default (Single Source of Truth).
+
+        Fällt auf DEFAULT_MODEL zurück wenn der Slot keinen eigenen Default hat.
+
+        Args:
+            slot: Task-Slot.
+
+        Returns:
+            Kanonische Model-ID (garantiert nicht-leer).
+        """
+        from application.model_service import DEFAULT_MODEL
+
+        cfg = self._slots.get(slot)
+        if cfg is not None and cfg.default_model:
+            resolve = _get_resolve_alias()
+            canonical = resolve(cfg.default_model)
+            if canonical is not None:
+                return canonical
+        return DEFAULT_MODEL
 
     def get_slot_defaults(self) -> dict[TaskSlot, str]:
         """Gibt die Default-Modelle pro Slot zurück.

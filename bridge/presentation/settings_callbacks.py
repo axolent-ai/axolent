@@ -120,16 +120,12 @@ def _get_task_router(context: ContextTypes.DEFAULT_TYPE) -> Any:
 def _get_slot_default_model(slot: TaskSlot, context: ContextTypes.DEFAULT_TYPE) -> str:
     """Bestimmt das Default-Modell für einen Slot.
 
-    Reihenfolge: TaskRouter slot-default -> System DEFAULT_MODEL.
+    Delegiert an TaskRouter.get_default_for_slot (Single Source of Truth).
+    Fällt auf DEFAULT_MODEL zurück wenn kein TaskRouter vorhanden.
     """
     task_router = _get_task_router(context)
-    if task_router is not None and hasattr(task_router, "get_slot_defaults"):
-        slot_defaults = task_router.get_slot_defaults()
-        if slot in slot_defaults:
-            alias = slot_defaults[slot]
-            resolved = resolve_alias(alias)
-            if resolved:
-                return resolved
+    if task_router is not None and hasattr(task_router, "get_default_for_slot"):
+        return task_router.get_default_for_slot(slot)
     return DEFAULT_MODEL
 
 
@@ -243,9 +239,11 @@ def build_slot_menu_keyboard(
     s = _get_settings_strings(lang)
 
     # Effektives Modell für diesen Slot bestimmen
+    # Priorität: Slot-Override > Global-Override > Slot-Default
     slot_override = model_service.get_user_model(user_id, slot.value)
+    global_override = model_service.get_user_model(user_id, "global")
     default_model_id = _get_slot_default_model(slot, context)
-    effective_model = slot_override if slot_override else default_model_id
+    effective_model = slot_override or global_override or default_model_id
 
     buttons: list[list[InlineKeyboardButton]] = []
 

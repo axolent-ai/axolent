@@ -287,7 +287,7 @@ class TestStatusInStreaming:
         mock_callback = AsyncMock()
         status = StatusSession(callback=mock_callback, language="de")
 
-        stream_iter, mem_count = await svc.process_user_message_streaming(
+        stream_iter, mem_count, _task_meta = await svc.process_user_message_streaming(
             text="Test Frage",
             user_id=1,
             chat_id=10,
@@ -334,7 +334,7 @@ class TestStatusInStreaming:
         mock_provider.query_streaming = mock_stream
 
         # Kein status_session
-        stream_iter, _ = await svc.process_user_message_streaming(
+        stream_iter, _, _task_meta = await svc.process_user_message_streaming(
             text="Test",
             user_id=1,
             chat_id=10,
@@ -380,7 +380,7 @@ class TestStatusInStreaming:
         status = StatusSession(callback=mock_callback, language="de")
 
         # Englische Nachricht: Sprach-Detection erkennt "en"
-        stream_iter, _ = await svc.process_user_message_streaming(
+        stream_iter, _, _task_meta = await svc.process_user_message_streaming(
             text="Hey, what is the weather like today?",
             user_id=99,
             chat_id=99,
@@ -433,7 +433,7 @@ class TestStatusInStreaming:
         mock_callback = AsyncMock()
         status = StatusSession(callback=mock_callback, language="de")
 
-        stream_iter, _ = await svc.process_user_message_streaming(
+        stream_iter, _, _task_meta = await svc.process_user_message_streaming(
             text="Hallo Welt",
             user_id=1,
             chat_id=1,

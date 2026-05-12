@@ -40,7 +40,7 @@ def full_router() -> TaskRouter:
         SlotConfig(
             slot=TaskSlot.REASON,
             default_model="opus",
-            keywords=("analysier", "vergleich", "schritt fuer schritt", "strategie"),
+            keywords=("analysier", "vergleich", "schritt für schritt", "strategie"),
             min_keyword_matches=2,
             min_word_count=50,
         ),
@@ -54,7 +54,7 @@ def full_router() -> TaskRouter:
         SlotConfig(
             slot=TaskSlot.CREATIVE,
             default_model="sonnet",
-            keywords=("brainstorm", "ideen", "vorschlaege", "schreib"),
+            keywords=("brainstorm", "ideen", "vorschläge", "schreib"),
             min_keyword_matches=2,
         ),
         SlotConfig(
