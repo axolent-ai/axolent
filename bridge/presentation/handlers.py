@@ -1785,7 +1785,7 @@ async def handle_settings_command(
     from presentation.settings_callbacks import build_main_menu_keyboard
 
     text, keyboard = build_main_menu_keyboard(user_id, model_service, context, lang)
-    await update.message.reply_text(text, reply_markup=keyboard)
+    await update.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
     log_command_audit(
         action="settings",
         user_id=user_id,

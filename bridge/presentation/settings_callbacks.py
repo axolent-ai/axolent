@@ -39,7 +39,7 @@ _SETTINGS_STRINGS: dict[str, dict[str, str]] = {
         "default_suffix": "(Default)",
         "global_override_suffix": "(global)",
         "global_override_headline": "Globaler Override: {display_name} (alle Slots)",
-        "global_override_text": "⚡ Globaler Override aktiv: {display_name} (alle Slots)",
+        "global_override_text": "⚡ <b>Globaler Override aktiv: {display_name} (alle Slots)</b>",
         "reset_global_btn": "Globalen Override aufheben",
         "slot_select_title": "{slot} — Modell wählen",
         "current_marker": "●",
@@ -66,7 +66,7 @@ _SETTINGS_STRINGS: dict[str, dict[str, str]] = {
         "default_suffix": "(Default)",
         "global_override_suffix": "(global)",
         "global_override_headline": "Global override: {display_name} (all slots)",
-        "global_override_text": "⚡ Global Override active: {display_name} (all slots)",
+        "global_override_text": "⚡ <b>Global Override active: {display_name} (all slots)</b>",
         "reset_global_btn": "Remove global override",
         "slot_select_title": "{slot} — Choose model",
         "current_marker": "●",
@@ -395,7 +395,7 @@ async def handle_settings_callback(
         )
         # Zurück zum Hauptmenü
         text, keyboard = build_main_menu_keyboard(user_id, model_service, context, lang)
-        await query.edit_message_text(text, reply_markup=keyboard)
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
         return
 
     if data.startswith("settings_slot:"):
@@ -408,7 +408,7 @@ async def handle_settings_callback(
         text, keyboard = build_slot_menu_keyboard(
             slot, user_id, model_service, context, lang
         )
-        await query.edit_message_text(text, reply_markup=keyboard)
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
         return
 
     if data.startswith("settings_model:"):
@@ -454,7 +454,7 @@ async def handle_settings_callback(
 
         # Zurück zum Hauptmenü mit aktualisierten Werten
         text, keyboard = build_main_menu_keyboard(user_id, model_service, context, lang)
-        await query.edit_message_text(text, reply_markup=keyboard)
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
         return
 
     if data.startswith("settings_reset:"):
@@ -474,13 +474,13 @@ async def handle_settings_callback(
 
         # Zurück zum Hauptmenü
         text, keyboard = build_main_menu_keyboard(user_id, model_service, context, lang)
-        await query.edit_message_text(text, reply_markup=keyboard)
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
         return
 
     if data == "settings_reset_all":
         # Bestätigungs-Dialog anzeigen
         text, keyboard = build_reset_confirm_keyboard(lang)
-        await query.edit_message_text(text, reply_markup=keyboard)
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
         return
 
     if data == "settings_reset_all_confirm":
@@ -496,19 +496,19 @@ async def handle_settings_callback(
 
         # Zurück zum Hauptmenü
         text, keyboard = build_main_menu_keyboard(user_id, model_service, context, lang)
-        await query.edit_message_text(text, reply_markup=keyboard)
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
         return
 
     if data == "settings_back":
         # Zurück zum Hauptmenü
         text, keyboard = build_main_menu_keyboard(user_id, model_service, context, lang)
-        await query.edit_message_text(text, reply_markup=keyboard)
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
         return
 
     if data == "settings_lang_menu":
         # Sprachauswahl anzeigen
         text, keyboard = build_lang_menu_keyboard(current_lang=lang, lang=lang)
-        await query.edit_message_text(text, reply_markup=keyboard)
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
         return
 
     if data.startswith("settings_lang:"):
@@ -533,5 +533,5 @@ async def handle_settings_callback(
         text, keyboard = build_main_menu_keyboard(
             user_id, model_service, context, new_lang
         )
-        await query.edit_message_text(text, reply_markup=keyboard)
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
         return

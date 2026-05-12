@@ -588,7 +588,7 @@ class TestGlobalOverrideShownInSettings:
 
         text = update.callback_query.edit_message_text.call_args[0][0]
         # Headline muss im Message-Text stehen
-        assert "Globaler Override aktiv:" in text
+        assert "<b>Globaler Override aktiv:" in text
         assert "Opus" in text
 
         # Keyboard darf KEINEN Button mit "Globaler Override" enthalten
@@ -649,7 +649,7 @@ class TestGlobalOverrideShownInSettings:
         await handle_settings_callback(update, context)
 
         text = update.callback_query.edit_message_text.call_args[0][0]
-        assert "Globaler Override aktiv:" not in text
+        assert "<b>Globaler Override aktiv:" not in text
 
         keyboard = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
         assert len(keyboard.inline_keyboard) == 8
@@ -698,7 +698,7 @@ class TestGlobalOverrideShownInSettings:
         await handle_settings_callback(update, context)
 
         text = update.callback_query.edit_message_text.call_args[0][0]
-        assert "Global Override active:" in text
+        assert "<b>Global Override active:" in text
         assert "Opus" in text
 
         # Keyboard darf KEINEN Headline-Button enthalten
