@@ -206,14 +206,17 @@ def build_main_menu_keyboard(
         ]
     )
 
-    # Reset all
-    buttons.append(
-        [
-            InlineKeyboardButton(
-                f"\U0001f504 {s['reset_all_btn']}", callback_data="settings_reset_all"
-            )
-        ]
-    )
+    # Reset all: nur anzeigen wenn mindestens ein pro-Slot Override existiert
+    slot_overrides_count = sum(1 for key in overrides if key != "global")
+    if slot_overrides_count > 0:
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    f"\U0001f504 {s['reset_all_btn']}",
+                    callback_data="settings_reset_all",
+                )
+            ]
+        )
 
     # Message-Text: Headline für globalen Override im Text (nicht im Keyboard)
     if global_override:

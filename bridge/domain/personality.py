@@ -47,11 +47,27 @@ class PersonalityConfig:
         return combined
 
 
+@dataclass(frozen=True, slots=True)
+class SlotInfo:
+    """Belegung eines einzelnen Task-Slots.
+
+    Attributes:
+        slot_name: Name des Slots (z.B. "chat", "code").
+        model_display_name: Menschenlesbarer Modell-Name.
+        source: Herkunft der Belegung ("default", "user-override", "global").
+    """
+
+    slot_name: str
+    model_display_name: str
+    source: str = "default"
+
+
 def build_self_awareness_block(
     model_display_name: str,
     model_id: str,
     task_slot: str,
     provider: str,
+    all_slots: list[SlotInfo] | None = None,
 ) -> str:
     """Baut den Self-Awareness-Block für den System-Prompt.
 
@@ -63,18 +79,45 @@ def build_self_awareness_block(
         model_id: Technische Modell-ID (z.B. "claude-opus-4-7").
         task_slot: Aktiver Task-Slot (z.B. "chat", "code").
         provider: Provider-Name (z.B. "anthropic").
+        all_slots: Optionale Liste aller 6 Slot-Belegungen im User-Kontext.
 
     Returns:
         Self-Awareness-Block als String.
     """
-    return (
-        "[SELF-AWARENESS]\n"
-        f"Modell: {model_display_name} ({model_id})\n"
-        f"Slot: {task_slot}\n"
-        f"Provider: {provider}\n"
+    lines = [
+        "[SELF-AWARENESS]",
+        f"Modell: {model_display_name} ({model_id})",
+        f"Slot: {task_slot}",
+        f"Provider: {provider}",
+    ]
+
+    if all_slots:
+        lines.append("")
+        lines.append("[Slot-Belegung im System]")
+        for slot_info in all_slots:
+            lines.append(
+                f"- {slot_info.slot_name.upper()}: "
+                f"{slot_info.model_display_name} ({slot_info.source})"
+            )
+        lines.append("")
+        lines.append(
+            "Antworte praezise mit diesen Werten wenn nach Slot-Belegungen gefragt wird."
+        )
+
+    lines.append(
         "Wenn der User fragt welches Modell du nutzt, antworte mit diesen Werten. "
         "Spekuliere nicht aus Trainingsdaten."
     )
+
+    # Anti-Halluzination: Edge-Case ohne Slot-Liste
+    if not all_slots:
+        lines.append(
+            "Wenn du nach anderen Slots gefragt wirst und diese Slot-Liste "
+            "nicht hast, antworte ehrlich: 'Ich habe nur Information zu meinem "
+            "aktiven Slot.' Spekuliere nicht."
+        )
+
+    return "\n".join(lines)
 
 
 def build_effective_prompt(base_prompt: str, language_hint: str = "") -> str:

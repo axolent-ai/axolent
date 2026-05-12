@@ -5,6 +5,7 @@ Testet build_combined_prompt und build_effective_prompt mit Language-Override.
 
 from domain.personality import (
     PersonalityConfig,
+    SlotInfo,
     build_effective_prompt,
     build_self_awareness_block,
 )
@@ -122,3 +123,78 @@ class TestBuildSelfAwarenessBlock:
         assert block_opus != block_sonnet
         assert "Opus 4.7" in block_opus
         assert "Sonnet 4.6" in block_sonnet
+
+    def test_all_slots_included_in_block(self) -> None:
+        """Block enthaelt alle 6 Slot-Belegungen wenn uebergeben."""
+        all_slots = [
+            SlotInfo(slot_name="chat", model_display_name="Opus 4.7", source="global"),
+            SlotInfo(slot_name="code", model_display_name="Opus 4.7", source="global"),
+            SlotInfo(
+                slot_name="reason", model_display_name="Opus 4.7", source="global"
+            ),
+            SlotInfo(
+                slot_name="creative", model_display_name="Opus 4.7", source="global"
+            ),
+            SlotInfo(slot_name="quick", model_display_name="Opus 4.7", source="global"),
+            SlotInfo(
+                slot_name="research", model_display_name="Opus 4.7", source="global"
+            ),
+        ]
+        block = build_self_awareness_block(
+            model_display_name="Opus 4.7",
+            model_id="claude-opus-4-7",
+            task_slot="chat",
+            provider="anthropic",
+            all_slots=all_slots,
+        )
+        assert "[Slot-Belegung im System]" in block
+        assert "CHAT: Opus 4.7 (global)" in block
+        assert "CODE: Opus 4.7 (global)" in block
+        assert "REASON: Opus 4.7 (global)" in block
+        assert "CREATIVE: Opus 4.7 (global)" in block
+        assert "QUICK: Opus 4.7 (global)" in block
+        assert "RESEARCH: Opus 4.7 (global)" in block
+        assert "Antworte praezise mit diesen Werten" in block
+        # Anti-Halluzination fuer fehlende Slots darf NICHT drin sein
+        assert "Ich habe nur Information zu meinem aktiven Slot" not in block
+
+    def test_no_slots_includes_anti_hallucination(self) -> None:
+        """Ohne Slot-Liste enthaelt Block Anti-Halluzination fuer andere Slots."""
+        block = build_self_awareness_block(
+            model_display_name="Opus 4.7",
+            model_id="claude-opus-4-7",
+            task_slot="chat",
+            provider="anthropic",
+            all_slots=None,
+        )
+        assert "Ich habe nur Information zu meinem aktiven Slot" in block
+        assert "[Slot-Belegung im System]" not in block
+
+    def test_mixed_slot_sources_in_block(self) -> None:
+        """Block zeigt verschiedene Sources korrekt an."""
+        all_slots = [
+            SlotInfo(slot_name="chat", model_display_name="Opus 4.7", source="global"),
+            SlotInfo(
+                slot_name="code", model_display_name="Haiku 4.5", source="user-override"
+            ),
+            SlotInfo(
+                slot_name="reason", model_display_name="Sonnet 4.6", source="default"
+            ),
+            SlotInfo(
+                slot_name="creative", model_display_name="Opus 4.7", source="global"
+            ),
+            SlotInfo(slot_name="quick", model_display_name="Opus 4.7", source="global"),
+            SlotInfo(
+                slot_name="research", model_display_name="Opus 4.7", source="global"
+            ),
+        ]
+        block = build_self_awareness_block(
+            model_display_name="Opus 4.7",
+            model_id="claude-opus-4-7",
+            task_slot="chat",
+            provider="anthropic",
+            all_slots=all_slots,
+        )
+        assert "CODE: Haiku 4.5 (user-override)" in block
+        assert "REASON: Sonnet 4.6 (default)" in block
+        assert "CHAT: Opus 4.7 (global)" in block

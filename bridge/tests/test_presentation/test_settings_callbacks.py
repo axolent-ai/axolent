@@ -153,8 +153,8 @@ class TestSettingsCommand:
         # Keyboard muss vorhanden sein
         keyboard = call_args[1]["reply_markup"]
         assert keyboard is not None
-        # 6 Slots + 1 Sprache + 1 Reset = 8 Rows
-        assert len(keyboard.inline_keyboard) == 8
+        # 6 Slots + 1 Sprache = 7 Rows (kein "Alle zurücksetzen" ohne Slot-Overrides)
+        assert len(keyboard.inline_keyboard) == 7
 
     async def test_settings_main_menu_shows_defaults(
         self, model_service: ModelService
@@ -375,7 +375,8 @@ class TestSettingsBackCallback:
         assert "Einstellungen" in text
 
         keyboard = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
-        assert len(keyboard.inline_keyboard) == 8
+        # 6 Slots + 1 Sprache = 7 Rows (kein "Alle zurücksetzen" ohne Slot-Overrides)
+        assert len(keyboard.inline_keyboard) == 7
 
 
 class TestSettingsLanguageCallbacks:
@@ -538,8 +539,11 @@ class TestSettingsI18n:
             yield  # type: ignore[misc]
 
     async def test_english_main_menu(self, model_service: ModelService) -> None:
-        """Hauptmenü in Englisch zeigt EN-Strings."""
+        """Hauptmenü in Englisch zeigt EN-Strings (inkl. Reset all bei Slot-Override)."""
         from presentation.settings_callbacks import handle_settings_callback
+
+        # Slot-Override setzen damit "Reset all" Button erscheint
+        model_service.set_user_model(1, "haiku", slot="code")
 
         update = _make_callback_update("settings_back")
         context = _make_context(model_service=model_service)
@@ -554,7 +558,7 @@ class TestSettingsI18n:
         assert "Settings" in text
 
         keyboard = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
-        # Reset-All-Button in EN
+        # Reset-All-Button in EN (letzter Button, da Slot-Override existiert)
         reset_btn = keyboard.inline_keyboard[-1][0]
         assert "Reset all" in reset_btn.text
 
@@ -652,7 +656,8 @@ class TestGlobalOverrideShownInSettings:
         assert "<b>Globaler Override aktiv:" not in text
 
         keyboard = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
-        assert len(keyboard.inline_keyboard) == 8
+        # 6 Slots + 1 Sprache = 7 Rows (kein "Alle zurücksetzen" ohne Slot-Overrides)
+        assert len(keyboard.inline_keyboard) == 7
 
     async def test_global_override_with_slot_override_mixed(
         self, model_service: ModelService
@@ -734,9 +739,9 @@ class TestSettingsResetGlobalCallback:
         # Override muss weg sein
         assert model_service.get_user_model(1, "global") is None
 
-        # Hauptmenü ohne Headline
+        # Hauptmenü ohne Headline, ohne "Alle zurücksetzen" (keine Slot-Overrides)
         keyboard = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
-        assert len(keyboard.inline_keyboard) == 8  # Keine Headline-Rows
+        assert len(keyboard.inline_keyboard) == 7
 
     async def test_reset_global_preserves_slot_overrides(
         self, model_service: ModelService
@@ -755,6 +760,70 @@ class TestSettingsResetGlobalCallback:
         # Global weg, Code bleibt
         assert model_service.get_user_model(1, "global") is None
         assert model_service.get_user_model(1, "code") is not None
+
+
+class TestResetAllButtonConditional:
+    """'Alle zurücksetzen' Button erscheint nur bei pro-Slot Overrides."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    async def test_reset_all_hidden_when_nothing_set(
+        self, model_service: ModelService
+    ) -> None:
+        """Ohne Overrides: kein 'Alle zurücksetzen' Button."""
+        from presentation.settings_callbacks import build_main_menu_keyboard
+
+        context = _make_context(model_service=model_service)
+        _, keyboard = build_main_menu_keyboard(1, model_service, context, "de")
+
+        btn_texts = [btn.text for row in keyboard.inline_keyboard for btn in row]
+        assert not any("zurücksetzen" in t.lower() and "Alle" in t for t in btn_texts)
+        assert not any(
+            "settings_reset_all" in btn.callback_data
+            for row in keyboard.inline_keyboard
+            for btn in row
+        )
+
+    async def test_reset_all_hidden_when_only_global_active(
+        self, model_service: ModelService
+    ) -> None:
+        """Nur Global-Override aktiv: kein 'Alle zurücksetzen' Button."""
+        from presentation.settings_callbacks import build_main_menu_keyboard
+
+        model_service.set_user_model(1, "opus")
+
+        context = _make_context(model_service=model_service)
+        _, keyboard = build_main_menu_keyboard(1, model_service, context, "de")
+
+        reset_all_btns = [
+            btn
+            for row in keyboard.inline_keyboard
+            for btn in row
+            if btn.callback_data == "settings_reset_all"
+        ]
+        assert len(reset_all_btns) == 0
+
+    async def test_reset_all_visible_when_slot_overrides_exist(
+        self, model_service: ModelService
+    ) -> None:
+        """Pro-Slot Override existiert: 'Alle zurücksetzen' Button sichtbar."""
+        from presentation.settings_callbacks import build_main_menu_keyboard
+
+        model_service.set_user_model(1, "haiku", slot="code")
+
+        context = _make_context(model_service=model_service)
+        _, keyboard = build_main_menu_keyboard(1, model_service, context, "de")
+
+        reset_all_btns = [
+            btn
+            for row in keyboard.inline_keyboard
+            for btn in row
+            if btn.callback_data == "settings_reset_all"
+        ]
+        assert len(reset_all_btns) == 1
 
 
 class TestGlobalOverrideTakesPrecedence:
