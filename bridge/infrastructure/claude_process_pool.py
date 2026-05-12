@@ -179,6 +179,8 @@ class ClaudeProcessPool:
 
         # Schneller Pfad: existierender, lebendiger Process mit richtigem Modell
         old_managed_to_kill: ManagedProcess | None = None
+        wait_for_locked: ManagedProcess | None = None
+
         async with self._pool_lock:
             managed = self._processes.get(key)
             if managed is not None and self._is_alive(managed):
@@ -187,31 +189,65 @@ class ClaudeProcessPool:
                     return managed, False
                 # Modell-Mismatch: prüfen ob aktiver Stream läuft
                 if managed.lock.locked():
-                    log.warning(
+                    log.info(
                         "Modell-Mismatch (alt=%s, neu=%s) während aktivem Stream "
-                        "auf pid=%d. Behalte aktuellen Prozess, Wechsel beim "
-                        "nächsten Call.",
+                        "auf pid=%d. Warte bis Stream fertig ist.",
                         managed.model,
                         effective_model,
                         managed.pid,
                     )
-                    managed.last_used = time.monotonic()
-                    return managed, False
-                # Kein aktiver Stream: aus Pool entfernen, Kill NACH Lock-Release
-                log.info(
-                    "Modell-Wechsel für key=%s: %s -> %s, terminiere alten Subprocess",
-                    key,
-                    managed.model,
-                    effective_model,
-                )
-                old_managed_to_kill = managed
-                del self._processes[key]
-                managed = None
+                    wait_for_locked = managed
+                else:
+                    # Kein aktiver Stream: aus Pool entfernen, Kill NACH Lock-Release
+                    log.info(
+                        "Modell-Wechsel für key=%s: %s -> %s, terminiere alten Subprocess",
+                        key,
+                        managed.model,
+                        effective_model,
+                    )
+                    old_managed_to_kill = managed
+                    del self._processes[key]
+                    managed = None
 
             # Per-Key Creation Lock holen (oder erstellen)
             if key not in self._creation_locks:
                 self._creation_locks[key] = asyncio.Lock()
             creation_lock = self._creation_locks[key]
+
+        # Warte-Pfad: aktiver Stream blockiert Modell-Wechsel.
+        # Warte bis der Stream fertig ist (Lock frei wird), dann wechsle.
+        if wait_for_locked is not None:
+            try:
+                await asyncio.wait_for(
+                    wait_for_locked.lock.acquire(),
+                    timeout=60.0,
+                )
+            except asyncio.TimeoutError:
+                from infrastructure.providers.base import ProviderError
+
+                raise ProviderError(
+                    provider_name="claude_persistent",
+                    retryable=True,
+                    message=(
+                        "Modell-Wechsel blockiert: aktiver Stream dauert zu lang. "
+                        "Bitte warte bis die aktuelle Antwort fertig ist."
+                    ),
+                )
+            try:
+                # Lock erworben: Stream ist fertig. Jetzt terminieren + neu spawnen.
+                async with self._pool_lock:
+                    current = self._processes.get(key)
+                    if current is wait_for_locked:
+                        del self._processes[key]
+                await self._kill_process(wait_for_locked)
+            finally:
+                wait_for_locked.lock.release()
+
+            # Neuen Subprocess mit gewünschtem Modell starten
+            new_managed = await self._spawn_process(key, model=effective_model)
+            async with self._pool_lock:
+                self._processes[key] = new_managed
+            return new_managed, True
 
         # Kill außerhalb des Pool-Locks (blockiert nicht den gesamten Pool)
         if old_managed_to_kill is not None:
@@ -227,7 +263,17 @@ class ClaudeProcessPool:
                     if managed.model == effective_model:
                         managed.last_used = time.monotonic()
                         return managed, False
-                    # Modell-Mismatch auch im Double-Check
+                    # Modell-Mismatch auch im Double-Check: Locked-Guard
+                    if managed.lock.locked():
+                        log.warning(
+                            "Double-Check Modell-Mismatch (alt=%s, neu=%s) während "
+                            "aktivem Stream auf pid=%d. Behalte aktuellen Prozess.",
+                            managed.model,
+                            effective_model,
+                            managed.pid,
+                        )
+                        managed.last_used = time.monotonic()
+                        return managed, False
                     old_managed_to_kill = managed
                     del self._processes[key]
                     managed = None

@@ -17,7 +17,6 @@ import pytest
 
 from application.model_service import (
     DEFAULT_MODEL,
-    MODEL_ALIASES,
     ModelService,
     resolve_alias,
 )
@@ -206,12 +205,83 @@ class TestModelServiceUtilities:
         )
 
     def test_list_available_aliases(self) -> None:
-        """list_available_aliases gibt alle Aliase zurueck."""
+        """list_available_aliases gibt nur Anthropic-Aliase zurück (Phase 1)."""
         aliases = ModelService.list_available_aliases()
         assert "opus" in aliases
         assert "sonnet" in aliases
         assert "haiku" in aliases
-        assert len(aliases) == len(MODEL_ALIASES)
+        # Phase 1: nur Anthropic, nicht die volle MODEL_ALIASES-Liste
+        assert len(aliases) == 3
+
+
+# ──────────────────────────────────────────────────────────────
+# SqliteModelStorage Direct Tests
+# ──────────────────────────────────────────────────────────────
+
+
+class TestProviderFilter:
+    """Tests für den Provider-Filter in set_user_model (V8-R2 Finding 3).
+
+    Nicht-Anthropic-Modelle dürfen im aktuellen Claude-Hauptpfad nicht
+    akzeptiert werden. /setmodel gpt55, gemini, llama etc. müssen abgelehnt
+    werden mit klarer Fehlermeldung.
+    """
+
+    def test_setmodel_gpt55_rejected(self, service: ModelService) -> None:
+        """gpt55 (OpenAI) wird abgelehnt: falscher Provider."""
+        success, msg = service.set_user_model(user_id=1, alias_or_id="gpt55")
+        assert success is False
+        assert "openai" in msg.lower()
+        assert "anthropic" in msg.lower() or "claude" in msg.lower()
+
+    def test_setmodel_gemini_rejected(self, service: ModelService) -> None:
+        """gemini (Google) wird abgelehnt: falscher Provider."""
+        success, msg = service.set_user_model(user_id=1, alias_or_id="gemini")
+        assert success is False
+        assert "google" in msg.lower()
+
+    def test_setmodel_llama_rejected(self, service: ModelService) -> None:
+        """llama (Ollama) wird abgelehnt: falscher Provider."""
+        success, msg = service.set_user_model(user_id=1, alias_or_id="llama")
+        assert success is False
+        assert "ollama" in msg.lower()
+
+    def test_setmodel_opus_accepted(self, service: ModelService) -> None:
+        """opus (Anthropic) wird akzeptiert."""
+        success, result = service.set_user_model(user_id=1, alias_or_id="opus")
+        assert success is True
+        assert result == "claude-opus-4-7"
+
+    def test_setmodel_sonnet_accepted(self, service: ModelService) -> None:
+        """sonnet (Anthropic) wird akzeptiert."""
+        success, result = service.set_user_model(user_id=1, alias_or_id="sonnet")
+        assert success is True
+        assert result == "claude-sonnet-4-6"
+
+    def test_setmodel_haiku_accepted(self, service: ModelService) -> None:
+        """haiku (Anthropic) wird akzeptiert."""
+        success, result = service.set_user_model(user_id=1, alias_or_id="haiku")
+        assert success is True
+        assert "haiku" in result
+
+    def test_list_available_aliases_only_anthropic(self) -> None:
+        """list_available_aliases gibt nur Anthropic-Modelle zurück."""
+        aliases = ModelService.list_available_aliases()
+        # Anthropic-Aliase müssen drin sein
+        assert "opus" in aliases
+        assert "sonnet" in aliases
+        assert "haiku" in aliases
+        # Nicht-Anthropic-Aliase dürfen NICHT drin sein
+        assert "gpt55" not in aliases
+        assert "gemini" not in aliases
+        assert "llama" not in aliases
+        assert "kimi" not in aliases
+        assert "qwen" not in aliases
+
+    def test_rejected_model_not_persisted(self, service: ModelService) -> None:
+        """Abgelehntes Modell darf nicht gespeichert werden."""
+        service.set_user_model(user_id=1, alias_or_id="gpt55")
+        assert service.get_user_model(user_id=1) is None
 
 
 # ──────────────────────────────────────────────────────────────

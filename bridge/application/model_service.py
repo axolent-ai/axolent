@@ -1,13 +1,13 @@
 """Model-Service: Verwaltet User-Modell-Overrides.
 
 Alias-Resolution: 'opus' -> 'claude-opus-4-7', etc.
-Phase 1: nur globaler Slot (gilt fuer alle Anfragen).
+Phase 1: nur globaler Slot (gilt für alle Anfragen).
 Phase 2+: per-Slot (chat, code, etc.).
 
 Backward-kompatibel: kein Override -> CLAUDE_POOL_MODEL Env-Variable.
 
 Phase 2b: MODEL_ALIASES und VALID_MODEL_IDS werden dynamisch aus der
-ModelRegistry geladen. Die oeffentliche Schnittstelle bleibt identisch.
+ModelRegistry geladen. Die öffentliche Schnittstelle bleibt identisch.
 """
 
 from __future__ import annotations
@@ -32,14 +32,14 @@ MODEL_ALIASES: dict[str, str] = _registry.all_aliases()
 # Default-Modell aus Environment (Fallback wenn kein Override)
 DEFAULT_MODEL: str = os.getenv("CLAUDE_POOL_MODEL", "claude-sonnet-4-6")
 
-# Alle akzeptierten Modell-IDs (fuer Validierung, dynamisch aus Registry)
+# Alle akzeptierten Modell-IDs (für Validierung, dynamisch aus Registry)
 VALID_MODEL_IDS: set[str] = _registry.all_ids()
 
 
 def resolve_alias(alias_or_id: str) -> Optional[str]:
-    """Loest einen Alias oder eine volle Modell-ID auf.
+    """Löst einen Alias oder eine volle Modell-ID auf.
 
-    Delegiert an ModelRegistry fuer zentrales Lookup.
+    Delegiert an ModelRegistry für zentrales Lookup.
 
     Args:
         alias_or_id: Alias ('opus', 'sonnet', 'haiku') oder volle Modell-ID.
@@ -100,10 +100,18 @@ class ModelService:
         override = self.get_user_model(user_id, "global")
         return override if override else DEFAULT_MODEL
 
+    # Provider der aktuell als Default-Backend aktiv ist (Phase 1: nur Claude).
+    # Phase 2 (TaskRouter) erweitert das auf dynamisches Provider-Routing.
+    ACTIVE_PROVIDER: str = "anthropic"
+
     def set_user_model(
         self, user_id: int, alias_or_id: str, slot: str = "global"
     ) -> tuple[bool, str]:
         """Setzt das Modell für einen User (Phase 1: nur globaler Slot).
+
+        Validiert zusätzlich, dass das Modell zum aktiven Provider passt.
+        Solange der Hauptpfad nur Claude unterstützt, werden Nicht-Anthropic-
+        Modelle abgelehnt (Phase 2: TaskRouter erweitert das).
 
         Args:
             user_id: Telegram-User-ID.
@@ -115,10 +123,21 @@ class ModelService:
         """
         resolved = resolve_alias(alias_or_id)
         if resolved is None:
-            available = ", ".join(sorted(MODEL_ALIASES.keys()))
+            available = ", ".join(sorted(self.list_available_aliases().keys()))
             return (
                 False,
                 f"Unbekanntes Modell: '{alias_or_id}'. Verfügbar: {available}",
+            )
+
+        # Provider-Check: nur Modelle des aktiven Providers akzeptieren
+        metadata = _registry.get(alias_or_id)
+        if metadata is not None and metadata.provider != self.ACTIVE_PROVIDER:
+            available = ", ".join(sorted(self.list_available_aliases().keys()))
+            return (
+                False,
+                f"Modell '{metadata.display_name}' nutzt Provider "
+                f"'{metadata.provider}'. Aktuell wird nur Anthropic Claude "
+                f"unterstützt. Verfügbar: {available}",
             )
 
         self._storage.set_model(user_id, resolved, slot=slot)
@@ -160,11 +179,20 @@ class ModelService:
             model_id: Volle Modell-ID.
 
         Returns:
-            Display-Name (z.B. 'Opus 4.7' fuer 'claude-opus-4-7').
+            Display-Name (z.B. 'Opus 4.7' für 'claude-opus-4-7').
         """
         return _registry.get_display_name(model_id)
 
     @staticmethod
     def list_available_aliases() -> dict[str, str]:
-        """Gibt alle verfügbaren Aliase mit ihren Modell-IDs zurück."""
-        return dict(MODEL_ALIASES)
+        """Gibt verfügbare Aliase für den aktiven Provider zurück.
+
+        Phase 1: nur Anthropic-Modelle. Phase 2 (TaskRouter) erweitert das.
+        """
+        active_models = _registry.for_provider(ModelService.ACTIVE_PROVIDER)
+        active_ids = {m.id for m in active_models}
+        return {
+            alias: model_id
+            for alias, model_id in MODEL_ALIASES.items()
+            if model_id in active_ids
+        }

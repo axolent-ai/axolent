@@ -3,20 +3,20 @@
 #
 # Schema:
 #   id:                     Offizielle Modell-ID (API-Identifier)
-#   display_name:           Menschenlesbarer Name fuer UI
+#   display_name:           Menschenlesbarer Name für UI
 #   provider:               Provider-Key (anthropic, openai, google, moonshot, ollama)
-#   aliases:                Liste von Kurzbezeichnungen fuer User-Input
+#   aliases:                Liste von Kurzbezeichnungen für User-Input
 #   context_window:         Max. Tokens im Kontext
 #   pricing_input_per_mtok: Kosten pro Million Input-Tokens (USD)
 #   pricing_output_per_mtok: Kosten pro Million Output-Tokens (USD)
 #   scores:                 Leistungswerte (0-100)
-#     coding:               Code-Generierung und -Verstaendnis
-#     reasoning:            Logisches Denken und Problemloesung
+#     coding:               Code-Generierung und -Verständnis
+#     reasoning:            Logisches Denken und Problemlösung
 #     knowledge:            Allgemeinwissen und Faktentreue
-#     speed:                Relative Geschwindigkeit (hoeher = schneller)
+#     speed:                Relative Geschwindigkeit (höher = schneller)
 #   supports_thinking:      Extended Thinking / Chain-of-Thought nativ
-#   supports_effort:        Effort/Budget-Parameter unterstuetzt
-#   is_open_source:         Open-Source-Modell (Weights verfuegbar)
+#   supports_effort:        Effort/Budget-Parameter unterstützt
+#   is_open_source:         Open-Source-Modell (Weights verfügbar)
 
 models:
   # === Anthropic Claude ===

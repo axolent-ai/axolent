@@ -1,6 +1,6 @@
-"""Static Model Registry: laedt Modell-Metadaten aus YAML.
+"""Static Model Registry: lädt Modell-Metadaten aus YAML.
 
-Phase 2b: Foundation fuer Phase 2 (TaskRouter) und Phase 2c (Dynamic Scraping).
+Phase 2b: Foundation für Phase 2 (TaskRouter) und Phase 2c (Dynamic Scraping).
 Konsolidiert alle Modell-Informationen in einer zentralen, datengetriebenen Registry.
 """
 
