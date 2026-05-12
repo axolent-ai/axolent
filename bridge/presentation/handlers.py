@@ -252,6 +252,7 @@ HELP_TEXT: str = (
     "(id steht in der Bestätigung von /remember)\n"
     "• /memory zeigt deine aktiven Notizen\n\n"
     "Modell:\n"
+    "• /settings öffnet die visuelle Modell-Konfiguration\n"
     "• /setmodel <modell> wechselt das KI-Modell global "
     "(opus, sonnet, haiku)\n"
     "• /setmodel <slot> <modell> wechselt nur einen Slot "
@@ -1741,6 +1742,46 @@ async def handle_models_command(
         chat_id=chat_id,
         username=user.username if user else None,
         details=f"overrides={overrides}",
+    )
+
+
+# ---------------------------------------------------------------------------
+# /settings Command (R18 Phase 2b: Inline-Keyboard Settings)
+# ---------------------------------------------------------------------------
+
+
+@require_whitelist
+@require_private_chat
+async def handle_settings_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Verarbeitet /settings. Öffnet Inline-Keyboard-Einstellungsmenü.
+
+    Zeigt Ebene A: Slot-Belegung, Sprache, Reset-All.
+    Alle Interaktionen laufen über Callback-Handler in settings_callbacks.py.
+    """
+    model_service = _get_model_service(context)
+    if model_service is None or not isinstance(model_service, ModelService):
+        await update.message.reply_text("Modell-System nicht initialisiert.")
+        return
+
+    chat_service = _get_chat_service(context)
+    user = update.effective_user
+    user_id: int = user.id if user else 0
+    chat_id: int = update.effective_chat.id if update.effective_chat else 0
+
+    lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+
+    from presentation.settings_callbacks import build_main_menu_keyboard
+
+    text, keyboard = build_main_menu_keyboard(user_id, model_service, context, lang)
+    await update.message.reply_text(text, reply_markup=keyboard)
+    log_command_audit(
+        action="settings",
+        user_id=user_id,
+        chat_id=chat_id,
+        username=user.username if user else None,
+        details="opened main menu",
     )
 
 

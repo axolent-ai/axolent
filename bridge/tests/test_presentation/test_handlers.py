@@ -303,6 +303,7 @@ class TestStartCommandHistory:
             "/start",
             "/help",
             "/debate",
+            "/settings",
         ]
         for cmd in expected_commands:
             assert cmd in HELP_TEXT, f"Command {cmd} fehlt im HELP_TEXT"
@@ -311,7 +312,7 @@ class TestStartCommandHistory:
         """/help Text enthält KEINE nicht-existenten Commands."""
         from presentation.handlers import HELP_TEXT
 
-        nonexistent = ["/unsave", "/delete", "/clear", "/settings", "/config"]
+        nonexistent = ["/unsave", "/delete", "/clear", "/config"]
         for cmd in nonexistent:
             assert cmd not in HELP_TEXT, f"Nicht-existenter Command {cmd} im HELP_TEXT"
 

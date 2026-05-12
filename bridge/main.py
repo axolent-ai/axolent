@@ -63,6 +63,7 @@ from presentation.callbacks import (
     handle_bookmark_delete_callback,
     handle_bookmark_show_callback,
 )
+from presentation.settings_callbacks import handle_settings_callback
 from presentation.decorators import ALLOW_ALL_USERS, WHITELIST
 from presentation.handlers import (
     handle_bookmarks_command,
@@ -80,6 +81,7 @@ from presentation.handlers import (
     handle_save_command,
     handle_setlimit_command,
     handle_setmodel_command,
+    handle_settings_command,
     handle_start_command,
     handle_usage_command,
 )
@@ -405,6 +407,7 @@ def main() -> None:
     app.add_handler(CommandHandler("setmodel", handle_setmodel_command))
     app.add_handler(CommandHandler("resetmodel", handle_resetmodel_command))
     app.add_handler(CommandHandler("models", handle_models_command))
+    app.add_handler(CommandHandler("settings", handle_settings_command))
     app.add_handler(CommandHandler("debate", handle_debate_command))
 
     # Message handler (non-command text)
@@ -416,6 +419,9 @@ def main() -> None:
     )
     app.add_handler(
         CallbackQueryHandler(handle_bookmark_delete_callback, pattern=r"^bm_del:")
+    )
+    app.add_handler(
+        CallbackQueryHandler(handle_settings_callback, pattern=r"^settings_")
     )
 
     log.info("Jarvis-LITE Bridge startet, Modus B (R04: Persistent Pipe + Streaming)")
