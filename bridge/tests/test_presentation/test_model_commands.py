@@ -100,7 +100,7 @@ class TestSetmodelResetShowsDefault:
     async def test_reset_with_override_shows_default_name(
         self, model_service: ModelService
     ) -> None:
-        """/setmodel reset mit aktivem Override zeigt Default-Modell."""
+        """/setmodel reset mit aktivem Override zeigt Erfolg."""
         from presentation.handlers import handle_setmodel_command
 
         # Override setzen
@@ -112,10 +112,8 @@ class TestSetmodelResetShowsDefault:
         await handle_setmodel_command(update, context)
 
         reply_text = update.message.reply_text.call_args[0][0]
-        # Muss den Display-Name des Defaults enthalten
-        default_display = ModelService.get_model_display_name(DEFAULT_MODEL)
-        assert default_display in reply_text
-        assert DEFAULT_MODEL in reply_text
+        # Phase 2a: /setmodel reset entfernt alle Overrides
+        assert "zurückgesetzt" in reply_text.lower() or "entfernt" in reply_text.lower()
 
     async def test_reset_without_override_shows_default_name(
         self, model_service: ModelService
@@ -291,7 +289,7 @@ class TestModelsCommand:
     async def test_models_shows_default_and_options(
         self, model_service: ModelService
     ) -> None:
-        """/models ohne Override zeigt Default und alle Aliase."""
+        """/models ohne Override zeigt pro-Slot Belegung."""
         from presentation.handlers import handle_models_command
 
         update = _make_update()
@@ -300,17 +298,20 @@ class TestModelsCommand:
         await handle_models_command(update, context)
 
         reply_text = update.message.reply_text.call_args[0][0]
-        # Muss Default-Modell anzeigen
-        assert DEFAULT_MODEL in reply_text or "Sonnet" in reply_text
-        # Muss alle Aliase anzeigen
-        assert "opus" in reply_text.lower()
-        assert "sonnet" in reply_text.lower()
-        assert "haiku" in reply_text.lower()
+        # Phase 2a: zeigt pro-Slot Belegung
+        assert "CHAT" in reply_text
+        assert "CODE" in reply_text
+        assert "REASON" in reply_text
+        assert "CREATIVE" in reply_text
+        assert "QUICK" in reply_text
+        assert "RESEARCH" in reply_text
+        assert "Sonnet" in reply_text  # Default fuer CHAT
+        assert "Default" in reply_text
 
     async def test_models_shows_active_override(
         self, model_service: ModelService
     ) -> None:
-        """/models mit Override zeigt das aktive Override-Modell."""
+        """/models mit Override zeigt das aktive Override-Modell pro Slot."""
         from presentation.handlers import handle_models_command
 
         model_service.set_user_model(user_id=1, alias_or_id="opus")
@@ -322,4 +323,4 @@ class TestModelsCommand:
 
         reply_text = update.message.reply_text.call_args[0][0]
         assert "Opus 4.7" in reply_text
-        assert "claude-opus-4-7" in reply_text
+        assert "Override" in reply_text

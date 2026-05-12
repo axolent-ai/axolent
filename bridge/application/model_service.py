@@ -118,6 +118,28 @@ class ModelService:
         override = self.get_user_model(user_id, "global")
         return override if override else DEFAULT_MODEL
 
+    def get_all_slot_overrides(self, user_id: int) -> dict[str, str]:
+        """Liest alle Slot-Overrides für einen User.
+
+        Args:
+            user_id: Telegram-User-ID.
+
+        Returns:
+            Dict von slot_name -> model_id für alle gesetzten Overrides.
+        """
+        return self._storage.get_all_models(user_id)
+
+    def reset_all_slots(self, user_id: int) -> int:
+        """Entfernt alle Modell-Overrides für einen User.
+
+        Args:
+            user_id: Telegram-User-ID.
+
+        Returns:
+            Anzahl geloeschter Overrides.
+        """
+        return self._storage.delete_all_models(user_id)
+
     # Provider der aktuell als Default-Backend aktiv ist (Phase 1: nur Claude).
     # Phase 2 (TaskRouter) erweitert das auf dynamisches Provider-Routing.
     ACTIVE_PROVIDER: str = "anthropic"

@@ -252,10 +252,12 @@ HELP_TEXT: str = (
     "(id steht in der Bestätigung von /remember)\n"
     "• /memory zeigt deine aktiven Notizen\n\n"
     "Modell:\n"
-    "• /setmodel <modell> wechselt das KI-Modell "
+    "• /setmodel <modell> wechselt das KI-Modell global "
     "(opus, sonnet, haiku)\n"
+    "• /setmodel <slot> <modell> wechselt nur einen Slot "
+    "(chat, code, reason, creative, quick, research)\n"
     "• /resetmodel setzt das Modell zurück auf Default\n"
-    "• /models zeigt aktuelles Modell und Optionen\n\n"
+    "• /models zeigt aktuelle Slot-Belegung\n\n"
     "Limits & Profile:\n"
     "• /usage zeigt aktuellen Verbrauch und Profil\n"
     "• /setlimit <profil> wechselt Profil "
@@ -1406,30 +1408,64 @@ _MODEL_STRINGS: dict[str, dict[str, str]] = {
     "de": {
         "set_success": "Modell gewechselt: {display_name} ({model_id})",
         "set_success_note": "Gilt ab der nächsten Nachricht.",
+        "set_slot_success": "Modell für {slot} gewechselt: {display_name} ({model_id})",
+        "set_slot_note": "Gilt nur für {slot}-Anfragen.",
         "reset_success": "Modell auf Default zurückgesetzt ({default_model}).",
+        "reset_slot_success": "Modell für {slot} auf Default zurückgesetzt.",
         "reset_nothing": "Kein Modell-Override aktiv. Du nutzt bereits den Default ({default_model}).",
+        "reset_all_success": "Alle Modell-Overrides zurückgesetzt ({count} entfernt).",
         "unknown_model": "Unbekanntes Modell: '{input}'",
+        "unknown_slot": "Unbekannter Slot: '{input}'. Verfügbar: {slots}",
         "available_aliases": "Verfügbar: {aliases}",
-        "usage_hint": "Benutzung: /setmodel <modell>\nBeispiel: /setmodel opus",
-        "models_header": "Dein aktuelles Modell:",
+        "usage_hint": (
+            "Benutzung:\n"
+            "  /setmodel <modell> (global)\n"
+            "  /setmodel <slot> <modell> (pro Slot)\n"
+            "  /setmodel reset (alles zurück)\n"
+            "  /setmodel reset <slot> (Slot zurück)\n\n"
+            "Slots: {slots}\n"
+            "Beispiel: /setmodel code opus"
+        ),
+        "models_header": "Aktuelle Modell-Belegung:",
+        "models_slot_line_override": "{slot}: {display_name} (Override)",
+        "models_slot_line_default": "{slot}: {display_name} (Default)",
         "models_active": "Aktiv: {display_name} ({model_id})",
         "models_default": "Default: {display_name} ({model_id})",
         "models_available": "Verfügbare Modelle:",
-        "models_change_hint": "Wechseln: /setmodel <modell>",
+        "models_change_hint": (
+            "Wechseln: /setmodel <slot> <modell>\nBeispiel: /setmodel code opus"
+        ),
     },
     "en": {
         "set_success": "Model changed: {display_name} ({model_id})",
         "set_success_note": "Takes effect from your next message.",
+        "set_slot_success": "Model for {slot} changed: {display_name} ({model_id})",
+        "set_slot_note": "Applies only to {slot} requests.",
         "reset_success": "Model reset to default ({default_model}).",
+        "reset_slot_success": "Model for {slot} reset to default.",
         "reset_nothing": "No model override active. You are already using the default ({default_model}).",
+        "reset_all_success": "All model overrides reset ({count} removed).",
         "unknown_model": "Unknown model: '{input}'",
+        "unknown_slot": "Unknown slot: '{input}'. Available: {slots}",
         "available_aliases": "Available: {aliases}",
-        "usage_hint": "Usage: /setmodel <model>\nExample: /setmodel opus",
-        "models_header": "Your current model:",
+        "usage_hint": (
+            "Usage:\n"
+            "  /setmodel <model> (global)\n"
+            "  /setmodel <slot> <model> (per slot)\n"
+            "  /setmodel reset (reset all)\n"
+            "  /setmodel reset <slot> (reset slot)\n\n"
+            "Slots: {slots}\n"
+            "Example: /setmodel code opus"
+        ),
+        "models_header": "Current model assignment:",
+        "models_slot_line_override": "{slot}: {display_name} (Override)",
+        "models_slot_line_default": "{slot}: {display_name} (Default)",
         "models_active": "Active: {display_name} ({model_id})",
         "models_default": "Default: {display_name} ({model_id})",
         "models_available": "Available models:",
-        "models_change_hint": "Switch: /setmodel <model>",
+        "models_change_hint": (
+            "Switch: /setmodel <slot> <model>\nExample: /setmodel code opus"
+        ),
     },
 }
 
@@ -1449,11 +1485,16 @@ def _get_model_service(context: ContextTypes.DEFAULT_TYPE) -> Any:
 async def handle_setmodel_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /setmodel <modell> und /setmodel reset.
+    """Verarbeitet /setmodel in mehreren Varianten.
 
-    Setzt das globale KI-Modell für alle Anfragen des Users.
-    Akzeptiert Aliase (opus, sonnet, haiku) oder volle Modell-IDs.
+    Phase 2a Syntax:
+      /setmodel <model>           global setzen
+      /setmodel <slot> <model>    pro Slot setzen
+      /setmodel reset             alles zuruecksetzen
+      /setmodel reset <slot>      einen Slot zuruecksetzen
     """
+    from domain.task_slot import TaskSlot
+
     model_service = _get_model_service(context)
     if model_service is None or not isinstance(model_service, ModelService):
         await update.message.reply_text("Modell-System nicht initialisiert.")
@@ -1464,42 +1505,105 @@ async def handle_setmodel_command(
     user_id: int = user.id if user else 0
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
-    # Sprache für Antwort bestimmen
     lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
     s = _get_model_strings(lang)
+    slot_names = ", ".join(TaskSlot.all_names())
 
     args: list[str] = context.args or []
     if not args:
         aliases = model_service.list_available_aliases()
         alias_list = ", ".join(sorted(aliases.keys()))
-        await update.message.reply_text(
-            f"{s['usage_hint']}\n\n{s['available_aliases'].format(aliases=alias_list)}"
+        msg = (
+            f"{s['usage_hint'].format(slots=slot_names)}\n\n"
+            f"{s['available_aliases'].format(aliases=alias_list)}"
         )
-        return
-
-    target = args[0].lower().strip()
-
-    # /setmodel reset
-    if target == "reset":
-        deleted = model_service.reset_user_model(user_id)
-        default_display = model_service.get_model_display_name(DEFAULT_MODEL)
-        default_label = f"{default_display} ({DEFAULT_MODEL})"
-        if deleted:
-            msg = s["reset_success"].format(default_model=default_label)
-        else:
-            msg = s["reset_nothing"].format(default_model=default_label)
         await update.message.reply_text(msg)
-        log_command_audit(
-            action="setmodel",
-            user_id=user_id,
-            chat_id=chat_id,
-            username=user.username if user else None,
-            details=f"reset (was_active={deleted})",
-        )
         return
 
-    # /setmodel <alias_or_id>
-    success, result = model_service.set_user_model(user_id, target)
+    first = args[0].lower().strip()
+
+    # /setmodel reset [slot]
+    if first == "reset":
+        if len(args) >= 2:
+            # /setmodel reset <slot>
+            slot_input = args[1].lower().strip()
+            slot = TaskSlot.from_string(slot_input)
+            if slot is None:
+                await update.message.reply_text(
+                    s["unknown_slot"].format(input=slot_input, slots=slot_names)
+                )
+                return
+            deleted = model_service.reset_user_model(user_id, slot=slot.value)
+            if deleted:
+                msg = s["reset_slot_success"].format(slot=slot.value.upper())
+            else:
+                default_display = model_service.get_model_display_name(DEFAULT_MODEL)
+                msg = s["reset_nothing"].format(
+                    default_model=f"{default_display} ({DEFAULT_MODEL})"
+                )
+            await update.message.reply_text(msg)
+            log_command_audit(
+                action="setmodel",
+                user_id=user_id,
+                chat_id=chat_id,
+                username=user.username if user else None,
+                details=f"reset slot={slot.value} (was_active={deleted})",
+            )
+        else:
+            # /setmodel reset (alles)
+            count = model_service.reset_all_slots(user_id)
+            if count > 0:
+                msg = s["reset_all_success"].format(count=count)
+            else:
+                default_display = model_service.get_model_display_name(DEFAULT_MODEL)
+                msg = s["reset_nothing"].format(
+                    default_model=f"{default_display} ({DEFAULT_MODEL})"
+                )
+            await update.message.reply_text(msg)
+            log_command_audit(
+                action="setmodel",
+                user_id=user_id,
+                chat_id=chat_id,
+                username=user.username if user else None,
+                details=f"reset all (removed={count})",
+            )
+        return
+
+    # Prüfen ob erstes Argument ein Slot ist
+    slot = TaskSlot.from_string(first)
+
+    if slot is not None and len(args) >= 2:
+        # /setmodel <slot> <model>
+        model_input = args[1].lower().strip()
+        success, result = model_service.set_user_model(
+            user_id, model_input, slot=slot.value
+        )
+        if success:
+            display_name = model_service.get_model_display_name(result)
+            msg = (
+                f"{s['set_slot_success'].format(slot=slot.value.upper(), display_name=display_name, model_id=result)}\n"
+                f"{s['set_slot_note'].format(slot=slot.value.upper())}"
+            )
+            await update.message.reply_text(msg)
+            log_command_audit(
+                action="setmodel",
+                user_id=user_id,
+                chat_id=chat_id,
+                username=user.username if user else None,
+                details=f"set slot={slot.value} {model_input} -> {result}",
+            )
+        else:
+            aliases = model_service.list_available_aliases()
+            alias_list = ", ".join(sorted(aliases.keys()))
+            msg = (
+                f"{s['unknown_model'].format(input=model_input)}\n"
+                f"{s['available_aliases'].format(aliases=alias_list)}"
+            )
+            await update.message.reply_text(msg)
+        return
+
+    # /setmodel <model> (global)
+    success, result = model_service.set_user_model(user_id, first)
     if success:
         display_name = model_service.get_model_display_name(result)
         msg = (
@@ -1512,13 +1616,13 @@ async def handle_setmodel_command(
             user_id=user_id,
             chat_id=chat_id,
             username=user.username if user else None,
-            details=f"set {target} -> {result}",
+            details=f"set global {first} -> {result}",
         )
     else:
         aliases = model_service.list_available_aliases()
         alias_list = ", ".join(sorted(aliases.keys()))
         msg = (
-            f"{s['unknown_model'].format(input=target)}\n"
+            f"{s['unknown_model'].format(input=first)}\n"
             f"{s['available_aliases'].format(aliases=alias_list)}"
         )
         await update.message.reply_text(msg)
@@ -1570,7 +1674,9 @@ async def handle_resetmodel_command(
 async def handle_models_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /models. Zeigt aktuelles Modell und verfügbare Optionen."""
+    """Verarbeitet /models. Zeigt pro-Slot Modell-Belegung."""
+    from domain.task_slot import TaskSlot
+
     model_service = _get_model_service(context)
     if model_service is None or not isinstance(model_service, ModelService):
         await update.message.reply_text("Modell-System nicht initialisiert.")
@@ -1584,30 +1690,48 @@ async def handle_models_command(
     lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
     s = _get_model_strings(lang)
 
-    # Aktuelles Modell
-    override = model_service.get_user_model(user_id)
-    if override:
-        display = model_service.get_model_display_name(override)
-        active_line = s["models_active"].format(display_name=display, model_id=override)
-    else:
-        display = model_service.get_model_display_name(DEFAULT_MODEL)
-        active_line = s["models_default"].format(
-            display_name=display, model_id=DEFAULT_MODEL
-        )
+    # TaskRouter für Slot-Defaults holen
+    task_router = context.application.bot_data.get("task_router")
 
-    # Verfügbare Modelle
-    aliases = model_service.list_available_aliases()
-    model_lines: list[str] = []
-    for alias, model_id in sorted(aliases.items()):
-        d = model_service.get_model_display_name(model_id)
-        marker = " (aktiv)" if model_id == (override or DEFAULT_MODEL) else ""
-        model_lines.append(f"  • {alias} = {d}{marker}")
+    # Slot-Defaults ermitteln
+    slot_defaults: dict[str, str] = {}
+    if task_router is not None and hasattr(task_router, "get_slot_defaults"):
+        for slot, alias in task_router.get_slot_defaults().items():
+            # Alias -> volle Modell-ID aufloesen
+            from application.model_service import resolve_alias
+
+            resolved = resolve_alias(alias)
+            slot_defaults[slot.value] = resolved if resolved else alias
+
+    # User-Overrides laden
+    overrides = model_service.get_all_slot_overrides(user_id)
+    global_override = overrides.get("global")
+
+    # Pro-Slot Zeilen bauen
+    slot_lines: list[str] = []
+    for slot in TaskSlot:
+        slot_name = slot.value.upper()
+
+        # Effektives Modell bestimmen: Slot-Override > Global > Slot-Default > System-Default
+        slot_override = overrides.get(slot.value)
+        if slot_override:
+            display = model_service.get_model_display_name(slot_override)
+            line = f"  {s['models_slot_line_override'].format(slot=slot_name, display_name=display)}"
+        elif global_override:
+            display = model_service.get_model_display_name(global_override)
+            line = f"  {s['models_slot_line_override'].format(slot=slot_name, display_name=display)}"
+        elif slot.value in slot_defaults:
+            display = model_service.get_model_display_name(slot_defaults[slot.value])
+            line = f"  {s['models_slot_line_default'].format(slot=slot_name, display_name=display)}"
+        else:
+            display = model_service.get_model_display_name(DEFAULT_MODEL)
+            line = f"  {s['models_slot_line_default'].format(slot=slot_name, display_name=display)}"
+
+        slot_lines.append(line)
 
     msg = (
         f"{s['models_header']}\n"
-        f"{active_line}\n\n"
-        f"{s['models_available']}\n"
-        + "\n".join(model_lines)
+        + "\n".join(slot_lines)
         + f"\n\n{s['models_change_hint']}"
     )
     await update.message.reply_text(msg)
@@ -1616,7 +1740,7 @@ async def handle_models_command(
         user_id=user_id,
         chat_id=chat_id,
         username=user.username if user else None,
-        details=f"current={override or 'default'}",
+        details=f"overrides={overrides}",
     )
 
 

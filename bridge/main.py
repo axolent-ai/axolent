@@ -323,11 +323,19 @@ def main() -> None:
         model_svc = ModelService(storage=model_storage)
         log.info("R18: Model-Service initialisiert (User-Model-Override aktiv)")
 
+    # R18 Phase 2a: TaskRouter initialisieren
+    from application.task_router import TaskRouter, load_slot_configs
+
+    slot_configs = load_slot_configs()
+    task_router = TaskRouter(slot_configs=slot_configs, model_service=model_svc)
+    log.info("R18 Phase 2a: TaskRouter initialisiert (%d Slots)", len(slot_configs))
+
     # ChatService mit Konstruktor-Injection erstellen
     chat_service = ChatService(
         provider_router=router,
         memory_service=memory_svc,
         model_service=model_svc,
+        task_router=task_router,
     )
 
     log.info("Trinity-Memory-System initialisiert (Auto-Loading aktiv)")
@@ -358,6 +366,7 @@ def main() -> None:
     app.bot_data["rate_limiter"] = rate_limiter
     if model_svc is not None:
         app.bot_data["model_service"] = model_svc
+    app.bot_data["task_router"] = task_router
     if use_sqlite:
         app.bot_data["sqlite_conn"] = sqlite_conn
 

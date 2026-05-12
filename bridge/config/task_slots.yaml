@@ -1,0 +1,125 @@
+# Task-Slot-Konfiguration fuer automatisches Modell-Routing
+# Jeder Slot hat: default_model, patterns, keywords, thresholds
+#
+# Score-Berechnung:
+#   - Jedes gematchte Pattern: +3 Punkte (starkes Signal)
+#   - Jedes gematchtes Keyword: +1 Punkt
+#   - Code-Block (```): +100 Punkte (direkt CODE-Slot)
+#
+# Bei Score-Gleichstand gilt Prioritaet: CODE > REASON > RESEARCH > CREATIVE > QUICK > CHAT
+
+slots:
+  code:
+    default_model: opus
+    patterns:
+      - "```"
+      - "def "
+      - "function "
+      - "class "
+      - "import "
+      - "from "
+      - "const "
+      - "SELECT "
+    keywords:
+      - debug
+      - refactor
+      - implementier
+      - implement
+      - programmier
+      - bug
+      - fehler im code
+      - error
+      - syntax
+      - traceback
+      - exception
+      - TypeError
+      - ValueError
+      - KeyError
+      - IndexError
+      - RuntimeError
+      - SyntaxError
+      - code review
+      - pull request
+    min_keyword_matches: 2
+
+  reason:
+    default_model: opus
+    keywords:
+      - analysier
+      - vergleich
+      - pro und contra
+      - step by step
+      - schritt fuer schritt
+      - berechn
+      - kalkulier
+      - strategie
+      - hypothese
+      - logisch
+      - ableiten
+      - schlussfolger
+      - break even
+      - marge
+      - roi
+    min_keyword_matches: 2
+    min_word_count: 50
+
+  research:
+    default_model: opus
+    keywords:
+      - recherchier
+      - research
+      - zusammenfass
+      - markt
+      - wettbewerb
+      - benchmark
+      - trend
+      - branche
+      - deep dive
+      - umfassend
+      - detailliert
+      - quellen
+      - studie
+    patterns:
+      - "http://"
+      - "https://"
+    min_keyword_matches: 2
+
+  creative:
+    default_model: sonnet
+    keywords:
+      - brainstorm
+      - ideen
+      - vorschlaege
+      - varianten
+      - alternativen
+      - schreib
+      - formulier
+      - verfass
+      - headline
+      - slogan
+      - ad copy
+      - email
+      - blog
+      - artikel
+      - naming
+      - produktname
+    min_keyword_matches: 2
+
+  quick:
+    default_model: haiku
+    keywords:
+      - klassifizier
+      - kategorisier
+      - extrahier
+      - ist das
+      - ja oder nein
+      - uebersetz
+      - formatier
+      - konvertier
+      - uebersetze
+    min_keyword_matches: 1
+    max_word_count: 50
+
+  chat:
+    default_model: sonnet
+    fallback: true

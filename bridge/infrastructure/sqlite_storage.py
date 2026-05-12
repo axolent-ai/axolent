@@ -756,6 +756,43 @@ class SqliteModelStorage:
             log.debug("Modell-Override gelöscht: user_id=%d slot=%s", user_id, slot)
         return deleted
 
+    def get_all_models(self, user_id: int) -> dict[str, str]:
+        """Liest alle Slot-Overrides für einen User.
+
+        Args:
+            user_id: Telegram-User-ID.
+
+        Returns:
+            Dict von slot_name -> model_id für alle gesetzten Overrides.
+        """
+        rows = self._conn.fetchall(
+            "SELECT slot, model_id FROM user_slot_models WHERE user_id = ?",
+            (user_id,),
+        )
+        return {row["slot"]: row["model_id"] for row in rows}
+
+    def delete_all_models(self, user_id: int) -> int:
+        """Entfernt alle Modell-Overrides für einen User.
+
+        Args:
+            user_id: Telegram-User-ID.
+
+        Returns:
+            Anzahl gelöschter Einträge.
+        """
+        cursor = self._conn.execute(
+            "DELETE FROM user_slot_models WHERE user_id = ?",
+            (user_id,),
+        )
+        count = cursor.rowcount
+        if count > 0:
+            log.debug(
+                "Alle Modell-Overrides gelöscht: user_id=%d count=%d",
+                user_id,
+                count,
+            )
+        return count
+
     def _reset_all_for_tests(self) -> None:
         """Löscht alle Modell-Overrides (nur für Tests).
 

@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     from application.memory_service import MemoryService
     from application.model_service import ModelService
     from application.provider_router import ProviderRouter
+    from application.task_router import TaskRouter
     from infrastructure.providers.claude_persistent import ClaudePersistentProvider
 
 log = logging.getLogger(__name__)
@@ -211,10 +212,12 @@ class ChatService:
         provider_router: "ProviderRouter",
         memory_service: "MemoryService | None" = None,
         model_service: "ModelService | None" = None,
+        task_router: "TaskRouter | None" = None,
     ) -> None:
         self.provider_router = provider_router
         self.memory_service = memory_service
         self.model_service = model_service
+        self.task_router = task_router
 
     def _get_memory_budget(self, provider_name: str | None = None) -> int:
         """Liest das Memory-Budget aus ProviderCapabilities.
@@ -432,9 +435,24 @@ class ChatService:
             if memory_context:
                 effective_prompt = f"{effective_prompt}\n\n{memory_context}"
 
-            # User-Modell-Override laden (Phase 1: globaler Slot)
+            # Phase 2a: TaskRouter-Klassifikation + Modell-Resolution
+            task_slot_name: str | None = None
+            task_score: int = 0
+            task_matched_patterns: tuple[str, ...] = ()
+            task_matched_keywords: tuple[str, ...] = ()
             user_model: str | None = None
-            if self.model_service is not None:
+
+            if self.task_router is not None:
+                classification = self.task_router.classify(text)
+                task_slot_name = classification.slot.value
+                task_score = classification.score
+                task_matched_patterns = classification.matched_patterns
+                task_matched_keywords = classification.matched_keywords
+
+                # Modell via TaskRouter resolven (Slot-Override > Global > Default)
+                user_model = self.task_router.resolve_model(uid, classification.slot)
+            elif self.model_service is not None:
+                # Fallback: Phase 1 Verhalten (nur globaler Override)
                 user_model = self.model_service.get_user_model(uid)
 
             # Provider-Router aufrufen (ersetzt direkten claude_cli Aufruf)
@@ -457,6 +475,15 @@ class ChatService:
                     "memory_entries_loaded": memory_entries_loaded,
                 }
             )
+
+            # Task-Classification ins Audit (Phase 2a Konfidenz-Logging)
+            if task_slot_name is not None:
+                audit["task_slot"] = task_slot_name
+                audit["task_score"] = task_score
+                audit["task_matched_patterns"] = list(task_matched_patterns)
+                audit["task_matched_keywords"] = list(task_matched_keywords)
+                if user_model:
+                    audit["resolved_model"] = user_model
 
             if result.error:
                 error_id = uuid.uuid4().hex[:8]
@@ -693,9 +720,13 @@ class ChatService:
         if memory_context:
             effective_prompt = f"{effective_prompt}\n\n{memory_context}"
 
-        # User-Modell-Override laden (Phase 1: globaler Slot)
+        # Phase 2a: TaskRouter-Klassifikation + Modell-Resolution
         user_model: str | None = None
-        if self.model_service is not None:
+        if self.task_router is not None:
+            classification = self.task_router.classify(text)
+            user_model = self.task_router.resolve_model(uid, classification.slot)
+        elif self.model_service is not None:
+            # Fallback: Phase 1 Verhalten (nur globaler Override)
             user_model = self.model_service.get_user_model(uid)
 
         # Status: Denke nach (vor Provider-Call)
