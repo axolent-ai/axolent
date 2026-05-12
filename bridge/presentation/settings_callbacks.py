@@ -37,6 +37,9 @@ _SETTINGS_STRINGS: dict[str, dict[str, str]] = {
         "lang_section": "Sprache:",
         "reset_all_btn": "Alle zurücksetzen",
         "default_suffix": "(Default)",
+        "global_override_suffix": "(global)",
+        "global_override_headline": "Globaler Override: {display_name} (alle Slots)",
+        "reset_global_btn": "Globalen Override aufheben",
         "slot_select_title": "{slot} — Modell wählen",
         "current_marker": "●",
         "other_marker": "○",
@@ -60,6 +63,9 @@ _SETTINGS_STRINGS: dict[str, dict[str, str]] = {
         "lang_section": "Language:",
         "reset_all_btn": "Reset all",
         "default_suffix": "(Default)",
+        "global_override_suffix": "(global)",
+        "global_override_headline": "Global override: {display_name} (all slots)",
+        "reset_global_btn": "Remove global override",
         "slot_select_title": "{slot} — Choose model",
         "current_marker": "●",
         "other_marker": "○",
@@ -138,19 +144,54 @@ def build_main_menu_keyboard(
 ) -> tuple[str, InlineKeyboardMarkup]:
     """Baut das Hauptmenü (Ebene A) für /settings.
 
+    Zeigt globalen Override prominent an, wenn aktiv.
+    Priorität der Anzeige pro Slot:
+      1. Slot-spezifischer Override (ohne Suffix)
+      2. Globaler Override (mit "(global)" Suffix)
+      3. Slot-Default (mit "(Default)" Suffix)
+
     Returns:
         Tuple (message_text, keyboard_markup).
     """
     s = _get_settings_strings(lang)
     overrides = model_service.get_all_slot_overrides(user_id)
 
+    # Globaler Override separat prüfen (slot="global" ist kein TaskSlot)
+    global_override = overrides.get("global")
+
     buttons: list[list[InlineKeyboardButton]] = []
+
+    # Globaler Override: Headline + Reset-Button wenn aktiv
+    if global_override:
+        global_display = model_service.get_model_display_name(global_override)
+        headline = s["global_override_headline"].format(display_name=global_display)
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    f"⚡ {headline}",
+                    callback_data="settings_noop",
+                )
+            ]
+        )
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    f"\U0001f504 {s['reset_global_btn']}",
+                    callback_data="settings_reset_global",
+                )
+            ]
+        )
 
     for slot in TaskSlot:
         slot_override = overrides.get(slot.value)
         if slot_override:
+            # Slot-spezifischer Override hat Vorrang
             display = model_service.get_model_display_name(slot_override)
             label = f"{slot.value.upper()}: {display}"
+        elif global_override:
+            # Globaler Override aktiv, Slot hat keinen eigenen
+            display = model_service.get_model_display_name(global_override)
+            label = f"{slot.value.upper()}: {display} {s['global_override_suffix']}"
         else:
             default_id = _get_slot_default_model(slot, context)
             display = model_service.get_model_display_name(default_id)
@@ -340,6 +381,25 @@ async def handle_settings_callback(
 
     # --- Route by callback data ---
 
+    if data == "settings_noop":
+        # Headline-Button ohne Aktion (nur informativ)
+        return
+
+    if data == "settings_reset_global":
+        # Globalen Override entfernen
+        deleted = model_service.reset_user_model(user_id, slot="global")
+        log_command_audit(
+            action="settings_reset_global",
+            user_id=user_id,
+            chat_id=chat_id,
+            username=user.username if user else None,
+            details=f"reset global (was_active={deleted})",
+        )
+        # Zurück zum Hauptmenü
+        text, keyboard = build_main_menu_keyboard(user_id, model_service, context, lang)
+        await query.edit_message_text(text, reply_markup=keyboard)
+        return
+
     if data.startswith("settings_slot:"):
         # Ebene B: Slot-Modellauswahl
         slot_name = data.split(":")[1]
@@ -366,19 +426,32 @@ async def handle_settings_callback(
 
         success, result = model_service.set_user_model(user_id, alias, slot=slot.value)
         if success:
+            was_implicit_reset = model_service.last_was_implicit_reset
+            audit_action = (
+                "settings_model_implicit_reset"
+                if was_implicit_reset
+                else "settings_model"
+            )
             log.info(
-                "Settings: User %d set %s -> %s (%s)",
+                "Settings: User %d set %s -> %s (%s, implicit_reset=%s)",
                 user_id,
                 slot.value,
                 alias,
                 result,
+                was_implicit_reset,
             )
+            if was_implicit_reset:
+                details = (
+                    f"implicit_reset slot={slot.value}, was default-equal alias={alias}"
+                )
+            else:
+                details = f"set slot={slot.value} alias={alias} -> {result}"
             log_command_audit(
-                action="settings_model",
+                action=audit_action,
                 user_id=user_id,
                 chat_id=chat_id,
                 username=user.username if user else None,
-                details=f"set slot={slot.value} alias={alias} -> {result}",
+                details=details,
             )
 
         # Zurück zum Hauptmenü mit aktualisierten Werten

@@ -190,10 +190,12 @@ class ModelService:
         # Impliziter Reset: Wenn das gewaehlte Modell dem Slot-Default entspricht,
         # wird kein Override gespeichert (bzw. ein bestehender entfernt).
         # Damit zeigt die UI korrekt "(Default)" an.
+        self._last_was_implicit_reset = False
         if slot != "global" and slot in self._slot_defaults:
             slot_default_id = self._slot_defaults[slot]
             if resolved == slot_default_id:
                 self._storage.delete_model(user_id, slot)
+                self._last_was_implicit_reset = True
                 log.info(
                     "User %d hat Modell '%s' gewählt das dem Slot-Default "
                     "für '%s' entspricht. Override entfernt (impliziter Reset).",
@@ -212,6 +214,15 @@ class ModelService:
             slot,
         )
         return True, resolved
+
+    @property
+    def last_was_implicit_reset(self) -> bool:
+        """True wenn der letzte set_user_model() einen impliziten Reset ausgelöst hat.
+
+        Ermöglicht dem Presentation-Layer, im Audit-Log zwischen "set" und
+        "implicit_reset" zu unterscheiden.
+        """
+        return getattr(self, "_last_was_implicit_reset", False)
 
     def reset_user_model(self, user_id: int, slot: str = "global") -> bool:
         """Entfernt das Modell-Override (zurück auf Default).

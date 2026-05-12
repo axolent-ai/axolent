@@ -1580,18 +1580,28 @@ async def handle_setmodel_command(
             user_id, model_input, slot=slot.value
         )
         if success:
+            was_implicit_reset = model_service.last_was_implicit_reset
             display_name = model_service.get_model_display_name(result)
             msg = (
                 f"{s['set_slot_success'].format(slot=slot.value.upper(), display_name=display_name, model_id=result)}\n"
                 f"{s['set_slot_note'].format(slot=slot.value.upper())}"
             )
             await update.message.reply_text(msg)
+            if was_implicit_reset:
+                audit_action = "setmodel_implicit_reset"
+                audit_details = (
+                    f"implicit_reset slot={slot.value}, "
+                    f"was default-equal alias={model_input}"
+                )
+            else:
+                audit_action = "setmodel"
+                audit_details = f"set slot={slot.value} alias={model_input} -> {result}"
             log_command_audit(
-                action="setmodel",
+                action=audit_action,
                 user_id=user_id,
                 chat_id=chat_id,
                 username=user.username if user else None,
-                details=f"set slot={slot.value} {model_input} -> {result}",
+                details=audit_details,
             )
         else:
             aliases = model_service.list_available_aliases()

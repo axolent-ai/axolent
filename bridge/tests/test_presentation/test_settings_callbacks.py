@@ -557,3 +557,296 @@ class TestSettingsI18n:
         # Reset-All-Button in EN
         reset_btn = keyboard.inline_keyboard[-1][0]
         assert "Reset all" in reset_btn.text
+
+
+# ──────────────────────────────────────────────────────────────
+# Global-Override Tests (Fix A + Fix B)
+# ──────────────────────────────────────────────────────────────
+
+
+class TestGlobalOverrideShownInSettings:
+    """Settings-UI zeigt globalen Override korrekt an."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    async def test_global_override_shows_headline(
+        self, model_service: ModelService
+    ) -> None:
+        """Nach /setmodel opus zeigt /settings eine globale Override-Headline."""
+        from presentation.settings_callbacks import handle_settings_callback
+
+        # Globalen Override setzen (slot="global" ist Default)
+        model_service.set_user_model(1, "opus")
+
+        update = _make_callback_update("settings_back")
+        context = _make_context(model_service=model_service)
+
+        await handle_settings_callback(update, context)
+
+        keyboard = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
+        # Erster Button muss die Headline sein
+        headline_btn = keyboard.inline_keyboard[0][0]
+        assert "Globaler Override" in headline_btn.text
+        assert "Opus" in headline_btn.text
+
+    async def test_global_override_shows_reset_button(
+        self, model_service: ModelService
+    ) -> None:
+        """Nach globalem Override gibt es einen Reset-Global-Button."""
+        from presentation.settings_callbacks import handle_settings_callback
+
+        model_service.set_user_model(1, "opus")
+
+        update = _make_callback_update("settings_back")
+        context = _make_context(model_service=model_service)
+
+        await handle_settings_callback(update, context)
+
+        keyboard = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
+        # Zweiter Button muss der Reset-Global-Button sein
+        reset_btn = keyboard.inline_keyboard[1][0]
+        assert "settings_reset_global" in reset_btn.callback_data
+
+    async def test_global_override_slots_show_global_suffix(
+        self, model_service: ModelService
+    ) -> None:
+        """Alle Slots zeigen das globale Modell mit (global) Suffix."""
+        from presentation.settings_callbacks import handle_settings_callback
+
+        model_service.set_user_model(1, "opus")
+
+        update = _make_callback_update("settings_back")
+        context = _make_context(model_service=model_service)
+
+        await handle_settings_callback(update, context)
+
+        keyboard = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
+        # Slots starten ab Index 2 (nach Headline + Reset-Global)
+        for i in range(2, 8):  # 6 Slots
+            btn = keyboard.inline_keyboard[i][0]
+            assert "(global)" in btn.text, (
+                f"Slot-Button '{btn.text}' muss '(global)' enthalten"
+            )
+            assert "(Default)" not in btn.text
+
+    async def test_no_global_override_no_headline(
+        self, model_service: ModelService
+    ) -> None:
+        """Ohne globalen Override: keine Headline, 8 Rows (6 Slots + Sprache + Reset)."""
+        from presentation.settings_callbacks import handle_settings_callback
+
+        update = _make_callback_update("settings_back")
+        context = _make_context(model_service=model_service)
+
+        await handle_settings_callback(update, context)
+
+        keyboard = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
+        assert len(keyboard.inline_keyboard) == 8
+
+    async def test_global_override_with_slot_override_mixed(
+        self, model_service: ModelService
+    ) -> None:
+        """Slot-Override hat Vorrang vor Global-Override in der Anzeige."""
+        from presentation.settings_callbacks import handle_settings_callback
+
+        # Global auf Opus, aber CODE explizit auf Haiku
+        model_service.set_user_model(1, "opus")
+        model_service.set_user_model(1, "haiku", slot="code")
+
+        update = _make_callback_update("settings_back")
+        context = _make_context(model_service=model_service)
+
+        await handle_settings_callback(update, context)
+
+        keyboard = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
+        # CODE (Index 3, nach Headline + Reset-Global + CHAT) zeigt Haiku ohne "(global)"
+        code_btn = keyboard.inline_keyboard[3][0]
+        assert "CODE:" in code_btn.text
+        assert "Haiku" in code_btn.text
+        assert "(global)" not in code_btn.text
+
+        # CHAT (Index 2) zeigt Opus mit "(global)"
+        chat_btn = keyboard.inline_keyboard[2][0]
+        assert "CHAT:" in chat_btn.text
+        assert "Opus" in chat_btn.text
+        assert "(global)" in chat_btn.text
+
+    async def test_global_override_en_strings(
+        self, model_service: ModelService
+    ) -> None:
+        """Globaler Override in EN zeigt englische Strings."""
+        from presentation.settings_callbacks import handle_settings_callback
+
+        model_service.set_user_model(1, "opus")
+
+        update = _make_callback_update("settings_back")
+        context = _make_context(model_service=model_service)
+        chat_service = context.application.bot_data["chat_service"]
+        chat_service.get_chat_language = AsyncMock(return_value="en")
+
+        await handle_settings_callback(update, context)
+
+        keyboard = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
+        headline_btn = keyboard.inline_keyboard[0][0]
+        assert "Global override" in headline_btn.text
+
+
+class TestSettingsResetGlobalCallback:
+    """settings_reset_global löscht den globalen Override."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    async def test_reset_global_removes_override(
+        self, model_service: ModelService
+    ) -> None:
+        """settings_reset_global entfernt den globalen Override."""
+        from presentation.settings_callbacks import handle_settings_callback
+
+        model_service.set_user_model(1, "opus")
+        assert model_service.get_user_model(1, "global") is not None
+
+        update = _make_callback_update("settings_reset_global")
+        context = _make_context(model_service=model_service)
+
+        await handle_settings_callback(update, context)
+
+        # Override muss weg sein
+        assert model_service.get_user_model(1, "global") is None
+
+        # Hauptmenü ohne Headline
+        keyboard = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
+        assert len(keyboard.inline_keyboard) == 8  # Keine Headline-Rows
+
+    async def test_reset_global_preserves_slot_overrides(
+        self, model_service: ModelService
+    ) -> None:
+        """settings_reset_global entfernt nur global, nicht Slot-Overrides."""
+        from presentation.settings_callbacks import handle_settings_callback
+
+        model_service.set_user_model(1, "opus")
+        model_service.set_user_model(1, "haiku", slot="code")
+
+        update = _make_callback_update("settings_reset_global")
+        context = _make_context(model_service=model_service)
+
+        await handle_settings_callback(update, context)
+
+        # Global weg, Code bleibt
+        assert model_service.get_user_model(1, "global") is None
+        assert model_service.get_user_model(1, "code") is not None
+
+
+class TestGlobalOverrideTakesPrecedence:
+    """TaskRouter berücksichtigt global-Override korrekt."""
+
+    def test_global_override_used_when_no_slot_override(
+        self, model_service: ModelService
+    ) -> None:
+        """Global-Override wird genutzt wenn kein Slot-Override existiert."""
+        from application.task_router import SlotConfig, TaskRouter
+        from domain.task_slot import TaskSlot
+
+        configs = [
+            SlotConfig(
+                slot=TaskSlot.CHAT,
+                default_model="haiku",
+                fallback=True,
+            ),
+        ]
+        router = TaskRouter(configs, model_service=model_service)
+
+        # Global auf Opus setzen
+        model_service.set_user_model(1, "opus")
+
+        result = router.resolve_model(1, TaskSlot.CHAT)
+        assert result == "claude-opus-4-7"
+
+    def test_slot_override_beats_global(self, model_service: ModelService) -> None:
+        """Slot-Override hat Vorrang vor Global-Override."""
+        from application.task_router import SlotConfig, TaskRouter
+        from domain.task_slot import TaskSlot
+
+        configs = [
+            SlotConfig(
+                slot=TaskSlot.CHAT,
+                default_model="haiku",
+                fallback=True,
+            ),
+        ]
+        router = TaskRouter(configs, model_service=model_service)
+
+        # Global Opus, Chat Sonnet
+        model_service.set_user_model(1, "opus")
+        model_service.set_user_model(1, "sonnet", slot="chat")
+
+        result = router.resolve_model(1, TaskSlot.CHAT)
+        assert result == "claude-sonnet-4-6"
+
+
+class TestImplicitResetAuditLog:
+    """Audit-Log differenziert implicit_reset vs set."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    @pytest.fixture
+    def model_service_with_defaults(self, conn: SqliteConnection) -> ModelService:
+        """ModelService mit Slot-Defaults."""
+        slot_defaults = {
+            "code": "claude-opus-4-7",
+            "chat": "claude-sonnet-4-6",
+        }
+        return ModelService(
+            storage=SqliteModelStorage(conn), slot_defaults=slot_defaults
+        )
+
+    async def test_implicit_reset_audit_action(
+        self, model_service_with_defaults: ModelService
+    ) -> None:
+        """Bei impliziter Reset wird action 'settings_model_implicit_reset' geloggt."""
+        from presentation.settings_callbacks import handle_settings_callback
+
+        svc = model_service_with_defaults
+
+        # Erst Override setzen (haiku statt default opus fuer code)
+        svc.set_user_model(1, "haiku", slot="code")
+
+        # Dann Default waehlen (opus = code default) -> implicit reset
+        update = _make_callback_update("settings_model:code:opus")
+        context = _make_context(model_service=svc)
+
+        with patch("presentation.settings_callbacks.log_command_audit") as mock_audit:
+            await handle_settings_callback(update, context)
+
+            mock_audit.assert_called_once()
+            call_kwargs = mock_audit.call_args[1]
+            assert call_kwargs["action"] == "settings_model_implicit_reset"
+            assert "implicit_reset" in call_kwargs["details"]
+            assert "default-equal" in call_kwargs["details"]
+
+    async def test_normal_set_audit_action(
+        self, model_service_with_defaults: ModelService
+    ) -> None:
+        """Bei normalem Set wird action 'settings_model' geloggt."""
+        from presentation.settings_callbacks import handle_settings_callback
+
+        svc = model_service_with_defaults
+
+        update = _make_callback_update("settings_model:code:haiku")
+        context = _make_context(model_service=svc)
+
+        with patch("presentation.settings_callbacks.log_command_audit") as mock_audit:
+            await handle_settings_callback(update, context)
+
+            mock_audit.assert_called_once()
+            call_kwargs = mock_audit.call_args[1]
+            assert call_kwargs["action"] == "settings_model"
+            assert "set slot=code" in call_kwargs["details"]
