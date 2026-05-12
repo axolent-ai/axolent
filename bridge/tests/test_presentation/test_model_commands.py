@@ -1,8 +1,8 @@
-"""Tests fuer /setmodel reset + /resetmodel Handler.
+"""Tests für /setmodel reset + /resetmodel Handler.
 
 Testet:
   - /setmodel reset zeigt Default-Modell-Name in der Antwort
-  - /resetmodel funktioniert als eigenstaendiger Command
+  - /resetmodel funktioniert als eigenständiger Command
   - /resetmodel ohne Override zeigt Default-Modell-Name
   - /resetmodel mit Override entfernt ihn und zeigt Default
 """
@@ -25,13 +25,13 @@ from infrastructure.sqlite_storage import SqliteConnection, SqliteModelStorage
 
 @pytest.fixture
 def db_path(tmp_path: Path) -> Path:
-    """Temporaerer DB-Pfad fuer Test-Isolation."""
+    """Temporärer DB-Pfad für Test-Isolation."""
     return tmp_path / "test_model_cmd.db"
 
 
 @pytest.fixture
 def conn(db_path: Path) -> SqliteConnection:
-    """Frische SQLite-Connection fuer jeden Test."""
+    """Frische SQLite-Connection für jeden Test."""
     c = SqliteConnection(db_path)
     yield c
     c.close()
@@ -136,12 +136,12 @@ class TestSetmodelResetShowsDefault:
 
 
 # ──────────────────────────────────────────────────────────────
-# /resetmodel: Eigenstaendiger Command
+# /resetmodel: Eigenständiger Command
 # ──────────────────────────────────────────────────────────────
 
 
 class TestResetmodelCommand:
-    """/resetmodel als eigenstaendiger Shortcut fuer /setmodel reset."""
+    """/resetmodel als eigenständiger Shortcut für /setmodel reset."""
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
@@ -229,7 +229,7 @@ class TestResetmodelCommand:
 
 
 class TestSetmodelHappyAndErrorPath:
-    """Tests fuer /setmodel mit gueltigem und ungueltigem Alias."""
+    """Tests für /setmodel mit gültigem und ungültigem Alias."""
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
@@ -257,25 +257,25 @@ class TestSetmodelHappyAndErrorPath:
     async def test_setmodel_invalid_model_error(
         self, model_service: ModelService
     ) -> None:
-        """/setmodel ungueltigeswort zeigt Fehlermeldung mit verfuegbaren Aliassen."""
+        """/setmodel ungültigeswort zeigt Fehlermeldung mit verfügbaren Aliassen."""
         from presentation.handlers import handle_setmodel_command
 
         update = _make_update()
-        context = _make_context(args=["ungueltigeswort"], model_service=model_service)
+        context = _make_context(args=["ungültigeswort"], model_service=model_service)
 
         await handle_setmodel_command(update, context)
 
         # Modell darf NICHT gesetzt sein
         assert model_service.get_user_model(user_id=1) is None
 
-        # Antwort muss Fehlermeldung mit verfuegbaren Aliassen enthalten
+        # Antwort muss Fehlermeldung mit verfügbaren Aliassen enthalten
         reply_text = update.message.reply_text.call_args[0][0]
-        assert "ungueltigeswort" in reply_text.lower()
+        assert "ungültigeswort" in reply_text.lower()
         assert "opus" in reply_text or "sonnet" in reply_text
 
 
 # ──────────────────────────────────────────────────────────────
-# /models: Zeigt aktives Modell und verfuegbare Optionen
+# /models: Zeigt aktives Modell und verfügbare Optionen
 # ──────────────────────────────────────────────────────────────
 
 

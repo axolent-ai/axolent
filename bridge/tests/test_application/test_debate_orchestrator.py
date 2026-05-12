@@ -33,7 +33,7 @@ from infrastructure.providers.base import (
 
 
 class _MockProvider(LLMProvider):
-    """Mock-Provider fuer Tests."""
+    """Mock-Provider für Tests."""
 
     def __init__(
         self,
@@ -161,7 +161,7 @@ class TestDebateOrchestratorBasic:
         )
 
     async def test_no_providers_available(self) -> None:
-        """Keine Provider verfuegbar: system-Fehler."""
+        """Keine Provider verfügbar: system-Fehler."""
         providers = {
             "offline": _MockProvider("offline", available=False),
         }
@@ -175,7 +175,7 @@ class TestDebateOrchestratorBasic:
         assert result.providers_queried == []
 
     async def test_single_provider_consensus_note(self) -> None:
-        """Nur ein Provider verfuegbar: Konsens-Analyse vermerkt das."""
+        """Nur ein Provider verfügbar: Konsens-Analyse vermerkt das."""
         providers = {
             "solo": _MockProvider("solo", response_text="Einzelantwort"),
             "off": _MockProvider("off", available=False),
@@ -230,12 +230,12 @@ class TestConsensusHeuristic:
         providers = {
             "a": _MockProvider(
                 "a",
-                response_text="Die Sonne scheint hell am Himmel ueber dem Meer",
+                response_text="Die Sonne scheint hell am Himmel über dem Meer",
             ),
             "b": _MockProvider(
                 "b",
                 response_text=(
-                    "Quantencomputer nutzen Superposition fuer "
+                    "Quantencomputer nutzen Superposition für "
                     "parallele Berechnungen in Millisekunden"
                 ),
             ),
@@ -250,7 +250,7 @@ class TestConsensusHeuristic:
 
 
 class TestDebateProviderConfig:
-    """Tests fuer DEBATE_PROVIDERS-Konfiguration."""
+    """Tests für DEBATE_PROVIDERS-Konfiguration."""
 
     async def test_configured_providers_filter(self) -> None:
         """DEBATE_PROVIDERS env-var filtert Provider."""
@@ -273,7 +273,7 @@ class TestDebateProviderConfig:
         assert "beta" not in result.responses
 
     async def test_configured_unavailable_provider_skipped(self) -> None:
-        """Konfigurierter aber nicht-verfuegbarer Provider wird uebersprungen."""
+        """Konfigurierter aber nicht-verfügbarer Provider wird übersprungen."""
         providers = {
             "online": _MockProvider("online", response_text="OK"),
             "offline": _MockProvider("offline", available=False),
@@ -558,7 +558,7 @@ class TestFinalReviewIntegration:
         judge_json = json.dumps(
             {
                 "winner": "A",
-                "synthesis": "Bitcoin ist eine dezentrale digitale Waehrung auf Blockchain-Basis.",
+                "synthesis": "Bitcoin ist eine dezentrale digitale Währung auf Blockchain-Basis.",
                 "recommendation": "Antwort A ist besser.",
                 "evaluations": [
                     {"label": "A", "pros": ["Klar"], "cons": []},
@@ -598,7 +598,7 @@ class TestFinalReviewIntegration:
         assert result.final_verdict.winner == "claude_persistent"
         assert result.final_verdict.recommendation == "Antwort A ist besser."
         assert result.final_verdict.synthesis == (
-            "Bitcoin ist eine dezentrale digitale Waehrung auf Blockchain-Basis."
+            "Bitcoin ist eine dezentrale digitale Währung auf Blockchain-Basis."
         )
         assert len(result.final_verdict.evaluations) == 2
 
@@ -755,9 +755,9 @@ class TestSynthesisFeature:
             {
                 "winner": "A",
                 "synthesis": (
-                    "Bitcoin ist eine dezentrale digitale Waehrung "
+                    "Bitcoin ist eine dezentrale digitale Währung "
                     "die auf Blockchain-Technologie basiert und "
-                    "Peer-to-Peer-Transaktionen ohne Mittelsmann ermoeglicht."
+                    "Peer-to-Peer-Transaktionen ohne Mittelsmann ermöglicht."
                 ),
                 "recommendation": "A ist praeziser.",
                 "evaluations": [
@@ -771,7 +771,7 @@ class TestSynthesisFeature:
         result = orchestrator._parse_judge_response(raw_json, label_to_provider)
 
         assert result is not None
-        assert "dezentrale digitale Waehrung" in result.synthesis
+        assert "dezentrale digitale Währung" in result.synthesis
         assert "Peer-to-Peer" in result.synthesis
 
     def test_parse_missing_synthesis_defaults_empty(self) -> None:
@@ -814,13 +814,13 @@ class TestSynthesisFeature:
         assert "SYNTHESE" in prompt
         assert "synthesis" in prompt
         # Prompt muss das neue Schema-Feld beinhalten
-        assert "Vollstaendige synthetisierte Antwort" in prompt
+        assert "Vollständige synthetisierte Antwort" in prompt
 
     def test_synthesis_preserved_through_final_review_reconstruction(self) -> None:
         """Synthesis bleibt erhalten wenn FinalVerdict in final_review() rekonstruiert wird."""
         from application.debate_orchestrator import FinalVerdict, ProviderEvaluation
 
-        # Simuliere was _parse_judge_response zurueckgibt
+        # Simuliere was _parse_judge_response zurückgibt
         parsed = FinalVerdict(
             winner="alpha",
             recommendation="Alpha ist besser.",
@@ -845,7 +845,7 @@ class TestSynthesisFeature:
 
 
 class TestRobustJsonExtraction:
-    """Tests fuer robuste JSON-Extraktion aus Judge-Responses.
+    """Tests für robuste JSON-Extraktion aus Judge-Responses.
 
     Bug-Kontext: Im Live-Test lieferte der Judge-Call Text mit umgebendem Prosa
     oder Markdown-Wrapping, was den alten Parser zum Scheitern brachte und
@@ -880,7 +880,7 @@ class TestRobustJsonExtraction:
 
         raw_text = (
             "Meine Bewertung der Antworten:\n\n"
-            '{"winner": "B", "synthesis": "B liefert die vollstaendigere Antwort.", '
+            '{"winner": "B", "synthesis": "B liefert die vollständigere Antwort.", '
             '"recommendation": "B gewinnt.", '
             '"evaluations": [{"label": "B", "pros": ["Detailliert"], "cons": []}], '
             '"reasoning": "B ist ausfuehrlicher."}\n\n'
@@ -891,7 +891,7 @@ class TestRobustJsonExtraction:
         result = orchestrator._parse_judge_response(raw_text, label_map)
         assert result is not None
         assert result.winner == "beta"
-        assert "vollstaendigere" in result.synthesis
+        assert "vollständigere" in result.synthesis
 
     def test_extract_json_in_codeblock_with_prose_prefix(self) -> None:
         """JSON in Markdown-Codeblock, NACH erklaertendem Text."""
@@ -955,7 +955,7 @@ class TestRobustJsonExtraction:
         assert "Pro1" in result.evaluations[0].pros
 
     def test_extract_no_json_at_all(self) -> None:
-        """Kein JSON im Text: gibt None zurueck."""
+        """Kein JSON im Text: gibt None zurück."""
         orchestrator = self._make_orchestrator()
         result = orchestrator._parse_judge_response(
             "Ich kann das leider nicht bewerten. Bitte versuche es erneut.",
@@ -974,7 +974,7 @@ class TestRobustJsonExtraction:
         assert result.winner == "alpha"
 
     def test_pure_array_no_dict_gives_none(self) -> None:
-        """Reines JSON-Array ohne brauchbares Dict: gibt None zurueck."""
+        """Reines JSON-Array ohne brauchbares Dict: gibt None zurück."""
         orchestrator = self._make_orchestrator()
         result = orchestrator._parse_judge_response(
             '["not", "a", "dict"]', {"A": "alpha"}
@@ -999,7 +999,7 @@ class TestRobustJsonExtraction:
 
 
 class TestMultiQuestionCoverage:
-    """Regressions-Tests: Multi-Fragen muessen alle Aspekte in der Kernaussage abdecken.
+    """Regressions-Tests: Multi-Fragen müssen alle Aspekte in der Kernaussage abdecken.
 
     Bug-Kontext: Bei Fragen wie 'Was ist Bitcoin UND sollte ich einsteigen?'
     deckte die Kernaussage bisher nur den Handlungs-Aspekt ab. Der Definitions-Teil
@@ -1020,7 +1020,7 @@ class TestMultiQuestionCoverage:
         orchestrator = self._make_orchestrator()
 
         responses = {
-            "alpha": "Bitcoin ist eine digitale Waehrung.",
+            "alpha": "Bitcoin ist eine digitale Währung.",
             "beta": "Du solltest vorsichtig investieren.",
         }
         prompt, _ = orchestrator._build_judge_prompt(
@@ -1032,13 +1032,13 @@ class TestMultiQuestionCoverage:
         assert "Teilaspekt" in prompt
 
     def test_judge_prompt_requests_2_4_sentences(self) -> None:
-        """Das JSON-Schema verlangt 2-4 Saetze fuer die Kernaussage."""
+        """Das JSON-Schema verlangt 2-4 Sätze für die Kernaussage."""
         orchestrator = self._make_orchestrator()
 
         responses = {"alpha": "A", "beta": "B"}
         prompt, _ = orchestrator._build_judge_prompt("Test?", responses)
 
-        assert "2-4 Saetze" in prompt
+        assert "2-4 Sätze" in prompt
 
     def test_multi_question_verdict_covers_both_aspects(self) -> None:
         """Mock-Judge-Response zu Multi-Frage deckt beide Aspekte ab."""
@@ -1049,13 +1049,13 @@ class TestMultiQuestionCoverage:
             {
                 "winner": "A",
                 "synthesis": (
-                    "Bitcoin ist eine dezentrale digitale Waehrung auf Blockchain-Basis. "
+                    "Bitcoin ist eine dezentrale digitale Währung auf Blockchain-Basis. "
                     "Ein Einstieg ist mit Risiken verbunden, kleine Positionen als Start "
                     "sind empfehlenswert."
                 ),
                 "recommendation": (
-                    "Bitcoin ist eine dezentrale Kryptowaehrung die auf "
-                    "Blockchain-Technologie basiert. Ein Investment ist moeglich, "
+                    "Bitcoin ist eine dezentrale Kryptowährung die auf "
+                    "Blockchain-Technologie basiert. Ein Investment ist möglich, "
                     "aber nur mit Geld das man bereit ist zu verlieren."
                 ),
                 "evaluations": [
@@ -1070,7 +1070,7 @@ class TestMultiQuestionCoverage:
                         "cons": ["Keine Definition"],
                     },
                 ],
-                "reasoning": "A liefert die bessere Basis-Erklaerung.",
+                "reasoning": "A liefert die bessere Basis-Erklärung.",
             }
         )
 
@@ -1078,7 +1078,7 @@ class TestMultiQuestionCoverage:
         verdict = orchestrator._parse_judge_response(raw_json, label_to_provider)
 
         assert verdict is not None
-        # Kernaussage deckt Definition ab (Bitcoin/Kryptowaehrung/Blockchain)
+        # Kernaussage deckt Definition ab (Bitcoin/Kryptowährung/Blockchain)
         assert "Bitcoin" in verdict.recommendation
         assert (
             "Blockchain" in verdict.recommendation or "Krypto" in verdict.recommendation
@@ -1090,7 +1090,7 @@ class TestMultiQuestionCoverage:
         )
 
     async def test_multi_question_debate_integration(self) -> None:
-        """Integration: Multi-Frage Debate mit Mock-Judge liefert vollstaendige Kernaussage."""
+        """Integration: Multi-Frage Debate mit Mock-Judge liefert vollständige Kernaussage."""
         judge_json = json.dumps(
             {
                 "winner": "A",
@@ -1099,7 +1099,7 @@ class TestMultiQuestionCoverage:
                     "Ein Einstieg sollte mit kleinen Betraegen beginnen."
                 ),
                 "recommendation": (
-                    "Bitcoin ist eine dezentrale Kryptowaehrung auf Blockchain-Basis. "
+                    "Bitcoin ist eine dezentrale Kryptowährung auf Blockchain-Basis. "
                     "Ein Einstieg kann sinnvoll sein, aber nur mit Risikokapital."
                 ),
                 "evaluations": [
@@ -1114,7 +1114,7 @@ class TestMultiQuestionCoverage:
             "claude_persistent": _MockProvider(
                 "claude_persistent",
                 response_text=(
-                    "Bitcoin ist eine dezentrale digitale Waehrung "
+                    "Bitcoin ist eine dezentrale digitale Währung "
                     "die auf Blockchain-Technologie basiert."
                 ),
             ),
@@ -1144,7 +1144,7 @@ class TestMultiQuestionCoverage:
 
         assert result.final_verdict is not None
         key_takeaway = result.final_verdict.recommendation
-        # Beide Aspekte muessen in der Kernaussage auftauchen
+        # Beide Aspekte müssen in der Kernaussage auftauchen
         assert "Bitcoin" in key_takeaway
         assert "Blockchain" in key_takeaway or "Krypto" in key_takeaway
         assert "Einstieg" in key_takeaway or "Risikokapital" in key_takeaway

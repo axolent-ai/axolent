@@ -30,7 +30,7 @@ class TestConversationTurn:
         """ConversationTurn ist immutable."""
         turn = ConversationTurn(role="user", content="Test")
         try:
-            turn.content = "Geaendert"  # type: ignore[misc]
+            turn.content = "Geändert"  # type: ignore[misc]
             assert False, "FrozenInstanceError erwartet"
         except Exception:
             pass
@@ -71,7 +71,7 @@ class TestBuildContextBlock:
         ]
         result = build_context_block(history, "Fuenf")
         lines = result.split("\n")
-        # Reihenfolge pruefen
+        # Reihenfolge prüfen
         eins_idx = next(i for i, line in enumerate(lines) if "Eins" in line)
         vier_idx = next(i for i, line in enumerate(lines) if "Vier" in line)
         assert eins_idx < vier_idx

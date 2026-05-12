@@ -258,7 +258,7 @@ class TestMigrateLegacyChatId:
         assert migrate_legacy_chat_id() == 0
 
     def test_migration_all_valid(self) -> None:
-        """Wenn keine Migration noetig und keine Korruption: Datei bleibt unveraendert."""
+        """Wenn keine Migration noetig und keine Korruption: Datei bleibt unverändert."""
         from infrastructure.bookmark_storage import migrate_legacy_chat_id
 
         import json

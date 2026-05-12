@@ -124,7 +124,7 @@ class StatusSession:
         - Der Status-Key sich ändert (neue Phase, z.B. memory_loading -> thinking)
 
         Args:
-            key: Status-Schluessel (z.B. "memory_loading").
+            key: Status-Schlüssel (z.B. "memory_loading").
             **kwargs: Format-Parameter.
         """
         if not self.enabled or self.stream_started:

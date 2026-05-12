@@ -361,7 +361,7 @@ class TestAuditLoggingBmShow:
 
     @patch("application.audit_service.write_audit_log")
     async def test_bm_show_existing_writes_audit(self, mock_audit: MagicMock) -> None:
-        """bm_show mit gueltigem Bookmark schreibt Audit mit success=True."""
+        """bm_show mit gültigem Bookmark schreibt Audit mit success=True."""
         from presentation.callbacks import handle_bookmark_show_callback
 
         save_bookmark(
@@ -434,7 +434,7 @@ class TestAuditLoggingBmDel:
 
     @patch("application.audit_service.write_audit_log")
     async def test_bm_del_existing_writes_audit(self, mock_audit: MagicMock) -> None:
-        """bm_del mit gueltigem Bookmark schreibt Audit mit success=True."""
+        """bm_del mit gültigem Bookmark schreibt Audit mit success=True."""
         from presentation.callbacks import handle_bookmark_delete_callback
 
         save_bookmark(

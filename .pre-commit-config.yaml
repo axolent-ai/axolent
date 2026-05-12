@@ -40,6 +40,13 @@ repos:
 
   - repo: local
     hooks:
+      - id: no-fake-umlauts
+        name: Keine ASCII-Umlaute (ae/oe/ue/ss) in deutschem Production-Text
+        entry: python scripts/check_no_fake_umlauts.py
+        language: python
+        types: [python]
+        exclude: '^(bridge/tests/|\.venv/|scripts/check_no_fake_umlauts\.py)'
+
       - id: import-linter
         name: import-linter
         entry: python scripts/run_with_venv.py lint-imports

@@ -62,7 +62,7 @@ class TestMarkdownToTelegramHtml:
             assert "<a href=" in result, f"Scheme '{scheme}' sollte erlaubt sein"
 
     def test_url_scheme_whitelist_blocked(self) -> None:
-        """Gefaehrliche Schemes (javascript:, data:, file:) werden blockiert.
+        """Gefährliche Schemes (javascript:, data:, file:) werden blockiert.
 
         Sicherheitskritisch: verhindert XSS via boeswillige Links.
         """

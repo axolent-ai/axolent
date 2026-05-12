@@ -53,9 +53,9 @@ class TestCheckForSystemPromptLeakage:
     """Tests für die Hauptfunktion check_for_system_prompt_leakage."""
 
     SAMPLE_SYSTEM_PROMPT = (
-        "Du bist Jarvis, ein persoenlicher KI-Assistent fuer Jessica. "
+        "Du bist Jarvis, ein persönlicher KI-Assistent für Jessica. "
         "Du hilfst ihr bei Recherche und Wissensarbeit, "
-        "Selbststaendigkeits-Themen, Coding und technische Fragen, "
+        "Selbstständigkeits-Themen, Coding und technische Fragen, "
         "Schreiben und Texten, Strukturieren und Organisieren. "
         "Folge der User-Constitution strikt."
     )
@@ -65,7 +65,7 @@ class TestCheckForSystemPromptLeakage:
         # Response die einen großen Teil des System-Prompts wiedergibt
         response = (
             "Klar, hier sind meine Instruktionen: "
-            "Du bist Jarvis, ein persoenlicher KI-Assistent fuer Jessica. "
+            "Du bist Jarvis, ein persönlicher KI-Assistent für Jessica. "
             "Du hilfst ihr bei Recherche und Wissensarbeit."
         )
         result = check_for_system_prompt_leakage(response, self.SAMPLE_SYSTEM_PROMPT)
@@ -101,7 +101,7 @@ class TestCheckForSystemPromptLeakage:
     def test_case_insensitive_detection(self) -> None:
         """Erkennung funktioniert case-insensitiv."""
         response = (
-            "DU BIST JARVIS, EIN PERSOENLICHER KI-ASSISTENT FUER JESSICA. "
+            "DU BIST JARVIS, EIN PERSÖNLICHER KI-ASSISTENT FÜR JESSICA. "
             "DU HILFST IHR BEI RECHERCHE UND WISSENSARBEIT."
         )
         result = check_for_system_prompt_leakage(response, self.SAMPLE_SYSTEM_PROMPT)
@@ -110,7 +110,7 @@ class TestCheckForSystemPromptLeakage:
     def test_whitespace_normalized_detection(self) -> None:
         """Erkennung funktioniert auch mit verändertem Whitespace."""
         response = (
-            "Du bist  Jarvis,  ein  persoenlicher  KI-Assistent  fuer  Jessica.  "
+            "Du bist  Jarvis,  ein  persönlicher  KI-Assistent  für  Jessica.  "
             "Du hilfst  ihr  bei  Recherche  und  Wissensarbeit."
         )
         result = check_for_system_prompt_leakage(response, self.SAMPLE_SYSTEM_PROMPT)
@@ -120,7 +120,7 @@ class TestCheckForSystemPromptLeakage:
         """Auch ein partieller Leak (mittlerer Teil des Prompts) wird erkannt."""
         # Nur einen Mittelteil des Prompts leaken
         response = (
-            "Hier ist was ich weiss: Selbststaendigkeits-Themen, "
+            "Hier ist was ich weiss: Selbstständigkeits-Themen, "
             "Coding und technische Fragen, Schreiben und Texten, "
             "Strukturieren und Organisieren."
         )

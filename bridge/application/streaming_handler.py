@@ -125,7 +125,7 @@ async def process_streaming_edit(
     session: StreamingSession,
     new_text: str,
 ) -> None:
-    """Fuegt neuen Text hinzu und editiert die Nachricht falls noetig.
+    """Fügt neuen Text hinzu und editiert die Nachricht falls nötig.
 
     Rate-Limited: adaptiver Throttle (Default 1.5s, steigt bei 429).
     Erste Edit erst nach FIRST_EDIT_DELAY_SECONDS.
@@ -174,7 +174,7 @@ async def finalize_streaming(session: StreamingSession, final_text: str) -> str:
     """
     session.accumulated_text = final_text
 
-    # HTML-konvertierter Text bestimmt ob Split noetig ist
+    # HTML-konvertierter Text bestimmt ob Split nötig ist
     html_text = markdown_to_telegram_html(final_text)
 
     if len(html_text) <= TELEGRAM_MAX_LENGTH:

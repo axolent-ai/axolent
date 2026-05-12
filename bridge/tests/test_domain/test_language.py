@@ -63,11 +63,11 @@ class TestDetectLanguage:
 
     def test_detect_language_german_umlauts_boost(self) -> None:
         """Umlaute geben einen Char-Hint-Bonus für Deutsch."""
-        result = detect_language("Wir fahren nach Muenchen fuer die Pruefung")
+        result = detect_language("Wir fahren nach Muenchen für die Prüfung")
         # Keine Umlaute im Text, aber genug deutsche Marker
         assert result == "de"
 
-        result = detect_language("Die Bruecke ueber den Fluessen ist schoen")
+        result = detect_language("Die Bruecke über den Fluessen ist schoen")
         assert result == "de"
 
     def test_detect_language_mixed_but_dominant(self) -> None:
@@ -78,10 +78,10 @@ class TestDetectLanguage:
 
 
 class TestDetectLanguageWithConfidence:
-    """Tests fuer detect_language_with_confidence() (Smart-Language-Detection)."""
+    """Tests für detect_language_with_confidence() (Smart-Language-Detection)."""
 
     def test_returns_tuple(self) -> None:
-        """Gibt immer ein Tuple (lang, confidence) zurueck."""
+        """Gibt immer ein Tuple (lang, confidence) zurück."""
         result = detect_language_with_confidence("Hello world")
         assert isinstance(result, tuple)
         assert len(result) == 2

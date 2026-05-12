@@ -337,7 +337,7 @@ class TestStreamingMarkdownConversion:
         # Bei unvollständigem **: HTML ohne den unfertigen Teil
         assert session.message.edit_text.call_count >= 1
 
-        # Finale Edit (HTML, vollstaendig)
+        # Finale Edit (HTML, vollständig)
         await finalize_streaming(session, "**Das Grundprinzip bleibt gleich**")
         final_call = session.message.edit_text.call_args
         assert final_call[1].get("parse_mode") == "HTML"
@@ -606,7 +606,7 @@ class TestStreamingLongTextNoHTMLCorruption:
                 assert html_sent.count("<i>") == html_sent.count("</i>")
                 assert html_sent.count("<code>") == html_sent.count("</code>")
                 assert html_sent.count("<pre>") == html_sent.count("</pre>")
-                # Laenge unter Telegram-Limit
+                # Länge unter Telegram-Limit
                 assert len(html_sent) <= 4096, (
                     f"HTML über Limit: {len(html_sent)} Zeichen"
                 )
@@ -722,7 +722,7 @@ class TestRecordEditSuccess:
         assert session._consecutive_success == 0
 
     def test_throttle_never_below_default(self) -> None:
-        """Throttle faellt nicht unter DEFAULT_THROTTLE."""
+        """Throttle fällt nicht unter DEFAULT_THROTTLE."""
         session = _make_session(started_offset=5.0)
         session._current_throttle = DEFAULT_THROTTLE  # Bereits am Default
 

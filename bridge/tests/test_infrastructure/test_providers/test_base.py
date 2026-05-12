@@ -155,7 +155,7 @@ class TestLLMProviderInterface:
             IncompleteProvider()  # type: ignore
 
     def test_complete_subclass_works(self) -> None:
-        """Eine vollstaendige Subklasse kann instanziiert werden."""
+        """Eine vollständige Subklasse kann instanziiert werden."""
 
         class DummyProvider(LLMProvider):
             name = "dummy"
@@ -200,7 +200,7 @@ class TestStreamingProviderMixin:
             IncompleteStreamingProvider()  # type: ignore
 
     def test_complete_streaming_provider_works(self) -> None:
-        """Vollstaendige StreamingProvider-Subklasse ist instanziierbar."""
+        """Vollständige StreamingProvider-Subklasse ist instanziierbar."""
         from typing import AsyncIterator
 
         class DummyStreamingProvider(LLMProvider, StreamingProvider):

@@ -53,7 +53,7 @@ def resolve_alias(alias_or_id: str) -> Optional[str]:
 class ModelService:
     """Verwaltet User-Modell-Overrides.
 
-    Speichert und liest Modell-Praeferenzen via SqliteModelStorage.
+    Speichert und liest Modell-Präferenzen via SqliteModelStorage.
     Bietet Alias-Resolution und Validierung.
     """
 
@@ -63,9 +63,12 @@ class ModelService:
     def get_user_model(self, user_id: int, slot: str = "global") -> Optional[str]:
         """Liest das aktive Modell für einen User.
 
-        Revalidiert gespeicherte Modell-IDs: falls der gespeicherte Wert
-        nicht mehr in VALID_MODEL_IDS enthalten ist (z.B. nach Alias-Update),
-        wird er ignoriert und None zurückgegeben.
+        Revalidiert gespeicherte Modell-IDs in zwei Stufen:
+        1. Ist die ID überhaupt in VALID_MODEL_IDS? (z.B. nach Alias-Update)
+        2. Gehört die ID zum ACTIVE_PROVIDER? (verhindert stale Werte von
+           Nicht-Anthropic-Modellen die vor dem Provider-Filter gesetzt wurden)
+
+        Bei ungültigen Werten wird der Storage-Eintrag aufgeräumt (Option B).
 
         Args:
             user_id: Telegram-User-ID.
@@ -80,11 +83,26 @@ class ModelService:
         if stored not in VALID_MODEL_IDS:
             log.warning(
                 "Gespeichertes Modell '%s' für user_id=%d slot='%s' ist nicht mehr "
-                "gültig (nicht in VALID_MODEL_IDS). Fallback auf Default.",
+                "gültig (nicht in VALID_MODEL_IDS). Räume auf und Fallback auf Default.",
                 stored,
                 user_id,
                 slot,
             )
+            self._storage.delete_model(user_id, slot)
+            return None
+        # Provider-Revalidierung: stale Werte von Nicht-Anthropic-Modellen bereinigen
+        metadata = _registry.get(stored)
+        if metadata is not None and metadata.provider != self.ACTIVE_PROVIDER:
+            log.warning(
+                "Gespeichertes Modell '%s' (provider=%s) für user_id=%d slot='%s' "
+                "gehört nicht zum aktiven Provider '%s'. Räume auf und Fallback auf Default.",
+                stored,
+                metadata.provider,
+                user_id,
+                slot,
+                self.ACTIVE_PROVIDER,
+            )
+            self._storage.delete_model(user_id, slot)
             return None
         return stored
 

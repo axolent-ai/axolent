@@ -444,7 +444,7 @@ class TestSpawnProcessFlags:
                 await pool.get_or_create(user_id=1, chat_id=903)
 
         assert "--model" in captured_cmd, (
-            "CLI-Flags muessen --model enthalten um nicht das User-Default-Modell "
+            "CLI-Flags müssen --model enthalten um nicht das User-Default-Modell "
             "(oft Opus = 3-5x langsamer) zu verwenden"
         )
         await pool.shutdown()
@@ -1178,5 +1178,72 @@ class TestLockedStreamModelSwitch:
                     assert key in pool._processes
 
                 managed_opus.lock.release()
+
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_double_check_locked_returns_correct_model(self) -> None:
+        """V8-R3: Double-Check-Pfad bei gelocktem Prozess mit Modell-Mismatch
+        muss nach Lock-Freigabe das ANGEFORDERTE Modell zurückgeben, nicht das alte.
+
+        Regression für Finding 1: der alte Code gab bei managed.lock.locked()
+        im Double-Check den ALTEN Prozess mit ALTEM Modell zurück statt zu warten.
+        """
+        pool = ClaudeProcessPool()
+        opus_proc = _make_mock_process(pid=33333)
+        sonnet_proc = _make_mock_process(pid=44444)
+
+        call_count = 0
+
+        async def mock_create(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return opus_proc if call_count == 1 else sonnet_proc
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
+                # Opus-Subprocess starten
+                managed_opus, cold = await pool.get_or_create(
+                    user_id=1, chat_id=400, model="claude-opus-4-7"
+                )
+                assert cold is True
+                assert managed_opus.model == "claude-opus-4-7"
+
+                # Lock acquiren (simuliert aktiven Stream)
+                await managed_opus.lock.acquire()
+
+                # Paralleler Task: fordert Sonnet an während Opus-Stream aktiv
+                async def request_sonnet():
+                    return await pool.get_or_create(
+                        user_id=1, chat_id=400, model="claude-sonnet-4-6"
+                    )
+
+                sonnet_task = asyncio.create_task(request_sonnet())
+
+                # Kurz warten damit der Task in den Warte-Pfad geht
+                await asyncio.sleep(0.05)
+
+                # Lock freigeben (simuliert Stream-Ende)
+                managed_opus.lock.release()
+
+                # Sonnet-Task sollte jetzt durchkommen
+                managed_result, cold_result = await asyncio.wait_for(
+                    sonnet_task, timeout=5.0
+                )
+
+                # MUSS Sonnet zurückgeben, NICHT Opus
+                assert managed_result.model == "claude-sonnet-4-6", (
+                    f"Double-Check-Pfad gab Modell '{managed_result.model}' zurück, "
+                    f"erwartet war 'claude-sonnet-4-6'. "
+                    f"Der alte Bug: gelockter Prozess mit altem Modell wurde zurückgegeben."
+                )
+                assert cold_result is True, (
+                    "Nach Warte-Pfad muss ein neuer Subprocess gestartet werden"
+                )
+                assert managed_result.pid == 44444, (
+                    "Neuer Sonnet-Subprocess muss neuen pid haben"
+                )
+                # Spawn muss 2x aufgerufen worden sein (Opus + Sonnet)
+                assert call_count == 2
 
         await pool.shutdown()

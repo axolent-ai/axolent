@@ -478,7 +478,7 @@ class RateLimiter:
                     unlimited_reminder=show_reminder,
                 )
 
-            # Alle drei Buckets pruefen
+            # Alle drei Buckets prüfen
             min_ok, min_retry = buckets.minute_bucket.try_consume()
             if not min_ok:
                 return RateLimitResult(

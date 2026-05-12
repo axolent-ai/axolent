@@ -41,7 +41,7 @@ class TestTypingKeepaliveFunction:
             pass
 
         # Mindestens 2 Aufrufe erwartet (0.25s / 0.05s = 5, grosszuegige Toleranz
-        # fuer Windows-Timing-Jitter unter Last)
+        # für Windows-Timing-Jitter unter Last)
         assert mock_chat.send_chat_action.call_count >= 2
 
     async def test_keepalive_cancels_cleanly(self) -> None:

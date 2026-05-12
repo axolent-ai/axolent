@@ -189,7 +189,7 @@ class TestHandleLangCommand:
         assert "Benutzung" in reply_text or "/lang" in reply_text
 
     async def test_lang_command_invalid_code(self) -> None:
-        """/lang xyz mit ungueltigem Code gibt Fehler."""
+        """/lang xyz mit ungültigem Code gibt Fehler."""
         from presentation.handlers import handle_lang_command
 
         update = _make_update()
@@ -316,7 +316,7 @@ class TestStartCommandHistory:
             assert cmd not in HELP_TEXT, f"Nicht-existenter Command {cmd} im HELP_TEXT"
 
     async def test_help_text_is_structured(self) -> None:
-        """/help Text hat die gewuenschte Struktur mit Kategorien."""
+        """/help Text hat die gewünschte Struktur mit Kategorien."""
         from presentation.handlers import HELP_TEXT
 
         assert "Multi-AI" in HELP_TEXT
@@ -447,7 +447,7 @@ class TestAuditLoggingLang:
 
     @patch("application.audit_service.write_audit_log")
     async def test_lang_invalid_no_audit(self, mock_audit: MagicMock) -> None:
-        """/lang xyz (ungueltig) schreibt KEINEN Audit-Eintrag."""
+        """/lang xyz (ungültig) schreibt KEINEN Audit-Eintrag."""
         from presentation.handlers import handle_lang_command
 
         update = _make_update(user_id=42, chat_id=99)
@@ -853,7 +853,7 @@ class TestStreamingAuditEntries:
         mock_svc.save_streaming_result = AsyncMock()
 
         async def _stream_events():
-            # init-Event liefert was_cold/subprocess_pid (Fix fuer Model-Switch-Bug)
+            # init-Event liefert was_cold/subprocess_pid (Fix für Model-Switch-Bug)
             yield StreamEvent(event_type="init", was_cold=True, subprocess_pid=999)
             yield StreamEvent(event_type="content_delta", text="Hallo")
             yield StreamEvent(
@@ -1214,7 +1214,7 @@ class TestHandleUsageCommand:
 
 
 class TestHandleDebateCommand:
-    """Tests fuer /debate Command (R10: Multi-AI-Debate)."""
+    """Tests für /debate Command (R10: Multi-AI-Debate)."""
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
@@ -1323,7 +1323,7 @@ class TestHandleDebateCommand:
 
 
 class TestFormatDebateSynthesis:
-    """Tests fuer die Synthesis-Anzeige im Debate-Formatter."""
+    """Tests für die Synthesis-Anzeige im Debate-Formatter."""
 
     def test_format_debate_shows_synthesis_prominently(self) -> None:
         """Synthese wird als prominentes Element im Output angezeigt."""
@@ -1337,7 +1337,7 @@ class TestFormatDebateSynthesis:
         verdict = FinalVerdict(
             winner="claude_persistent",
             recommendation="Claude liefert die klarere Antwort.",
-            synthesis="Bitcoin ist eine dezentrale digitale Waehrung die Peer-to-Peer-Zahlungen ermoeglicht.",
+            synthesis="Bitcoin ist eine dezentrale digitale Währung die Peer-to-Peer-Zahlungen ermöglicht.",
             evaluations=[
                 ProviderEvaluation(
                     provider="claude_persistent", pros=["Klar"], cons=[]
@@ -1354,10 +1354,10 @@ class TestFormatDebateSynthesis:
             question="Was ist Bitcoin?",
             responses={
                 "claude_persistent": "Bitcoin ist digitales Geld.",
-                "ollama_local": "Bitcoin ist eine Kryptowaehrung.",
+                "ollama_local": "Bitcoin ist eine Kryptowährung.",
             },
             errors={},
-            consensus_analysis="Hohe Uebereinstimmung.",
+            consensus_analysis="Hohe Übereinstimmung.",
             final_verdict=verdict,
             duration_seconds=3.2,
             providers_queried=["claude_persistent", "ollama_local"],
@@ -1366,9 +1366,9 @@ class TestFormatDebateSynthesis:
         formatted = _format_debate_result(result)
 
         # Synthese muss im Output sein (prominent)
-        assert "dezentrale digitale Waehrung" in formatted
+        assert "dezentrale digitale Währung" in formatted
         assert "Peer-to-Peer" in formatted
-        # "Synthese" als Ueberschrift
+        # "Synthese" als Überschrift
         assert "Synthese" in formatted
         # Winner-Label ist jetzt "Stärkster Beitrag" (nicht "Beste Einzelantwort")
         assert "Stärkster Beitrag" in formatted
@@ -1415,7 +1415,7 @@ class TestFormatDebateSynthesis:
                 "ollama_local": "Llama-Antwort hier.",
             },
             errors={},
-            consensus_analysis="Hohe Uebereinstimmung.",
+            consensus_analysis="Hohe Übereinstimmung.",
             final_verdict=verdict,
             duration_seconds=2.0,
             providers_queried=["claude_persistent", "ollama_local"],

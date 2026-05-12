@@ -1,7 +1,7 @@
-"""Tests fuer OllamaProvider.
+"""Tests für OllamaProvider.
 
 Verifiziert:
-    - is_available() prueft Ollama via HTTP mit Mock
+    - is_available() prüft Ollama via HTTP mit Mock
     - is_available() gibt False bei Connection-Error
     - query() extrahiert response-Feld korrekt (gemockt)
     - query() handelt Timeout korrekt
@@ -22,7 +22,7 @@ from infrastructure.providers.ollama_local import OllamaProvider
 
 
 class TestOllamaProviderAvailability:
-    """Tests fuer is_available()."""
+    """Tests für is_available()."""
 
     def test_available_when_ollama_responds_200(self) -> None:
         """is_available() gibt True wenn HTTP 200 von /api/tags."""
@@ -93,7 +93,7 @@ class TestOllamaProviderAvailability:
 
 
 class TestOllamaProviderCapabilities:
-    """Tests fuer get_capabilities()."""
+    """Tests für get_capabilities()."""
 
     def test_privacy_class_is_local(self) -> None:
         provider = OllamaProvider()
@@ -123,7 +123,7 @@ class TestOllamaProviderCapabilities:
 
 
 class TestOllamaProviderQuery:
-    """Tests fuer query() mit gemocktem HTTP."""
+    """Tests für query() mit gemocktem HTTP."""
 
     @pytest.mark.asyncio
     async def test_successful_query(self) -> None:
@@ -209,7 +209,7 @@ class TestOllamaProviderQuery:
 
     @pytest.mark.asyncio
     async def test_query_http_error(self) -> None:
-        """HTTP-Fehler von Ollama wird als error im Response zurueckgegeben."""
+        """HTTP-Fehler von Ollama wird als error im Response zurückgegeben."""
         provider = OllamaProvider()
 
         import urllib.error
@@ -235,7 +235,7 @@ class TestOllamaProviderQuery:
 
     @pytest.mark.asyncio
     async def test_query_connection_refused(self) -> None:
-        """Connection-Error wird als error im Response zurueckgegeben."""
+        """Connection-Error wird als error im Response zurückgegeben."""
         provider = OllamaProvider()
 
         import urllib.error
@@ -252,7 +252,7 @@ class TestOllamaProviderQuery:
 
     @pytest.mark.asyncio
     async def test_query_invalid_json_response(self) -> None:
-        """Ungueltige JSON-Antwort wird als error gehandelt."""
+        """Ungültige JSON-Antwort wird als error gehandelt."""
         provider = OllamaProvider()
 
         mock_resp = MagicMock()

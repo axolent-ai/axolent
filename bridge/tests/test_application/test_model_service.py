@@ -1,4 +1,4 @@
-"""Tests fuer ModelService: Alias-Resolution, CRUD, Default-Fallback.
+"""Tests für ModelService: Alias-Resolution, CRUD, Default-Fallback.
 
 Testet:
   - resolve_alias: Alias -> Modell-ID Mapping
@@ -30,13 +30,13 @@ from infrastructure.sqlite_storage import SqliteConnection, SqliteModelStorage
 
 @pytest.fixture
 def db_path(tmp_path: Path) -> Path:
-    """Temporaerer DB-Pfad fuer Test-Isolation."""
+    """Temporärer DB-Pfad für Test-Isolation."""
     return tmp_path / "test_model.db"
 
 
 @pytest.fixture
 def conn(db_path: Path) -> SqliteConnection:
-    """Frische SQLite-Connection fuer jeden Test."""
+    """Frische SQLite-Connection für jeden Test."""
     c = SqliteConnection(db_path)
     yield c
     c.close()
@@ -60,20 +60,20 @@ def service(storage: SqliteModelStorage) -> ModelService:
 
 
 class TestResolveAlias:
-    """Tests fuer die Alias-Resolution-Funktion."""
+    """Tests für die Alias-Resolution-Funktion."""
 
     def test_opus_alias(self) -> None:
-        """'opus' wird korrekt aufgeloest."""
+        """'opus' wird korrekt aufgelöst."""
         result = resolve_alias("opus")
         assert result == "claude-opus-4-7"
 
     def test_sonnet_alias(self) -> None:
-        """'sonnet' wird korrekt aufgeloest."""
+        """'sonnet' wird korrekt aufgelöst."""
         result = resolve_alias("sonnet")
         assert result == "claude-sonnet-4-6"
 
     def test_haiku_alias(self) -> None:
-        """'haiku' wird korrekt aufgeloest."""
+        """'haiku' wird korrekt aufgelöst."""
         result = resolve_alias("haiku")
         assert result == "claude-haiku-4-5-20251001"
 
@@ -89,7 +89,7 @@ class TestResolveAlias:
         assert resolve_alias(full_id) == full_id
 
     def test_unknown_returns_none(self) -> None:
-        """Unbekannter Alias gibt None zurueck."""
+        """Unbekannter Alias gibt None zurück."""
         assert resolve_alias("gpt-4") is None
         assert resolve_alias("nonexistent") is None
         assert resolve_alias("") is None
@@ -105,7 +105,7 @@ class TestResolveAlias:
 
 
 class TestModelServiceSet:
-    """Tests fuer set_user_model."""
+    """Tests für set_user_model."""
 
     def test_set_via_alias(self, service: ModelService) -> None:
         """Modell per Alias setzen funktioniert."""
@@ -126,7 +126,7 @@ class TestModelServiceSet:
         assert "gpt-4" in error_msg
 
     def test_set_overwrites_previous(self, service: ModelService) -> None:
-        """Neues Modell ueberschreibt vorheriges."""
+        """Neues Modell überschreibt vorheriges."""
         service.set_user_model(user_id=1, alias_or_id="opus")
         service.set_user_model(user_id=1, alias_or_id="haiku")
         model = service.get_user_model(user_id=1)
@@ -134,19 +134,19 @@ class TestModelServiceSet:
 
 
 class TestModelServiceGet:
-    """Tests fuer get_user_model und get_effective_model."""
+    """Tests für get_user_model und get_effective_model."""
 
     def test_no_override_returns_none(self, service: ModelService) -> None:
-        """Kein Override gibt None zurueck."""
+        """Kein Override gibt None zurück."""
         assert service.get_user_model(user_id=1) is None
 
     def test_effective_model_no_override(self, service: ModelService) -> None:
-        """Ohne Override wird DEFAULT_MODEL zurueckgegeben."""
+        """Ohne Override wird DEFAULT_MODEL zurückgegeben."""
         effective = service.get_effective_model(user_id=1)
         assert effective == DEFAULT_MODEL
 
     def test_effective_model_with_override(self, service: ModelService) -> None:
-        """Mit Override wird das Override-Modell zurueckgegeben."""
+        """Mit Override wird das Override-Modell zurückgegeben."""
         service.set_user_model(user_id=1, alias_or_id="opus")
         effective = service.get_effective_model(user_id=1)
         assert effective == "claude-opus-4-7"
@@ -159,7 +159,7 @@ class TestModelServiceGet:
 
 
 class TestModelServiceReset:
-    """Tests fuer reset_user_model."""
+    """Tests für reset_user_model."""
 
     def test_reset_removes_override(self, service: ModelService) -> None:
         """Reset entfernt das Override."""
@@ -169,7 +169,7 @@ class TestModelServiceReset:
         assert service.get_user_model(user_id=1) is None
 
     def test_reset_no_override_returns_false(self, service: ModelService) -> None:
-        """Reset ohne vorheriges Override gibt False zurueck."""
+        """Reset ohne vorheriges Override gibt False zurück."""
         deleted = service.reset_user_model(user_id=1)
         assert deleted is False
 
@@ -186,10 +186,10 @@ class TestModelServiceReset:
 
 
 class TestModelServiceUtilities:
-    """Tests fuer Hilfsfunktionen."""
+    """Tests für Hilfsfunktionen."""
 
     def test_display_name_for_alias(self) -> None:
-        """Display-Name fuer bekannte Modelle."""
+        """Display-Name für bekannte Modelle."""
         assert ModelService.get_model_display_name("claude-opus-4-7") == "Opus 4.7"
         assert ModelService.get_model_display_name("claude-sonnet-4-6") == "Sonnet 4.6"
         assert (
@@ -198,7 +198,7 @@ class TestModelServiceUtilities:
         )
 
     def test_display_name_unknown_returns_id(self) -> None:
-        """Unbekannte Modell-ID wird als Display-Name zurueckgegeben."""
+        """Unbekannte Modell-ID wird als Display-Name zurückgegeben."""
         assert (
             ModelService.get_model_display_name("some-unknown-model")
             == "some-unknown-model"
@@ -290,7 +290,7 @@ class TestProviderFilter:
 
 
 class TestSqliteModelStorage:
-    """Direkte Tests fuer den SQLite-Adapter."""
+    """Direkte Tests für den SQLite-Adapter."""
 
     def test_set_and_get(self, storage: SqliteModelStorage) -> None:
         """set_model + get_model roundtrip."""
@@ -299,7 +299,7 @@ class TestSqliteModelStorage:
         assert result == "claude-opus-4-7"
 
     def test_get_nonexistent(self, storage: SqliteModelStorage) -> None:
-        """get_model fuer nicht-existierenden User gibt None zurueck."""
+        """get_model für nicht-existierenden User gibt None zurück."""
         assert storage.get_model(user_id=999) is None
 
     def test_delete(self, storage: SqliteModelStorage) -> None:
@@ -309,11 +309,11 @@ class TestSqliteModelStorage:
         assert storage.get_model(user_id=1) is None
 
     def test_delete_nonexistent(self, storage: SqliteModelStorage) -> None:
-        """delete_model fuer nicht-existierenden Override gibt False zurueck."""
+        """delete_model für nicht-existierenden Override gibt False zurück."""
         assert storage.delete_model(user_id=999) is False
 
     def test_upsert(self, storage: SqliteModelStorage) -> None:
-        """Zweites set_model ueberschreibt das erste."""
+        """Zweites set_model überschreibt das erste."""
         storage.set_model(user_id=1, model_id="model-a")
         storage.set_model(user_id=1, model_id="model-b")
         assert storage.get_model(user_id=1) == "model-b"
@@ -331,3 +331,65 @@ class TestSqliteModelStorage:
         storage.set_model(user_id=2, model_id="model-b")
         assert storage.get_model(user_id=1) == "model-a"
         assert storage.get_model(user_id=2) == "model-b"
+
+
+# ──────────────────────────────────────────────────────────────
+# Stale Storage Revalidation Tests (V8-R3 Finding 2)
+# ──────────────────────────────────────────────────────────────
+
+
+class TestStaleStorageRevalidation:
+    """V8-R3 Finding 2: Stale Werte von Nicht-Anthropic-Modellen
+    die vor dem Provider-Filter gespeichert wurden, müssen beim
+    Lesen bereinigt werden (delete + warning + return None).
+    """
+
+    def test_stale_non_anthropic_model_returns_none(
+        self, service: ModelService
+    ) -> None:
+        """Direkt in Storage geschriebenes gpt-5-5 wird bei get_user_model
+        als stale erkannt, aufgeräumt und None zurückgegeben."""
+        # Direkt in Storage schreiben (umgeht set_user_model Provider-Filter)
+        service._storage.set_model(user_id=1, model_id="gpt-5-5")
+
+        # get_user_model muss None zurückgeben (stale Revalidierung)
+        result = service.get_user_model(user_id=1)
+        assert result is None, (
+            f"Stale Nicht-Anthropic-Modell 'gpt-5-5' hätte None ergeben müssen, "
+            f"bekam aber: {result}"
+        )
+
+    def test_stale_model_cleaned_from_storage(self, service: ModelService) -> None:
+        """Nach Revalidierung muss der stale Eintrag aus der DB entfernt sein."""
+        service._storage.set_model(user_id=1, model_id="gpt-5-5")
+
+        # Erster Aufruf: erkennt stale, bereinigt
+        service.get_user_model(user_id=1)
+
+        # Direkter Storage-Check: Eintrag muss weg sein
+        raw = service._storage.get_model(user_id=1)
+        assert raw is None, (
+            f"Stale Eintrag hätte aus Storage gelöscht werden müssen, "
+            f"ist aber noch da: {raw}"
+        )
+
+    def test_stale_effective_model_falls_back_to_default(
+        self, service: ModelService
+    ) -> None:
+        """get_effective_model mit stale Storage fällt auf Default zurück."""
+        service._storage.set_model(user_id=1, model_id="gemini-3-1-pro")
+
+        effective = service.get_effective_model(user_id=1)
+        assert effective == DEFAULT_MODEL, (
+            f"Stale Modell hätte auf DEFAULT_MODEL ({DEFAULT_MODEL}) "
+            f"fallen müssen, bekam: {effective}"
+        )
+
+    def test_valid_anthropic_model_not_cleaned(self, service: ModelService) -> None:
+        """Valide Anthropic-Modelle werden NICHT fälschlich bereinigt."""
+        service.set_user_model(user_id=1, alias_or_id="opus")
+
+        result = service.get_user_model(user_id=1)
+        assert result == "claude-opus-4-7", (
+            "Gültiges Anthropic-Modell darf nicht als stale behandelt werden"
+        )

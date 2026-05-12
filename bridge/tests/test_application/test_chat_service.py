@@ -418,7 +418,7 @@ class TestAutoMemoryLoading:
             system_prompt="Du bist hilfreich.",
         )
 
-        # Pruefen: system_prompt an Router muss Memory-Context enthalten
+        # Prüfen: system_prompt an Router muss Memory-Context enthalten
         call_args = mock_router.route.call_args
         system_sent = call_args.kwargs.get("system_prompt", "")
         assert "GESPEICHERTE NOTIZEN" in system_sent
@@ -510,7 +510,7 @@ class TestAutoMemoryLoading:
 
 
 class TestChatServiceModelOverride:
-    """Tests fuer User-Modell-Override-Durchreichung an ProviderRouter."""
+    """Tests für User-Modell-Override-Durchreichung an ProviderRouter."""
 
     async def test_chat_service_passes_user_model_to_router(self) -> None:
         """ChatService reicht User-Override als model= an ProviderRouter.route() weiter."""
@@ -595,7 +595,7 @@ class TestExtractKeywords:
             assert kw.strip() != ""
 
     def test_sorts_longest_first(self) -> None:
-        """Keywords werden nach Laenge absteigend sortiert."""
+        """Keywords werden nach Länge absteigend sortiert."""
         from application.chat_service import _extract_keywords
 
         keywords = _extract_keywords("Python Lieblingssprache Programmierung")
@@ -703,7 +703,7 @@ class TestSmartLanguageDetection:
     """Bug-Fix R02-B: Smart-Language-Switch ohne expliziten /lang-Befehl."""
 
     async def test_implicit_switch_back_to_german(self) -> None:
-        """User wechselt nach /lang en implizit zurueck auf Deutsch.
+        """User wechselt nach /lang en implizit zurück auf Deutsch.
 
         Szenario: /lang en -> Bot auf Englisch -> User schreibt Deutsch -> Sticky wird de.
         """
@@ -748,7 +748,7 @@ class TestSmartLanguageDetection:
             system_prompt="System.",
         )
 
-        # Sticky bleibt "en" (Confidence zu niedrig fuer Wechsel)
+        # Sticky bleibt "en" (Confidence zu niedrig für Wechsel)
         assert result.detected_language == "en"
         sticky = await get_language(1, 10)
         assert sticky == "en"

@@ -157,7 +157,7 @@ class ClaudeProcessPool:
 
         Wenn ein model-Override angegeben wird und der bestehende Subprocess
         ein anderes Modell nutzt, wird der alte Subprocess terminiert und
-        ein neuer mit dem gewuenschten Modell gestartet.
+        ein neuer mit dem gewünschten Modell gestartet.
 
         Args:
             user_id: Telegram-User-ID.
@@ -214,40 +214,11 @@ class ClaudeProcessPool:
                 self._creation_locks[key] = asyncio.Lock()
             creation_lock = self._creation_locks[key]
 
-        # Warte-Pfad: aktiver Stream blockiert Modell-Wechsel.
-        # Warte bis der Stream fertig ist (Lock frei wird), dann wechsle.
+        # Warte-Pfad: aktiver Stream blockiert Modell-Wechsel (DRY-Helper).
         if wait_for_locked is not None:
-            try:
-                await asyncio.wait_for(
-                    wait_for_locked.lock.acquire(),
-                    timeout=60.0,
-                )
-            except asyncio.TimeoutError:
-                from infrastructure.providers.base import ProviderError
-
-                raise ProviderError(
-                    provider_name="claude_persistent",
-                    retryable=True,
-                    message=(
-                        "Modell-Wechsel blockiert: aktiver Stream dauert zu lang. "
-                        "Bitte warte bis die aktuelle Antwort fertig ist."
-                    ),
-                )
-            try:
-                # Lock erworben: Stream ist fertig. Jetzt terminieren + neu spawnen.
-                async with self._pool_lock:
-                    current = self._processes.get(key)
-                    if current is wait_for_locked:
-                        del self._processes[key]
-                await self._kill_process(wait_for_locked)
-            finally:
-                wait_for_locked.lock.release()
-
-            # Neuen Subprocess mit gewünschtem Modell starten
-            new_managed = await self._spawn_process(key, model=effective_model)
-            async with self._pool_lock:
-                self._processes[key] = new_managed
-            return new_managed, True
+            return await self._handle_locked_mismatch(
+                key, wait_for_locked, effective_model
+            )
 
         # Kill außerhalb des Pool-Locks (blockiert nicht den gesamten Pool)
         if old_managed_to_kill is not None:
@@ -263,23 +234,23 @@ class ClaudeProcessPool:
                     if managed.model == effective_model:
                         managed.last_used = time.monotonic()
                         return managed, False
-                    # Modell-Mismatch auch im Double-Check: Locked-Guard
+                    # Modell-Mismatch auch im Double-Check: Locked-Guard (DRY-Helper)
                     if managed.lock.locked():
-                        log.warning(
-                            "Double-Check Modell-Mismatch (alt=%s, neu=%s) während "
-                            "aktivem Stream auf pid=%d. Behalte aktuellen Prozess.",
-                            managed.model,
-                            effective_model,
-                            managed.pid,
-                        )
-                        managed.last_used = time.monotonic()
-                        return managed, False
-                    old_managed_to_kill = managed
-                    del self._processes[key]
-                    managed = None
+                        double_check_wait = managed
+                    else:
+                        double_check_wait = None
+                        old_managed_to_kill = managed
+                        del self._processes[key]
+                        managed = None
+
+                    if double_check_wait is not None:
+                        # Muss außerhalb des Pool-Locks warten
+                        pass
+                else:
+                    double_check_wait = None
 
                 # Process ist tot: aufräumen
-                if managed is not None:
+                if managed is not None and not self._is_alive(managed):
                     log.warning(
                         "Subprocess für key=%s ist tot (pid=%d), starte neu",
                         key,
@@ -287,11 +258,17 @@ class ClaudeProcessPool:
                     )
                     old_managed_to_kill = managed
 
+            # Double-Check Locked-Mismatch: warte und wechsle (DRY-Helper)
+            if double_check_wait is not None:
+                return await self._handle_locked_mismatch(
+                    key, double_check_wait, effective_model
+                )
+
             # Kill außerhalb des Pool-Locks
             if old_managed_to_kill is not None:
                 await self._kill_process(old_managed_to_kill)
 
-            # Neuen Subprocess ausserhalb des Pool-Locks starten
+            # Neuen Subprocess außerhalb des Pool-Locks starten
             new_managed = await self._spawn_process(key, model=effective_model)
 
             async with self._pool_lock:
@@ -413,6 +390,60 @@ class ClaudeProcessPool:
     # Private Methods
     # -------------------------------------------------------------------------
 
+    async def _handle_locked_mismatch(
+        self,
+        key: tuple[int, int],
+        locked_managed: ManagedProcess,
+        effective_model: str,
+    ) -> tuple[ManagedProcess, bool]:
+        """Wartet bis ein gelockter Subprocess frei wird und wechselt dann das Modell.
+
+        Wird sowohl im Fast-Path als auch im Double-Check-Pfad genutzt (DRY).
+        Wartet maximal 60s auf Lock-Freigabe, dann ProviderError.
+
+        Args:
+            key: (user_id, chat_id) Routing-Key.
+            locked_managed: Der gelockte ManagedProcess mit falschem Modell.
+            effective_model: Das gewünschte Modell.
+
+        Returns:
+            Tuple von (neuer ManagedProcess, was_cold=True).
+
+        Raises:
+            ProviderError: Bei Timeout (Stream dauert zu lang).
+        """
+        try:
+            await asyncio.wait_for(
+                locked_managed.lock.acquire(),
+                timeout=60.0,
+            )
+        except asyncio.TimeoutError:
+            from infrastructure.providers.base import ProviderError
+
+            raise ProviderError(
+                provider_name="claude_persistent",
+                retryable=True,
+                message=(
+                    "Modell-Wechsel blockiert: aktiver Stream dauert zu lang. "
+                    "Bitte warte bis die aktuelle Antwort fertig ist."
+                ),
+            )
+        try:
+            # Lock erworben: Stream ist fertig. Jetzt terminieren + neu spawnen.
+            async with self._pool_lock:
+                current = self._processes.get(key)
+                if current is locked_managed:
+                    del self._processes[key]
+            await self._kill_process(locked_managed)
+        finally:
+            locked_managed.lock.release()
+
+        # Neuen Subprocess mit gewünschtem Modell starten
+        new_managed = await self._spawn_process(key, model=effective_model)
+        async with self._pool_lock:
+            self._processes[key] = new_managed
+        return new_managed, True
+
     async def _spawn_process(
         self, key: tuple[int, int], model: str | None = None
     ) -> ManagedProcess:
@@ -441,7 +472,7 @@ class ClaudeProcessPool:
             "--verbose",
             "--no-session-persistence",
             # NOTE: --bare hier bewusst NICHT gesetzt.
-            # R10 hatte --bare eingefuehrt um ~5000 Token Init-Overhead zu sparen,
+            # R10 hatte --bare eingeführt um ~5000 Token Init-Overhead zu sparen,
             # aber --bare verursacht "authentication_failed" bei Subscription-Usern
             # (getestet mit claude-code 2.1.126). Ohne --bare läuft Auth korrekt.
             "--model",

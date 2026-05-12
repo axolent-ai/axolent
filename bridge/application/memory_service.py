@@ -79,7 +79,8 @@ class MemoryService:
         Args:
             user_id: Telegram-User-ID.
             content: Der generalisierte Fakt.
-            category: Klassifizierung (fakt, person, praeferenz, projekt).
+            category: Klassifizierung (fakt, person, praeferenz, projekt).  # noqa: fake-umlaut
+                      Hinweis: Werte sind ASCII-Keys (DB-Schema, nicht lokalisiert).
             importance: Wichtigkeit 1-10.
             context: Optionaler Kontext.
 

@@ -1,4 +1,4 @@
-"""Tests fuer den Status-Manager (R02-B).
+"""Tests für den Status-Manager (R02-B).
 
 Verifiziert:
     - Status-Update Rate-Limiting (max alle 0.5s)
@@ -24,15 +24,15 @@ from application.status_manager import (
 
 
 class TestGetStatusText:
-    """Tests fuer get_status_text()."""
+    """Tests für get_status_text()."""
 
     def test_german_memory_loading(self) -> None:
-        """Deutsche Status-Texte fuer Memory-Loading."""
+        """Deutsche Status-Texte für Memory-Loading."""
         text = get_status_text("memory_loading", "de")
         assert "Lade Notizen" in text
 
     def test_english_memory_loading(self) -> None:
-        """Englische Status-Texte fuer Memory-Loading."""
+        """Englische Status-Texte für Memory-Loading."""
         text = get_status_text("memory_loading", "en")
         assert "Loading memory" in text
 
@@ -67,18 +67,18 @@ class TestGetStatusText:
         assert "Formatting" in text
 
     def test_unknown_language_falls_back_to_german(self) -> None:
-        """Unbekannte Sprache faellt auf Deutsch zurueck."""
+        """Unbekannte Sprache fällt auf Deutsch zurück."""
         text = get_status_text("thinking", "xx")
         assert "Denke nach" in text
 
     def test_unknown_key_returns_key(self) -> None:
-        """Unbekannter Key gibt den Key selbst zurueck."""
+        """Unbekannter Key gibt den Key selbst zurück."""
         text = get_status_text("nonexistent_key", "de")
         assert text == "nonexistent_key"
 
 
 class TestStatusSession:
-    """Tests fuer StatusSession."""
+    """Tests für StatusSession."""
 
     async def test_update_calls_callback(self) -> None:
         """update() ruft den Callback mit formatiertem Text auf."""
@@ -105,7 +105,7 @@ class TestStatusSession:
         assert mock_callback.call_count == 1
 
     async def test_rate_limiting_allows_after_interval(self) -> None:
-        """Nach dem Rate-Limit-Intervall geht das naechste Update durch."""
+        """Nach dem Rate-Limit-Intervall geht das nächste Update durch."""
         mock_callback = AsyncMock()
         session = StatusSession(callback=mock_callback, language="de")
 
@@ -127,7 +127,7 @@ class TestStatusSession:
         assert mock_callback.call_count == 1
 
         session.mark_stream_started()
-        session.last_update_time = 0  # Rate-Limit zuruecksetzen
+        session.last_update_time = 0  # Rate-Limit zurücksetzen
 
         await session.update("formatting")
         # Immer noch nur 1 Call (nach mark_stream_started blockiert)
@@ -221,7 +221,7 @@ class TestStatusLanguageUpdate:
     """Bug-Fix-Tests: Status-Sprache respektiert Sticky-Language."""
 
     async def test_set_language_changes_output(self) -> None:
-        """set_language() aendert die Sprache fuer folgende Updates."""
+        """set_language() ändert die Sprache für folgende Updates."""
         mock_callback = AsyncMock()
         session = StatusSession(callback=mock_callback, language="de")
 
@@ -232,7 +232,7 @@ class TestStatusLanguageUpdate:
         # Sprache wechseln
         session.set_language("en")
 
-        # Naechstes Update muss Englisch sein (Phase-Change -> kein Rate-Limit)
+        # Nächstes Update muss Englisch sein (Phase-Change -> kein Rate-Limit)
         await session.update("thinking")
         second_text = mock_callback.call_args_list[1][0][0]
         assert "Thinking" in second_text
@@ -297,7 +297,7 @@ class TestStatusInStreaming:
             status_session=status,
         )
 
-        # Status-Updates muessen VOR dem Stream gesendet worden sein
+        # Status-Updates müssen VOR dem Stream gesendet worden sein
         # (memory_loading + thinking)
         assert mock_callback.call_count >= 1
         first_call = mock_callback.call_args_list[0][0][0]
@@ -443,7 +443,7 @@ class TestStatusInStreaming:
             status_session=status,
         )
 
-        # Beide Status-Updates muessen gesendet worden sein
+        # Beide Status-Updates müssen gesendet worden sein
         # (memory_loading + thinking, weil Phase-Change Rate-Limit umgeht)
         assert mock_callback.call_count == 2
         calls = [c[0][0] for c in mock_callback.call_args_list]
@@ -456,7 +456,7 @@ class TestStatusInStreaming:
 
 
 class TestMinStatusDisplayTime:
-    """Bug-Fix R02-B: Mindest-Anzeigedauer fuer Status-Updates."""
+    """Bug-Fix R02-B: Mindest-Anzeigedauer für Status-Updates."""
 
     async def test_min_display_time_enforced_between_updates(self) -> None:
         """Zwischen zwei Status-Updates liegen mindestens MIN_STATUS_DISPLAY_MS."""
@@ -473,7 +473,7 @@ class TestMinStatusDisplayTime:
 
         # Mindestens MIN_STATUS_DISPLAY_MS ms zwischen den beiden Callbacks
         elapsed_ms = (second_time - first_time) * 1000
-        assert elapsed_ms >= MIN_STATUS_DISPLAY_MS - 50  # 50ms Toleranz fuer Timer
+        assert elapsed_ms >= MIN_STATUS_DISPLAY_MS - 50  # 50ms Toleranz für Timer
 
     async def test_min_display_time_not_applied_on_first_update(self) -> None:
         """Erstes Status-Update hat keine Verzoegerung."""

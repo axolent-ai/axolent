@@ -341,26 +341,26 @@ class DebateOrchestrator:
             f"Bewerte sie neutral und objektiv.\n\n"
             f"{answers_text}\n"
             f"Deine Aufgabe:\n"
-            f"1. Identifiziere die Staerken und Schwaechen jeder Antwort\n"
+            f"1. Identifiziere die Stärken und Schwächen jeder Antwort\n"
             f"2. Erstelle eine SYNTHESE die das Beste aller Antworten vereint\n"
-            f"3. Die Synthese soll eine eigenstaendige, vollstaendige Antwort sein "
+            f"3. Die Synthese soll eine eigenständige, vollständige Antwort sein "
             f"(nicht nur 'A ist besser')\n"
             f"4. Die Kernaussage (key_takeaway) muss ALLE Aspekte der Frage abdecken. "
             f"Bei Multi-Fragen (z.B. 'Was ist X und sollte ich Y tun?') strukturiere "
             f"die Kernaussage so dass jeder Teilaspekt adressiert wird.\n\n"
             f"WICHTIG: Deine GESAMTE Antwort muss EIN EINZIGES JSON-Objekt sein.\n"
-            f"Kein Text davor, kein Text danach, kein Markdown, keine Erklaerung.\n"
+            f"Kein Text davor, kein Text danach, kein Markdown, keine Erklärung.\n"
             f"Starte direkt mit {{ und ende mit }}.\n\n"
             f"JSON-Schema (exakt einhalten):\n"
             f'{{"winner": "<Buchstabe der besten Antwort oder tie>", '
-            f'"synthesis": "<Vollstaendige synthetisierte Antwort die das Beste vereint, '
-            f'2-5 Saetze, NIEMALS leer lassen>", '
-            f'"recommendation": "<Vollstaendige Kernaussage die alle Frage-Aspekte abdeckt, '
-            f'2-4 Saetze>", '
+            f'"synthesis": "<Vollständige synthetisierte Antwort die das Beste vereint, '
+            f'2-5 Sätze, NIEMALS leer lassen>", '
+            f'"recommendation": "<Vollständige Kernaussage die alle Frage-Aspekte abdeckt, '
+            f'2-4 Sätze>", '
             f'"evaluations": ['
             f'{{"label": "<Buchstabe>", "pros": ["..."], "cons": ["..."]}}, ...'
             f"], "
-            f'"reasoning": "<1-2 Saetze warum dieser Winner>"}}'
+            f'"reasoning": "<1-2 Sätze warum dieser Winner>"}}'
         )
 
         return prompt, label_to_provider
@@ -583,8 +583,8 @@ class DebateOrchestrator:
 
         # Isolierter Konversationskontext für den Judge:
         # Offset auf die chat_id damit der Judge-Call NICHT in die
-        # User-Konversation geht (wuerde Bias durch vorherige Debate-Antwort erzeugen
-        # und kann JSON-Output stoeren weil Claude im Chat-Modus antwortet).
+        # User-Konversation geht (würde Bias durch vorherige Debate-Antwort erzeugen
+        # und kann JSON-Output stören weil Claude im Chat-Modus antwortet).
         judge_chat_id = chat_id + _JUDGE_CHAT_ID_OFFSET
 
         try:
@@ -619,7 +619,7 @@ class DebateOrchestrator:
             if verdict is None:
                 log.warning(
                     "Judge-Response konnte nicht geparst werden. "
-                    "Vollstaendige Response (%d chars): %s",
+                    "Vollständige Response (%d chars): %s",
                     len(response.text),
                     response.text[:500],
                 )

@@ -5,7 +5,7 @@ Testet:
     - Token-Refill nach Wartezeit
     - Getrennte Buckets pro User-ID
     - Eviction nach Inaktivitaet
-    - Profil-Persistierung ueber Bot-Restart
+    - Profil-Persistierung über Bot-Restart
     - /usage Output (UsageInfo)
     - /setlimit Profilwechsel
     - Unlimited Two-Step Confirmation (Handler-Level)
@@ -63,7 +63,7 @@ class TestTokenBucket:
         assert allowed is True
 
     def test_bucket_retry_after_is_positive(self) -> None:
-        """retry_after gibt Wartezeit bis Window-Reset zurueck."""
+        """retry_after gibt Wartezeit bis Window-Reset zurück."""
         bucket = TokenBucket(capacity=1, window_seconds=60.0)
         bucket.try_consume()
         allowed, retry_after = bucket.try_consume()
@@ -71,7 +71,7 @@ class TestTokenBucket:
         assert 0 < retry_after <= 60.0
 
     def test_consumed_count(self) -> None:
-        """consumed_count gibt korrekte Anzahl zurueck."""
+        """consumed_count gibt korrekte Anzahl zurück."""
         bucket = TokenBucket(capacity=10, window_seconds=60.0)
         bucket.try_consume()
         bucket.try_consume()
@@ -141,14 +141,14 @@ class TestRateLimiterProfiles:
             assert limiter.get_user_profile(3) == "unlimited"
 
     def test_set_invalid_profile_rejected(self) -> None:
-        """Ungueltiges Profil wird abgelehnt."""
+        """Ungültiges Profil wird abgelehnt."""
         limiter = RateLimiter()
         success = limiter.set_user_profile(user_id=4, chat_id=4, profile="nonexistent")
         assert success is False
         assert limiter.get_user_profile(4) == DEFAULT_PROFILE
 
     def test_profile_persistence_over_restart(self, tmp_path: Path) -> None:
-        """Profile ueberleben einen Bot-Restart (Persistierung via JSONL)."""
+        """Profile überleben einen Bot-Restart (Persistierung via JSONL)."""
         profiles_path = tmp_path / "user_profiles.jsonl"
         with patch("application.rate_limiter._PROFILES_PATH", profiles_path):
             # Erster "Start": Profil setzen
@@ -198,7 +198,7 @@ class TestRateLimiterLimits:
                 result = limiter.check_and_consume(user_id=1)
                 assert result.allowed is True, f"Anfrage {i + 1} sollte erlaubt sein"
 
-            # Naechste Anfrage: blockiert
+            # Nächste Anfrage: blockiert
             result = limiter.check_and_consume(user_id=1)
             assert result.allowed is False
             assert result.period == "minute"
@@ -259,7 +259,7 @@ class TestRateLimiterLimits:
             buckets.minute_bucket.request_count = 0
             buckets.minute_bucket.window_start = time.monotonic()
 
-        # Naechste Anfrage: Hour-Bucket sollte blockieren
+        # Nächste Anfrage: Hour-Bucket sollte blockieren
         result = limiter.check_and_consume(user_id)
         assert result.allowed is False
         assert result.period == "hour"
@@ -295,7 +295,7 @@ class TestRateLimiterLimits:
                 buckets.hour_bucket.request_count = 0
                 buckets.hour_bucket.window_start = time.monotonic()
 
-            # Naechste Anfrage: Day-Bucket blockiert
+            # Nächste Anfrage: Day-Bucket blockiert
             result = limiter.check_and_consume(user_id)
             assert result.allowed is False
             assert result.period == "day"
@@ -326,7 +326,7 @@ class TestRateLimiterLimits:
         result_1 = limiter.check_and_consume(user_id=1)
         assert result_1.allowed is False
 
-        # User 2: noch voll verfuegbar
+        # User 2: noch voll verfügbar
         result_2 = limiter.check_and_consume(user_id=2)
         assert result_2.allowed is True
 
@@ -579,7 +579,7 @@ class TestEviction:
         with limiter._lock:
             limiter._users[100].last_activity = time.monotonic() - 7200  # 2h
 
-        # Naechster check_and_consume triggert Eviction
+        # Nächster check_and_consume triggert Eviction
         limiter.check_and_consume(user_id=200)
 
         assert 100 not in limiter._users
@@ -643,7 +643,7 @@ class TestBugReproduction:
     """
 
     def test_17_rapid_requests_counted_exactly(self, tmp_path: Path) -> None:
-        """Bug-Regression: 17 schnelle Anfragen muessen request_count == 17 ergeben."""
+        """Bug-Regression: 17 schnelle Anfragen müssen request_count == 17 ergeben."""
         profiles_path = tmp_path / "user_profiles.jsonl"
         with patch("application.rate_limiter._PROFILES_PATH", profiles_path):
             limiter = RateLimiter()
@@ -664,7 +664,7 @@ class TestBugReproduction:
             assert result.period == "minute"
 
     def test_17_requests_with_delays_still_blocked(self, tmp_path: Path) -> None:
-        """17 Anfragen ueber ~30s verteilt muessen trotzdem exakt 17 zaehlen.
+        """17 Anfragen über ~30s verteilt müssen trotzdem exakt 17 zählen.
 
         Simuliert den realen Bug: Zwischen Anfragen vergehen 1-3 Sekunden.
         Mit dem alten Token-Bucket haette der Refill ~8.5 Extra-Tokens erzeugt.
@@ -704,7 +704,7 @@ class TestBugReproduction:
 
                 result = limiter.check_and_consume(user_id)
                 assert result.allowed is False, (
-                    f"{profile_name}: Anfrage {cap + 1} haette blockiert sein muessen!"
+                    f"{profile_name}: Anfrage {cap + 1} haette blockiert sein müssen!"
                 )
 
     def test_counter_not_inflated_by_time(self) -> None:

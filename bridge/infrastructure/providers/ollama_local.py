@@ -45,7 +45,7 @@ def _get_host() -> str:
     """Gibt den konfigurierten Ollama-Host zurück.
 
     Validiert das URL-Scheme: nur http:// und https:// sind erlaubt.
-    Verhindert file:// oder andere potentiell gefaehrliche Schemes.
+    Verhindert file:// oder andere potentiell gefährliche Schemes.
     """
     host = os.getenv("OLLAMA_HOST", DEFAULT_HOST).rstrip("/")
     if not host.startswith(("http://", "https://")):
@@ -73,11 +73,11 @@ class OllamaProvider(LLMProvider):
     name = "ollama_local"
 
     def get_capabilities(self) -> ProviderCapabilities:
-        """Ollama-Capabilities: Local, Free, 8k Context (modellabhaengig)."""
+        """Ollama-Capabilities: Local, Free, 8k Context (modellabhängig)."""
         return _CAPABILITIES
 
     def is_available(self) -> bool:
-        """Prueft ob Ollama auf dem konfigurierten Host erreichbar ist.
+        """Prüft ob Ollama auf dem konfigurierten Host erreichbar ist.
 
         Macht einen HTTP-GET auf /api/tags mit kurzem Timeout (2s).
         True wenn 200 OK, False bei Connection-Error oder Timeout.
@@ -200,7 +200,7 @@ class OllamaProvider(LLMProvider):
         try:
             result = json.loads(body)
         except json.JSONDecodeError as exc:
-            raise RuntimeError(f"Ollama ungueltige JSON-Antwort: {body[:200]}") from exc
+            raise RuntimeError(f"Ollama ungültige JSON-Antwort: {body[:200]}") from exc
 
         if "response" not in result:
             raise RuntimeError(

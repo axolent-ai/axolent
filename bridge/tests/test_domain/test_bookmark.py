@@ -96,7 +96,7 @@ class TestFormatBookmarkPreview:
     """Preview-Formatierung für Bookmark-Auflistung."""
 
     def test_format_bookmark_preview_short(self) -> None:
-        """Kurze Bookmarks werden vollstaendig angezeigt."""
+        """Kurze Bookmarks werden vollständig angezeigt."""
         bm = {
             "timestamp": "2026-05-06T12:00:00+00:00",
             "content": "Kurzer Text",

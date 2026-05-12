@@ -334,7 +334,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         " (reply-to)" if reply_to_text else "",
     )
 
-    # C-2: Rate-Limit pruefen (vor LLM-Call, vor Lock)
+    # C-2: Rate-Limit prüfen (vor LLM-Call, vor Lock)
     rate_limiter = _get_rate_limiter(context)
     if rate_limiter is not None:
         result: RateLimitResult = rate_limiter.check_and_consume(user_id)
@@ -1833,7 +1833,7 @@ async def handle_debate_command(
 
     question = " ".join(args)
 
-    # Rate-Limit pruefen (gleiche Logik wie handle_message)
+    # Rate-Limit prüfen (gleiche Logik wie handle_message)
     rate_limiter = _get_rate_limiter(context)
     if rate_limiter is not None:
         result_rl: RateLimitResult = rate_limiter.check_and_consume(user_id)

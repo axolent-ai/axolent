@@ -101,7 +101,7 @@ class TestClaudeProviderQuery:
 
     @pytest.mark.asyncio
     async def test_query_accepts_user_id_and_chat_id(self) -> None:
-        """Legacy-Provider darf nicht crashen wenn user_id/chat_id uebergeben werden."""
+        """Legacy-Provider darf nicht crashen wenn user_id/chat_id übergeben werden."""
         provider = ClaudeProvider()
 
         mock_proc = AsyncMock()
@@ -169,7 +169,7 @@ class TestClaudeProviderQuery:
 
     @pytest.mark.asyncio
     async def test_query_without_model_no_flag(self) -> None:
-        """Legacy-Provider ohne model-Parameter uebergibt kein --model Flag."""
+        """Legacy-Provider ohne model-Parameter übergibt kein --model Flag."""
         provider = ClaudeProvider()
 
         mock_proc = AsyncMock()

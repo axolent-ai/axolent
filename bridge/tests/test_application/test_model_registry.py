@@ -1,4 +1,4 @@
-"""Tests fuer ModelRegistry: YAML-Loading, Alias-Lookup, Best-for-Dimension.
+"""Tests für ModelRegistry: YAML-Loading, Alias-Lookup, Best-for-Dimension.
 
 Testet:
   - YAML-Loading mit korrekten Daten
@@ -97,7 +97,7 @@ def registry(yaml_file: Path) -> ModelRegistry:
 
 
 class TestLoading:
-    """Tests fuer YAML-Loading und Parsing."""
+    """Tests für YAML-Loading und Parsing."""
 
     def test_loads_all_models(self, registry: ModelRegistry) -> None:
         """Alle Modelle aus YAML werden geladen."""
@@ -153,7 +153,7 @@ class TestLoading:
             ModelRegistry(yaml_path=path)
 
     def test_invalid_entry_skipped(self, tmp_path: Path) -> None:
-        """Eintraege mit fehlenden Pflichtfeldern werden uebersprungen."""
+        """Einträge mit fehlenden Pflichtfeldern werden übersprungen."""
         yaml_content = dedent("""\
             models:
               - id: good-model
@@ -187,10 +187,10 @@ class TestLoading:
 
 
 class TestAliasLookup:
-    """Tests fuer Alias-Resolution."""
+    """Tests für Alias-Resolution."""
 
     def test_lookup_by_alias(self, registry: ModelRegistry) -> None:
-        """Alias wird korrekt aufgeloest."""
+        """Alias wird korrekt aufgelöst."""
         meta = registry.get("testa")
         assert meta is not None
         assert meta.id == "test-model-a"
@@ -202,7 +202,7 @@ class TestAliasLookup:
         assert meta.id == "test-model-a"
 
     def test_lookup_by_full_id(self, registry: ModelRegistry) -> None:
-        """Lookup per vollstaendiger ID funktioniert."""
+        """Lookup per vollständiger ID funktioniert."""
         meta = registry.get("test-model-b")
         assert meta is not None
         assert meta.id == "test-model-b"
@@ -219,12 +219,12 @@ class TestAliasLookup:
         assert registry.get("  testa  ") == registry.get("testa")
 
     def test_unknown_returns_none(self, registry: ModelRegistry) -> None:
-        """Unbekannter Alias gibt None zurueck."""
+        """Unbekannter Alias gibt None zurück."""
         assert registry.get("nonexistent") is None
         assert registry.get("") is None
 
     def test_resolve_id(self, registry: ModelRegistry) -> None:
-        """resolve_id gibt die kanonische ID zurueck."""
+        """resolve_id gibt die kanonische ID zurück."""
         assert registry.resolve_id("testa") == "test-model-a"
         assert registry.resolve_id("test-model-b") == "test-model-b"
         assert registry.resolve_id("unknown") is None
@@ -270,10 +270,10 @@ class TestAliasLookup:
 
 
 class TestProviderFilter:
-    """Tests fuer Provider-Filterung."""
+    """Tests für Provider-Filterung."""
 
     def test_for_provider(self, registry: ModelRegistry) -> None:
-        """for_provider gibt nur Modelle des Providers zurueck."""
+        """for_provider gibt nur Modelle des Providers zurück."""
         result = registry.for_provider("test_provider")
         assert len(result) == 2
         ids = {m.id for m in result}
@@ -286,7 +286,7 @@ class TestProviderFilter:
         assert result[0].id == "test-model-b"
 
     def test_for_unknown_provider(self, registry: ModelRegistry) -> None:
-        """Unbekannter Provider gibt leere Liste zurueck."""
+        """Unbekannter Provider gibt leere Liste zurück."""
         assert registry.for_provider("unknown") == []
 
 
@@ -296,7 +296,7 @@ class TestProviderFilter:
 
 
 class TestBestForDimension:
-    """Tests fuer best_for_dimension."""
+    """Tests für best_for_dimension."""
 
     def test_best_coding(self, registry: ModelRegistry) -> None:
         """Bestes Coding-Modell wird korrekt ermittelt."""
@@ -327,7 +327,7 @@ class TestBestForDimension:
         assert best2.id == "test-model-b"  # 60.0 (only one)
 
     def test_unknown_dimension_returns_none(self, registry: ModelRegistry) -> None:
-        """Unbekannte Dimension gibt None zurueck."""
+        """Unbekannte Dimension gibt None zurück."""
         assert registry.best_for_dimension("nonexistent") is None
 
 
@@ -337,15 +337,15 @@ class TestBestForDimension:
 
 
 class TestUtilities:
-    """Tests fuer Hilfsmethoden."""
+    """Tests für Hilfsmethoden."""
 
     def test_all_ids(self, registry: ModelRegistry) -> None:
-        """all_ids gibt alle Modell-IDs zurueck."""
+        """all_ids gibt alle Modell-IDs zurück."""
         ids = registry.all_ids()
         assert ids == {"test-model-a", "test-model-b", "test-model-c"}
 
     def test_all_aliases(self, registry: ModelRegistry) -> None:
-        """all_aliases gibt Alias->ID Mapping zurueck."""
+        """all_aliases gibt Alias->ID Mapping zurück."""
         aliases = registry.all_aliases()
         assert aliases["testa"] == "test-model-a"
         assert aliases["a"] == "test-model-a"
@@ -354,12 +354,12 @@ class TestUtilities:
         assert aliases["testc"] == "test-model-c"
 
     def test_get_display_name_known(self, registry: ModelRegistry) -> None:
-        """get_display_name gibt korrekten Namen zurueck."""
+        """get_display_name gibt korrekten Namen zurück."""
         assert registry.get_display_name("test-model-a") == "Test A"
         assert registry.get_display_name("test-model-b") == "Test B"
 
     def test_get_display_name_unknown(self, registry: ModelRegistry) -> None:
-        """Unbekannte ID wird als Display-Name zurueckgegeben."""
+        """Unbekannte ID wird als Display-Name zurückgegeben."""
         assert registry.get_display_name("unknown-model") == "unknown-model"
 
     def test_get_score(self, registry: ModelRegistry) -> None:
