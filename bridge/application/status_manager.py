@@ -52,7 +52,7 @@ def get_status_text(key: str, lang: str = "de", **kwargs: Any) -> str:
     """Gibt den lokalisierten Status-Text zurück.
 
     Args:
-        key: Status-Schluessel (z.B. "memory_loading", "thinking").
+        key: Status-Schlüssel (z.B. "memory_loading", "thinking").
         lang: Sprachcode ("de", "en", etc.). Fallback auf "de".
         **kwargs: Format-Parameter (z.B. n=3 für Memory-Count).
 
@@ -119,9 +119,9 @@ class StatusSession:
         aufeinanderfolgenden Status-Updates, damit der User jeden Status
         lesen kann bevor er ersetzt wird.
 
-        Rate-Limit wird uebersprungen wenn:
+        Rate-Limit wird übersprungen wenn:
         - Es der allererste Aufruf ist (last_update_time == 0)
-        - Der Status-Key sich aendert (neue Phase, z.B. memory_loading -> thinking)
+        - Der Status-Key sich ändert (neue Phase, z.B. memory_loading -> thinking)
 
         Args:
             key: Status-Schluessel (z.B. "memory_loading").
@@ -158,7 +158,7 @@ class StatusSession:
     def set_language(self, lang: str) -> None:
         """Aktualisiert die Sprache der Session.
 
-        Wird aufgerufen sobald die tatsaechliche Sprache bestimmt ist
+        Wird aufgerufen sobald die tatsächliche Sprache bestimmt ist
         (z.B. nach Sticky-Language-Lookup oder Sprach-Detection).
         Alle folgenden Status-Updates nutzen die neue Sprache.
 
@@ -171,6 +171,6 @@ class StatusSession:
         """Markiert dass der Token-Stream begonnen hat.
 
         Ab hier werden keine Status-Updates mehr gesendet,
-        der normale Streaming-Edit-Flow uebernimmt.
+        der normale Streaming-Edit-Flow übernimmt.
         """
         self.stream_started = True

@@ -185,20 +185,25 @@ class ClaudeProcessPool:
                 if managed.model == effective_model:
                     managed.last_used = time.monotonic()
                     return managed, False
-                # Modell-Mismatch: aus Pool entfernen, Kill NACH Lock-Release
+                # Modell-Mismatch: prüfen ob aktiver Stream läuft
+                if managed.lock.locked():
+                    log.warning(
+                        "Modell-Mismatch (alt=%s, neu=%s) während aktivem Stream "
+                        "auf pid=%d. Behalte aktuellen Prozess, Wechsel beim "
+                        "nächsten Call.",
+                        managed.model,
+                        effective_model,
+                        managed.pid,
+                    )
+                    managed.last_used = time.monotonic()
+                    return managed, False
+                # Kein aktiver Stream: aus Pool entfernen, Kill NACH Lock-Release
                 log.info(
                     "Modell-Wechsel für key=%s: %s -> %s, terminiere alten Subprocess",
                     key,
                     managed.model,
                     effective_model,
                 )
-                if managed.lock.locked():
-                    log.warning(
-                        "Modell-Wechsel für key=%s: aktiver Stream auf pid=%d, "
-                        "Kill wird trotzdem durchgeführt",
-                        key,
-                        managed.pid,
-                    )
                 old_managed_to_kill = managed
                 del self._processes[key]
                 managed = None

@@ -832,6 +832,59 @@ class TestModelSwitchViaPool:
         await pool.shutdown()
 
     @pytest.mark.asyncio
+    async def test_locked_process_not_killed_on_model_mismatch(self) -> None:
+        """Aktive Streams dürfen bei Modell-Wechsel NICHT terminiert werden.
+
+        Szenario: User chattet mit Opus (Stream aktiv, lock acquired).
+        Parallel kommt eine Anfrage mit anderem Modell (z.B. Sonnet via
+        DebateOrchestrator). Der Pool darf den aktiven Stream NICHT killen,
+        sondern muss den bestehenden Prozess zurückgeben.
+        """
+        pool = ClaudeProcessPool()
+        opus_proc = _make_mock_process(pid=22222)
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                return_value=opus_proc,
+            ):
+                # Opus-Subprocess starten
+                managed_opus, cold = await pool.get_or_create(
+                    user_id=1, chat_id=100, model="claude-opus-4-7"
+                )
+                assert cold is True
+                assert managed_opus.model == "claude-opus-4-7"
+
+                # Lock acquiren (simuliert aktiven Stream)
+                await managed_opus.lock.acquire()
+
+                # Jetzt mit Sonnet aufrufen (Modell-Mismatch bei aktivem Stream)
+                managed_result, cold_result = await pool.get_or_create(
+                    user_id=1, chat_id=100, model="claude-sonnet-4-6"
+                )
+
+                # MUSS den bestehenden Opus-Prozess zurückgeben, NICHT killen
+                assert cold_result is False, (
+                    "Aktiver Stream darf NICHT terminiert werden, was_cold muss "
+                    "False sein"
+                )
+                assert managed_result.pid == 22222, (
+                    "Muss denselben Prozess zurückgeben, nicht einen neuen starten"
+                )
+                assert managed_result.model == "claude-opus-4-7", (
+                    "Modell bleibt beim aktiven Prozess (Opus), Wechsel erst "
+                    "beim nächsten Call"
+                )
+
+                # terminate() darf NICHT aufgerufen worden sein
+                opus_proc.terminate.assert_not_called()
+
+                # Lock freigeben
+                managed_opus.lock.release()
+
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
     async def test_send_message_init_event_reflects_model_switch(self) -> None:
         """send_message() muss ein init-Event yielden das was_cold=True und
         den neuen pid enthält, wenn ein Modell-Wechsel stattfindet.

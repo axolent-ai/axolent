@@ -152,9 +152,9 @@ class ModelService:
 
     @staticmethod
     def get_model_display_name(model_id: str) -> str:
-        """Gibt einen menschenlesbaren Namen fuer eine Modell-ID zurueck.
+        """Gibt einen menschenlesbaren Namen für eine Modell-ID zurück.
 
-        Delegiert an ModelRegistry fuer zentrales Display-Name-Lookup.
+        Delegiert an ModelRegistry für zentrales Display-Name-Lookup.
 
         Args:
             model_id: Volle Modell-ID.
