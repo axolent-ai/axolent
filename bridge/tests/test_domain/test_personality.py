@@ -3,7 +3,11 @@
 Testet build_combined_prompt und build_effective_prompt mit Language-Override.
 """
 
-from domain.personality import PersonalityConfig, build_effective_prompt
+from domain.personality import (
+    PersonalityConfig,
+    build_effective_prompt,
+    build_self_awareness_block,
+)
 
 
 class TestPersonalityConfig:
@@ -72,3 +76,49 @@ class TestBuildEffectivePrompt:
         result = build_effective_prompt("", "fr")
         assert "LANGUAGE OVERRIDE" in result
         assert "'fr'" in result
+
+
+class TestBuildSelfAwarenessBlock:
+    """build_self_awareness_block: Modell-Info fuer System-Prompt."""
+
+    def test_contains_all_fields(self) -> None:
+        """Block enthaelt Modell-Name, ID, Slot und Provider."""
+        block = build_self_awareness_block(
+            model_display_name="Opus 4.7",
+            model_id="claude-opus-4-7",
+            task_slot="code",
+            provider="anthropic",
+        )
+        assert "[SELF-AWARENESS]" in block
+        assert "Opus 4.7" in block
+        assert "claude-opus-4-7" in block
+        assert "code" in block
+        assert "anthropic" in block
+
+    def test_contains_anti_hallucination_instruction(self) -> None:
+        """Block enthaelt Anweisung nicht zu halluzinieren."""
+        block = build_self_awareness_block(
+            model_display_name="Sonnet 4.6",
+            model_id="claude-sonnet-4-6",
+            task_slot="chat",
+            provider="anthropic",
+        )
+        assert "Spekuliere nicht" in block
+
+    def test_different_models_produce_different_blocks(self) -> None:
+        """Verschiedene Modelle produzieren verschiedene Blocks."""
+        block_opus = build_self_awareness_block(
+            model_display_name="Opus 4.7",
+            model_id="claude-opus-4-7",
+            task_slot="chat",
+            provider="anthropic",
+        )
+        block_sonnet = build_self_awareness_block(
+            model_display_name="Sonnet 4.6",
+            model_id="claude-sonnet-4-6",
+            task_slot="chat",
+            provider="anthropic",
+        )
+        assert block_opus != block_sonnet
+        assert "Opus 4.7" in block_opus
+        assert "Sonnet 4.6" in block_sonnet

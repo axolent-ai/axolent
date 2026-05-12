@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any, AsyncIterator, Optional
 from application.leakage_filter import check_for_system_prompt_leakage
 from domain.conversation import ConversationTurn, build_context_block
 from domain.language import detect_language_with_confidence
-from domain.personality import build_effective_prompt
+from domain.personality import build_effective_prompt, build_self_awareness_block
 from infrastructure.audit_log import write_audit_log
 from infrastructure.claude_process_pool import StreamEvent
 from infrastructure.conversation_storage import (
@@ -218,6 +218,50 @@ class ChatService:
         self.memory_service = memory_service
         self.model_service = model_service
         self.task_router = task_router
+
+    def _build_self_awareness(
+        self,
+        user_model: str | None,
+        task_slot_name: str | None,
+    ) -> str:
+        """Baut den Self-Awareness-Block für den System-Prompt.
+
+        Resolved Modell-Metadaten aus der ModelRegistry und baut den Block.
+        Wenn kein Modell resolved wurde, wird der System-Default verwendet.
+
+        Args:
+            user_model: Resolved Modell-ID oder None.
+            task_slot_name: Name des Task-Slots oder None.
+
+        Returns:
+            Self-Awareness-Block als String, oder leerer String bei Fehler.
+        """
+        from application.model_registry import ModelRegistry
+        from application.model_service import DEFAULT_MODEL
+
+        model_id = user_model or DEFAULT_MODEL
+        slot = task_slot_name or "chat"
+
+        try:
+            registry = ModelRegistry()
+            metadata = registry.get(model_id)
+            if metadata is not None:
+                return build_self_awareness_block(
+                    model_display_name=metadata.display_name,
+                    model_id=metadata.id,
+                    task_slot=slot,
+                    provider=metadata.provider,
+                )
+            # Fallback: ID direkt verwenden wenn nicht in Registry
+            return build_self_awareness_block(
+                model_display_name=model_id,
+                model_id=model_id,
+                task_slot=slot,
+                provider="unknown",
+            )
+        except Exception:
+            log.debug("Self-Awareness-Block konnte nicht gebaut werden", exc_info=True)
+            return ""
 
     def _get_memory_budget(self, provider_name: str | None = None) -> int:
         """Liest das Memory-Budget aus ProviderCapabilities.
@@ -454,6 +498,11 @@ class ChatService:
             elif self.model_service is not None:
                 # Fallback: Phase 1 Verhalten (nur globaler Override)
                 user_model = self.model_service.get_user_model(uid)
+
+            # Self-Awareness-Block: Modell-Info in System-Prompt injizieren
+            self_awareness = self._build_self_awareness(user_model, task_slot_name)
+            if self_awareness:
+                effective_prompt = f"{effective_prompt}\n\n{self_awareness}"
 
             # Provider-Router aufrufen (ersetzt direkten claude_cli Aufruf)
             result = await self.provider_router.route(
@@ -722,12 +771,19 @@ class ChatService:
 
         # Phase 2a: TaskRouter-Klassifikation + Modell-Resolution
         user_model: str | None = None
+        task_slot_name: str | None = None
         if self.task_router is not None:
             classification = self.task_router.classify(text)
+            task_slot_name = classification.slot.value
             user_model = self.task_router.resolve_model(uid, classification.slot)
         elif self.model_service is not None:
             # Fallback: Phase 1 Verhalten (nur globaler Override)
             user_model = self.model_service.get_user_model(uid)
+
+        # Self-Awareness-Block: Modell-Info in System-Prompt injizieren
+        self_awareness = self._build_self_awareness(user_model, task_slot_name)
+        if self_awareness:
+            effective_prompt = f"{effective_prompt}\n\n{self_awareness}"
 
         # Status: Denke nach (vor Provider-Call)
         if status_session is not None:

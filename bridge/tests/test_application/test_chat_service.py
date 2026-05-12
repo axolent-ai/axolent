@@ -812,3 +812,134 @@ class TestSmartLanguageDetection:
         assert result.detected_language == "en"
         sticky = await get_language(1, 10)
         assert sticky == "en"
+
+
+class TestSelfAwareness:
+    """Tests fuer Self-Awareness-Block: Modell-Info im System-Prompt."""
+
+    async def test_system_prompt_contains_self_awareness_block(self) -> None:
+        """System-Prompt an Provider enthaelt Self-Awareness mit Modell-Info."""
+        svc, mock_router = _make_chat_service()
+
+        await svc.process_user_message(
+            text="Welches Modell bist du?",
+            user_id=1,
+            chat_id=10,
+            username="test",
+            system_prompt="Du bist hilfreich.",
+        )
+
+        call_args = mock_router.route.call_args
+        system_sent = call_args.kwargs.get("system_prompt", "")
+        assert "[SELF-AWARENESS]" in system_sent
+        assert "Modell:" in system_sent
+        assert "Slot:" in system_sent
+        assert "Provider:" in system_sent
+
+    async def test_self_awareness_reflects_model_override(self) -> None:
+        """Nach /setmodel opus enthaelt Self-Awareness Opus-Daten."""
+        from application.model_service import ModelService
+        from application.task_router import TaskRouter, load_slot_configs
+        from infrastructure.sqlite_storage import SqliteConnection, SqliteModelStorage
+        from pathlib import Path
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "test_self_awareness.db"
+            conn = SqliteConnection(db_path)
+            try:
+                storage = SqliteModelStorage(conn)
+                slot_configs = load_slot_configs()
+                slot_defaults = {
+                    cfg.slot.value: cfg.default_model for cfg in slot_configs
+                }
+                model_service = ModelService(
+                    storage=storage, slot_defaults=slot_defaults
+                )
+                model_service.set_user_model(user_id=1, alias_or_id="opus")
+
+                task_router = TaskRouter(
+                    slot_configs=slot_configs,
+                    model_service=model_service,
+                )
+
+                mock_router = MagicMock()
+                mock_router.route = AsyncMock(
+                    return_value=ProviderResponse(
+                        text="Antwort",
+                        duration_seconds=1.0,
+                        provider_name="claude",
+                    )
+                )
+
+                svc = ChatService(
+                    provider_router=mock_router,
+                    model_service=model_service,
+                    task_router=task_router,
+                )
+
+                await svc.process_user_message(
+                    text="Welches Modell nutzt du?",
+                    user_id=1,
+                    chat_id=10,
+                    username="test",
+                    system_prompt="System.",
+                )
+
+                call_args = mock_router.route.call_args
+                system_sent = call_args.kwargs.get("system_prompt", "")
+                assert "Opus 4.7" in system_sent
+                assert "claude-opus-4-7" in system_sent
+                assert "anthropic" in system_sent
+            finally:
+                conn.close()
+
+    async def test_self_awareness_contains_task_slot(self) -> None:
+        """Self-Awareness enthaelt den erkannten Task-Slot."""
+        from application.model_service import ModelService
+        from application.task_router import TaskRouter, load_slot_configs
+        from infrastructure.sqlite_storage import SqliteConnection, SqliteModelStorage
+        from pathlib import Path
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "test_self_awareness_slot.db"
+            conn = SqliteConnection(db_path)
+            try:
+                storage = SqliteModelStorage(conn)
+                slot_configs = load_slot_configs()
+                model_service = ModelService(storage=storage)
+                task_router = TaskRouter(
+                    slot_configs=slot_configs,
+                    model_service=model_service,
+                )
+
+                mock_router = MagicMock()
+                mock_router.route = AsyncMock(
+                    return_value=ProviderResponse(
+                        text="Antwort",
+                        duration_seconds=1.0,
+                        provider_name="claude",
+                    )
+                )
+
+                svc = ChatService(
+                    provider_router=mock_router,
+                    model_service=model_service,
+                    task_router=task_router,
+                )
+
+                # Code-Nachricht um den CODE-Slot zu triggern
+                await svc.process_user_message(
+                    text="/code Schreibe eine Python-Funktion",
+                    user_id=1,
+                    chat_id=10,
+                    username="test",
+                    system_prompt="System.",
+                )
+
+                call_args = mock_router.route.call_args
+                system_sent = call_args.kwargs.get("system_prompt", "")
+                assert "Slot: code" in system_sent
+            finally:
+                conn.close()

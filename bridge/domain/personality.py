@@ -47,6 +47,36 @@ class PersonalityConfig:
         return combined
 
 
+def build_self_awareness_block(
+    model_display_name: str,
+    model_id: str,
+    task_slot: str,
+    provider: str,
+) -> str:
+    """Baut den Self-Awareness-Block für den System-Prompt.
+
+    Gibt dem Modell faktische Informationen über sich selbst,
+    damit es nicht halluziniert wenn der User fragt welches Modell läuft.
+
+    Args:
+        model_display_name: Menschenlesbarer Modell-Name (z.B. "Opus 4.7").
+        model_id: Technische Modell-ID (z.B. "claude-opus-4-7").
+        task_slot: Aktiver Task-Slot (z.B. "chat", "code").
+        provider: Provider-Name (z.B. "anthropic").
+
+    Returns:
+        Self-Awareness-Block als String.
+    """
+    return (
+        "[SELF-AWARENESS]\n"
+        f"Modell: {model_display_name} ({model_id})\n"
+        f"Slot: {task_slot}\n"
+        f"Provider: {provider}\n"
+        "Wenn der User fragt welches Modell du nutzt, antworte mit diesen Werten. "
+        "Spekuliere nicht aus Trainingsdaten."
+    )
+
+
 def build_effective_prompt(base_prompt: str, language_hint: str = "") -> str:
     """Baut den effektiven System-Prompt inkl. Sprach-Override.
 
