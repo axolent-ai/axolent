@@ -380,7 +380,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             if skip_count == 3:
                 from domain.onboarding import get_onboarding_hint_text
 
-                hint = get_onboarding_hint_text("de")
+                hint_lang = (
+                    await chat_service.get_chat_language(user_id, chat_id) or "de"
+                )
+                hint = get_onboarding_hint_text(hint_lang)
                 await update.message.reply_text(hint)
                 onboarding_storage.set_hint_shown(user_id)
 
@@ -854,6 +857,12 @@ async def _handle_message_legacy(
     )
 
 
+_RESET_TEXTS: dict[str, str] = {
+    "de": "Konversation zurückgesetzt. Wir starten frisch!",
+    "en": "Conversation reset. Let's start fresh!",
+}
+
+
 @require_whitelist
 async def handle_reset_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -865,8 +874,15 @@ async def handle_reset_command(
     user_id: int = user.id if user else 0
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
+    # Read language BEFORE reset (reset clears sticky language)
+    lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+
     await chat_service.reset(user_id, chat_id)
-    reset_msg = "Konversation zurückgesetzt. Wir starten frisch!"
+    reset_msg = (
+        _RESET_TEXTS.get(lang, _RESET_TEXTS["en"])
+        if lang != "de"
+        else _RESET_TEXTS["de"]
+    )
     await update.message.reply_text(reset_msg)
     await chat_service.save_static_response_to_history(user_id, chat_id, reset_msg)
     log.info("User %d reset conversation in chat %d", user_id, chat_id)
@@ -938,7 +954,11 @@ async def handle_lang_command(
         "vi": "Tiếng Việt",
     }
     name = lang_names.get(lang_code, lang_code)
-    lang_msg = f"Sprache gewechselt: {name} ({lang_code})"
+    lang_msg = (
+        f"Language changed: {name} ({lang_code})"
+        if lang_code != "de"
+        else f"Sprache gewechselt: {name} ({lang_code})"
+    )
     await update.message.reply_text(lang_msg)
     await chat_service.save_static_response_to_history(user_id, chat_id, lang_msg)
     log.info("User %d set language to '%s' in chat %d", user_id, lang_code, chat_id)
@@ -1132,14 +1152,10 @@ async def handle_help_command(
     user_id: int = user.id if user else 0
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
-    # Choose language-specific help text
-    lang = "de"
-    if chat_service and hasattr(chat_service, "get_chat_language"):
-        stored_lang = await chat_service.get_chat_language(user_id, chat_id)
-        if stored_lang == "en":
-            lang = "en"
+    # Choose language-specific help text (DE for "de", EN for all other languages)
+    lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
 
-    help_text = HELP_TEXT_EN if lang == "en" else HELP_TEXT_DE
+    help_text = HELP_TEXT_DE if lang == "de" else HELP_TEXT_EN
     try:
         await update.message.reply_text(help_text, parse_mode="HTML")
     except Exception:
@@ -1170,9 +1186,13 @@ async def handle_start_command(
         await start_wizard(update, context, is_restart=False)
         return
 
-    # Already onboarded: show normal welcome
-    await update.message.reply_text(START_TEXT)
-    await chat_service.save_static_response_to_history(user_id, chat_id, START_TEXT)
+    # Already onboarded: show welcome in sticky language
+    from domain.onboarding import get_start_welcome_text
+
+    lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+    welcome_text = get_start_welcome_text(lang)
+    await update.message.reply_text(welcome_text)
+    await chat_service.save_static_response_to_history(user_id, chat_id, welcome_text)
 
 
 @require_whitelist

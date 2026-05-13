@@ -26,6 +26,9 @@ from domain.onboarding import (
     get_skip_wizard_text,
     get_step1_text,
     get_step2_text,
+    get_wizard_done_text,
+    get_wizard_skip_step1_text,
+    get_wizard_skip_step2_text,
 )
 from presentation.decorators import require_private_chat, require_whitelist
 
@@ -237,8 +240,10 @@ async def handle_wizard_callback(
         state = onboarding_storage.get_state(user_id)
         if state and state.wizard_lang:
             # Skip from Step 2: mark as onboarded, keep language
+            skip_lang = state.wizard_lang if state.wizard_lang != "auto" else "de"
             onboarding_storage.set_onboarded(user_id, state.wizard_lang)
-            await query.edit_message_text("✓ Setup abgeschlossen.")
+            skip_text = get_wizard_skip_step2_text(skip_lang)
+            await query.edit_message_text(f"✓ {skip_text}")
             log_command_audit(
                 action="wizard_skip_step2",
                 user_id=user_id,
@@ -247,7 +252,14 @@ async def handle_wizard_callback(
             )
         else:
             # Skip from Step 1: do NOT mark as onboarded
-            await query.edit_message_text("Setup übersprungen.")
+            # UI lang from sticky language or fallback
+            skip_lang = "de"
+            if chat_service and hasattr(chat_service, "get_chat_language"):
+                stored = await chat_service.get_chat_language(user_id, chat_id)
+                if stored:
+                    skip_lang = stored
+            skip_text = get_wizard_skip_step1_text(skip_lang)
+            await query.edit_message_text(skip_text)
             log_command_audit(
                 action="wizard_skip_step1",
                 user_id=user_id,
@@ -263,7 +275,9 @@ async def handle_wizard_callback(
         lang = state.wizard_lang if state else None
         onboarding_storage.set_onboarded(user_id, lang)
 
-        await query.edit_message_text("✓ Viel Spaß!")
+        done_lang = lang if lang and lang != "auto" else "de"
+        done_text = get_wizard_done_text(done_lang)
+        await query.edit_message_text(f"✓ {done_text}")
 
         log_command_audit(
             action="wizard_done",

@@ -247,6 +247,57 @@ _ONBOARDING_HINT_TEXTS: dict[str, str] = {
     "en": "Tip: Use /onboarding to complete the setup.",
 }
 
+# Wizard done (completion) texts
+_WIZARD_DONE_TEXTS: dict[str, str] = {
+    "de": "Viel Spaß!",
+    "en": "Enjoy!",
+    "fr": "Amusez-vous bien !",
+    "es": "¡A disfrutar!",
+    "it": "Buon divertimento!",
+    "pt": "Aproveite!",
+    "nl": "Veel plezier!",
+    "pl": "Miłej zabawy!",
+    "sv": "Ha det kul!",
+    "tr": "İyi eğlenceler!",
+    "ru": "Приятного использования!",
+    "uk": "Приємного користування!",
+    "zh": "祝你使用愉快！",
+    "ja": "楽しんでください！",
+    "ko": "즐겁게 사용하세요!",
+    "ar": "استمتع!",
+    "hi": "आनंद लें!",
+    "id": "Selamat menikmati!",
+    "th": "ขอให้สนุก!",
+    "vi": "Chúc bạn vui vẻ!",
+}
+
+# Wizard skip texts
+_WIZARD_SKIP_STEP1_TEXTS: dict[str, str] = {
+    "de": "Setup übersprungen.",
+    "en": "Setup skipped.",
+}
+
+_WIZARD_SKIP_STEP2_TEXTS: dict[str, str] = {
+    "de": "Setup abgeschlossen.",
+    "en": "Setup completed.",
+}
+
+# /start welcome texts for onboarded users
+_START_WELCOME_TEXTS: dict[str, str] = {
+    "de": (
+        "Jarvis-LITE Bridge ist bereit.\n\n"
+        "Schick mir eine Frage und ich leite sie an Claude weiter.\n\n"
+        "Tipp: Du kannst Bot-Nachrichten als Bookmark speichern. "
+        "Antworte einfach mit /save."
+    ),
+    "en": (
+        "Jarvis-LITE Bridge is ready.\n\n"
+        "Send me a question and I'll forward it to Claude.\n\n"
+        "Tip: You can bookmark bot messages. "
+        "Just reply with /save."
+    ),
+}
+
 
 def get_step1_text(lang: str = "de") -> str:
     """Returns the Step 1 prompt text in the given language."""
@@ -282,6 +333,26 @@ def get_lets_go_text(lang: str = "de") -> str:
 def get_onboarding_hint_text(lang: str = "de") -> str:
     """Returns the onboarding hint for skipped users."""
     return _ONBOARDING_HINT_TEXTS.get(lang, _ONBOARDING_HINT_TEXTS["en"])
+
+
+def get_wizard_done_text(lang: str = "de") -> str:
+    """Returns the wizard completion text in the given language."""
+    return _WIZARD_DONE_TEXTS.get(lang, _WIZARD_DONE_TEXTS["en"])
+
+
+def get_wizard_skip_step1_text(lang: str = "de") -> str:
+    """Returns the wizard skip (step 1) text."""
+    return _WIZARD_SKIP_STEP1_TEXTS.get(lang, _WIZARD_SKIP_STEP1_TEXTS["en"])
+
+
+def get_wizard_skip_step2_text(lang: str = "de") -> str:
+    """Returns the wizard skip (step 2) text."""
+    return _WIZARD_SKIP_STEP2_TEXTS.get(lang, _WIZARD_SKIP_STEP2_TEXTS["en"])
+
+
+def get_start_welcome_text(lang: str = "de") -> str:
+    """Returns the /start welcome text for onboarded users."""
+    return _START_WELCOME_TEXTS.get(lang, _START_WELCOME_TEXTS["en"])
 
 
 def get_language_name(code: str) -> str:

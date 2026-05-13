@@ -238,13 +238,20 @@ class TestHandleResetCommand:
         assert (
             "zurückgesetzt" in history[0].content.lower()
             or "frisch" in history[0].content.lower()
+            or "reset" in history[0].content.lower()
+            or "fresh" in history[0].content.lower()
         )
         assert lang is None
 
         # Bestaetigung gesendet
         update.message.reply_text.assert_called_once()
         reply_text = update.message.reply_text.call_args[0][0]
-        assert "zurückgesetzt" in reply_text.lower() or "frisch" in reply_text.lower()
+        assert (
+            "zurückgesetzt" in reply_text.lower()
+            or "frisch" in reply_text.lower()
+            or "reset" in reply_text.lower()
+            or "fresh" in reply_text.lower()
+        )
 
 
 class TestStartCommandHistory:
