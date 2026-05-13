@@ -46,7 +46,7 @@ class TaskSlot(str, Enum):
         return [slot.value for slot in cls]
 
 
-# Prioritaetsreihenfolge bei Score-Gleichstand:
+# Prioritätsreihenfolge bei Score-Gleichstand:
 # CODE > REASON > RESEARCH > CREATIVE > QUICK > CHAT
 SLOT_PRIORITY: list[TaskSlot] = [
     TaskSlot.CODE,

@@ -143,7 +143,7 @@ class ModelService:
             user_id: Telegram-User-ID.
 
         Returns:
-            Anzahl geloeschter Overrides.
+            Anzahl gelöschter Overrides.
         """
         return self._storage.delete_all_models(user_id)
 

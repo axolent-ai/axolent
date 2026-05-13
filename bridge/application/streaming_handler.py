@@ -878,6 +878,6 @@ def _handle_edit_error(e: Exception) -> None:
     if "message is not modified" in error_str:
         pass  # Harmlos: Text hat sich nicht geändert
     elif "message to edit not found" in error_str:
-        log.warning("Streaming-Edit fehlgeschlagen: Nachricht geloescht")
+        log.warning("Streaming-Edit fehlgeschlagen: Nachricht gelöscht")
     else:
         log.warning("Streaming-Edit Fehler: %s", e)

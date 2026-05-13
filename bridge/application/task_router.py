@@ -73,7 +73,7 @@ class SlotConfig:
 class ClassificationResult:
     """Ergebnis einer Task-Klassifikation.
 
-    Enthaelt den erkannten Slot, den Score und die gematchten Indikatoren.
+    Enthält den erkannten Slot, den Score und die gematchten Indikatoren.
     """
 
     slot: TaskSlot
@@ -114,11 +114,11 @@ class TaskRouter:
         """Klassifiziert eine User-Nachricht in einen Task-Slot.
 
         Dreistufige Heuristik:
-          1. Explizite Slot-Marker (Praefix /code, /reason, etc.)
+          1. Explizite Slot-Marker (Präfix /code, /reason, etc.)
           2. Pattern + Keyword Matching mit Score
           3. Fallback auf CHAT
 
-        Bei Gleichstand gilt Prioritaet: CODE > REASON > RESEARCH > CREATIVE > QUICK > CHAT
+        Bei Gleichstand gilt Priorität: CODE > REASON > RESEARCH > CREATIVE > QUICK > CHAT
 
         Args:
             text: User-Nachricht.
@@ -200,7 +200,7 @@ class TaskRouter:
     def resolve_model(self, user_id: int, slot: TaskSlot) -> str | None:
         """Resolved das Modell für einen User und Slot.
 
-        Prioritaet:
+        Priorität:
           1. User-Override pro Slot (via ModelService/SQLite)
           2. User-Override global
           3. Slot-Default (aus YAML, kanonisch aufgelöst)
@@ -274,7 +274,7 @@ class TaskRouter:
 
 
 def load_slot_configs(yaml_path: Path | str | None = None) -> list[SlotConfig]:
-    """Laedt SlotConfigs aus YAML.
+    """Lädt SlotConfigs aus YAML.
 
     Bei Fehler: Fallback auf Hardcoded-Defaults (CHAT-only).
 
@@ -321,11 +321,11 @@ def load_slot_configs(yaml_path: Path | str | None = None) -> list[SlotConfig]:
     for slot_name, slot_data in data["slots"].items():
         task_slot = TaskSlot.from_string(slot_name)
         if task_slot is None:
-            log.warning("Unbekannter Slot '%s' in YAML, wird uebersprungen.", slot_name)
+            log.warning("Unbekannter Slot '%s' in YAML, wird übersprungen.", slot_name)
             continue
 
         if not isinstance(slot_data, dict):
-            log.warning("Slot '%s' hat keine gueltige Konfiguration.", slot_name)
+            log.warning("Slot '%s' hat keine gültige Konfiguration.", slot_name)
             continue
 
         configs.append(

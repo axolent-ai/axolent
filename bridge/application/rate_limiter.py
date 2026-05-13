@@ -533,7 +533,7 @@ class RateLimiter:
                 warning_period = "minute"
                 buckets.warning_sent_minute = True
 
-            # Stunden-Warnung (hat Prioritaet wenn beide gleichzeitig feuern)
+            # Stunden-Warnung (hat Priorität wenn beide gleichzeitig feuern)
             hour_consumed = buckets.hour_bucket.consumed_count()
             hour_cap = buckets.hour_bucket.capacity
             if (

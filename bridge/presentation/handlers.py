@@ -1494,8 +1494,8 @@ async def handle_setmodel_command(
     Phase 2a Syntax:
       /setmodel <model>           global setzen
       /setmodel <slot> <model>    pro Slot setzen
-      /setmodel reset             alles zuruecksetzen
-      /setmodel reset <slot>      einen Slot zuruecksetzen
+      /setmodel reset             alles zurücksetzen
+      /setmodel reset <slot>      einen Slot zurücksetzen
     """
     from domain.task_slot import TaskSlot
 

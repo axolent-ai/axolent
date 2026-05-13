@@ -226,7 +226,7 @@ class ChatService:
     def _build_all_slot_infos(self, user_id: int) -> list[SlotInfo]:
         """Baut die Slot-Belegungsliste für alle 6 Task-Slots.
 
-        Prioritaet pro Slot:
+        Priorität pro Slot:
           1. Slot-spezifischer Override
           2. Globaler Override
           3. Slot-Default (via TaskRouter.get_default_for_slot, Single Source of Truth)
