@@ -87,10 +87,28 @@ _SETTINGS_STRINGS: dict[str, dict[str, str]] = {
     },
 }
 
-# Available language options for the settings menu (subset of _SUPPORTED_LANGUAGES)
+# Available language options for the settings menu (synced with domain.onboarding.WIZARD_LANGUAGES)
 _SETTINGS_LANGUAGES: dict[str, str] = {
     "de": "Deutsch",
     "en": "English",
+    "fr": "Français",
+    "es": "Español",
+    "it": "Italiano",
+    "pt": "Português",
+    "nl": "Nederlands",
+    "pl": "Polski",
+    "sv": "Svenska",
+    "tr": "Türkçe",
+    "ru": "Русский",
+    "uk": "Українська",
+    "zh": "中文",
+    "ja": "日本語",
+    "ko": "한국어",
+    "ar": "العربية",
+    "hi": "हिन्दी",
+    "id": "Bahasa Indo.",
+    "th": "ภาษาไทย",
+    "vi": "Tiếng Việt",
 }
 
 # Available model aliases for Anthropic (active provider)
@@ -311,7 +329,7 @@ def build_lang_menu_keyboard(
     current_lang: str = "de",
     lang: str = "de",
 ) -> tuple[str, InlineKeyboardMarkup]:
-    """Baut das Sprach-Auswahl-Menü.
+    """Baut das Sprach-Auswahl-Menü (Grid-Layout, 4 Buttons pro Reihe).
 
     Returns:
         Tuple (message_text, keyboard_markup).
@@ -319,19 +337,24 @@ def build_lang_menu_keyboard(
     s = _get_settings_strings(lang)
     buttons: list[list[InlineKeyboardButton]] = []
 
+    # Build grid: 4 buttons per row
+    row: list[InlineKeyboardButton] = []
     for code, name in _SETTINGS_LANGUAGES.items():
         if code == current_lang:
             marker = s["current_marker"]
         else:
             marker = s["other_marker"]
-        buttons.append(
-            [
-                InlineKeyboardButton(
-                    f"{marker} {name}",
-                    callback_data=f"settings_lang:{code}",
-                )
-            ]
+        row.append(
+            InlineKeyboardButton(
+                f"{marker} {name}",
+                callback_data=f"settings_lang:{code}",
+            )
         )
+        if len(row) == 4:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
 
     buttons.append(
         [InlineKeyboardButton(s["lang_back"], callback_data="settings_back")]

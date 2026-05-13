@@ -54,7 +54,7 @@ _user_locks: dict[int, tuple[asyncio.Lock, float]] = {}
 _user_locks_meta_lock = Lock()
 _USER_LOCK_TTL_SECONDS = 3600  # 1h ohne Aktivität -> entfernt
 
-# Supported languages for /lang command
+# Supported languages for /lang command (synced with domain.onboarding.WIZARD_LANGUAGES)
 _SUPPORTED_LANGUAGES: set[str] = {
     "de",
     "en",
@@ -64,10 +64,18 @@ _SUPPORTED_LANGUAGES: set[str] = {
     "pt",
     "nl",
     "pl",
+    "sv",
+    "tr",
     "ru",
+    "uk",
+    "zh",
     "ja",
     "ko",
-    "zh",
+    "ar",
+    "hi",
+    "id",
+    "th",
+    "vi",
 }
 
 
@@ -236,41 +244,68 @@ def build_bookmarks_keyboard(bookmarks: list[dict[str, Any]]) -> InlineKeyboardM
     return InlineKeyboardMarkup(rows)
 
 
-HELP_TEXT: str = (
-    "\U0001f916 Jarvis-LITE Befehlsübersicht\n\n"
-    "Multi-AI:\n"
-    "• /debate <Frage> fragt mehrere KIs parallel und "
-    "vergleicht Antworten (Multi-AI-Debate)\n\n"
-    "Bookmarks (Bot-Antworten speichern):\n"
-    "• /save als Reply auf eine Bot-Nachricht speichert sie als Bookmark\n"
-    "• /bookmarks zeigt deine gespeicherten Bookmarks "
-    "(mit Inline-Buttons zum Anzeigen und Entfernen)\n\n"
-    "Memory (eigene Notizen):\n"
-    "• /remember <Text> speichert eine Notiz die der Bot "
-    "in zukünftigen Antworten berücksichtigt\n"
-    "• /forget <id> löscht eine Notiz "
-    "(id steht in der Bestätigung von /remember)\n"
-    "• /memory zeigt deine aktiven Notizen\n\n"
-    "Modell:\n"
-    "• /settings öffnet die visuelle Modell-Konfiguration\n"
-    "• /setmodel <modell> wechselt das KI-Modell global "
-    "(opus, sonnet, haiku)\n"
-    "• /setmodel <slot> <modell> wechselt nur einen Slot "
-    "(chat, code, reason, creative, quick, research)\n"
-    "• /resetmodel setzt das Modell zurück auf Default\n"
-    "• /models zeigt aktuelle Slot-Belegung\n\n"
-    "Limits & Profile:\n"
-    "• /usage zeigt aktuellen Verbrauch und Profil\n"
-    "• /setlimit <profil> wechselt Profil "
-    "(light, normal, power, unlimited)\n\n"
-    "Konversation:\n"
-    "• /reset löscht den aktuellen Konversationsverlauf\n"
-    "• /lang [code] wechselt Sprache (z.B. de, en, oder leer = automatisch)\n"
-    "• /start zeigt die Begrüßung\n"
-    "• /help diese Übersicht\n\n"
-    "Ohne Slash:\n"
-    "Schreibe einfach deine Frage, der Bot leitet sie an Claude weiter."
+HELP_TEXT_DE: str = (
+    "\U0001f916 <b>Jarvis-LITE Befehlsübersicht</b>\n\n"
+    "<b>Chat</b>\n"
+    "• Schreibe einfach eine Nachricht, der Bot leitet sie an Claude weiter\n"
+    "• /new neuer Chat (löscht Verlauf)\n"
+    "• /reset löscht den Konversationsverlauf\n\n"
+    "<b>Memory</b>\n"
+    "• /remember &lt;Text&gt; speichert eine Notiz\n"
+    "• /memory zeigt deine Notizen\n"
+    "• /forget &lt;id&gt; löscht eine Notiz\n\n"
+    "<b>Bookmarks</b>\n"
+    "• /save (als Reply) speichert eine Bot-Antwort\n"
+    "• /bookmarks zeigt gespeicherte Bookmarks\n\n"
+    "<b>Multi-AI</b>\n"
+    "• /debate &lt;Frage&gt; fragt mehrere KIs parallel\n\n"
+    "<b>Konfiguration</b>\n"
+    "• /settings visuelle Einstellungen\n"
+    "• /setmodel &lt;modell&gt; wechselt KI-Modell (opus, sonnet, haiku)\n"
+    "• /resetmodel setzt Modell auf Default zurück\n"
+    "• /models zeigt aktuelle Slot-Belegung\n"
+    "• /setlimit &lt;profil&gt; wechselt Profil (light, normal, power, unlimited)\n"
+    "• /usage zeigt Verbrauch und Profil\n\n"
+    "<b>Setup &amp; Sprache</b>\n"
+    "• /start Begrüßung (Setup-Wizard für neue User)\n"
+    "• /onboarding Setup-Wizard manuell starten\n"
+    "• /lang &lt;code&gt; Sprache wechseln (de, en, fr, ...)\n\n"
+    "<b>Hilfe</b>\n"
+    "• /help diese Übersicht"
 )
+
+HELP_TEXT_EN: str = (
+    "\U0001f916 <b>Jarvis-LITE Command Overview</b>\n\n"
+    "<b>Chat</b>\n"
+    "• Just send a message, the bot forwards it to Claude\n"
+    "• /new new chat (clears history)\n"
+    "• /reset clears conversation history\n\n"
+    "<b>Memory</b>\n"
+    "• /remember &lt;text&gt; saves a note\n"
+    "• /memory shows your notes\n"
+    "• /forget &lt;id&gt; deletes a note\n\n"
+    "<b>Bookmarks</b>\n"
+    "• /save (as reply) bookmarks a bot response\n"
+    "• /bookmarks shows saved bookmarks\n\n"
+    "<b>Multi-AI</b>\n"
+    "• /debate &lt;question&gt; asks multiple AIs in parallel\n\n"
+    "<b>Configuration</b>\n"
+    "• /settings visual settings menu\n"
+    "• /setmodel &lt;model&gt; changes AI model (opus, sonnet, haiku)\n"
+    "• /resetmodel resets model to default\n"
+    "• /models shows current slot assignments\n"
+    "• /setlimit &lt;profile&gt; changes profile (light, normal, power, unlimited)\n"
+    "• /usage shows usage and profile\n\n"
+    "<b>Setup &amp; Language</b>\n"
+    "• /start welcome (setup wizard for new users)\n"
+    "• /onboarding start setup wizard manually\n"
+    "• /lang &lt;code&gt; change language (de, en, fr, ...)\n\n"
+    "<b>Help</b>\n"
+    "• /help this overview"
+)
+
+# Legacy alias for backwards compatibility
+HELP_TEXT: str = HELP_TEXT_DE
 
 START_TEXT: str = (
     "Jarvis-LITE Bridge ist bereit.\n\n"
@@ -336,6 +371,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         len(text),
         " (reply-to)" if reply_to_text else "",
     )
+
+    # Onboarding hint: if user skipped wizard, show hint after 3rd message
+    onboarding_storage = context.application.bot_data.get("onboarding_storage")
+    if onboarding_storage is not None and not onboarding_storage.is_onboarded(user_id):
+        if not onboarding_storage.is_hint_shown(user_id):
+            skip_count = onboarding_storage.increment_skip_count(user_id)
+            if skip_count == 3:
+                from domain.onboarding import get_onboarding_hint_text
+
+                hint = get_onboarding_hint_text("de")
+                await update.message.reply_text(hint)
+                onboarding_storage.set_hint_shown(user_id)
 
     # C-2: Rate-Limit prüfen (vor LLM-Call, vor Lock)
     rate_limiter = _get_rate_limiter(context)
@@ -877,10 +924,18 @@ async def handle_lang_command(
         "pt": "Português",
         "nl": "Nederlands",
         "pl": "Polski",
+        "sv": "Svenska",
+        "tr": "Türkçe",
         "ru": "Русский",
+        "uk": "Українська",
+        "zh": "中文",
         "ja": "日本語",
         "ko": "한국어",
-        "zh": "中文",
+        "ar": "العربية",
+        "hi": "हिन्दी",
+        "id": "Bahasa Indonesia",
+        "th": "ภาษาไทย",
+        "vi": "Tiếng Việt",
     }
     name = lang_names.get(lang_code, lang_code)
     lang_msg = f"Sprache gewechselt: {name} ({lang_code})"
@@ -1070,30 +1125,65 @@ async def handle_bookmarks_command(
 async def handle_help_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /help. Zeigt verfügbare Commands an."""
+    """Verarbeitet /help. Zeigt verfügbare Commands an (DE/EN je nach Sprache)."""
     chat_service = _get_chat_service(context)
 
     user = update.effective_user
     user_id: int = user.id if user else 0
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
-    await update.message.reply_text(HELP_TEXT)
-    await chat_service.save_static_response_to_history(user_id, chat_id, HELP_TEXT)
+    # Choose language-specific help text
+    lang = "de"
+    if chat_service and hasattr(chat_service, "get_chat_language"):
+        stored_lang = await chat_service.get_chat_language(user_id, chat_id)
+        if stored_lang == "en":
+            lang = "en"
+
+    help_text = HELP_TEXT_EN if lang == "en" else HELP_TEXT_DE
+    try:
+        await update.message.reply_text(help_text, parse_mode="HTML")
+    except Exception:
+        # Fallback: plain text without HTML
+        from domain.markdown import strip_markdown
+
+        await update.message.reply_text(strip_markdown(help_text))
+    await chat_service.save_static_response_to_history(user_id, chat_id, help_text)
 
 
 @require_whitelist
 async def handle_start_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /start. Zeigt Willkommensnachricht an."""
+    """Verarbeitet /start. Zeigt Setup-Wizard für neue User, Welcome für onboarded User."""
     chat_service = _get_chat_service(context)
 
     user = update.effective_user
     user_id: int = user.id if user else 0
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
+    # Check onboarding state
+    onboarding_storage = context.application.bot_data.get("onboarding_storage")
+    if onboarding_storage is not None and not onboarding_storage.is_onboarded(user_id):
+        # New user: start wizard
+        from presentation.onboarding_callbacks import start_wizard
+
+        await start_wizard(update, context, is_restart=False)
+        return
+
+    # Already onboarded: show normal welcome
     await update.message.reply_text(START_TEXT)
     await chat_service.save_static_response_to_history(user_id, chat_id, START_TEXT)
+
+
+@require_whitelist
+@require_private_chat
+async def handle_onboarding_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Verarbeitet /onboarding. Startet den Setup-Wizard manuell (auch für onboarded User)."""
+    from presentation.onboarding_callbacks import start_wizard
+
+    await start_wizard(update, context, is_restart=True)
 
 
 @require_whitelist

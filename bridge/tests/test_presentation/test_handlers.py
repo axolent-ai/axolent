@@ -318,14 +318,22 @@ class TestStartCommandHistory:
 
     async def test_help_text_is_structured(self) -> None:
         """/help Text hat die gewünschte Struktur mit Kategorien."""
-        from presentation.handlers import HELP_TEXT
+        from presentation.handlers import HELP_TEXT_DE, HELP_TEXT_EN
 
-        assert "Multi-AI" in HELP_TEXT
-        assert "Bookmarks" in HELP_TEXT
-        assert "Memory" in HELP_TEXT
-        assert "Limits" in HELP_TEXT or "Profile" in HELP_TEXT
-        assert "Konversation" in HELP_TEXT
-        assert "Ohne Slash" in HELP_TEXT
+        # DE version
+        assert "Chat" in HELP_TEXT_DE
+        assert "Memory" in HELP_TEXT_DE
+        assert "Bookmarks" in HELP_TEXT_DE
+        assert "Multi-AI" in HELP_TEXT_DE
+        assert "Konfiguration" in HELP_TEXT_DE
+        assert "/onboarding" in HELP_TEXT_DE
+        assert "/help" in HELP_TEXT_DE
+
+        # EN version
+        assert "Chat" in HELP_TEXT_EN
+        assert "Memory" in HELP_TEXT_EN
+        assert "Bookmarks" in HELP_TEXT_EN
+        assert "/onboarding" in HELP_TEXT_EN
 
 
 class TestReplyToContext:

@@ -400,8 +400,8 @@ class TestSettingsLanguageCallbacks:
         assert "Sprache" in text or "language" in text.lower()
 
         keyboard = update.callback_query.edit_message_text.call_args[1]["reply_markup"]
-        # DE + EN + Zurück = 3 Rows
-        assert len(keyboard.inline_keyboard) == 3
+        # 20 languages in grid (4 per row = 5 rows) + Zurück = 6 Rows
+        assert len(keyboard.inline_keyboard) == 6
 
     async def test_lang_set_changes_language(self, model_service: ModelService) -> None:
         """settings_lang:en setzt Sprache auf Englisch."""

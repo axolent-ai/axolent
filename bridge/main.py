@@ -59,10 +59,12 @@ from infrastructure.providers import (
     OllamaProvider,
     OpenAICodexProvider,
 )
+from infrastructure.onboarding_storage import OnboardingStorage
 from presentation.callbacks import (
     handle_bookmark_delete_callback,
     handle_bookmark_show_callback,
 )
+from presentation.onboarding_callbacks import handle_wizard_callback
 from presentation.settings_callbacks import handle_settings_callback
 from presentation.decorators import ALLOW_ALL_USERS, WHITELIST
 from presentation.handlers import (
@@ -75,6 +77,7 @@ from presentation.handlers import (
     handle_message,
     handle_models_command,
     handle_new_command,
+    handle_onboarding_command,
     handle_remember_command,
     handle_reset_command,
     handle_resetmodel_command,
@@ -342,6 +345,18 @@ def main() -> None:
     task_router = TaskRouter(slot_configs=slot_configs, model_service=model_svc)
     log.info("R18 Phase 2a: TaskRouter initialisiert (%d Slots)", len(slot_configs))
 
+    # Onboarding-Storage initialisieren (Setup-Wizard)
+    onboarding_storage: OnboardingStorage | None = None
+    if use_sqlite:
+        onboarding_storage = OnboardingStorage(sqlite_conn)
+        # Migrate: bestehende User als onboarded markieren
+        migrated_onboarding = onboarding_storage.migrate_existing_users(sqlite_conn)
+        if migrated_onboarding > 0:
+            log.info(
+                "Onboarding: %d bestehende User als onboarded migriert",
+                migrated_onboarding,
+            )
+
     # ChatService mit Konstruktor-Injection erstellen
     chat_service = ChatService(
         provider_router=router,
@@ -381,6 +396,8 @@ def main() -> None:
     app.bot_data["task_router"] = task_router
     if use_sqlite:
         app.bot_data["sqlite_conn"] = sqlite_conn
+    if onboarding_storage is not None:
+        app.bot_data["onboarding_storage"] = onboarding_storage
 
     # Lifecycle-Hooks: ProcessPool starten/stoppen
     async def post_init(application: Application) -> None:
@@ -419,6 +436,7 @@ def main() -> None:
     app.add_handler(CommandHandler("models", handle_models_command))
     app.add_handler(CommandHandler("settings", handle_settings_command))
     app.add_handler(CommandHandler("debate", handle_debate_command))
+    app.add_handler(CommandHandler("onboarding", handle_onboarding_command))
 
     # Message handler (non-command text)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
@@ -433,6 +451,7 @@ def main() -> None:
     app.add_handler(
         CallbackQueryHandler(handle_settings_callback, pattern=r"^settings_")
     )
+    app.add_handler(CallbackQueryHandler(handle_wizard_callback, pattern=r"^wizard_"))
 
     log.info("Jarvis-LITE Bridge startet, Modus B (R04: Persistent Pipe + Streaming)")
     log.info("Default-Provider: '%s'", router.default)
