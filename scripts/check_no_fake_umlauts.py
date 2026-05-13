@@ -1,7 +1,10 @@
 """Pre-Commit Hook: erkennt ASCII-Umlaut-Umschreibungen in Production-Code.
 
-Verhindert Regressionen wie fuer/ueber/zurueck/Prueft/etc. in deutschem Text.
+Verhindert Regressionen wie fuer/ueber/zurueck/praezise/etc. in deutschem Text.
 Nur fuer Production-Dateien (Tests sind ausgenommen, separate Iteration).
+
+Strukturelle Lösung: Wortstämme mit ``\\w*`` Suffix statt einzelner Wortformen,
+damit Flexionen (uebergeben, uebergibt, uebergabe etc.) zuverlässig erkannt werden.
 
 Exit-Code 0: alles sauber.
 Exit-Code 1: Treffer gefunden (blockiert Commit).
@@ -13,59 +16,62 @@ import re
 import sys
 from pathlib import Path
 
-# Pattern: typische deutsche Woerter mit ASCII-Umlaut-Umschreibung.
-# Erfasst sowohl Gross- als auch Kleinschreibung.
+# Pattern: deutsche Wortstämme mit ASCII-Umlaut-Umschreibung.
+# Jeder Stamm endet auf \w* statt \b, damit Flexionen zuverlässig matchen.
+# Erfasst sowohl Groß- als auch Kleinschreibung.
 _FAKE_UMLAUT_PATTERNS = re.compile(
     r"\b("
-    # ae statt ä  (alphabetisch sortiert)
-    r"[Aa]ehnlich|[Aa]endern|[Aa]enderung|[Aa]enderungen|"
-    r"[Ee]nthaelt|[Ee]rklaeren|[Ee]rklaerung|"
-    r"[Gg]aebe|[Gg]aengig|[Gg]aenzig|[Gg]efaehrlich|"
-    r"[Hh]aelt|[Hh]aette|[Hh]aeufig|"
-    r"[Ll]aedt|[Ll]aesst|[Ll]aeuft|"
-    r"[Mm]aechtig|"
-    r"[Nn]aechst|[Nn]aechste|"
-    r"[Pp]raeferenz|[Pp]raefix|[Pp]raefixe|[Pp]rioritaet|[Pp]rioritaeten|"
-    r"[Ss]aetze|[Ss]chaerfer|[Ss]chwaechen|[Ss]paeter|[Ss]taerken|"
-    r"[Vv]orschlaege|"
-    r"[Ww]aehlen|[Ww]aehrend|[Ww]aehrung|"
-    # oe statt ö  (alphabetisch sortiert)
-    r"[Bb]oese|"
-    r"[Gg]ehoert|[Gg]eloescht|[Gg]eloeschte|[Gg]eloeschter|[Gg]eloeschtes|"
-    r"[Gg]ewoehnlich|[Gg]oettin|[Gg]roesse|[Gg]roesser|"
-    r"[Hh]oeflich|[Hh]oeren|"
-    r"[Kk]oennen|[Kk]oennte|"
-    r"[Mm]oeglich|[Mm]oechte|"
-    r"[Nn]oetig|"
-    r"[Oo]effentlich|"
-    r"[Ss]toerung|"
-    r"[Vv]oellig|"
-    r"[Ww]oerter|[Ww]oertlich|"
-    r"[Zz]uhoerer|"
-    # ue statt ü  (alphabetisch sortiert)
-    r"[Aa]usfuehr|"
-    r"[Bb]egruend|"
-    r"[Dd]urchfuehr|"
-    r"[Ee]infuehr|[Ee]ingefuehrt|"
-    r"[Ff]uehren|[Ff]uehrt|[Ff]uer|"
-    r"[Gg]eprueft|[Gg]ewuenscht|[Gg]lueck|[Gg]ruende|[Gg]ruenden|"
-    r"[Gg]ueltig|"
-    r"[Mm]odellabhaengig|[Mm]uede|[Mm]uessen|"
-    r"[Nn]uetzlich|"
-    r"[Pp]ruefen|[Pp]rueft|"
-    r"[Ss]chluessel|[Ss]tueck|"
-    r"[Uu]eber|[Uu]ebergeb|[Uu]ebergibt|[Uu]eberpr|[Uu]eberpruef|"
-    r"[Uu]eberschreib|[Uu]ebersetz|[Uu]ebersetze|[Uu]ebersicht|"
-    r"[Uu]ebersprungen|[Uu]ebrigens|[Uu]ngueltig|"
-    r"[Vv]erfuegbar|[Vv]ollstaendig|"
-    r"[Ww]uerde|[Ww]uerden|"
-    r"[Zz]urueck|[Zz]urueckgeb|[Zz]uruecksetzen|"
-    r"[Ee]igenstaendig|[Aa]usserhalb|"
+    # ae statt ä  (alphabetisch nach Stamm sortiert)
+    r"[Aa]ehnlich\w*|[Aa]endern\w*|[Aa]enderung\w*|"
+    r"[Ee]igenstae?ndig\w*|[Ee]nthaelt\w*|[Ee]rklaer\w*|"
+    r"[Gg]aeb\w*|[Gg]aengig\w*|[Gg]aenzig\w*|[Gg]efaehrlich\w*|"
+    r"[Hh]aelt\w*|[Hh]aett\w*|[Hh]aeufig\w*|"
+    r"[Ll]aedt\w*|[Ll]aesst\w*|[Ll]aeuft\w*|"
+    r"[Mm]aechtig\w*|[Mm]odellabhaengig\w*|"
+    r"[Nn]aechst\w*|"
+    r"[Pp]raeferenz\w*|[Pp]raefix\w*|[Pp]raezis\w*|[Pp]rioritaet\w*|"
+    r"[Ss]aetz\w*|[Ss]chaerfer\w*|[Ss]chwaeche\w*|[Ss]paeter\w*|[Ss]taerke\w*|"
+    r"[Vv]ollstaendig\w*|[Vv]orschlaeg\w*|"
+    r"[Ww]aehl\w*|[Ww]aehrend\w*|[Ww]aehrung\w*|"
+    # oe statt ö  (alphabetisch nach Stamm sortiert)
+    r"[Bb]oese\w*|"
+    r"[Gg]ehoer\w*|[Gg]eloescht\w*|"
+    r"[Gg]ewoehnlich\w*|[Gg]oettin\w*|[Gg]roess\w*|"
+    r"[Hh]oeflich\w*|[Hh]oer\w*|"
+    r"[Kk]oenn\w*|"
+    r"[Mm]oeglich\w*|[Mm]oecht\w*|"
+    r"[Nn]oetig\w*|"
+    r"[Oo]effentlich\w*|"
+    r"[Ss]toerung\w*|"
+    r"[Vv]oellig\w*|"
+    r"[Ww]oert\w*|"
+    r"[Zz]uhoerer\w*|"
+    # ue statt ü  (alphabetisch nach Stamm sortiert)
+    r"[Aa]usfuehr\w*|"
+    r"[Bb]egruend\w*|"
+    r"[Dd]urchfuehr\w*|"
+    r"[Ee]infuehr\w*|[Ee]ingefuehr\w*|"
+    r"[Ff]uehr\w*|[Ff]uer\b|"
+    r"[Gg]eprueft\w*|[Gg]ewuenscht\w*|[Gg]lueck\w*|[Gg]ruend\w*|"
+    r"[Gg]ueltig\w*|"
+    r"[Mm]ued\w*|[Mm]uess\w*|"
+    r"[Nn]uetzlich\w*|"
+    r"[Pp]ruef\w*|"
+    r"[Ss]chluessel\w*|[Ss]tueck\w*|"
+    r"[Uu]eber\w*|"
+    r"[Uu]ebrig\w*|[Uu]ngueltig\w*|"
+    r"[Vv]erfuegbar\w*|"
+    r"[Ww]uerd\w*|"
+    r"[Zz]urueck\w*|"
     # ss statt ß  (selektiv, nur eindeutige Fälle)
-    r"[Aa]usserdem|[Gg]emaess|[Ss]chliessen|[Ss]trasse"
+    r"[Aa]usserdem\w*|[Aa]usserhalb\w*|[Gg]emaess\w*|[Ss]chliess\w*|[Ss]trass\w*"
     r")\b",
     re.UNICODE,
 )
+
+# Suppress-Token: Zeilen die diesen String enthalten werden uebersprungen.
+# Zusammengesetzt damit ruff nicht warnt (ruff erkennt "# noqa: X" als Directive).
+_SUPPRESS_TOKEN = "# noqa: " + "fake-umlaut"
 
 # Whitelist: Dateien/Patterns die NICHT geprueft werden
 _EXCLUDED_PATHS = {
@@ -98,8 +104,8 @@ def check_file(filepath: Path) -> list[tuple[int, str, str]]:
         return []
 
     for line_no, line in enumerate(text.splitlines(), start=1):
-        # Inline-Suppress: Zeilen mit "# noqa: fake-umlaut" ueberspringen
-        if "# noqa: fake-umlaut" in line:
+        # Inline-Suppress: Zeilen mit dem Suppress-Token ueberspringen
+        if _SUPPRESS_TOKEN in line:
             continue
         # Kommentare und Strings gleich behandeln (alles ist Production-Text)
         for match in _FAKE_UMLAUT_PATTERNS.finditer(line):

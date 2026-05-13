@@ -989,6 +989,79 @@ class TestStreamingAuditEntries:
         ]
         assert error_entries[0]["error_id"] != ""
 
+    @patch("presentation.handlers.write_raw_audit")
+    async def test_stream_error_includes_task_meta(self, mock_audit: MagicMock) -> None:
+        """stream_error audit event includes task_meta (task_slot, resolved_model etc.)."""
+        from presentation.handlers import _handle_message_streaming
+
+        mock_provider = MagicMock()
+        mock_svc = _make_mock_chat_service()
+
+        sample_task_meta = {
+            "task_slot": "code",
+            "task_score": 103,
+            "resolved_model": "claude-opus-4-7",
+        }
+
+        async def mock_stream_crash(**kwargs):
+            async def _crash_gen():
+                if True:
+                    raise RuntimeError("crash with meta")
+                yield  # pragma: no cover
+
+            return _crash_gen(), 0, sample_task_meta
+
+        mock_svc.process_user_message_streaming = mock_stream_crash
+
+        mock_pool = MagicMock()
+        mock_managed = MagicMock()
+        mock_managed.pid = 999
+
+        async def mock_get_or_create(user_id, chat_id):
+            return mock_managed, False
+
+        mock_pool.get_or_create = mock_get_or_create
+
+        update = _make_update(user_id=42, chat_id=99, text="Crash meta test")
+        context = _make_context(
+            chat_service=mock_svc,
+            persistent_provider=mock_provider,
+            process_pool=mock_pool,
+        )
+
+        mock_msg = AsyncMock()
+        mock_msg.edit_text = AsyncMock()
+        mock_msg.chat = MagicMock()
+
+        with patch(
+            "presentation.handlers.create_streaming_message",
+            return_value=mock_msg,
+        ):
+            await _handle_message_streaming(
+                update=update,
+                context=context,
+                chat_service=mock_svc,
+                persistent_provider=mock_provider,
+                user_id=42,
+                chat_id=99,
+                username="testuser",
+                text="Crash meta test",
+                reply_to_text=None,
+            )
+
+        # Find stream_error entries
+        error_entries = [
+            c[0][0]
+            for c in mock_audit.call_args_list
+            if c[0][0]["event_type"] == "stream_error"
+        ]
+        assert len(error_entries) >= 1
+        err = error_entries[0]
+        # task_meta fields must be present
+        assert err["task_slot"] == "code"
+        assert err["task_score"] == 103
+        assert err["resolved_model"] == "claude-opus-4-7"
+
 
 class TestOuterExceptionCoverage:
     """Tests: Outer Exception in _handle_message_streaming (P1-8)."""

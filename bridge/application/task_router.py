@@ -12,6 +12,7 @@ Pro Slot wird das passende Modell resolved:
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
@@ -50,6 +51,64 @@ _PATTERN_SCORE = 3
 
 # Keyword-Match Score (pro Keyword)
 _KEYWORD_SCORE = 1
+
+
+# ──────────────────────────────────────────────────────────────
+# German ASCII-to-Umlaut Normalisierung
+# ──────────────────────────────────────────────────────────────
+
+# Reihenfolge: Großbuchstaben vor Kleinbuchstaben, damit z.B. "Ae" nicht
+# versehentlich als "a" + "e" gematcht wird.
+_UMLAUT_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    ("Ae", "Ä"),
+    ("Oe", "Ö"),
+    ("Ue", "Ü"),
+    ("ae", "ä"),
+    ("oe", "ö"),
+    ("ue", "ü"),
+)
+
+# ss -> ß: Whitelist-Ansatz statt Regex, weil ein generisches Vokal-ss-Vokal
+# Pattern zu viele False Positives erzeugt (z.B. "processing" -> "proceßing",
+# "Klassifizier" -> "Klaßifizier"). Nur eindeutig deutsche Wortstämme.
+_SS_TO_ESZETT_WORDS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\b([Ss])trass", re.UNICODE), r"\1traß"),
+    (re.compile(r"\b([Ss])chliess", re.UNICODE), r"\1chließ"),
+    (re.compile(r"\b([Aa])usserdem", re.UNICODE), r"\1ußerdem"),
+    (re.compile(r"\b([Aa])usserhalb", re.UNICODE), r"\1ußerhalb"),
+    (re.compile(r"\b([Gg])emaess", re.UNICODE), r"\1emäß"),
+    (re.compile(r"\b([Gg])ross", re.UNICODE), r"\1roß"),
+    (re.compile(r"\b([Ww])eiss", re.UNICODE), r"\1eiß"),
+    (re.compile(r"\b([Hh])eiss", re.UNICODE), r"\1eiß"),
+)
+
+
+def _normalize_german_input(text: str) -> str:
+    """Normalisiert ASCII-Umlaut-Umschreibungen zu echten deutschen Umlauten.
+
+    Zweck: User-Eingaben mit ASCII-Umlaut-Umschreibungen sollen dieselben
+    Keyword-Matches auslösen wie Eingaben mit echten Umlauten (ä, ö, ü, ß).
+
+    Risiko der Übergeneralisierung ist gering, weil:
+    1. TaskRouter matcht nur gegen deutsche Keywords/Patterns
+    2. Englische Begriffe mit ae/oe/ue (queue, phoenix, aesthetic) matchen
+       ohnehin nicht gegen deutsche Slot-Keywords
+    3. Die Normalisierung ändert nur den internen Klassifikations-Input,
+       nicht die angezeigte User-Nachricht
+
+    ss -> ß: Bewusst per Whitelist statt generischem Regex, weil ein
+    Vokal-ss-Vokal-Pattern zu viele englische Wörter trifft (processing,
+    message, klassifizier etc.). Nur eindeutige deutsche Wortstämme.
+
+    Performance: Reine String-Operationen + wenige Regex-Subs. Bei 1000 Zeichen < 0.1ms.
+    """
+    for ascii_form, umlaut in _UMLAUT_REPLACEMENTS:
+        text = text.replace(ascii_form, umlaut)
+
+    for pattern, replacement in _SS_TO_ESZETT_WORDS:
+        text = pattern.sub(replacement, text)
+
+    return text
 
 
 @dataclass(frozen=True)
@@ -128,6 +187,9 @@ class TaskRouter:
         """
         if not text or not text.strip():
             return ClassificationResult(slot=self._fallback_slot, score=0)
+
+        # Stufe 0: ASCII-Umlaut-Normalisierung für deutsches Keyword-Matching
+        text = _normalize_german_input(text)
 
         # Stufe 1: Explizite Marker
         stripped = text.strip()

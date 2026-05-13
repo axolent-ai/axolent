@@ -199,7 +199,7 @@ async def _finalize_multi_message(
         3. Teil 1 als Edit der bestehenden Streaming-Message
         4. Teile 2+ als neue Nachrichten im Chat
 
-    Multi-Message-Teile gehoeren zur Final-Phase und bekommen
+    Multi-Message-Teile gehören zur Final-Phase und bekommen
     dasselbe RetryAfter-Handling wie Final-Edits.
 
     Args:

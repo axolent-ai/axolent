@@ -719,6 +719,7 @@ async def _handle_message_streaming(
                 "streaming_chunks": streaming_chunks,
                 "was_cold": was_cold,
                 "subprocess_pid": subprocess_pid,
+                **task_meta,
             }
             write_raw_audit(audit_error)
             log.warning(
@@ -742,6 +743,7 @@ async def _handle_message_streaming(
             "error_id": error_id,
             "duration_seconds": round(duration, 2),
             "error": "outer_exception",
+            **task_meta,
         }
         write_raw_audit(audit_crash)
 

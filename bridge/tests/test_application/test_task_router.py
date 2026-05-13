@@ -1,6 +1,7 @@
 """Tests fuer TaskRouter: Heuristik-Klassifikation, Modell-Resolution, YAML-Loading.
 
 25+ Tests die alle Slot-Klassifikationen, Edge-Cases, Prioritaeten und Fallback abdecken.
+Inklusive Normalisierungs-Tests fuer ASCII-Umlaut-Eingaben.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import pytest
 from application.task_router import (
     SlotConfig,
     TaskRouter,
+    _normalize_german_input,
     load_slot_configs,
 )
 from domain.task_slot import TaskSlot
@@ -565,3 +567,96 @@ class TestModelResolutionWithService:
         """Ohne Override wird kanonischer Slot-Default verwendet."""
         model = router_with_service.resolve_model(user_id=999, slot=TaskSlot.CODE)
         assert model == "claude-opus-4-7"
+
+
+# ──────────────────────────────────────────────────────────────
+# ASCII-Umlaut-Normalisierung Tests
+# ──────────────────────────────────────────────────────────────
+
+
+class TestNormalizeGermanInput:
+    """Tests fuer _normalize_german_input Pure-Function."""
+
+    def test_ue_to_umlaut(self) -> None:
+        """Uebersetze -> Übersetze."""
+        assert _normalize_german_input("Uebersetze") == "Übersetze"
+
+    def test_ae_to_umlaut(self) -> None:
+        """Aendern -> Ändern."""
+        assert _normalize_german_input("Aendern") == "Ändern"
+
+    def test_oe_to_umlaut(self) -> None:
+        """Oeffnen -> Öffnen."""
+        assert _normalize_german_input("Oeffnen") == "Öffnen"
+
+    def test_lowercase_ue(self) -> None:
+        """fuer -> für."""
+        assert _normalize_german_input("fuer") == "für"
+
+    def test_lowercase_ae(self) -> None:
+        """aendern -> ändern."""
+        assert _normalize_german_input("aendern") == "ändern"
+
+    def test_lowercase_oe(self) -> None:
+        """oeffnen -> öffnen."""
+        assert _normalize_german_input("oeffnen") == "öffnen"
+
+    def test_ss_to_eszett_strasse(self) -> None:
+        """Strasse -> Straße (Vokal + ss + Vokal/Ende)."""
+        assert _normalize_german_input("Strasse") == "Straße"
+
+    def test_ss_safe_for_english(self) -> None:
+        """English words like 'processing' or 'message' stay unchanged."""
+        assert _normalize_german_input("processing") == "processing"
+        assert _normalize_german_input("message") == "message"
+
+    def test_preserves_correct_umlauts(self) -> None:
+        """Already correct umlauts pass through unchanged."""
+        text = "Übersetze für Änderung"
+        assert _normalize_german_input(text) == text
+
+    def test_mixed_text(self) -> None:
+        """Mixed ASCII and real umlauts."""
+        result = _normalize_german_input("Uebersetze für Aenderung")
+        assert result == "Übersetze für Änderung"
+
+
+class TestTaskRouterNormalization:
+    """Integration tests: ASCII-Umlaut-Eingaben werden korrekt klassifiziert."""
+
+    def test_uebersetze_becomes_quick(self, router: TaskRouter) -> None:
+        """'Uebersetze: Guten Morgen' wird QUICK (nicht CHAT)."""
+        result = router.classify("Uebersetze: Guten Morgen")
+        assert result.slot == TaskSlot.QUICK
+
+    def test_lowercase_uebersetze_becomes_quick(self, router: TaskRouter) -> None:
+        """'uebersetze: Hello World' wird QUICK."""
+        result = router.classify("uebersetze: Hello World")
+        assert result.slot == TaskSlot.QUICK
+
+    def test_real_umlauts_still_work(self, router: TaskRouter) -> None:
+        """'Übersetze: Guten Morgen' bleibt QUICK (keine Regression)."""
+        result = router.classify("Übersetze: Guten Morgen")
+        assert result.slot == TaskSlot.QUICK
+
+    def test_schritt_fuer_schritt_reason(self, router: TaskRouter) -> None:
+        """ASCII 'schritt fuer schritt' + 'analysier' in long text maps to REASON."""
+        filler = "kontext und zusaetzliche details fuer die analyse " * 8
+        text = f"Analysier das und erklaere schritt fuer schritt wie X funktioniert. {filler}"
+        result = router.classify(text)
+        # After normalization "schritt für schritt" matches REASON keyword,
+        # "analysier" is a second REASON keyword, min_keyword_matches=2 satisfied,
+        # word count > 50
+        assert result.slot == TaskSlot.REASON
+
+    def test_english_queue_no_false_match(self, router: TaskRouter) -> None:
+        """English 'queue' gets normalized to 'qüe' but doesn't match German slots."""
+        result = router.classify("My queue handler needs work")
+        # "qüe" won't match any German keyword, so CHAT fallback
+        assert result.slot == TaskSlot.CHAT
+
+    def test_explicit_marker_still_wins(self, router: TaskRouter) -> None:
+        """Explicit /code marker is unaffected by normalization."""
+        result = router.classify("/code Fix den uebergeben-Bug")
+        assert result.slot == TaskSlot.CODE
+        assert result.score == 1000

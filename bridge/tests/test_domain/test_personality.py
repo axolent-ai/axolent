@@ -154,7 +154,7 @@ class TestBuildSelfAwarenessBlock:
         assert "CREATIVE: Opus 4.7 (global)" in block
         assert "QUICK: Opus 4.7 (global)" in block
         assert "RESEARCH: Opus 4.7 (global)" in block
-        assert "Antworte praezise mit diesen Werten" in block
+        assert "Antworte präzise mit diesen Werten" in block
         # Anti-Halluzination fuer fehlende Slots darf NICHT drin sein
         assert "Ich habe nur Information zu meinem aktiven Slot" not in block
 

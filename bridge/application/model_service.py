@@ -64,7 +64,7 @@ class ModelService:
     ) -> None:
         self._storage = storage
         # Slot-Defaults: slot_name -> resolved model_id (z.B. "code" -> "claude-opus-4-7")
-        # Wird von main.py aus SlotConfigs extrahiert und uebergeben.
+        # Wird von main.py aus SlotConfigs extrahiert und übergeben.
         self._slot_defaults: dict[str, str] = slot_defaults or {}
 
     def get_user_model(self, user_id: int, slot: str = "global") -> Optional[str]:

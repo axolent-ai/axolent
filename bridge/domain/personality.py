@@ -92,7 +92,9 @@ def build_self_awareness_block(
     if use_de:
         label_model = "Modell"
         label_slot_heading = "[Slot-Belegung im System]"
-        text_precise = "Antworte praezise mit diesen Werten wenn nach Slot-Belegungen gefragt wird."
+        text_precise = (
+            "Antworte präzise mit diesen Werten wenn nach Slot-Belegungen gefragt wird."
+        )
         text_self_id = (
             "Wenn der User fragt welches Modell du nutzt, antworte mit diesen Werten. "
             "Spekuliere nicht aus Trainingsdaten."
