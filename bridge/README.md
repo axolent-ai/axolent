@@ -1,51 +1,51 @@
-# Bridge-Service
+# Bridge Service
 
-Backend von AXOLENT AI (Axolent). Telegram-Bot der Claude Code CLI als lokalen Subprozess spawnt (Modus B). Hexagonale Architektur, 1190+ Tests, UTF-8 durchgängig.
+Backend of AXOLENT AI (Axolent). Telegram bot that spawns Claude Code CLI as a local subprocess (Mode B). Hexagonal Architecture, 1190+ tests, UTF-8 throughout.
 
-## Architektur (Hexagonal)
+## Architecture (Hexagonal)
 
 ```
 [Telegram User]
       |
       v
-[presentation/handlers.py]   Telegram-spezifisch: Commands, Messages, Callbacks
+[presentation/handlers.py]   Telegram-specific: Commands, Messages, Callbacks
       |
       v
-[application/services]        Use-Cases: chat_service, bookmark_service
+[application/services]        Use-cases: chat_service, bookmark_service
       |                \
       v                 v
 [domain/]            [infrastructure/]
-  Pure Logic           I/O-Adapter
-  bookmark.py          claude_cli.py      (Claude Code CLI Subprozess)
-  language.py          bookmark_storage.py (JSONL Legacy-Backend)
+  Pure Logic           I/O Adapters
+  bookmark.py          claude_cli.py      (Claude Code CLI subprocess)
+  language.py          bookmark_storage.py (JSONL legacy backend)
   conversation.py      sqlite_storage.py   (SQLite: BookmarkService, MemoryService)
   personality.py       conversation_storage.py
-  markdown.py          audit_log.py       (Audit mit Rotation)
-                       encoding.py        (UTF-8 Helper)
+  markdown.py          audit_log.py       (Audit with rotation)
+                       encoding.py        (UTF-8 helper)
                        personality_loader.py
 ```
 
-**Datenfluss:** Telegram-Nachricht kommt rein -> presentation parsed und validiert -> application orchestriert den Use-Case -> domain enthält die Businesslogik -> infrastructure führt I/O aus (CLI-Aufruf, Dateisystem, Logging).
+**Data flow:** Telegram message arrives -> presentation parses and validates -> application orchestrates the use-case -> domain contains business logic -> infrastructure performs I/O (CLI call, filesystem, logging).
 
-## Verzeichnisse
+## Directories
 
-| Ordner | Inhalt |
-|--------|--------|
-| `domain/` | Pure Businesslogik. Keine I/O-Imports erlaubt. |
-| `application/` | Use-Case-Orchestration (chat_service, bookmark_service) |
-| `infrastructure/` | I/O-Adapter: Claude CLI, Storage, Audit, Encoding |
-| `presentation/` | Telegram-Handler, Decorators (Whitelist), Rendering |
+| Folder | Contents |
+|--------|----------|
+| `domain/` | Pure business logic. No I/O imports allowed. |
+| `application/` | Use-case orchestration (chat_service, bookmark_service) |
+| `infrastructure/` | I/O adapters: Claude CLI, Storage, Audit, Encoding |
+| `presentation/` | Telegram handlers, Decorators (Whitelist), Rendering |
 | `config/` | system_prompt.md, user_constitution.md |
-| `data/` | axolent.db (SQLite), user_profiles.jsonl (Laufzeit-Daten) |
-| `logs/` | audit.jsonl (mit Rotation) |
-| `tests/` | 1190+ pytest-Tests |
+| `data/` | axolent.db (SQLite), user_profiles.jsonl (runtime data) |
+| `logs/` | audit.jsonl (with rotation) |
+| `tests/` | 1190+ pytest tests |
 
 ## Setup
 
-### Voraussetzungen
+### Prerequisites
 
-1. Python 3.11+ (3.12 empfohlen)
-2. Claude Code CLI installiert und eingeloggt (eigene Pro/Max Subscription)
+1. Python 3.11+ (3.12 recommended)
+2. Claude Code CLI installed and logged in (own Pro/Max subscription)
 3. Telegram Bot Token (via @BotFather)
 
 ### Installation
@@ -62,133 +62,133 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-### .env anlegen
+### Create .env
 
-Erstelle eine `.env` Datei im `bridge/` Ordner:
+Create a `.env` file in the `bridge/` folder:
 
 ```env
-# Pflicht
-TELEGRAM_BOT_TOKEN=dein_bot_token_hier
+# Required
+TELEGRAM_BOT_TOKEN=your_bot_token_here
 WHITELIST_USER_IDS=YOUR_TELEGRAM_USER_ID
 
-# Optional (nur für Entwicklung!)
+# Optional (development only!)
 ALLOW_ALL_USERS=false
 ```
 
-## .env Variablen
+## .env Variables
 
-| Variable | Pflicht | Beschreibung |
-|----------|---------|--------------|
-| `TELEGRAM_BOT_TOKEN` | Ja | Bot-Token von @BotFather |
-| `WHITELIST_USER_IDS` | Ja* | Komma-separierte Telegram User IDs |
-| `ALLOW_ALL_USERS` | Nein | `true` = jeder darf den Bot nutzen (nur Dev!) |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `TELEGRAM_BOT_TOKEN` | Yes | Bot token from @BotFather |
+| `WHITELIST_USER_IDS` | Yes* | Comma-separated Telegram User IDs |
+| `ALLOW_ALL_USERS` | No | `true` = anyone can use the bot (dev only!) |
 
-*Pflicht wenn `ALLOW_ALL_USERS` nicht auf `true` steht.
+*Required when `ALLOW_ALL_USERS` is not set to `true`.
 
-## Bot starten
+## Start the Bot
 
 ```bash
 python main.py
 ```
 
-Erwartete Log-Ausgabe:
+Expected log output:
 
 ```
-2026-05-06 10:00:00 [INFO] axolent-bridge: Axolent Bridge startet, Modus B (Claude Code CLI Subprozess)
-2026-05-06 10:00:00 [INFO] axolent-bridge: Whitelist aktiv: ja
-2026-05-06 10:00:00 [INFO] axolent-bridge: Bookmarks-Feature aktiv (Reply-basiert via /save)
-2026-05-06 10:00:00 [INFO] axolent-bridge: Conversation-History aktiv (max 20 Turns, /reset zum Löschen)
+2026-05-06 10:00:00 [INFO] axolent-bridge: Axolent Bridge starting, Mode B (Claude Code CLI subprocess)
+2026-05-06 10:00:00 [INFO] axolent-bridge: Whitelist active: yes
+2026-05-06 10:00:00 [INFO] axolent-bridge: Bookmarks feature active (reply-based via /save)
+2026-05-06 10:00:00 [INFO] axolent-bridge: Conversation history active (max 20 turns, /reset to clear)
 ```
 
-Der Bot pollt jetzt Telegram. Jede Nachricht an den Bot wird an Claude Code CLI weitergeleitet.
+The bot now polls Telegram. Every message to the bot is forwarded to Claude Code CLI.
 
-## Telegram-Commands
+## Telegram Commands
 
-| Command | Beschreibung |
-|---------|--------------|
-| Normaler Text | Startet Claude-Anfrage mit Conversation-History |
-| `/save` (als Reply) | Bookmark speichern oder entfernen (Toggle) |
-| `/bookmarks` | Liste aller gespeicherten Bookmarks |
-| `/bookmarks search <begriff>` | Bookmarks durchsuchen |
-| `/remember <text>` | Notiz speichern (wird in zukünftigen Antworten berücksichtigt) |
-| `/memory` | Gespeicherte Notizen anzeigen |
-| `/memory search <query>` | Notizen durchsuchen |
-| `/forget <id>` | Notiz löschen |
-| `/usage` | Aktueller Verbrauch und Profil anzeigen |
-| `/setlimit <profil>` | Rate-Limit-Profil wechseln (light, normal, power, unlimited) |
-| `/setmodel <modell>` | KI-Modell wechseln (opus, sonnet, haiku oder volle ID) |
-| `/resetmodel` | Modell auf Default zurücksetzen |
-| `/models` | Aktuelles Modell und verfügbare Optionen anzeigen |
-| `/lang <code>` | Sprache fest setzen (de, en, es, fr, etc.) |
-| `/reset` oder `/new` | Konversation und Sprache zurücksetzen |
-| `/help` | Commands-Übersicht |
-| `/start` | Begrüßung |
+| Command | Description |
+|---------|-------------|
+| Normal text | Starts Claude query with conversation history |
+| `/save` (as reply) | Save or remove bookmark (toggle) |
+| `/bookmarks` | List all saved bookmarks |
+| `/bookmarks search <term>` | Search bookmarks |
+| `/remember <text>` | Save a note (considered in future responses) |
+| `/memory` | Show saved notes |
+| `/memory search <query>` | Search notes |
+| `/forget <id>` | Delete a note |
+| `/usage` | Show current usage and profile |
+| `/setlimit <profile>` | Switch rate-limit profile (light, normal, power, unlimited) |
+| `/setmodel <model>` | Switch AI model (opus, sonnet, haiku or full ID) |
+| `/resetmodel` | Reset model to default |
+| `/models` | Show current model and available options |
+| `/lang <code>` | Set language (de, en, es, fr, etc.) |
+| `/reset` or `/new` | Reset conversation and language |
+| `/help` | Command overview |
+| `/start` | Welcome message |
 
-## Tests ausführen
+## Running Tests
 
 ```bash
-# Alle Tests
+# All tests
 python -m pytest
 
-# Mit Verbose-Output (default via pyproject.toml)
+# With verbose output (default via pyproject.toml)
 python -m pytest -v
 
-# Einzelnes Modul
+# Single module
 python -m pytest tests/test_bookmark.py
 
-# Snapshots aktualisieren (nach UI-Änderungen)
+# Update snapshots (after UI changes)
 python -m pytest --snapshot-update
 ```
 
-Aktuell: **1190+ Tests**, alle grün, Laufzeit ca. 3 Sekunden.
+Currently: **1190+ tests**, all passing, runtime ~3 seconds.
 
-## Coverage-Report generieren
+## Generate Coverage Report
 
 ```bash
-# Via Script (generiert Terminal + HTML Report)
+# Via script (generates terminal + HTML report)
 python scripts/pytest_coverage.py
 
-# Oder via pre-commit (manuell, nicht bei jedem Commit)
+# Or via pre-commit (manual, not on every commit)
 pre-commit run pytest-coverage-report --hook-stage manual
 
-# Oder direkt
+# Or directly
 python -m pytest --cov=bridge --cov-config=.coveragerc --cov-report=term-missing --cov-report=html:htmlcov
 ```
 
-HTML-Report liegt danach in `bridge/htmlcov/index.html`.
-Konfiguration: `bridge/.coveragerc` (excludiert .venv und tests).
+HTML report is then at `bridge/htmlcov/index.html`.
+Configuration: `bridge/.coveragerc` (excludes .venv and tests).
 
-## Architektur-Regeln (nicht verhandelbar)
+## Architecture Rules (non-negotiable)
 
-| Layer | Darf importieren von |
-|-------|---------------------|
-| `domain/` | Nichts (pure, keine externen Deps) |
+| Layer | May import from |
+|-------|-----------------|
+| `domain/` | Nothing (pure, no external deps) |
 | `infrastructure/` | `domain/` |
 | `application/` | `domain/`, `infrastructure/` |
 | `presentation/` | `domain/`, `application/` |
-| `main.py` | Alles (Composition Root) |
+| `main.py` | Everything (Composition Root) |
 
-**Goldene Regel:** domain/ importiert NIEMALS aus infrastructure/ oder presentation/. Wenn du diese Regel brichst, brechen die Tests.
+**Golden Rule:** domain/ NEVER imports from infrastructure/ or presentation/. If you break this rule, the tests break.
 
-## Stil-Regeln
+## Style Rules
 
-1. Kommentare und Dokumentation: Deutsch
-2. Code-Identifier (Variablen, Funktionen, Klassen): Englisch
-3. Umlaute immer korrekt: ä, ö, ü, ß (nie ae, oe, ue, ss)
-4. Keine Gedankenstriche in Outputs
-5. Bullets als Punkt (•) oder nummeriert, nie als Bindestrich
-6. Type-Hints durchgängig (alle Funktionen, alle Parameter)
-7. Docstrings: was rein, was raus, WARUM (nicht WAS der Code tut)
-8. Encoding: immer explizit UTF-8 + errors="replace" + ensure_ascii=False
+1. Comments and documentation in public-facing files: English
+2. Code identifiers (variables, functions, classes): English
+3. Umlauts always correct in German text: ä, ö, ü, ß (never ae, oe, ue, ss)
+4. No em-dashes in outputs
+5. Bullets as dot or numbered, never as hyphen
+6. Type hints throughout (all functions, all parameters)
+7. Docstrings: what goes in, what comes out, WHY (not WHAT the code does)
+8. Encoding: always explicit UTF-8 + errors="replace" + ensure_ascii=False
 
 ## Troubleshooting
 
-| Problem | Lösung |
-|---------|--------|
-| `claude: command not found` | Claude Code CLI installieren und einloggen (`claude login`) |
-| `WHITELIST_USER_IDS not set` | In `.env` setzen oder `ALLOW_ALL_USERS=true` für Dev |
-| Mojibake im Bot-Output | `PYTHONIOENCODING=utf-8` setzen (main.py tut das automatisch) |
-| Bot startet nicht | `pip install -e .` wiederholen, `python -c "import main"` zum Testen |
-| Tests schlagen fehl | `.venv` aktiv? `pip install -e ".[test]"` ausführen |
-| Bookmark wird nicht gespeichert | `/save` muss als Reply auf eine Bot-Nachricht gesendet werden |
-| Claude antwortet nicht | CLI testen: `claude "test"` direkt im Terminal ausführen |
+| Problem | Solution |
+|---------|----------|
+| `claude: command not found` | Install Claude Code CLI and log in (`claude login`) |
+| `WHITELIST_USER_IDS not set` | Set in `.env` or use `ALLOW_ALL_USERS=true` for dev |
+| Mojibake in bot output | Set `PYTHONIOENCODING=utf-8` (main.py does this automatically) |
+| Bot won't start | Run `pip install -e .` again, test with `python -c "import main"` |
+| Tests fail | Is `.venv` active? Run `pip install -e ".[test]"` |
+| Bookmark not saved | `/save` must be sent as reply to a bot message |
+| Claude not responding | Test CLI: run `claude "test"` directly in terminal |
