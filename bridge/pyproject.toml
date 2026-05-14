@@ -30,6 +30,14 @@ dev = [
     "bandit>=1.7",
     "pip-audit>=2.7",
 ]
+text-guard-office = [
+    "python-docx>=1.0",
+    "openpyxl>=3.1",
+    "python-pptx>=0.6",
+]
+text-guard-watch = [
+    "watchdog>=4.0",
+]
 
 [project.urls]
 Homepage = "https://axolent.ai"

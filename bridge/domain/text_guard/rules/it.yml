@@ -1,0 +1,55 @@
+# Italian: accent corrections
+#
+# Covers missing grave and acute accents that LLMs frequently
+# omit when generating Italian text.
+
+language: it
+
+word_pairs:
+  - ascii: "citta"
+    correct: "città"
+  - ascii: "perche"
+    correct: "perché"
+  - ascii: "qualita"
+    correct: "qualità"
+  - ascii: "realta"
+    correct: "realtà"
+  - ascii: "societa"
+    correct: "società"
+  - ascii: "universita"
+    correct: "università"
+  - ascii: "liberta"
+    correct: "libertà"
+  - ascii: "attivita"
+    correct: "attività"
+  - ascii: "possibilita"
+    correct: "possibilità"
+  - ascii: "gia"
+    correct: "già"
+  - ascii: "piu"
+    correct: "più"
+  - ascii: "cosi"
+    correct: "così"
+  - ascii: "pero"
+    correct: "però"
+  - ascii: "puo"
+    correct: "può"
+
+loan_word_whitelist:
+  - "area"
+  - "camera"
+  - "data"
+  - "era"
+  - "extra"
+  - "formula"
+  - "idea"
+  - "media"
+  - "meta"
+  - "opera"
+  - "piano"
+  - "pizza"
+  - "radio"
+  - "via"
+  - "visa"
+  - "vista"
+  - "villa"

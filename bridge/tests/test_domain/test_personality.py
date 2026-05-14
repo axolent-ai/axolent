@@ -49,10 +49,11 @@ class TestBuildEffectivePrompt:
     """build_effective_prompt mit optionalem Language-Override."""
 
     def test_no_language_override_for_german(self) -> None:
-        """Bei 'de' wird kein Language-Override angehängt."""
+        """Bei 'de' wird kein Language-Override, aber DIACRITIC RULE angehängt."""
         result = build_effective_prompt("Base prompt.", "de")
         assert "LANGUAGE OVERRIDE" not in result
-        assert result == "Base prompt."
+        assert result.startswith("Base prompt.")
+        assert "[DIACRITIC RULE]" in result
 
     def test_language_override_for_english(self) -> None:
         """Bei 'en' wird ein Language-Override-Block angehängt."""
@@ -61,22 +62,25 @@ class TestBuildEffectivePrompt:
         assert "'en'" in result
 
     def test_language_override_for_spanish(self) -> None:
-        """Beliebige Nicht-de-Sprache löst Override aus."""
+        """Beliebige Nicht-de-Sprache löst Override und DIACRITIC RULE aus."""
         result = build_effective_prompt("Base.", "es")
         assert "LANGUAGE OVERRIDE" in result
         assert "'es'" in result
+        assert "[DIACRITIC RULE]" in result
 
     def test_empty_language_hint_no_override(self) -> None:
-        """Leerer Language-Hint fügt keinen Override an."""
+        """Leerer Language-Hint fügt keinen Override an, aber DE DIACRITIC RULE."""
         result = build_effective_prompt("Base.", "")
         assert "LANGUAGE OVERRIDE" not in result
-        assert result == "Base."
+        assert result.startswith("Base.")
+        assert "[DIACRITIC RULE]" in result
 
     def test_empty_base_prompt_with_language(self) -> None:
         """Auch ohne Base-Prompt wird Language-Override gesetzt."""
         result = build_effective_prompt("", "fr")
         assert "LANGUAGE OVERRIDE" in result
         assert "'fr'" in result
+        assert "[DIACRITIC RULE]" in result
 
 
 class TestBuildSelfAwarenessBlock:

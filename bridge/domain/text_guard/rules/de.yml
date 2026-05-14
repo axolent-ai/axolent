@@ -1,0 +1,103 @@
+# German: ASCII umlaut and eszett corrections
+#
+# Word-list based, NOT blind substitution.
+# Each pair maps an ASCII-degraded form to the correct Unicode form.
+#
+# Source: derived from scripts/check_no_fake_umlauts.py word stems
+# plus common LLM output errors observed in production.
+#
+# Categories:
+#   ae -> ae with umlaut (a-umlaut)
+#   oe -> oe with umlaut (o-umlaut)
+#   ue -> ue with umlaut (u-umlaut)
+#   ss -> eszett (sharp s)
+
+language: de
+
+word_pairs:
+  # ae -> a-umlaut
+  - ascii: "aehnlich"
+    correct: "ähnlich"
+  - ascii: "aendern"
+    correct: "ändern"
+  - ascii: "aenderung"
+    correct: "Änderung"
+  - ascii: "erklaeren"
+    correct: "erklären"
+  - ascii: "erklaert"
+    correct: "erklärt"
+  - ascii: "erklaerung"
+    correct: "Erklärung"
+  - ascii: "haette"
+    correct: "hätte"
+  - ascii: "haeufig"
+    correct: "häufig"
+  - ascii: "laesst"
+    correct: "lässt"
+  - ascii: "moeglich"
+    correct: "möglich"
+  - ascii: "praezise"
+    correct: "präzise"
+  - ascii: "spaeter"
+    correct: "später"
+  - ascii: "vollstaendig"
+    correct: "vollständig"
+  - ascii: "waehrend"
+    correct: "während"
+  # oe -> o-umlaut
+  - ascii: "groesser"
+    correct: "größer"
+  - ascii: "koennen"
+    correct: "können"
+  - ascii: "koennte"
+    correct: "könnte"
+  - ascii: "moeglich"
+    correct: "möglich"
+  - ascii: "moechte"
+    correct: "möchte"
+  # ue -> u-umlaut
+  - ascii: "fuer"
+    correct: "für"
+  - ascii: "fuehren"
+    correct: "führen"
+  - ascii: "ueber"
+    correct: "über"
+  - ascii: "zurueck"
+    correct: "zurück"
+  - ascii: "wuerde"
+    correct: "würde"
+  - ascii: "natuerlich"
+    correct: "natürlich"
+  - ascii: "verfuegbar"
+    correct: "verfügbar"
+  # ss -> eszett
+  - ascii: "ausserdem"
+    correct: "außerdem"
+  - ascii: "schliessen"
+    correct: "schließen"
+  - ascii: "strasse"
+    correct: "Straße"
+
+# Loan words that must NOT be corrected
+loan_word_whitelist:
+  - "queue"
+  - "blue"
+  - "true"
+  - "clue"
+  - "continue"
+  - "issue"
+  - "value"
+  - "rescue"
+  - "unique"
+  - "user"
+  - "route"
+  - "module"
+  - "request"
+  - "feature"
+  - "configure"
+  - "execute"
+  - "structured"
+  - "boolean"
+  - "scheduled"
+  - "parameter"
+  - "procedure"

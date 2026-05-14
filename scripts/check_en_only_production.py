@@ -114,6 +114,10 @@ WHITELIST_DIR_PREFIXES = (
     "bridge/data/",
     "bridge/logs/",
     "bridge/.venv/",
+    # Text Guard core engine: docstring examples, word-pair data, CLI help texts,
+    # and YAML rule files all contain intentional German (and other language)
+    # text as detection targets. The module is self-referential by design.
+    "bridge/domain/text_guard/",
 )
 
 # ---------------------------------------------------------------

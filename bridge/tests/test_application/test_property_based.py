@@ -13,12 +13,30 @@ from __future__ import annotations
 
 
 import pytest
-from hypothesis import given, settings, HealthCheck, strategies as st
 
-from application.model_service import ModelService, resolve_alias
-from application.task_router import SlotConfig, TaskRouter
-from domain.task_slot import TaskSlot
-from infrastructure.sqlite_storage import SqliteConnection, SqliteModelStorage
+try:
+    from hypothesis import given, settings, HealthCheck, strategies as st
+
+    HAS_HYPOTHESIS = True
+except ImportError:
+    HAS_HYPOTHESIS = False
+
+pytestmark = pytest.mark.skipif(not HAS_HYPOTHESIS, reason="hypothesis not installed")
+
+if not HAS_HYPOTHESIS:
+    # Provide stubs so the module parses without hypothesis.
+    # Tests will never run (pytestmark skips the entire module).
+    from unittest.mock import MagicMock
+
+    given = MagicMock()  # type: ignore[assignment]
+    settings = MagicMock()  # type: ignore[assignment]
+    HealthCheck = MagicMock()  # type: ignore[assignment,misc]
+    st = MagicMock()  # type: ignore[assignment]
+
+from application.model_service import ModelService, resolve_alias  # noqa: E402
+from application.task_router import SlotConfig, TaskRouter  # noqa: E402
+from domain.task_slot import TaskSlot  # noqa: E402
+from infrastructure.sqlite_storage import SqliteConnection, SqliteModelStorage  # noqa: E402
 
 
 # ──────────────────────────────────────────────────────────────

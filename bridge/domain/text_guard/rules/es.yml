@@ -1,0 +1,66 @@
+# Spanish: tilde and accent corrections
+#
+# Covers missing n-tilde and accent marks on vowels
+# that LLMs frequently omit when generating Spanish text.
+
+language: es
+
+word_pairs:
+  # n-tilde
+  - ascii: "ano"
+    correct: "año"
+  - ascii: "espanol"
+    correct: "español"
+  - ascii: "manana"
+    correct: "mañana"
+  - ascii: "nino"
+    correct: "niño"
+  - ascii: "nina"
+    correct: "niña"
+  - ascii: "senor"
+    correct: "señor"
+  - ascii: "senora"
+    correct: "señora"
+  - ascii: "pequeno"
+    correct: "pequeño"
+  - ascii: "sueno"
+    correct: "sueño"
+  # accent marks
+  - ascii: "tambien"
+    correct: "también"
+  - ascii: "despues"
+    correct: "después"
+  - ascii: "aqui"
+    correct: "aquí"
+  - ascii: "facil"
+    correct: "fácil"
+  - ascii: "dificil"
+    correct: "difícil"
+  - ascii: "rapido"
+    correct: "rápido"
+  - ascii: "numero"
+    correct: "número"
+  - ascii: "pagina"
+    correct: "página"
+  - ascii: "telefono"
+    correct: "teléfono"
+  - ascii: "informacion"
+    correct: "información"
+
+loan_word_whitelist:
+  - "area"
+  - "auto"
+  - "data"
+  - "extra"
+  - "final"
+  - "formula"
+  - "general"
+  - "media"
+  - "metal"
+  - "normal"
+  - "opera"
+  - "radio"
+  - "total"
+  - "ultra"
+  - "via"
+  - "volume"

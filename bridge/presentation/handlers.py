@@ -628,13 +628,21 @@ async def _handle_message_streaming(
             started_at=time.monotonic(),
         )
 
+        # Determine chat language once (used for text guard + status session)
+        chat_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+
+        # Text Guard: streaming diacritic filter
+        from application.text_guard_service import TextGuardService
+
+        _tg_service = TextGuardService()
+        _stream_guard = _tg_service.get_streaming_guard(chat_lang)
+        _text_guard = _tg_service.get_guard(chat_lang, mode="fix")
+
         # Create status session (R02-B)
         from application.status_manager import SHOW_STATUS_UPDATES, StatusSession
 
         status_session: StatusSession | None = None
         if SHOW_STATUS_UPDATES:
-            # Determine language for status texts
-            chat_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
 
             async def _status_callback(status_text: str) -> None:
                 """Edits the placeholder message with status text."""
@@ -680,10 +688,25 @@ async def _handle_message_streaming(
 
                 elif event.event_type == "content_delta":
                     streaming_chunks += 1
-                    await process_streaming_edit(session, event.text)
+                    # Text Guard: filter token through streaming guard
+                    _token = event.text
+                    if _stream_guard is not None:
+                        _filtered = _stream_guard.process_token(_token)
+                        if _filtered is not None:
+                            await process_streaming_edit(session, _filtered)
+                        # else: buffered, waiting for word boundary
+                    else:
+                        await process_streaming_edit(session, _token)
 
                 elif event.event_type == "result":
+                    # Text Guard: flush streaming buffer + fix final text
                     final_text = event.full_text
+                    if _stream_guard is not None:
+                        _remaining = _stream_guard.flush()
+                        if _remaining:
+                            await process_streaming_edit(session, _remaining)
+                    if _text_guard is not None:
+                        final_text = _text_guard.fix(final_text)
                     await finalize_streaming(session, final_text)
 
                 elif event.event_type == "error":
@@ -725,6 +748,8 @@ async def _handle_message_streaming(
         # Fallback: no final text but accumulated text available
         if not final_text and session.accumulated_text and not had_error:
             final_text = session.accumulated_text
+            if _text_guard is not None:
+                final_text = _text_guard.fix(final_text)
             await finalize_streaming(session, final_text)
 
         # Save history + audit (+ C-3 leakage check)
@@ -845,7 +870,17 @@ async def _handle_message_legacy(
         await update.message.reply_text(result.error_message)
         return
 
-    await send_response(update, result.response)
+    # Text Guard: fix diacritics in legacy (non-streaming) responses
+    from application.text_guard_service import TextGuardService
+
+    _legacy_tg = TextGuardService()
+    _legacy_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+    _legacy_guard = _legacy_tg.get_guard(_legacy_lang, mode="fix")
+    _response = result.response
+    if _legacy_guard is not None:
+        _response = _legacy_guard.fix(_response)
+
+    await send_response(update, _response)
 
     log.info(
         "Legacy response sent: %d chars in %.1fs",

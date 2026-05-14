@@ -164,4 +164,56 @@ def build_effective_prompt(base_prompt: str, language_hint: str = "") -> str:
             f"You MUST reply in '{language_hint}'. This overrides all other language rules."
         )
         effective = (effective + lang_instruction) if effective else lang_instruction
+
+    # Append diacritic instruction for the detected language
+    diacritic_hint = _build_diacritic_hint(language_hint or "de")
+    if diacritic_hint:
+        effective = (effective + diacritic_hint) if effective else diacritic_hint
+
     return effective
+
+
+# Diacritic instructions per language, appended to system prompt
+# so the LLM is primed to use correct characters from the start.
+_DIACRITIC_HINTS: dict[str, str] = {
+    "de": (
+        "\n\n[DIACRITIC RULE] When responding in German, ALWAYS use real "
+        "umlauts and eszett: ä, ö, ü, Ä, Ö, Ü, ß. "
+        "NEVER use ASCII substitutes (ae, oe, ue, ss). "
+        "Examples: 'für' not 'fuer', 'über' not 'ueber', 'größer' not 'groesser'."
+    ),
+    "fr": (
+        "\n\n[DIACRITIC RULE] When responding in French, ALWAYS use real "
+        "accents and cedilla: é, è, ê, ë, à, â, ç, ô, û, î, ï, ù. "
+        "NEVER omit them. "
+        "Examples: 'être' not 'etre', 'français' not 'francais'."
+    ),
+    "es": (
+        "\n\n[DIACRITIC RULE] When responding in Spanish, ALWAYS use ñ "
+        "and accent marks: á, é, í, ó, ú, ñ. NEVER substitute with "
+        "plain ASCII. "
+        "Examples: 'español' not 'espanol', 'también' not 'tambien'."
+    ),
+    "it": (
+        "\n\n[DIACRITIC RULE] When responding in Italian, ALWAYS use "
+        "proper accented vowels: à, è, é, ì, ò, ù. "
+        "Examples: 'città' not 'citta', 'perché' not 'perche'."
+    ),
+    "pt": (
+        "\n\n[DIACRITIC RULE] When responding in Portuguese, ALWAYS use "
+        "tildes, cedilla, and accents: ã, õ, ç, á, é, í, ó, ú, â, ê, ô. "
+        "Examples: 'não' not 'nao', 'você' not 'voce'."
+    ),
+}
+
+
+def _build_diacritic_hint(language: str) -> str:
+    """Build a diacritic instruction for the system prompt.
+
+    Args:
+        language: ISO 639-1 language code.
+
+    Returns:
+        Instruction string, empty if no hint for the language.
+    """
+    return _DIACRITIC_HINTS.get(language, "")

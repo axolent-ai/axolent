@@ -76,6 +76,12 @@ _SUPPRESS_TOKEN = "# noqa: " + "fake-umlaut"
 # Whitelist: files/patterns that are NOT checked
 _EXCLUDED_PATHS = {
     "scripts/check_no_fake_umlauts.py",  # This script itself
+    # Text Guard module: word pairs, docstring examples, and YAML rule files
+    # contain ASCII diacritic forms by design (they ARE the detection targets).
+    "domain/text_guard/",
+    # DIACRITIC RULE hints contain intentional ASCII negative examples
+    # (e.g. "'für' not 'fuer'") to prime the LLM.
+    "domain/personality.py",
 }
 
 
@@ -83,7 +89,7 @@ def _is_excluded(path: Path) -> bool:
     """Checks whether a path is excluded."""
     posix = path.as_posix()
     for excluded in _EXCLUDED_PATHS:
-        if posix.endswith(excluded):
+        if posix.endswith(excluded) or excluded in posix:
             return True
     return False
 

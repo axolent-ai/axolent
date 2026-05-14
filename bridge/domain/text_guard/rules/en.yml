@@ -1,0 +1,11 @@
+# English: no-op rule set
+#
+# English does not use diacritics in standard text.
+# This file exists for completeness and to document the pattern.
+# The engine loads this as an empty rule set and passes text through unchanged.
+
+language: en
+
+word_pairs: []
+
+loan_word_whitelist: []
