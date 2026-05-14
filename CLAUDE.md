@@ -1,8 +1,7 @@
 # AXOLENT AI — Coding Conventions
 
 **Scope:** This file defines project-specific conventions for AXOLENT AI.
-It overrides the global rule in `D:\Obsidian\Command Center\SELBSTSTÄNDIG\CLAUDE.md`
-for everything inside `D:\Code\jarvis-lite\`.
+For Atlas-orchestrated agents this overrides any conflicting global rule.
 
 ---
 

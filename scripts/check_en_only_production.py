@@ -62,6 +62,7 @@ PRODUCTION_GLOBS = [
     "bridge/domain/**/*.py",
     "bridge/infrastructure/**/*.py",
     "bridge/presentation/**/*.py",
+    "bridge/main.py",
     "scripts/*.py",
     "bridge/config/system_prompt.example.md",
     "bridge/config/user_constitution.example.md",

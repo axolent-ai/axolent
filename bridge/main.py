@@ -1,9 +1,9 @@
-"""Axolent Bridge: Entry-Point.
+"""Axolent Bridge: Entry point.
 
-Startet den Telegram-Bot mit hexagonaler Architektur.
-Modus B (lokaler CLI-Wrapper, User hat eigene Pro/Max-Subscription).
+Starts the Telegram bot with hexagonal architecture.
+Mode B (local CLI wrapper, user has own Pro/Max subscription).
 
-Lädt Konfiguration, registriert Provider + Handler, startet Long-Polling.
+Loads configuration, registers providers + handlers, starts long-polling.
 """
 
 from __future__ import annotations
@@ -97,13 +97,13 @@ logging.basicConfig(
 )
 log = logging.getLogger("axolent")
 
-# Flag: ob DEV_MODE aktiv ist (nur für ALLOW_ALL_USERS-Safeguard)
+# Flag: whether DEV_MODE is active (only for ALLOW_ALL_USERS safeguard)
 _dev_mode_raw = os.getenv("AXOLENT_DEV_MODE", "")
 if not _dev_mode_raw:
     _dev_mode_raw = os.getenv("JARVIS_DEV_MODE", "")
     if _dev_mode_raw:
         logging.getLogger("axolent").warning(
-            "JARVIS_DEV_MODE ist deprecated, bitte AXOLENT_DEV_MODE verwenden."
+            "JARVIS_DEV_MODE is deprecated, please use AXOLENT_DEV_MODE instead."
         )
 AXOLENT_DEV_MODE: bool = _dev_mode_raw.lower() in (
     "true",
@@ -113,27 +113,27 @@ AXOLENT_DEV_MODE: bool = _dev_mode_raw.lower() in (
 
 
 def validate_allow_all_users() -> None:
-    """Prüft ob ALLOW_ALL_USERS sicher konfiguriert ist.
+    """Validate that ALLOW_ALL_USERS is safely configured.
 
-    Blockiert den Bot-Start wenn ALLOW_ALL_USERS aktiv ist ohne
-    AXOLENT_DEV_MODE. Verhindert versehentliches öffnen des Bots
-    für alle Telegram-User in Produktion.
+    Blocks bot startup when ALLOW_ALL_USERS is active without
+    AXOLENT_DEV_MODE. Prevents accidentally opening the bot
+    to all Telegram users in production.
 
     Raises:
-        SystemExit: Wenn ALLOW_ALL_USERS=true ohne AXOLENT_DEV_MODE=true.
+        SystemExit: If ALLOW_ALL_USERS=true without AXOLENT_DEV_MODE=true.
     """
     if not ALLOW_ALL_USERS:
         return
 
     if not AXOLENT_DEV_MODE:
         log.critical(
-            "GEFAHR: ALLOW_ALL_USERS ist aktiv, aber AXOLENT_DEV_MODE nicht gesetzt. "
-            "Setze AXOLENT_DEV_MODE=true wenn das beabsichtigt ist, "
-            "sonst entferne ALLOW_ALL_USERS."
+            "DANGER: ALLOW_ALL_USERS is active but AXOLENT_DEV_MODE is not set. "
+            "Set AXOLENT_DEV_MODE=true if this is intentional, "
+            "otherwise remove ALLOW_ALL_USERS."
         )
         sys.exit(2)
 
-    log.warning("WARNUNG: ALLOW_ALL_USERS aktiv im DEV_MODE. Whitelist deaktiviert.")
+    log.warning("WARNING: ALLOW_ALL_USERS active in DEV_MODE. Whitelist disabled.")
     write_audit_log(
         {
             "event_type": "dev_mode_start",
@@ -145,16 +145,16 @@ def validate_allow_all_users() -> None:
 
 
 def _migrate_profiles_to_sqlite(profile_storage: SqliteProfileStorage) -> None:
-    """Migriert JSONL-Profile in SQLite (einmalig, idempotent).
+    """Migrate JSONL profiles to SQLite (one-time, idempotent).
 
-    Liest data/user_profiles.jsonl, schreibt in SQLite,
-    benennt JSONL in .bak um.
+    Reads data/user_profiles.jsonl, writes to SQLite,
+    renames JSONL to .bak.
     """
     jsonl_path = Path(__file__).resolve().parent / "data" / "user_profiles.jsonl"
     if not jsonl_path.exists():
         return
 
-    # Nur migrieren wenn SQLite-Tabelle leer ist
+    # Only migrate if SQLite table is empty
     existing = profile_storage.load_all()
     if existing:
         return
@@ -191,20 +191,20 @@ def _migrate_profiles_to_sqlite(profile_storage: SqliteProfileStorage) -> None:
         bak_path = jsonl_path.with_suffix(".jsonl.bak")
         jsonl_path.rename(bak_path)
         log.info(
-            "Profil-Migration: %d Profile von JSONL nach SQLite migriert",
+            "Profile migration: %d profiles migrated from JSONL to SQLite",
             migrated,
         )
 
 
 def _build_provider_router(process_pool: ClaudeProcessPool) -> ProviderRouter:
-    """Erstellt und konfiguriert den ProviderRouter mit allen Providern.
+    """Create and configure the ProviderRouter with all providers.
 
-    Registriert alle bekannten Provider (aktive + Stubs).
-    Default-Provider: claude_persistent (R04, persistent stdin-Pipe).
-    Fallback: claude (Legacy, einzelne Subprozesse).
+    Registers all known providers (active + stubs).
+    Default provider: claude_persistent (R04, persistent stdin pipe).
+    Fallback: claude (legacy, individual subprocesses).
 
     Args:
-        process_pool: ClaudeProcessPool für den PersistentProvider.
+        process_pool: ClaudeProcessPool for the PersistentProvider.
     """
     persistent_provider = ClaudePersistentProvider(process_pool=process_pool)
 
@@ -219,50 +219,50 @@ def _build_provider_router(process_pool: ClaudeProcessPool) -> ProviderRouter:
 
     default = os.getenv("DEFAULT_PROVIDER", "claude_persistent")
 
-    # Validierung: Default muss registriert sein
+    # Validation: default must be a registered provider
     if default not in providers:
         log.warning(
-            "DEFAULT_PROVIDER='%s' nicht bekannt, falle auf 'claude_persistent' zurück.",
+            "DEFAULT_PROVIDER='%s' not recognized, falling back to 'claude_persistent'.",
             default,
         )
         default = "claude_persistent"
 
     router = ProviderRouter(providers=providers, default=default)
 
-    # Log welche Provider tatsächlich verfügbar sind
+    # Log which providers are actually available
     available = router.list_available()
-    log.info("Verfügbare Provider: %s", available if available else ["KEINE!"])
+    log.info("Available providers: %s", available if available else ["NONE!"])
 
     return router
 
 
 def main() -> None:
-    """Startet den Axolent Bridge Bot via long-polling."""
-    # Whitelist-Validierung
+    """Start the Axolent Bridge Bot via long-polling."""
+    # Whitelist validation
     if not WHITELIST and not ALLOW_ALL_USERS:
         log.critical(
-            "WHITELIST_USER_IDS in .env nicht gesetzt oder leer. "
-            "Setze WHITELIST_USER_IDS=12345 oder ALLOW_ALL_USERS=true (nur für Dev!)"
+            "WHITELIST_USER_IDS not set or empty in .env. "
+            "Set WHITELIST_USER_IDS=12345 or ALLOW_ALL_USERS=true (dev only!)"
         )
         sys.exit(1)
 
     # C-1: ALLOW_ALL_USERS-Safeguard
     validate_allow_all_users()
 
-    # Token laden
+    # Load token
     token: str | None = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
-        log.critical("Kein TELEGRAM_BOT_TOKEN in .env gefunden.")
+        log.critical("No TELEGRAM_BOT_TOKEN found in .env.")
         sys.exit(1)
 
-    # Legacy-Bookmarks migrieren (chat_id nachrüsten, JSONL)
+    # Legacy bookmark migration (backfill chat_id, JSONL)
     migrated_count = migrate_legacy_chat_id()
     if migrated_count:
         log.info(
-            "Bookmark-Migration: %d Einträge mit chat_id nachgerüstet", migrated_count
+            "Bookmark migration: %d entries backfilled with chat_id", migrated_count
         )
 
-    # C-4: SQLite-Storage initialisieren
+    # C-4: Initialize SQLite storage
     bridge_root = Path(__file__).resolve().parent
     use_sqlite = os.getenv("USE_SQLITE_STORAGE", "true").lower() in (
         "true",
@@ -275,23 +275,23 @@ def main() -> None:
 
         _t0 = _time.monotonic()
 
-        # Backwards-Compat: jarvis.db -> axolent.db stille Umbenennung
+        # Backwards-compat: silent rename jarvis.db -> axolent.db
         _legacy_db = bridge_root / "data" / "jarvis.db"
         _new_db = bridge_root / "data" / "axolent.db"
         if _legacy_db.exists() and not _new_db.exists():
             _legacy_db.rename(_new_db)
-            log.info("DB-Migration: jarvis.db -> axolent.db umbenannt (einmalig)")
+            log.info("DB migration: jarvis.db -> axolent.db renamed (one-time)")
 
         sqlite_conn = SqliteConnection(bridge_root / "data" / "axolent.db")
 
-        # JSONL -> SQLite Migration (idempotent, nur beim ersten Mal)
+        # JSONL -> SQLite migration (idempotent, first run only)
         migration_stats = migrate_jsonl_to_sqlite(sqlite_conn, bridge_root / "data")
         _duration = _time.monotonic() - _t0
 
         if migration_stats:
             total_migrated = sum(migration_stats.values())
             log.info(
-                "C-4 Migration: %d Einträge migriert in %.2fs %s",
+                "C-4 migration: %d entries migrated in %.2fs %s",
                 total_migrated,
                 _duration,
                 migration_stats,
@@ -314,36 +314,36 @@ def main() -> None:
                 }
             )
 
-        # BookmarkService mit SQLite-Backend (Konstruktor-Injection)
+        # BookmarkService with SQLite backend (constructor injection)
         bookmark_svc = BookmarkService(storage=SqliteBookmarkStorage(sqlite_conn))
 
         # Memory-Storage: SQLite
         memory_storage: MemoryStorage | SqliteMemoryStorage = SqliteMemoryStorage(
             sqlite_conn
         )
-        log.info("Storage-Backend: SQLite (WAL-Mode, FTS5 aktiv)")
+        log.info("Storage backend: SQLite (WAL mode, FTS5 active)")
     else:
         memory_storage = MemoryStorage(data_dir=bridge_root / "data")
 
-        # BookmarkService mit JSONL-Adapter (Konstruktor-Injection)
+        # BookmarkService with JSONL adapter (constructor injection)
         bookmark_svc = BookmarkService(storage=JsonlBookmarkStorageAdapter())
-        log.info("Storage-Backend: JSONL (Legacy-Modus)")
+        log.info("Storage backend: JSONL (legacy mode)")
 
-    # R04: Process-Pool initialisieren (für persistent Claude Subprocesses)
+    # R04: Initialize process pool (for persistent Claude subprocesses)
     process_pool = ClaudeProcessPool()
 
-    # Provider-Router initialisieren (mit Process-Pool)
+    # Initialize provider router (with process pool)
     router = _build_provider_router(process_pool)
 
-    # Trinity-Memory initialisieren
+    # Initialize Trinity memory
     memory_svc = MemoryService(storage=memory_storage)
 
-    # R18 Phase 2a: SlotConfigs laden (benötigt für ModelService Slot-Defaults)
+    # R18 Phase 2a: Load SlotConfigs (needed for ModelService slot defaults)
     from application.task_router import TaskRouter, load_slot_configs
 
     slot_configs = load_slot_configs()
 
-    # Slot-Defaults extrahieren: slot_name -> resolved model_id
+    # Extract slot defaults: slot_name -> resolved model_id
     _slot_defaults: dict[str, str] = {}
     for cfg in slot_configs:
         if cfg.default_model:
@@ -351,37 +351,37 @@ def main() -> None:
             if resolved:
                 _slot_defaults[cfg.slot.value] = resolved
 
-    # R18 Phase 1: Model-Service initialisieren (mit Slot-Defaults für impliziten Reset)
+    # R18 Phase 1: Initialize model service (with slot defaults for implicit reset)
     model_svc: ModelService | None = None
     if use_sqlite:
         model_storage = SqliteModelStorage(sqlite_conn)
         model_svc = ModelService(storage=model_storage, slot_defaults=_slot_defaults)
-        log.info("R18: Model-Service initialisiert (User-Model-Override aktiv)")
+        log.info("R18: Model service initialized (user model override active)")
 
-    # R18 Phase 2a: TaskRouter initialisieren
+    # R18 Phase 2a: Initialize TaskRouter
     task_router = TaskRouter(slot_configs=slot_configs, model_service=model_svc)
-    log.info("R18 Phase 2a: TaskRouter initialisiert (%d Slots)", len(slot_configs))
+    log.info("R18 Phase 2a: TaskRouter initialized (%d slots)", len(slot_configs))
 
-    # Onboarding-Storage initialisieren (Setup-Wizard)
+    # Initialize onboarding storage (setup wizard)
     onboarding_storage: OnboardingStorage | None = None
     if use_sqlite:
         onboarding_storage = OnboardingStorage(sqlite_conn)
-        # Migrate: bestehende User als onboarded markieren
+        # Migrate: mark existing users as onboarded
         migrated_onboarding = onboarding_storage.migrate_existing_users(sqlite_conn)
         if migrated_onboarding > 0:
             log.info(
-                "Onboarding: %d bestehende User als onboarded migriert",
+                "Onboarding: %d existing users migrated as onboarded",
                 migrated_onboarding,
             )
 
-    # SelfAwarenessService initialisieren (Phase 3: extrahiert aus ChatService)
+    # Initialize SelfAwarenessService (Phase 3: extracted from ChatService)
     self_awareness_svc = SelfAwarenessService(
         model_service=model_svc,
         task_router=task_router,
         model_registry=ModelRegistry(),
     )
 
-    # ChatService mit Konstruktor-Injection erstellen
+    # Create ChatService with constructor injection
     chat_service = ChatService(
         provider_router=router,
         memory_service=memory_svc,
@@ -390,25 +390,25 @@ def main() -> None:
         self_awareness_service=self_awareness_svc,
     )
 
-    log.info("Trinity-Memory-System initialisiert (Auto-Loading aktiv)")
+    log.info("Trinity memory system initialized (auto-loading active)")
 
-    # C-2: Rate-Limiter initialisieren (mit SQLite-Profil-Storage wenn verfügbar)
+    # C-2: Initialize rate limiter (with SQLite profile storage if available)
     if use_sqlite:
         profile_storage = SqliteProfileStorage(sqlite_conn)
         rate_limiter = RateLimiter(profile_storage=profile_storage)
 
-        # JSONL-Profile -> SQLite migrieren (einmalig)
+        # JSONL profiles -> SQLite migration (one-time)
         _migrate_profiles_to_sqlite(profile_storage)
     else:
         rate_limiter = RateLimiter()
 
-    # Personality laden
+    # Load personality
     system_prompt = build_combined_prompt()
 
-    # Application bauen
+    # Build application
     app = Application.builder().token(token).build()
 
-    # Alle Services via bot_data teilen (für Handler-Zugriff)
+    # Share all services via bot_data (for handler access)
     app.bot_data["chat_service"] = chat_service
     app.bot_data["bookmark_service"] = bookmark_svc
     app.bot_data["system_prompt"] = system_prompt
@@ -424,21 +424,21 @@ def main() -> None:
     if onboarding_storage is not None:
         app.bot_data["onboarding_storage"] = onboarding_storage
 
-    # Lifecycle-Hooks: ProcessPool starten/stoppen
+    # Lifecycle hooks: start/stop ProcessPool
     async def post_init(application: Application) -> None:
-        """Startet den ProcessPool Cleanup-Task nach App-Init."""
+        """Start the ProcessPool cleanup task after app init."""
         await process_pool.start()
-        log.info("R04: ClaudeProcessPool gestartet (persistent stdin-Pipe aktiv)")
+        log.info("R04: ClaudeProcessPool started (persistent stdin pipe active)")
 
     async def post_shutdown(application: Application) -> None:
-        """Graceful Shutdown: Subprocesses terminieren, SQLite-Connection schließen."""
+        """Graceful shutdown: terminate subprocesses, close SQLite connection."""
         await process_pool.shutdown()
-        log.info("R04: ClaudeProcessPool heruntergefahren")
-        # SQLite-Connection sauber schließen
+        log.info("R04: ClaudeProcessPool shut down")
+        # Close SQLite connection cleanly
         conn = application.bot_data.get("sqlite_conn")
         if conn is not None:
             conn.close()
-            log.info("SQLite-Connection geschlossen")
+            log.info("SQLite connection closed")
 
     app.post_init = post_init
     app.post_shutdown = post_shutdown
@@ -478,17 +478,17 @@ def main() -> None:
     )
     app.add_handler(CallbackQueryHandler(handle_wizard_callback, pattern=r"^wizard_"))
 
-    log.info("Axolent Bridge startet, Modus B (R04: Persistent Pipe + Streaming)")
+    log.info("Axolent Bridge starting, Mode B (R04: Persistent Pipe + Streaming)")
     log.info("Default-Provider: '%s'", router.default)
     log.info(
-        "Whitelist aktiv: %s",
-        "ja"
+        "Whitelist active: %s",
+        "yes"
         if WHITELIST
-        else ("ALLOW_ALL_USERS=true (Dev-Modus!)" if ALLOW_ALL_USERS else "FEHLER"),
+        else ("ALLOW_ALL_USERS=true (dev mode!)" if ALLOW_ALL_USERS else "ERROR"),
     )
-    log.info("Bookmarks-Feature aktiv (Reply-basiert via /save)")
-    log.info("Trinity-Memory aktiv (/remember /memory /forget)")
-    log.info("Conversation-History aktiv (max 20 Turns, /reset zum Löschen)")
+    log.info("Bookmarks feature active (reply-based via /save)")
+    log.info("Trinity memory active (/remember /memory /forget)")
+    log.info("Conversation history active (max 20 turns, /reset to clear)")
     app.run_polling()
 
 

@@ -48,7 +48,7 @@ repos:
         name: English-only in production code (EN-only policy)
         entry: python scripts/check_en_only_production.py
         language: python
-        files: ^(bridge/(application|domain|infrastructure|presentation)/|scripts/|\.pre-commit-config\.yaml$|start-bot\.bat$)
+        files: ^(bridge/(application|domain|infrastructure|presentation)/|bridge/main\.py$|scripts/|\.pre-commit-config\.yaml$|start-bot\.bat$)
         pass_filenames: true
 
       - id: no-fake-umlauts
