@@ -31,6 +31,7 @@ def _make_chat_service(
     route_return: ProviderResponse | None = None,
     route_side_effect: Exception | None = None,
     memory_service: MagicMock | None = None,
+    self_awareness_service: object | None = None,
 ) -> tuple[ChatService, MagicMock]:
     """Erstellt einen ChatService mit gemocktem ProviderRouter.
 
@@ -52,6 +53,7 @@ def _make_chat_service(
     svc = ChatService(
         provider_router=mock_router,
         memory_service=memory_service,
+        self_awareness_service=self_awareness_service,
     )
     return svc, mock_router
 
@@ -819,7 +821,15 @@ class TestSelfAwareness:
 
     async def test_system_prompt_contains_self_awareness_block(self) -> None:
         """System-Prompt an Provider enthaelt Self-Awareness mit Modell-Info."""
-        svc, mock_router = _make_chat_service()
+        from application.model_registry import ModelRegistry
+        from application.self_awareness_service import SelfAwarenessService
+
+        sa_svc = SelfAwarenessService(
+            model_service=None,
+            task_router=None,
+            model_registry=ModelRegistry(),
+        )
+        svc, mock_router = _make_chat_service(self_awareness_service=sa_svc)
 
         await svc.process_user_message(
             text="Welches Modell bist du?",
@@ -838,7 +848,9 @@ class TestSelfAwareness:
 
     async def test_self_awareness_reflects_model_override(self) -> None:
         """Nach /setmodel opus enthaelt Self-Awareness Opus-Daten."""
+        from application.model_registry import ModelRegistry
         from application.model_service import ModelService
+        from application.self_awareness_service import SelfAwarenessService
         from application.task_router import TaskRouter, load_slot_configs
         from infrastructure.sqlite_storage import SqliteConnection, SqliteModelStorage
         from pathlib import Path
@@ -863,6 +875,13 @@ class TestSelfAwareness:
                     model_service=model_service,
                 )
 
+                registry = ModelRegistry()
+                sa_svc = SelfAwarenessService(
+                    model_service=model_service,
+                    task_router=task_router,
+                    model_registry=registry,
+                )
+
                 mock_router = MagicMock()
                 mock_router.route = AsyncMock(
                     return_value=ProviderResponse(
@@ -876,6 +895,7 @@ class TestSelfAwareness:
                     provider_router=mock_router,
                     model_service=model_service,
                     task_router=task_router,
+                    self_awareness_service=sa_svc,
                 )
 
                 await svc.process_user_message(
@@ -896,7 +916,9 @@ class TestSelfAwareness:
 
     async def test_self_awareness_contains_task_slot(self) -> None:
         """Self-Awareness enthaelt den erkannten Task-Slot."""
+        from application.model_registry import ModelRegistry
         from application.model_service import ModelService
+        from application.self_awareness_service import SelfAwarenessService
         from application.task_router import TaskRouter, load_slot_configs
         from infrastructure.sqlite_storage import SqliteConnection, SqliteModelStorage
         from pathlib import Path
@@ -914,6 +936,13 @@ class TestSelfAwareness:
                     model_service=model_service,
                 )
 
+                registry = ModelRegistry()
+                sa_svc = SelfAwarenessService(
+                    model_service=model_service,
+                    task_router=task_router,
+                    model_registry=registry,
+                )
+
                 mock_router = MagicMock()
                 mock_router.route = AsyncMock(
                     return_value=ProviderResponse(
@@ -927,6 +956,7 @@ class TestSelfAwareness:
                     provider_router=mock_router,
                     model_service=model_service,
                     task_router=task_router,
+                    self_awareness_service=sa_svc,
                 )
 
                 # Code-Nachricht um den CODE-Slot zu triggern
@@ -943,3 +973,20 @@ class TestSelfAwareness:
                 assert "Slot: code" in system_sent
             finally:
                 conn.close()
+
+    async def test_no_self_awareness_when_service_is_none(self) -> None:
+        """Ohne SelfAwarenessService (None) laeuft alles normal ohne Block."""
+        svc, mock_router = _make_chat_service(self_awareness_service=None)
+
+        result = await svc.process_user_message(
+            text="Welches Modell bist du?",
+            user_id=1,
+            chat_id=10,
+            username="test",
+            system_prompt="Du bist hilfreich.",
+        )
+
+        assert result.success is True
+        call_args = mock_router.route.call_args
+        system_sent = call_args.kwargs.get("system_prompt", "")
+        assert "[SELF-AWARENESS]" not in system_sent

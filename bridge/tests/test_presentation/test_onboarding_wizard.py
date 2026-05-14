@@ -152,6 +152,42 @@ class TestWizardStart:
         text = update.message.reply_text.call_args[0][0]
         assert text == START_TEXT
 
+    async def test_start_after_wizard_respects_sticky_language(
+        self, onboarding_storage: OnboardingStorage
+    ) -> None:
+        """/start nach Wizard mit Sticky-Language zeigt Text in gewaehlter Sprache.
+
+        Regression-Test fuer Bug: /start ignorierte Sticky-Language nach
+        /onboarding und fiel auf Englisch zurueck weil nur de/en Uebersetzungen
+        in _START_WELCOME_TEXTS existierten.
+        """
+        from domain.onboarding import get_start_welcome_text
+        from presentation.handlers import handle_start_command
+
+        onboarding_storage.set_onboarded(1)
+
+        # Chat-Service mit Sticky-Language "tr" (Tuerkisch)
+        mock_chat_service = MagicMock()
+        mock_chat_service.get_chat_language = AsyncMock(return_value="tr")
+        mock_chat_service.save_static_response_to_history = AsyncMock()
+
+        update = _make_update()
+        context = _make_context(
+            onboarding_storage=onboarding_storage,
+            chat_service=mock_chat_service,
+        )
+
+        await handle_start_command(update, context)
+
+        update.message.reply_text.assert_called_once()
+        text = update.message.reply_text.call_args[0][0]
+        expected = get_start_welcome_text("tr")
+        assert text == expected
+        assert "Axolent" in text
+        # Darf nicht auf Englisch oder Deutsch fallen
+        assert "Send me" not in text
+        assert "Schick mir" not in text
+
 
 # ──────────────────────────────────────────────────────────────
 # Complete Click Sequence: DE

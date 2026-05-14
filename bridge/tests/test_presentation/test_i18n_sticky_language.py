@@ -157,18 +157,18 @@ class TestStartRespectsStickyLanguage:
         """/start falls back to EN for languages without specific translation."""
         from presentation.handlers import handle_start_command
 
-        onboarding_storage.set_onboarded(1, "fr")
+        onboarding_storage.set_onboarded(1, "xx")
 
         update = _make_update()
         context = _make_context(
             onboarding_storage=onboarding_storage,
-            sticky_lang="fr",
+            sticky_lang="xx",
         )
 
         await handle_start_command(update, context)
 
         text = update.message.reply_text.call_args[0][0]
-        # Falls back to EN (not DE)
+        # Falls back to EN (not DE) for unknown language codes
         assert "is ready" in text
 
 

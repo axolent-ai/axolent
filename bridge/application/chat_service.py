@@ -25,11 +25,7 @@ from typing import TYPE_CHECKING, Any, AsyncIterator, Optional
 from application.leakage_filter import check_for_system_prompt_leakage
 from domain.conversation import ConversationTurn, build_context_block
 from domain.language import detect_language_with_confidence
-from domain.personality import (
-    SlotInfo,
-    build_effective_prompt,
-    build_self_awareness_block,
-)
+from domain.personality import build_effective_prompt
 from infrastructure.audit_log import write_audit_log
 from infrastructure.claude_process_pool import StreamEvent
 from infrastructure.conversation_storage import (
@@ -47,6 +43,7 @@ if TYPE_CHECKING:
     from application.memory_service import MemoryService
     from application.model_service import ModelService
     from application.provider_router import ProviderRouter
+    from application.self_awareness_service import SelfAwarenessService
     from application.task_router import TaskRouter
     from infrastructure.providers.claude_persistent import ClaudePersistentProvider
 
@@ -217,131 +214,13 @@ class ChatService:
         memory_service: "MemoryService | None" = None,
         model_service: "ModelService | None" = None,
         task_router: "TaskRouter | None" = None,
+        self_awareness_service: "SelfAwarenessService | None" = None,
     ) -> None:
         self.provider_router = provider_router
         self.memory_service = memory_service
         self.model_service = model_service
         self.task_router = task_router
-
-    def _build_all_slot_infos(self, user_id: int) -> list[SlotInfo]:
-        """Baut die Slot-Belegungsliste für alle 6 Task-Slots.
-
-        Priorität pro Slot:
-          1. Slot-spezifischer Override
-          2. Globaler Override
-          3. Slot-Default (via TaskRouter.get_default_for_slot, Single Source of Truth)
-
-        Args:
-            user_id: Telegram-User-ID.
-
-        Returns:
-            Liste von SlotInfo für alle 6 Slots.
-        """
-        from application.model_registry import ModelRegistry
-        from application.model_service import DEFAULT_MODEL
-        from domain.task_slot import TaskSlot
-
-        registry = ModelRegistry()
-        result: list[SlotInfo] = []
-
-        overrides: dict[str, str] = {}
-        if self.model_service is not None:
-            overrides = self.model_service.get_all_slot_overrides(user_id)
-
-        global_override = overrides.get("global")
-
-        for slot in TaskSlot:
-            slot_override = overrides.get(slot.value)
-            if slot_override:
-                model_id = slot_override
-                source = "user-override"
-            elif global_override:
-                model_id = global_override
-                source = "global"
-            else:
-                # Single Source of Truth: TaskRouter.get_default_for_slot
-                if self.task_router is not None:
-                    model_id = self.task_router.get_default_for_slot(slot)
-                else:
-                    model_id = DEFAULT_MODEL
-                source = "default"
-
-            meta = registry.get(model_id)
-            display_name = meta.display_name if meta else model_id
-            result.append(
-                SlotInfo(
-                    slot_name=slot.value,
-                    model_display_name=display_name,
-                    source=source,
-                )
-            )
-
-        return result
-
-    def _build_self_awareness(
-        self,
-        user_model: str | None,
-        task_slot_name: str | None,
-        user_id: int | None = None,
-        lang: str = "de",
-    ) -> str:
-        """Baut den Self-Awareness-Block für den System-Prompt.
-
-        Resolved Modell-Metadaten aus der ModelRegistry und baut den Block.
-        Wenn kein Modell resolved wurde, wird der System-Default verwendet.
-        Wenn user_id gegeben, werden alle 6 Slot-Belegungen inkludiert.
-
-        Args:
-            user_model: Resolved Modell-ID oder None.
-            task_slot_name: Name des Task-Slots oder None.
-            user_id: Telegram-User-ID für Slot-Belegungsliste (optional).
-            lang: Sprach-Code für i18n des Blocks (default: "de").
-
-        Returns:
-            Self-Awareness-Block als String, oder leerer String bei Fehler.
-        """
-        from application.model_registry import ModelRegistry
-        from application.model_service import DEFAULT_MODEL
-
-        model_id = user_model or DEFAULT_MODEL
-        slot = task_slot_name or "chat"
-
-        try:
-            registry = ModelRegistry()
-            metadata = registry.get(model_id)
-
-            # Alle 6 Slot-Belegungen sammeln (wenn user_id vorhanden)
-            all_slots: list[SlotInfo] | None = None
-            if user_id is not None:
-                try:
-                    all_slots = self._build_all_slot_infos(user_id)
-                except Exception:
-                    log.debug(
-                        "Slot-Belegungsliste konnte nicht gebaut werden",
-                        exc_info=True,
-                    )
-
-            if metadata is not None:
-                return build_self_awareness_block(
-                    model_display_name=metadata.display_name,
-                    model_id=metadata.id,
-                    task_slot=slot,
-                    provider=metadata.provider,
-                    all_slots=all_slots,
-                    lang=lang,
-                )
-            # Fallback: ID direkt verwenden wenn nicht in Registry
-            return build_self_awareness_block(
-                model_display_name=model_id,
-                model_id=model_id,
-                task_slot=slot,
-                provider="unknown",
-                all_slots=all_slots,
-                lang=lang,
-            )
-        except Exception:
-            log.debug("Self-Awareness-Block konnte nicht gebaut werden", exc_info=True)
-            return ""
+        self.self_awareness_service = self_awareness_service
 
     def _get_memory_budget(self, provider_name: str | None = None) -> int:
         """Liest das Memory-Budget aus ProviderCapabilities.
@@ -580,11 +459,15 @@ class ChatService:
                 user_model = self.model_service.get_user_model(uid)
 
             # Self-Awareness-Block: Modell-Info in System-Prompt injizieren
-            self_awareness = self._build_self_awareness(
-                user_model, task_slot_name, uid, lang=lang
-            )
-            if self_awareness:
-                effective_prompt = f"{effective_prompt}\n\n{self_awareness}"
+            if self.self_awareness_service is not None:
+                self_awareness = self.self_awareness_service.build(
+                    user_id=uid,
+                    user_model=user_model,
+                    task_slot_name=task_slot_name,
+                    lang=lang,
+                )
+                if self_awareness:
+                    effective_prompt = f"{effective_prompt}\n\n{self_awareness}"
 
             # Provider-Router aufrufen (ersetzt direkten claude_cli Aufruf)
             result = await self.provider_router.route(
@@ -883,11 +766,15 @@ class ChatService:
                 task_meta["resolved_model"] = user_model
 
         # Self-Awareness-Block: Modell-Info in System-Prompt injizieren (i18n)
-        self_awareness = self._build_self_awareness(
-            user_model, task_slot_name, uid, lang=lang
-        )
-        if self_awareness:
-            effective_prompt = f"{effective_prompt}\n\n{self_awareness}"
+        if self.self_awareness_service is not None:
+            self_awareness = self.self_awareness_service.build(
+                user_id=uid,
+                user_model=user_model,
+                task_slot_name=task_slot_name,
+                lang=lang,
+            )
+            if self_awareness:
+                effective_prompt = f"{effective_prompt}\n\n{self_awareness}"
 
         # Status: Denke nach (vor Provider-Call)
         if status_session is not None:

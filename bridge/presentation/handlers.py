@@ -247,7 +247,7 @@ def build_bookmarks_keyboard(bookmarks: list[dict[str, Any]]) -> InlineKeyboardM
 HELP_TEXT_DE: str = (
     "\U0001f916 <b>Axolent Befehlsübersicht</b>\n\n"
     "<b>Chat</b>\n"
-    "• Schreibe einfach eine Nachricht, der Bot leitet sie an Claude weiter\n"
+    "• Schreibe einfach eine Nachricht und der Bot antwortet\n"
     "• /new neuer Chat (löscht Verlauf)\n"
     "• /reset löscht den Konversationsverlauf\n\n"
     "<b>Memory</b>\n"
@@ -277,7 +277,7 @@ HELP_TEXT_DE: str = (
 HELP_TEXT_EN: str = (
     "\U0001f916 <b>Axolent Command Overview</b>\n\n"
     "<b>Chat</b>\n"
-    "• Just send a message, the bot forwards it to Claude\n"
+    "• Just send a message and the bot will answer\n"
     "• /new new chat (clears history)\n"
     "• /reset clears conversation history\n\n"
     "<b>Memory</b>\n"
@@ -309,7 +309,7 @@ HELP_TEXT: str = HELP_TEXT_DE
 
 START_TEXT: str = (
     "Axolent ist bereit.\n\n"
-    "Schick mir eine Frage und ich leite sie an Claude weiter.\n\n"
+    "Schick mir eine Frage und ich beantworte sie.\n\n"
     "Tipp: Du kannst Bot-Nachrichten als Bookmark speichern. "
     "Antworte einfach mit /save."
 )

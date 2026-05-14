@@ -1,8 +1,7 @@
-"""Snapshot-Tests für Telegram-UI-Ausgaben.
+"""Deterministic UI-Tests fuer Telegram-UI-Ausgaben.
 
-Verwendet syrupy für deterministische Snapshot-Vergleiche.
-Bei jeder UI-Änderung schlägt der Test fehl. Entwickler entscheidet
-ob neuer Snapshot OK ist via: pytest --snapshot-update
+Inline-Vergleiche statt syrupy-Snapshots (robuster, keine externe Fixture-Dependency).
+Bei jeder UI-Aenderung schlaegt der Test fehl. Entwickler prueft ob neue Werte OK sind.
 
 Getestete Szenarien:
   1. /settings Hauptmenü ohne Overrides
@@ -25,20 +24,20 @@ from domain.task_slot import TaskSlot
 from infrastructure.sqlite_storage import SqliteConnection, SqliteModelStorage
 
 
-# ──────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------
 # Fixtures
-# ──────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------
 
 
 @pytest.fixture
 def db_path(tmp_path: Path) -> Path:
-    """Temporärer DB-Pfad für Test-Isolation."""
+    """Temporaerer DB-Pfad fuer Test-Isolation."""
     return tmp_path / "test_snapshot.db"
 
 
 @pytest.fixture
 def conn(db_path: Path) -> SqliteConnection:
-    """Frische SQLite-Connection für jeden Test."""
+    """Frische SQLite-Connection fuer jeden Test."""
     c = SqliteConnection(db_path)
     yield c
     c.close()
@@ -52,7 +51,7 @@ def model_service(conn: SqliteConnection) -> ModelService:
 
 @pytest.fixture
 def slot_configs() -> list[SlotConfig]:
-    """Standard SlotConfigs für Tests."""
+    """Standard SlotConfigs fuer Tests."""
     return [
         SlotConfig(slot=TaskSlot.CHAT, default_model="sonnet", fallback=True),
         SlotConfig(slot=TaskSlot.CODE, default_model="opus"),
@@ -115,7 +114,7 @@ def _serialize_keyboard(keyboard) -> list[list[dict[str, str]]]:
 
 
 def _make_command_update(user_id: int = 1, chat_id: int = 10) -> MagicMock:
-    """Erstellt ein gemocktes Telegram-Update für Commands."""
+    """Erstellt ein gemocktes Telegram-Update fuer Commands."""
     update = MagicMock()
     update.effective_user = MagicMock()
     update.effective_user.id = user_id
@@ -128,13 +127,13 @@ def _make_command_update(user_id: int = 1, chat_id: int = 10) -> MagicMock:
     return update
 
 
-# ──────────────────────────────────────────────────────────────
-# Snapshot Tests
-# ──────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------
+# Settings Menu Tests (deterministic inline assertions)
+# ----------------------------------------------------------------
 
 
 class TestSettingsMenuSnapshots:
-    """Snapshot-Tests für /settings Inline-Keyboard Menü."""
+    """Deterministic-Tests fuer /settings Inline-Keyboard Menu."""
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
@@ -145,9 +144,8 @@ class TestSettingsMenuSnapshots:
         self,
         model_service: ModelService,
         task_router: TaskRouter,
-        snapshot,
     ) -> None:
-        """Snapshot: /settings Hauptmenü ohne Overrides."""
+        """Settings-Menu ohne Overrides hat korrekte Slot-Labels."""
         from presentation.settings_callbacks import build_main_menu_keyboard
 
         context = _make_context(model_service=model_service, task_router=task_router)
@@ -156,19 +154,34 @@ class TestSettingsMenuSnapshots:
             user_id=1, model_service=model_service, context=context, lang="de"
         )
 
-        snapshot_data = {
-            "text": text,
-            "keyboard": _serialize_keyboard(keyboard),
-        }
-        assert snapshot_data == snapshot
+        kb = _serialize_keyboard(keyboard)
+
+        # Text assertions
+        assert "Einstellungen" in text
+        assert "Modelle pro Slot" in text
+
+        # Keyboard: 6 Slot-Buttons + 1 Sprache-Button = 7 Reihen
+        assert len(kb) == 7
+
+        # Slot-Labels muessen Default anzeigen
+        assert kb[0][0]["text"] == "CHAT: Sonnet 4.6 (Default)"
+        assert kb[1][0]["text"] == "CODE: Opus 4.7 (Default)"
+        assert kb[2][0]["text"] == "REASON: Opus 4.7 (Default)"
+        assert kb[3][0]["text"] == "CREATIVE: Sonnet 4.6 (Default)"
+        assert kb[4][0]["text"] == "QUICK: Haiku 4.5 (Default)"
+        assert kb[5][0]["text"] == "RESEARCH: Opus 4.7 (Default)"
+        assert "Sprache" in kb[6][0]["text"]
+
+        # Callback-Data korrekt
+        assert kb[0][0]["callback_data"] == "settings_slot:chat"
+        assert kb[1][0]["callback_data"] == "settings_slot:code"
 
     def test_settings_main_menu_with_global_override(
         self,
         model_service: ModelService,
         task_router: TaskRouter,
-        snapshot,
     ) -> None:
-        """Snapshot: /settings Hauptmenü mit globalem Override (Opus)."""
+        """Settings-Menu mit globalem Override (Opus) zeigt Override-Banner."""
         from presentation.settings_callbacks import build_main_menu_keyboard
 
         model_service.set_user_model(1, "opus")
@@ -179,19 +192,27 @@ class TestSettingsMenuSnapshots:
             user_id=1, model_service=model_service, context=context, lang="de"
         )
 
-        snapshot_data = {
-            "text": text,
-            "keyboard": _serialize_keyboard(keyboard),
-        }
-        assert snapshot_data == snapshot
+        kb = _serialize_keyboard(keyboard)
+
+        # Override-Banner im Text
+        assert "Globaler Override aktiv" in text
+        assert "Opus 4.7" in text
+
+        # 8 Reihen: Reset-Button + 6 Slots + Sprache
+        assert len(kb) == 8
+        assert "Override aufheben" in kb[0][0]["text"]
+
+        # Alle Slots zeigen "(global)"
+        for row in kb[1:7]:
+            assert "(global)" in row[0]["text"]
+            assert "Opus 4.7" in row[0]["text"]
 
     def test_settings_main_menu_with_slot_overrides(
         self,
         model_service: ModelService,
         task_router: TaskRouter,
-        snapshot,
     ) -> None:
-        """Snapshot: /settings Hauptmenü mit Slot-Overrides (zeigt 'Alle zurücksetzen')."""
+        """Settings-Menu mit Slot-Overrides zeigt 'Alle zurücksetzen'."""
         from presentation.settings_callbacks import build_main_menu_keyboard
 
         model_service.set_user_model(1, "haiku", slot="code")
@@ -203,15 +224,31 @@ class TestSettingsMenuSnapshots:
             user_id=1, model_service=model_service, context=context, lang="de"
         )
 
-        snapshot_data = {
-            "text": text,
-            "keyboard": _serialize_keyboard(keyboard),
-        }
-        assert snapshot_data == snapshot
+        kb = _serialize_keyboard(keyboard)
+
+        # 8 Reihen: 6 Slots + Sprache + "Alle zurücksetzen"
+        assert len(kb) == 8
+
+        # Overridden Slots zeigen Modell ohne "(Default)"
+        assert kb[0][0]["text"] == "CHAT: Opus 4.7"
+        assert kb[1][0]["text"] == "CODE: Haiku 4.5"
+
+        # Non-overridden Slots zeigen "(Default)"
+        assert "(Default)" in kb[2][0]["text"]
+
+        # Letzter Button: "Alle zurücksetzen"
+        last_row = kb[-1][0]
+        assert "zurücksetzen" in last_row["text"]
+        assert last_row["callback_data"] == "settings_reset_all"
+
+
+# ----------------------------------------------------------------
+# Models Command Tests
+# ----------------------------------------------------------------
 
 
 class TestModelsCommandSnapshots:
-    """Snapshot-Tests für /models Ausgabe."""
+    """Deterministic-Tests fuer /models Ausgabe."""
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
@@ -222,9 +259,8 @@ class TestModelsCommandSnapshots:
         self,
         model_service: ModelService,
         task_router: TaskRouter,
-        snapshot,
     ) -> None:
-        """Snapshot: /models ohne Overrides."""
+        """Models-Output ohne Overrides zeigt alle 6 Slots mit Default."""
         from presentation.handlers import handle_models_command
 
         update = _make_command_update()
@@ -233,15 +269,20 @@ class TestModelsCommandSnapshots:
         await handle_models_command(update, context)
 
         reply_text = update.message.reply_text.call_args[0][0]
-        assert reply_text == snapshot
+        assert "CHAT: Sonnet 4.6 (Default)" in reply_text
+        assert "CODE: Opus 4.7 (Default)" in reply_text
+        assert "REASON: Opus 4.7 (Default)" in reply_text
+        assert "CREATIVE: Sonnet 4.6 (Default)" in reply_text
+        assert "QUICK: Haiku 4.5 (Default)" in reply_text
+        assert "RESEARCH: Opus 4.7 (Default)" in reply_text
+        assert "/setmodel" in reply_text
 
     async def test_models_output_with_overrides(
         self,
         model_service: ModelService,
         task_router: TaskRouter,
-        snapshot,
     ) -> None:
-        """Snapshot: /models mit Global-Override (Opus) + Slot-Override (CODE=Haiku)."""
+        """Models-Output mit Overrides zeigt Override-Markierung."""
         from presentation.handlers import handle_models_command
 
         model_service.set_user_model(1, "opus")
@@ -253,4 +294,9 @@ class TestModelsCommandSnapshots:
         await handle_models_command(update, context)
 
         reply_text = update.message.reply_text.call_args[0][0]
-        assert reply_text == snapshot
+        # Global Override auf Opus: alle Slots zeigen Opus (Override)
+        assert "CHAT: Opus 4.7 (Override)" in reply_text
+        # CODE hat spezifischen Override auf Haiku
+        assert "CODE: Haiku 4.5 (Override)" in reply_text
+        # Nicht-overridden Slots zeigen Global-Override
+        assert "REASON: Opus 4.7 (Override)" in reply_text

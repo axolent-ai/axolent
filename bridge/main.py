@@ -32,8 +32,10 @@ from pathlib import Path
 from application.bookmark_service import BookmarkService
 from application.chat_service import ChatService
 from application.memory_service import MemoryService
+from application.model_registry import ModelRegistry
 from application.model_service import ModelService, resolve_alias
 from application.provider_router import ProviderRouter
+from application.self_awareness_service import SelfAwarenessService
 from application.rate_limiter import RateLimiter
 from infrastructure.audit_log import write_audit_log
 from infrastructure.bookmark_storage import (
@@ -357,12 +359,20 @@ def main() -> None:
                 migrated_onboarding,
             )
 
+    # SelfAwarenessService initialisieren (Phase 3: extrahiert aus ChatService)
+    self_awareness_svc = SelfAwarenessService(
+        model_service=model_svc,
+        task_router=task_router,
+        model_registry=ModelRegistry(),
+    )
+
     # ChatService mit Konstruktor-Injection erstellen
     chat_service = ChatService(
         provider_router=router,
         memory_service=memory_svc,
         model_service=model_svc,
         task_router=task_router,
+        self_awareness_service=self_awareness_svc,
     )
 
     log.info("Trinity-Memory-System initialisiert (Auto-Loading aktiv)")

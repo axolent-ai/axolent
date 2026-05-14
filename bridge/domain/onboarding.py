@@ -286,15 +286,123 @@ _WIZARD_SKIP_STEP2_TEXTS: dict[str, str] = {
 _START_WELCOME_TEXTS: dict[str, str] = {
     "de": (
         "Axolent ist bereit.\n\n"
-        "Schick mir eine Frage und ich leite sie an Claude weiter.\n\n"
+        "Schick mir eine Frage und ich beantworte sie.\n\n"
         "Tipp: Du kannst Bot-Nachrichten als Bookmark speichern. "
         "Antworte einfach mit /save."
     ),
     "en": (
         "Axolent is ready.\n\n"
-        "Send me a question and I'll forward it to Claude.\n\n"
+        "Send me a question and I'll answer it.\n\n"
         "Tip: You can bookmark bot messages. "
         "Just reply with /save."
+    ),
+    "fr": (
+        "Axolent est prêt.\n\n"
+        "Pose-moi une question et je te réponds.\n\n"
+        "Astuce : tu peux enregistrer les messages du bot. "
+        "Réponds simplement avec /save."
+    ),
+    "es": (
+        "Axolent está listo.\n\n"
+        "Hazme una pregunta y te respondo.\n\n"
+        "Consejo: puedes guardar los mensajes del bot. "
+        "Simplemente responde con /save."
+    ),
+    "it": (
+        "Axolent è pronto.\n\n"
+        "Fammi una domanda e ti rispondo.\n\n"
+        "Suggerimento: puoi salvare i messaggi del bot. "
+        "Rispondi semplicemente con /save."
+    ),
+    "pt": (
+        "Axolent está pronto.\n\n"
+        "Me faça uma pergunta e eu respondo.\n\n"
+        "Dica: você pode salvar as mensagens do bot. "
+        "Basta responder com /save."
+    ),
+    "nl": (
+        "Axolent is klaar.\n\n"
+        "Stel me een vraag en ik beantwoord het.\n\n"
+        "Tip: je kunt bot-berichten opslaan als bladwijzer. "
+        "Antwoord gewoon met /save."
+    ),
+    "pl": (
+        "Axolent jest gotowy.\n\n"
+        "Zadaj mi pytanie, a odpowiem.\n\n"
+        "Wskazówka: możesz zapisywać wiadomości bota. "
+        "Po prostu odpowiedz /save."
+    ),
+    "sv": (
+        "Axolent är redo.\n\n"
+        "Ställ en fråga så svarar jag.\n\n"
+        "Tips: du kan spara bot-meddelanden som bokmärken. "
+        "Svara bara med /save."
+    ),
+    "tr": (
+        "Axolent hazır.\n\n"
+        "Bana bir soru sor, cevaplayayım.\n\n"
+        "İpucu: Bot mesajlarını yer imi olarak kaydedebilirsin. "
+        "Sadece /save ile yanıtla."
+    ),
+    "ru": (
+        "Axolent готов.\n\n"
+        "Задай мне вопрос, и я отвечу.\n\n"
+        "Подсказка: ты можешь сохранять сообщения бота. "
+        "Просто ответь /save."
+    ),
+    "uk": (
+        "Axolent готовий.\n\n"
+        "Постав мені питання, і я відповім.\n\n"
+        "Підказка: ти можеш зберігати повідомлення бота. "
+        "Просто відповідай /save."
+    ),
+    "zh": (
+        "Axolent 已就绪。\n\n"
+        "问我一个问题，我来回答。\n\n"
+        "提示：你可以将机器人消息加入书签。"
+        "只需回复 /save。"
+    ),
+    "ja": (
+        "Axolent の準備ができました。\n\n"
+        "質問をどうぞ、お答えします。\n\n"
+        "ヒント：ボットのメッセージをブックマークできます。"
+        "/save と返信するだけです。"
+    ),
+    "ko": (
+        "Axolent 준비 완료.\n\n"
+        "질문하면 답변해 드립니다.\n\n"
+        "팁: 봇 메시지를 북마크할 수 있습니다. "
+        "/save로 답장하세요."
+    ),
+    "ar": (
+        "Axolent جاهز.\n\n"
+        "اسألني سؤالاً وسأجيبك.\n\n"
+        "نصيحة: يمكنك حفظ رسائل البوت كإشارة مرجعية. "
+        "فقط أجب بـ /save."
+    ),
+    "hi": (
+        "Axolent तैयार है।\n\n"
+        "मुझसे कोई सवाल पूछें, मैं जवाब दूँगा।\n\n"
+        "सुझाव: आप बॉट संदेशों को बुकमार्क कर सकते हैं। "
+        "बस /save के साथ जवाब दें।"
+    ),
+    "id": (
+        "Axolent siap.\n\n"
+        "Tanyakan sesuatu dan saya akan menjawab.\n\n"
+        "Tips: kamu bisa menyimpan pesan bot sebagai bookmark. "
+        "Cukup balas dengan /save."
+    ),
+    "th": (
+        "Axolent พร้อมแล้ว\n\n"
+        "ถามคำถามได้เลย แล้วจะตอบให้\n\n"
+        "เคล็ดลับ: คุณสามารถบันทึกข้อความบอทเป็นบุ๊กมาร์กได้ "
+        "เพียงตอบกลับด้วย /save"
+    ),
+    "vi": (
+        "Axolent đã sẵn sàng.\n\n"
+        "Hãy hỏi tôi một câu hỏi, tôi sẽ trả lời.\n\n"
+        "Mẹo: bạn có thể lưu tin nhắn bot làm dấu trang. "
+        "Chỉ cần trả lời bằng /save."
     ),
 }
 
