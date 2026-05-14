@@ -15,7 +15,7 @@ layers =
     domain
 
 [importlinter:contract:domain-pure]
-name = Domain darf nichts importieren
+name = Domain must not import anything
 type = forbidden
 source_modules =
     domain
@@ -25,7 +25,7 @@ forbidden_modules =
     presentation
 
 [importlinter:contract:presentation-no-infra]
-name = Presentation darf nicht direkt aus Infrastructure importieren
+name = Presentation must not import directly from Infrastructure
 type = forbidden
 source_modules =
     presentation

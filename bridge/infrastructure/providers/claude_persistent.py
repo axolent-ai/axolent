@@ -143,7 +143,7 @@ class ClaudePersistentProvider(LLMProvider, StreamingProvider):
 
         except RuntimeError as e:
             duration = time.monotonic() - start
-            log.error("ClaudePersistentProvider Fehler: %s", e)
+            log.error("ClaudePersistentProvider error: %s", e)
             return ProviderResponse(
                 text="",
                 duration_seconds=duration,

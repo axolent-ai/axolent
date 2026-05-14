@@ -31,7 +31,7 @@ class TestSemanticEntry:
 
     def test_to_dict_includes_category(self) -> None:
         """to_dict enthält category-Feld."""
-        entry = SemanticEntry(category="person", content="Jessica, Selbststaendig")
+        entry = SemanticEntry(category="person", content="Alice, freelancer")
         d = entry.to_dict()
         assert d["category"] == "person"
         assert "category" in d

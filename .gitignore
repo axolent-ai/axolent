@@ -47,7 +47,7 @@ pytest_tmp_*/
 bridge/pytest_tmp_*/
 bridge/data/pytest-basetemp/
 
-# Personalisierte Runtime-Config (User-Overrides, nicht ins Repo)
+# Personalized runtime config (user overrides, not committed)
 bridge/config/system_prompt.md
 bridge/config/user_constitution.md
 

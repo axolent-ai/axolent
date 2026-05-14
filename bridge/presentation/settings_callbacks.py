@@ -476,7 +476,7 @@ async def handle_settings_callback(
                 details=details,
             )
 
-        # Back to main menu mit aktualisierten Werten
+        # Back to main menu with updated values
         text, keyboard = build_main_menu_keyboard(user_id, model_service, context, lang)
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
         return
@@ -553,7 +553,7 @@ async def handle_settings_callback(
         )
         log.info("Settings: User %d set language to '%s'", user_id, new_lang)
 
-        # Back to main menu (in neuer Sprache)
+        # Back to main menu (in new language)
         text, keyboard = build_main_menu_keyboard(
             user_id, model_service, context, new_lang
         )

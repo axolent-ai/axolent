@@ -73,27 +73,38 @@ PRODUCTION_GLOBS = [
 ]
 
 WHITELIST_PATHS = {
+    # German keywords for TaskRouter slot classification (feature, not a bug).
     "bridge/config/task_slots.yaml",
+    # Contains German word stems as regex patterns (the detection target IS German).
     "scripts/check_no_fake_umlauts.py",
-    "scripts/check_en_only_production.py",  # self-exclude
+    # Self-exclude: this script contains German detection patterns by definition.
+    "scripts/check_en_only_production.py",
+    # Public documentation: already EN, hook double-checks for regressions.
     "README.md",
     "bridge/README.md",
     "CLAUDE.md",
-    # i18n lookup tables: hold translations for 20+ languages, intentionally
-    # multilingual. Their German strings are user-facing translations, not
-    # production logic.
+    # i18n: wizard texts, welcome messages, button labels in 20 languages.
     "bridge/domain/onboarding.py",
+    # i18n: German word markers for language detection heuristic (feature data).
     "bridge/domain/language.py",
+    # i18n: self-awareness block has DE + EN branches (lang="de" / lang="en").
     "bridge/domain/personality.py",
+    # i18n: HELP_TEXT_DE, _RESET_TEXTS, _MODEL_STRINGS, /lang names (DE + EN).
     "bridge/presentation/handlers.py",
+    # i18n: _SETTINGS_STRINGS dict with DE + EN translations for /settings menu.
     "bridge/presentation/settings_callbacks.py",
+    # i18n: calls domain.onboarding i18n functions; no own DE strings.
     "bridge/presentation/onboarding_callbacks.py",
+    # Bookmark callbacks: no own DE strings, but whitelisted as presentation layer.
     "bridge/presentation/callbacks.py",
+    # Render logic: no DE strings, whitelisted for safety (Markdown conversion).
     "bridge/presentation/render.py",
-    # Feature data: German stop words, umlaut normalization, i18n status messages.
-    # The German content IS the feature.
+    # Feature data: _STOP_WORDS_DE for keyword extraction (the words ARE the feature).
     "bridge/application/chat_service.py",
+    # Feature data: _UMLAUT_REPLACEMENTS, _SS_TO_ESZETT_WORDS for German input
+    # normalization. Umlauts in code ARE the feature.
     "bridge/application/task_router.py",
+    # i18n: _STATUS_TEXTS dict with DE + EN status messages (memory, thinking).
     "bridge/application/status_manager.py",
 }
 

@@ -535,8 +535,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     async with user_lock:
         async with GLOBAL_CLAUDE_SEMAPHORE:
             # R04: Streaming path when PersistentProvider available
-            # Type-Safety: hasattr statt isinstance wegen Layer-Contract
-            # (presentation darf infrastructure.providers.base nicht importieren)
+            # Type safety: hasattr instead of isinstance due to layer contract
+            # (presentation must not import infrastructure.providers.base)
             if (
                 persistent_provider is not None
                 and hasattr(persistent_provider, "query_streaming")
@@ -602,7 +602,7 @@ async def _handle_message_streaming(
     memory_entries_loaded = 0
     task_meta: dict[str, Any] = {}
 
-    # Audit "started" Eintrag
+    # Audit "started" entry
     audit_started: dict[str, Any] = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "event_type": "stream_started",
@@ -614,21 +614,21 @@ async def _handle_message_streaming(
     }
     write_raw_audit(audit_started)
 
-    # Process-Info wird aus dem init-Event des Streams geholt (nicht vorab,
-    # da ein vorab-get_or_create ohne model-Argument den Modell-Wechsel
-    # nicht erkennt und den alten Subprocess wiederverwendet).
+    # Process info is extracted from the stream's init event (not upfront,
+    # because an upfront get_or_create without model argument would not
+    # detect a model switch and would reuse the old subprocess).
     was_cold = False
     subprocess_pid = 0
 
     try:
-        # Streaming-Nachricht erstellen
+        # Create streaming placeholder message
         streaming_msg = await create_streaming_message(update.effective_chat)
         session = StreamingSession(
             message=streaming_msg,
             started_at=time.monotonic(),
         )
 
-        # Status-Session erstellen (R02-B)
+        # Create status session (R02-B)
         from application.status_manager import SHOW_STATUS_UPDATES, StatusSession
 
         status_session: StatusSession | None = None
@@ -673,7 +673,7 @@ async def _handle_message_streaming(
             )
             async for event in stream_iter:
                 if event.event_type == "init":
-                    # Process-Metadata aus dem init-Event des Pools
+                    # Process metadata from the pool's init event
                     was_cold = event.was_cold
                     subprocess_pid = event.subprocess_pid
                     continue
@@ -699,8 +699,8 @@ async def _handle_message_streaming(
                     # Generic message to user
                     await abort_streaming(
                         session,
-                        "Der Sprachmodell-Anbieter meldet ein Problem "
-                        f"(ref: {error_id}). Versuch es gleich noch mal.",
+                        "The language model provider reports a problem "
+                        f"(ref: {error_id}). Please try again shortly.",
                     )
                     break
 
@@ -710,7 +710,7 @@ async def _handle_message_streaming(
             log.error("Streaming RuntimeError (ref: %s): %s", error_id, e)
             await abort_streaming(
                 session,
-                f"Interner Fehler (ref: {error_id}).",
+                f"Internal error (ref: {error_id}).",
             )
 
         finally:
@@ -795,7 +795,7 @@ async def _handle_message_streaming(
         write_raw_audit(audit_crash)
 
         # User-facing error message
-        error_msg = f"Interner Fehler (ref: {error_id})."
+        error_msg = f"Internal error (ref: {error_id})."
         try:
             if session is not None:
                 await abort_streaming(session, error_msg)

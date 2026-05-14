@@ -105,7 +105,7 @@ class TestAuditLog:
         """Unicode-Inhalt wird korrekt geschrieben (keine ASCII-Escapes)."""
         audit_path, logger = isolated_audit
 
-        entry = {"user": "Jessica", "text": "Grueße aus Muenchen: äöüß"}
+        entry = {"user": "Alice", "text": "Grueße aus Muenchen: äöüß"}
         logger.info(json.dumps(entry, ensure_ascii=False))
 
         raw = audit_path.read_text(encoding="utf-8")

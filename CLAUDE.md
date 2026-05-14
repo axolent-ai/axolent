@@ -8,7 +8,7 @@ For Atlas-orchestrated agents this overrides any conflicting global rule.
 ## 1. Language Rule, English-Only
 
 This project is **English-only** for all code, docs, and user-facing strings.
-This explicitly overrides the global SELBSTSTÄNDIG rule that says "German in
+This explicitly overrides any external project rule that says "German in
 comments, English in identifiers".
 
 ### Mandatory English
