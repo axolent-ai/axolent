@@ -2221,6 +2221,15 @@ async def handle_debate_command(
 
     # Format and send result
     formatted = _format_debate_result(debate_result, lang=debate_lang)
+
+    # Text Guard: fix diacritics in debate output before sending
+    from application.text_guard_service import TextGuardService
+
+    _debate_tg = TextGuardService()
+    _debate_guard = _debate_tg.get_guard(debate_lang, mode="fix")
+    if _debate_guard is not None:
+        formatted = _debate_guard.fix(formatted)
+
     chunks = split_message(formatted)
     for chunk in chunks:
         await update.message.reply_text(chunk)

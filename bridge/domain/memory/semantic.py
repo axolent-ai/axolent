@@ -19,7 +19,7 @@ class SemanticEntry:
         id: Unique ID with prefix sem_ for layer detection.
         user_id: Telegram user ID.
         content: The generalized fact.
-        category: Classification (e.g. "fakt", "person", "praeferenz", "projekt").
+        category: Classification (e.g. "fakt", "person", "preference", "projekt").
         context: Optional context (source, confidence).
         timestamp: ISO 8601 UTC.
         importance: 1-10, auto-scored or user-assigned.

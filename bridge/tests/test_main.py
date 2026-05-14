@@ -44,7 +44,8 @@ class TestValidateAllowAllUsers:
             validate_allow_all_users()
 
             assert any(
-                "ALLOW_ALL_USERS active in DEV_MODE" in r.message for r in caplog.records
+                "ALLOW_ALL_USERS active in DEV_MODE" in r.message
+                for r in caplog.records
             )
 
     def test_allow_all_disabled_no_output(
