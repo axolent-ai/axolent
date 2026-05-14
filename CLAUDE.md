@@ -1,11 +1,11 @@
-# AXOLENT AI — Coding Conventions
+# AXOLENT AI, Coding Conventions
 
 **Scope:** This file defines project-specific conventions for AXOLENT AI.
 For Atlas-orchestrated agents this overrides any conflicting global rule.
 
 ---
 
-## 1. Language Rule — English-Only
+## 1. Language Rule, English-Only
 
 This project is **English-only** for all code, docs, and user-facing strings.
 This explicitly overrides the global SELBSTSTÄNDIG rule that says "German in
@@ -25,11 +25,11 @@ comments, English in identifiers".
 
 ### Mandatory German (intentional exceptions)
 
-* `bridge/config/task_slots.yaml` — German keywords are a **feature**, not a bug.
+* `bridge/config/task_slots.yaml`, German keywords are a **feature**, not a bug.
   They enable the TaskRouter to classify German user inputs.
   English keywords must be added alongside, not replacing.
 * Internal `docs/` files that are not public-facing (code reviews, briefings,
-  brand-naming history, internal research) — these are historical context and
+  brand-naming history, internal research), these are historical context and
   may stay German. They will be removed from the public repository via
   `git filter-repo` before public release.
 
@@ -44,7 +44,7 @@ comments, English in identifiers".
 
 ## 2. Style Rules
 
-* **No em-dashes (—)** or en-dashes (–). Use commas, colons, parentheses, or
+* **No em-dashes (,)** or en-dashes (-). Use commas, colons, parentheses, or
   periods instead.
 * **Bullets:** use `*` or numbered lists. Never `-` as bullet marker.
 * **Comments:** prefer no comments. Only add when the WHY is non-obvious
@@ -107,7 +107,7 @@ no token reading from `~/.claude`.
 * pip-audit (dependency vulnerabilities)
 * semgrep (semantic security patterns)
 * no-fake-umlauts (prevents ASCII umlaut regression in any remaining German text)
-* en-only-production — blocks new German strings/comments in production code
+* en-only-production, blocks new German strings/comments in production code
 
 All hooks must pass before commit.
 
