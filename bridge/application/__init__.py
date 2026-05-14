@@ -1,1 +1,1 @@
-"""Application-Layer: Use-Cases die Domain und Infrastructure orchestrieren."""
+"""Application layer: use cases orchestrating domain and infrastructure."""

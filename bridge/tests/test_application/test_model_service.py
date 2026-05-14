@@ -1,12 +1,12 @@
-"""Tests für ModelService: Alias-Resolution, CRUD, Default-Fallback.
+"""Tests for ModelService: alias resolution, CRUD, default fallback.
 
-Testet:
-  - resolve_alias: Alias -> Modell-ID Mapping
-  - ModelService.set_user_model: Alias setzen, unbekannter Alias
-  - ModelService.get_effective_model: Override vs. Default
-  - ModelService.reset_user_model: Reset auf Default
-  - ModelService.get_model_display_name: Reverse-Lookup
-  - ModelService.list_available_aliases: Alle Aliase
+Tests:
+  - resolve_alias: alias -> model ID mapping
+  - ModelService.set_user_model: set alias, unknown alias
+  - ModelService.get_effective_model: override vs. default
+  - ModelService.reset_user_model: reset to default
+  - ModelService.get_model_display_name: reverse lookup
+  - ModelService.list_available_aliases: all aliases
 """
 
 from __future__ import annotations

@@ -245,17 +245,17 @@ class SqliteBookmarkStorage:
         chat_id: int,
         content: str,
     ) -> dict[str, Any]:
-        """Speichert einen Bookmark-Eintrag.
+        """Save a bookmark entry.
 
         Args:
-            user_id: Telegram User-ID.
-            username: Telegram Username (kann None sein).
-            message_id: Telegram Message-ID der Bot-Antwort.
-            chat_id: Telegram Chat-ID.
-            content: Volltext der Bot-Antwort.
+            user_id: Telegram user ID.
+            username: Telegram username (can be None).
+            message_id: Telegram message ID of the bot response.
+            chat_id: Telegram chat ID.
+            content: Full text of the bot response.
 
         Returns:
-            Der gespeicherte Bookmark-Eintrag als Dict.
+            The saved bookmark entry as a dict.
         """
         ts = datetime.now(timezone.utc).isoformat()
         self._conn.execute(
@@ -284,14 +284,14 @@ class SqliteBookmarkStorage:
     def list_recent_bookmarks(
         self, user_id: int, limit: int = 10
     ) -> list[dict[str, Any]]:
-        """Gibt die neuesten Bookmarks eines Users zurück.
+        """Return the most recent bookmarks for a user.
 
         Args:
-            user_id: Telegram User-ID.
-            limit: Maximale Anzahl zurückzugebender Bookmarks.
+            user_id: Telegram user ID.
+            limit: Maximum number of bookmarks to return.
 
         Returns:
-            Liste von Bookmark-Dicts, neueste zuerst, max `limit` Einträge.
+            List of bookmark dicts, newest first, at most `limit` entries.
         """
         rows = self._conn.fetchall(
             """SELECT user_id, username, chat_id, message_id, content,
@@ -307,18 +307,18 @@ class SqliteBookmarkStorage:
     def search_bookmarks(
         self, user_id: int, query: str, limit: int = 20
     ) -> list[dict[str, Any]]:
-        """Sucht Bookmarks per Inhalts-Substring (case-insensitive).
+        """Search bookmarks by content substring (case-insensitive).
 
         Args:
-            user_id: Telegram User-ID.
-            query: Suchbegriff für den Bookmark-Inhalt.
-            limit: Maximale Anzahl Ergebnisse.
+            user_id: Telegram user ID.
+            query: Search term for bookmark content.
+            limit: Maximum number of results.
 
         Returns:
-            Liste passender Bookmark-Dicts, neueste zuerst.
+            List of matching bookmark dicts, newest first.
         """
-        # SQLite LIKE ist per Default case-insensitive für ASCII.
-        # Für Unicode-Korrektheit verwenden wir LOWER().
+        # SQLite LIKE is case-insensitive by default for ASCII.
+        # For Unicode correctness we use LOWER().
         rows = self._conn.fetchall(
             """SELECT user_id, username, chat_id, message_id, content,
                       created_at as timestamp
@@ -333,15 +333,15 @@ class SqliteBookmarkStorage:
     def get_bookmark_by_message_id(
         self, user_id: int, chat_id: int, message_id: int
     ) -> Optional[dict[str, Any]]:
-        """Findet einen Bookmark per chat_id + message_id.
+        """Find a bookmark by chat_id + message_id.
 
         Args:
-            user_id: Telegram User-ID.
-            chat_id: Telegram Chat-ID.
-            message_id: Telegram Message-ID zum Suchen.
+            user_id: Telegram user ID.
+            chat_id: Telegram chat ID.
+            message_id: Telegram message ID to search for.
 
         Returns:
-            Bookmark-Dict oder None falls nicht gefunden.
+            Bookmark dict or None if not found.
         """
         row = self._conn.fetchone(
             """SELECT user_id, username, chat_id, message_id, content,
@@ -353,15 +353,15 @@ class SqliteBookmarkStorage:
         return dict(row) if row else None
 
     def bookmark_exists(self, user_id: int, chat_id: int, message_id: int) -> bool:
-        """Prüft ob ein Bookmark existiert.
+        """Check whether a bookmark exists.
 
         Args:
-            user_id: Telegram User-ID.
-            chat_id: Telegram Chat-ID.
-            message_id: Telegram Message-ID zum Prüfen.
+            user_id: Telegram user ID.
+            chat_id: Telegram chat ID.
+            message_id: Telegram message ID to check.
 
         Returns:
-            True wenn der Bookmark existiert, False sonst.
+            True if the bookmark exists, False otherwise.
         """
         row = self._conn.fetchone(
             """SELECT 1 FROM bookmarks
@@ -371,15 +371,15 @@ class SqliteBookmarkStorage:
         return row is not None
 
     def delete_bookmark(self, user_id: int, chat_id: int, message_id: int) -> bool:
-        """Löscht einen Bookmark per chat_id + message_id.
+        """Delete a bookmark by chat_id + message_id.
 
         Args:
-            user_id: Telegram User-ID.
-            chat_id: Telegram Chat-ID.
-            message_id: Telegram Message-ID zum Entfernen.
+            user_id: Telegram user ID.
+            chat_id: Telegram chat ID.
+            message_id: Telegram message ID to remove.
 
         Returns:
-            True wenn ein Bookmark gelöscht wurde, False falls nicht gefunden.
+            True if a bookmark was deleted, False if not found.
         """
         cursor = self._conn.execute(
             """DELETE FROM bookmarks
@@ -416,29 +416,29 @@ class SqliteMemoryStorage:
 
     @staticmethod
     def _validate_layer(layer: str) -> None:
-        """Prüft ob der Layer valide ist.
+        """Validate that the layer name is known.
 
         Raises:
-            ValueError: Bei unbekanntem Layer.
+            ValueError: If the layer is unknown.
         """
         if layer not in VALID_LAYERS:
             raise ValueError(f"Unknown layer: '{layer}'. Allowed: {VALID_LAYERS}")
 
     @staticmethod
     def _entry_to_row(entry: dict, layer: str) -> tuple:
-        """Konvertiert ein Entry-Dict in ein SQLite-Row-Tupel.
+        """Convert an entry dict to a SQLite row tuple.
 
-        Typ-spezifische Felder (context, category, skill_name, usage_count)
-        werden in metadata_json gepackt.
+        Type-specific fields (context, category, skill_name, usage_count)
+        are packed into metadata_json.
 
         Args:
-            entry: Serialisiertes Entry-Dict.
-            layer: Ziel-Layer.
+            entry: Serialized entry dict.
+            layer: Target layer.
 
         Returns:
-            Tupel für INSERT.
+            Tuple for INSERT.
         """
-        # Alle Felder die nicht zum Basis-Schema gehören -> metadata
+        # All fields not in the base schema go into metadata
         base_keys = {"id", "user_id", "content", "importance", "timestamp", "type"}
         metadata = {k: v for k, v in entry.items() if k not in base_keys}
 
@@ -454,15 +454,15 @@ class SqliteMemoryStorage:
 
     @staticmethod
     def _row_to_entry(row: sqlite3.Row) -> dict:
-        """Konvertiert eine SQLite-Row zurück in ein Entry-Dict.
+        """Convert a SQLite row back into an entry dict.
 
-        Merged metadata_json zurück in das Haupt-Dict.
+        Merges metadata_json back into the main dict.
 
         Args:
-            row: sqlite3.Row-Objekt.
+            row: sqlite3.Row object.
 
         Returns:
-            Entry-Dict (kompatibel mit JSONL-Format).
+            Entry dict (compatible with JSONL format).
         """
         entry: dict[str, Any] = {
             "id": row["id"],
@@ -484,11 +484,11 @@ class SqliteMemoryStorage:
         return entry
 
     def append(self, entry: dict, layer: str) -> None:
-        """Hängt einen Entry an den entsprechenden Layer an.
+        """Append an entry to the specified layer.
 
         Args:
-            entry: Serialisiertes Entry-Dict.
-            layer: Ziel-Layer.
+            entry: Serialized entry dict.
+            layer: Target layer.
         """
         self._validate_layer(layer)
         row_data = self._entry_to_row(entry, layer)
@@ -501,15 +501,15 @@ class SqliteMemoryStorage:
         log.debug("Memory entry appended: layer=%s id=%s", layer, entry.get("id"))
 
     def list_entries(self, user_id: int, layer: str, limit: int = 50) -> list[dict]:
-        """Liest Entries für einen User, neueste zuerst.
+        """Read entries for a user, newest first.
 
         Args:
-            user_id: Telegram-User-ID.
-            layer: Zu lesender Layer.
-            limit: Maximale Anzahl Einträge.
+            user_id: Telegram user ID.
+            layer: Layer to read from.
+            limit: Maximum number of entries.
 
         Returns:
-            Liste von Entry-Dicts, neueste zuerst (nach Timestamp sortiert).
+            List of entry dicts, newest first (sorted by timestamp).
         """
         self._validate_layer(layer)
         rows = self._conn.fetchall(
@@ -530,27 +530,27 @@ class SqliteMemoryStorage:
         limit: int = 20,
         mode: SearchMode = "substring",
     ) -> list[dict]:
-        """Durchsucht Memory-Entries eines Users.
+        """Search memory entries for a user.
 
-        Unterstützt zwei Modi:
-          - "substring": SQLite LIKE (default, kompatibel mit JSONL)
-          - "embedding": Phase 1+, noch nicht implementiert
+        Supports two modes:
+          - "substring": SQLite LIKE (default, compatible with JSONL)
+          - "embedding": Phase 1+, not yet implemented
 
-        Wenn FTS5-Index vorhanden ist UND mode="substring", wird
-        FTS5 für bessere Performance genutzt.
+        When FTS5 index is available AND mode="substring", FTS5 is used
+        for better performance.
 
         Args:
-            user_id: Telegram-User-ID.
-            query: Suchbegriff.
-            layer: Zu durchsuchender Layer.
-            limit: Maximale Treffer.
-            mode: "substring" oder "embedding".
+            user_id: Telegram user ID.
+            query: Search term.
+            layer: Layer to search.
+            limit: Maximum number of hits.
+            mode: "substring" or "embedding".
 
         Returns:
-            Liste von matching Entry-Dicts, neueste Treffer zuerst.
+            List of matching entry dicts, newest hits first.
 
         Raises:
-            NotImplementedError: Bei mode="embedding".
+            NotImplementedError: For mode="embedding".
         """
         if mode == "embedding":
             raise NotImplementedError(
@@ -597,17 +597,17 @@ class SqliteMemoryStorage:
         return [self._row_to_entry(r) for r in rows]
 
     def delete_by_id(self, entry_id: str, layer: str, user_id: int) -> bool:
-        """Löscht einen Entry anhand seiner ID.
+        """Delete an entry by its ID.
 
-        Verifiziert Ownership: Entry muss dem User gehören.
+        Verifies ownership: the entry must belong to the user.
 
         Args:
-            entry_id: ID des zu löschenden Entries.
-            layer: Layer in dem gesucht wird.
-            user_id: User-ID für Ownership-Check.
+            entry_id: ID of the entry to delete.
+            layer: Layer to search in.
+            user_id: User ID for ownership check.
 
         Returns:
-            True wenn Entry gefunden und gelöscht, False wenn nicht gefunden.
+            True if the entry was found and deleted, False if not found.
         """
         self._validate_layer(layer)
         cursor = self._conn.execute(
@@ -621,15 +621,15 @@ class SqliteMemoryStorage:
         return deleted
 
     def get_by_id(self, entry_id: str, layer: str, user_id: int) -> Optional[dict]:
-        """Liest einen einzelnen Entry anhand seiner ID.
+        """Read a single entry by its ID.
 
         Args:
-            entry_id: Gesuchte Entry-ID.
-            layer: Layer in dem gesucht wird.
-            user_id: User-ID für Ownership-Check.
+            entry_id: Entry ID to look up.
+            layer: Layer to search in.
+            user_id: User ID for ownership check.
 
         Returns:
-            Entry-Dict oder None wenn nicht gefunden.
+            Entry dict or None if not found.
         """
         self._validate_layer(layer)
         row = self._conn.fetchone(
@@ -658,7 +658,7 @@ class SqliteProfileStorage:
         self._conn = conn
 
     def load_all(self) -> dict[int, str]:
-        """Lädt alle User-Profile.
+        """Load all user profiles.
 
         Returns:
             Dict: user_id -> profile_name.
@@ -667,12 +667,12 @@ class SqliteProfileStorage:
         return {int(row["user_id"]): row["profile"] for row in rows}
 
     def save(self, user_id: int, chat_id: int, profile: str) -> None:
-        """Speichert oder aktualisiert ein User-Profil.
+        """Save or update a user profile.
 
         Args:
-            user_id: Telegram User-ID.
-            chat_id: Telegram Chat-ID.
-            profile: Profilname (light, normal, power, unlimited).
+            user_id: Telegram user ID.
+            chat_id: Telegram chat ID.
+            profile: Profile name (light, normal, power, unlimited).
         """
         ts = datetime.now(timezone.utc).isoformat()
         self._conn.execute(
@@ -700,14 +700,14 @@ class SqliteModelStorage:
         self._conn = conn
 
     def get_model(self, user_id: int, slot: str = "global") -> Optional[str]:
-        """Liest das aktive Modell-Override für einen User und Slot.
+        """Read the active model override for a user and slot.
 
         Args:
-            user_id: Telegram-User-ID.
-            slot: Slot-Name (default: 'global').
+            user_id: Telegram user ID.
+            slot: Slot name (default: 'global').
 
         Returns:
-            Modell-ID als String oder None wenn kein Override gesetzt.
+            Model ID as string or None if no override is set.
         """
         row = self._conn.fetchone(
             "SELECT model_id FROM user_slot_models WHERE user_id = ? AND slot = ?",
@@ -716,12 +716,12 @@ class SqliteModelStorage:
         return row["model_id"] if row else None
 
     def set_model(self, user_id: int, model_id: str, slot: str = "global") -> None:
-        """Setzt oder aktualisiert das Modell-Override.
+        """Set or update a model override.
 
         Args:
-            user_id: Telegram-User-ID.
-            model_id: Volle Modell-ID (z.B. 'claude-opus-4-7').
-            slot: Slot-Name (default: 'global').
+            user_id: Telegram user ID.
+            model_id: Full model ID (e.g. 'claude-opus-4-7').
+            slot: Slot name (default: 'global').
         """
         ts = datetime.now(timezone.utc).isoformat()
         self._conn.execute(
@@ -738,14 +738,14 @@ class SqliteModelStorage:
         )
 
     def delete_model(self, user_id: int, slot: str = "global") -> bool:
-        """Entfernt ein Modell-Override (Reset auf Default).
+        """Remove a model override (reset to default).
 
         Args:
-            user_id: Telegram-User-ID.
-            slot: Slot-Name (default: 'global').
+            user_id: Telegram user ID.
+            slot: Slot name (default: 'global').
 
         Returns:
-            True wenn ein Override gelöscht wurde.
+            True if an override was deleted.
         """
         cursor = self._conn.execute(
             "DELETE FROM user_slot_models WHERE user_id = ? AND slot = ?",
@@ -757,13 +757,13 @@ class SqliteModelStorage:
         return deleted
 
     def get_all_models(self, user_id: int) -> dict[str, str]:
-        """Liest alle Slot-Overrides für einen User.
+        """Read all slot overrides for a user.
 
         Args:
-            user_id: Telegram-User-ID.
+            user_id: Telegram user ID.
 
         Returns:
-            Dict von slot_name -> model_id für alle gesetzten Overrides.
+            Dict of slot_name -> model_id for all set overrides.
         """
         rows = self._conn.fetchall(
             "SELECT slot, model_id FROM user_slot_models WHERE user_id = ?",
@@ -772,13 +772,13 @@ class SqliteModelStorage:
         return {row["slot"]: row["model_id"] for row in rows}
 
     def delete_all_models(self, user_id: int) -> int:
-        """Entfernt alle Modell-Overrides für einen User.
+        """Remove all model overrides for a user.
 
         Args:
-            user_id: Telegram-User-ID.
+            user_id: Telegram user ID.
 
         Returns:
-            Anzahl gelöschter Einträge.
+            Number of deleted entries.
         """
         cursor = self._conn.execute(
             "DELETE FROM user_slot_models WHERE user_id = ?",
@@ -794,9 +794,9 @@ class SqliteModelStorage:
         return count
 
     def _reset_all_for_tests(self) -> None:
-        """Löscht alle Modell-Overrides (nur für Tests).
+        """Delete all model overrides (test-only).
 
-        Konsistenz-Pattern: analog zu conversation_storage._reset_all_for_tests.
+        Consistency pattern: analogous to conversation_storage._reset_all_for_tests.
         """
         self._conn.execute("DELETE FROM user_slot_models", ())
 
@@ -810,21 +810,21 @@ def migrate_jsonl_to_sqlite(
     conn: SqliteConnection,
     data_dir: Path,
 ) -> dict[str, int]:
-    """Migriert bestehende JSONL-Daten in SQLite (idempotent).
+    """Migrate existing JSONL data into SQLite (idempotent).
 
-    Ablauf:
-      1. Schema ist bereits initialisiert (via SqliteConnection)
-      2. Wenn bookmarks.jsonl existiert UND bookmarks-Tabelle leer:
-         alle Zeilen importieren
-      3. Analog für memory_*.jsonl
-      4. Migrierte JSONL-Files als .bak umbenennen
+    Workflow:
+      1. Schema is already initialized (via SqliteConnection)
+      2. If bookmarks.jsonl exists AND bookmarks table is empty:
+         import all lines
+      3. Same for memory_*.jsonl
+      4. Rename migrated JSONL files to .bak
 
     Args:
-        conn: Initialisierte SqliteConnection.
-        data_dir: Pfad zum data/-Ordner mit JSONL-Dateien.
+        conn: Initialized SqliteConnection.
+        data_dir: Path to the data/ directory containing JSONL files.
 
     Returns:
-        Dict mit Migrations-Statistiken:
+        Dict with migration statistics:
           {"bookmarks": N, "memory_episodic": N, ...}
     """
     stats: dict[str, int] = {}
@@ -884,14 +884,14 @@ def migrate_jsonl_to_sqlite(
 
 
 def _migrate_bookmarks_jsonl(conn: SqliteConnection, path: Path) -> int:
-    """Liest bookmarks.jsonl und schreibt alle Einträge in SQLite.
+    """Read bookmarks.jsonl and write all entries into SQLite.
 
     Args:
-        conn: SQLite-Connection.
-        path: Pfad zur bookmarks.jsonl.
+        conn: SQLite connection.
+        path: Path to bookmarks.jsonl.
 
     Returns:
-        Anzahl migrierter Einträge.
+        Number of migrated entries.
     """
     entries: list[tuple] = []
     corrupt = 0
@@ -941,15 +941,15 @@ def _migrate_bookmarks_jsonl(conn: SqliteConnection, path: Path) -> int:
 
 
 def _migrate_memory_jsonl(conn: SqliteConnection, path: Path, layer: str) -> int:
-    """Liest eine memory_*.jsonl und schreibt alle Einträge in SQLite.
+    """Read a memory_*.jsonl file and write all entries into SQLite.
 
     Args:
-        conn: SQLite-Connection.
-        path: Pfad zur JSONL-Datei.
-        layer: Memory-Layer (episodic/semantic/procedural).
+        conn: SQLite connection.
+        path: Path to the JSONL file.
+        layer: Memory layer (episodic/semantic/procedural).
 
     Returns:
-        Anzahl migrierter Einträge.
+        Number of migrated entries.
     """
     entries: list[tuple] = []
     corrupt = 0

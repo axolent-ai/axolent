@@ -1,4 +1,4 @@
-"""Tests für ProceduralEntry: Erstellung, Serialisierung, Deserialisierung."""
+"""Tests for ProceduralEntry: creation, serialization, deserialization."""
 
 from __future__ import annotations
 

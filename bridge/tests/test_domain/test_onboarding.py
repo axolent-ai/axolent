@@ -1,7 +1,7 @@
-"""Tests für domain.onboarding: Wizard-Konfiguration und Sprach-Mapping.
+"""Tests for domain.onboarding: wizard configuration and language mapping.
 
-Testet die Onboarding-Domain-Logik: Sprach-Definitionen, Keyboard-Layout,
-Wizard-Texte in verschiedenen Sprachen.
+Tests the onboarding domain logic: language definitions, keyboard layout,
+wizard texts in various languages.
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
-"""Telegram-Decorators: Whitelist-Check, Privacy-Guard und andere Guards.
+"""Telegram decorators: whitelist check, privacy guard, and other guards.
 
-Enthält Decorator-Funktionen die vor Handler-Logik ausgeführt werden.
+Contains decorator functions that run before handler logic.
 """
 
 from __future__ import annotations
@@ -17,10 +17,10 @@ log = logging.getLogger(__name__)
 
 
 def _parse_whitelist() -> set[int]:
-    """Parst WHITELIST_USER_IDS, loggt ungültige Einträge als critical.
+    """Parses WHITELIST_USER_IDS, logs invalid entries as critical.
 
     Returns:
-        Set von gültigen User-IDs.
+        Set of valid user IDs.
     """
     raw = os.getenv("WHITELIST_USER_IDS", "")
     valid: set[int] = set()
@@ -35,29 +35,29 @@ def _parse_whitelist() -> set[int]:
             invalid.append(stripped)
     if invalid:
         log.critical(
-            "WHITELIST_USER_IDS enthält ungültige Einträge (ignoriert): %s",
+            "WHITELIST_USER_IDS contains invalid entries (ignored): %s",
             invalid,
         )
     return valid
 
 
-# Whitelist-Konfiguration (einmal beim Import geladen)
+# Whitelist configuration (loaded once at import time)
 WHITELIST: set[int] = _parse_whitelist()
 ALLOW_ALL_USERS: bool = os.getenv("ALLOW_ALL_USERS", "").lower() in ("true", "1", "yes")
 
 _PRIVATE_ONLY_MSG = (
-    "Dieser Befehl funktioniert nur im privaten Chat mit dem Bot. "
-    "Bitte schreib mir direkt."
+    "This command only works in a private chat with the bot. "
+    "Please message me directly."
 )
 
 
 def require_whitelist(func: Callable) -> Callable:
-    """Decorator: Prüft ob der User auf der Whitelist steht.
+    """Decorator: checks whether the user is on the whitelist.
 
-    Wenn ALLOW_ALL_USERS=true, wird jeder durchgelassen.
-    Sonst nur User deren ID in WHITELIST_USER_IDS steht.
+    When ALLOW_ALL_USERS=true, everyone is allowed through.
+    Otherwise only users whose ID is in WHITELIST_USER_IDS.
 
-    Bei Ablehnung: sendet eine Fehlermeldung und beendet den Handler.
+    On rejection: sends an error message and terminates the handler.
     """
 
     @wraps(func)
@@ -71,11 +71,11 @@ def require_whitelist(func: Callable) -> Callable:
         if user_id not in WHITELIST:
             username = user.username if user else None
             log.warning(
-                "Unautorisierter Zugriff: user_id=%s username=%s", user_id, username
+                "Unauthorized access: user_id=%s username=%s", user_id, username
             )
             if update.message:
                 await update.message.reply_text(
-                    "Du bist nicht autorisiert, diesen Bot zu nutzen."
+                    "You are not authorized to use this bot."
                 )
             return
 
@@ -85,9 +85,9 @@ def require_whitelist(func: Callable) -> Callable:
 
 
 def require_private_chat(func: Callable) -> Callable:
-    """Decorator: Erlaubt Command nur im privaten 1:1-Chat mit dem Bot.
+    """Decorator: allows command only in private 1:1 chat with the bot.
 
-    In Gruppen/Supergruppen wird eine Fehlermeldung gesendet und der Handler abgebrochen.
+    In groups/supergroups an error message is sent and the handler is aborted.
     """
 
     @wraps(func)

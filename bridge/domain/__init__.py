@@ -1,1 +1,1 @@
-"""Domain-Layer: Reine Geschäftslogik ohne I/O-Abhängigkeiten."""
+"""Domain layer: pure business logic without I/O dependencies."""

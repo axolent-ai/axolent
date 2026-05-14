@@ -1,6 +1,6 @@
-"""Tests für infrastructure.conversation_storage: In-Memory Conversation History.
+"""Tests for infrastructure.conversation_storage: in-memory conversation history.
 
-Testet async CRUD-Operationen, MAX_HISTORY eviction und sticky language.
+Tests async CRUD operations, MAX_HISTORY eviction, and sticky language.
 """
 
 from __future__ import annotations

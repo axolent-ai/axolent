@@ -1,13 +1,13 @@
-"""Tests fuer application.self_awareness_service: Self-Awareness-Block-Aufbau.
+"""Tests for application.self_awareness_service: self-awareness block construction.
 
-Isolierte Unit-Tests mit gemockten Dependencies (ModelService, TaskRouter, ModelRegistry).
-Testet:
-  - Block-Aufbau mit Default-Modell
-  - Block-Aufbau mit User-Override
-  - Slot-Belegungsliste fuer alle 6 Slots
+Isolated unit tests with mocked dependencies (ModelService, TaskRouter, ModelRegistry).
+Tests:
+  - Block construction with default model
+  - Block construction with user override
+  - Slot occupancy list for all 6 slots
   - i18n (DE/EN)
-  - Graceful Degradation bei Fehlern
-  - Edge Cases (None-Werte, unbekannte Modelle)
+  - Graceful degradation on errors
+  - Edge cases (None values, unknown models)
 """
 
 from __future__ import annotations

@@ -1,9 +1,9 @@
-"""Telegram-Handler: Message-, Command- und Callback-Handler.
+"""Telegram handlers: message, command, and callback handlers.
 
-Alle Telegram-spezifischen Handler die auf User-Input reagieren.
-Nutzt application-Layer für Business-Logik, presentation/render für Output.
+All Telegram-specific handlers that react to user input.
+Uses the application layer for business logic, presentation/render for output.
 
-Seit R04: Streaming-Handler für Echtzeit-Token-Updates via Telegram-Edits.
+Since R04: streaming handler for real-time token updates via Telegram edits.
 """
 
 from __future__ import annotations
@@ -44,15 +44,15 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# Typing-Keepalive: Telegram zeigt Typing ca. 5s, wir triggern alle 4s neu
+# Typing keepalive: Telegram shows typing for ~5s, we re-trigger every 4s
 TYPING_KEEPALIVE_INTERVAL_SECONDS: float = 4.0
 
 
-# Concurrency Controls: max 4 Claude-Prozesse global, max 1 pro User
+# Concurrency controls: max 4 Claude processes global, max 1 per user
 GLOBAL_CLAUDE_SEMAPHORE = asyncio.Semaphore(4)
 _user_locks: dict[int, tuple[asyncio.Lock, float]] = {}
 _user_locks_meta_lock = Lock()
-_USER_LOCK_TTL_SECONDS = 3600  # 1h ohne Aktivität -> entfernt
+_USER_LOCK_TTL_SECONDS = 3600  # 1h without activity -> removed
 
 # Supported languages for /lang command (synced with domain.onboarding.WIZARD_LANGUAGES)
 _SUPPORTED_LANGUAGES: set[str] = {
@@ -82,16 +82,16 @@ _SUPPORTED_LANGUAGES: set[str] = {
 async def _typing_keepalive(
     chat: Any, interval: float = TYPING_KEEPALIVE_INTERVAL_SECONDS
 ) -> None:
-    """Sendet Typing-Indicator periodisch bis der Task gecancelled wird.
+    """Sends typing indicator periodically until the task is cancelled.
 
-    Läuft als Background-Task parallel zum LLM-Call. Telegram zeigt den
-    Typing-Indicator nur ca. 5 Sekunden, daher triggern wir alle 4s neu.
-    Bei Telegram-API-Fehlern (Network-Hickup etc.) wird leise weitergemacht
-    oder beendet, niemals raised.
+    Runs as a background task parallel to the LLM call. Telegram shows the
+    typing indicator for only ~5 seconds, so we re-trigger every 4s.
+    On Telegram API errors (network hickups etc.) it silently continues
+    or terminates, never raises.
 
     Args:
-        chat: Telegram Chat-Objekt mit send_chat_action-Methode.
-        interval: Sekunden zwischen Re-Triggers (Default: 4.0).
+        chat: Telegram Chat object with send_chat_action method.
+        interval: Seconds between re-triggers (default: 4.0).
     """
     try:
         while True:
@@ -99,16 +99,16 @@ async def _typing_keepalive(
             try:
                 await chat.send_chat_action(ChatAction.TYPING)
             except Exception as exc:
-                log.debug("Typing-Keepalive ignoriert Fehler: %s", exc)
+                log.debug("Typing keepalive ignoring error: %s", exc)
     except asyncio.CancelledError:
         pass
 
 
 def _get_user_lock(user_id: int) -> asyncio.Lock:
-    """Gibt den pro-User Lock zurück (lazy init mit TTL-Cleanup)."""
+    """Returns the per-user lock (lazy init with TTL cleanup)."""
     now = time.monotonic()
     with _user_locks_meta_lock:
-        # Stale Locks entfernen (nur wenn nicht gehalten)
+        # Remove stale locks (only when not held)
         stale = [
             uid
             for uid, (lock, ts) in _user_locks.items()
@@ -125,41 +125,41 @@ def _get_user_lock(user_id: int) -> asyncio.Lock:
 
 
 def _get_chat_service(context: ContextTypes.DEFAULT_TYPE) -> ChatService:
-    """Holt den ChatService aus bot_data.
+    """Gets the ChatService from bot_data.
 
     Args:
-        context: Telegram-Handler-Context.
+        context: Telegram handler context.
 
     Returns:
-        ChatService-Instanz.
+        ChatService instance.
 
     Raises:
-        RuntimeError: Wenn ChatService nicht in bot_data ist.
+        RuntimeError: If ChatService is not in bot_data.
     """
     svc = context.application.bot_data.get("chat_service")
     if svc is None:
         raise RuntimeError(
-            "ChatService nicht in bot_data. main.py muss ChatService initialisieren."
+            "ChatService not in bot_data. main.py must initialize ChatService."
         )
     return svc
 
 
 def _get_system_prompt(context: ContextTypes.DEFAULT_TYPE) -> str:
-    """Holt den System-Prompt aus bot_data.
+    """Gets the system prompt from bot_data.
 
     Args:
-        context: Telegram-Handler-Context.
+        context: Telegram handler context.
 
     Returns:
-        System-Prompt-String.
+        System prompt string.
 
     Raises:
-        RuntimeError: Wenn system_prompt nicht in bot_data ist.
+        RuntimeError: If system_prompt is not in bot_data.
     """
     prompt = context.application.bot_data.get("system_prompt")
     if prompt is None:
         raise RuntimeError(
-            "system_prompt nicht in bot_data. main.py muss system_prompt setzen."
+            "system_prompt not in bot_data. main.py must set system_prompt."
         )
     return prompt
 
@@ -167,13 +167,13 @@ def _get_system_prompt(context: ContextTypes.DEFAULT_TYPE) -> str:
 def _get_memory_service(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> "MemoryService | None":
-    """Holt den MemoryService aus bot_data (kann None sein).
+    """Gets the MemoryService from bot_data (can be None).
 
     Args:
-        context: Telegram-Handler-Context.
+        context: Telegram handler context.
 
     Returns:
-        MemoryService-Instanz oder None.
+        MemoryService instance or None.
     """
     return context.application.bot_data.get("memory_service")
 
@@ -181,21 +181,21 @@ def _get_memory_service(
 def _get_bookmark_service(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> BookmarkService:
-    """Holt den BookmarkService aus bot_data.
+    """Gets the BookmarkService from bot_data.
 
     Args:
-        context: Telegram-Handler-Context.
+        context: Telegram handler context.
 
     Returns:
-        BookmarkService-Instanz.
+        BookmarkService instance.
 
     Raises:
-        RuntimeError: Wenn BookmarkService nicht in bot_data ist.
+        RuntimeError: If BookmarkService is not in bot_data.
     """
     svc = context.application.bot_data.get("bookmark_service")
     if svc is None:
         raise RuntimeError(
-            "BookmarkService nicht in bot_data. main.py muss BookmarkService initialisieren."
+            "BookmarkService not in bot_data. main.py must initialize BookmarkService."
         )
     return svc
 
@@ -203,27 +203,27 @@ def _get_bookmark_service(
 def _get_rate_limiter(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> "RateLimiter | None":
-    """Holt den RateLimiter aus bot_data (kann None sein).
+    """Gets the RateLimiter from bot_data (can be None).
 
     Args:
-        context: Telegram-Handler-Context.
+        context: Telegram handler context.
 
     Returns:
-        RateLimiter-Instanz oder None.
+        RateLimiter instance or None.
     """
     return context.application.bot_data.get("rate_limiter")
 
 
 def build_bookmarks_keyboard(bookmarks: list[dict[str, Any]]) -> InlineKeyboardMarkup:
-    """Baut ein InlineKeyboard für die /bookmarks-Auflistung.
+    """Builds an InlineKeyboard for the /bookmarks listing.
 
-    Jeder Bookmark bekommt zwei Buttons: 'Volltext' und 'Entfernen'.
+    Each bookmark gets two buttons: 'Full text' and 'Remove'.
 
     Args:
-        bookmarks: Liste von Bookmark-Dicts mit 'message_id' und 'chat_id'.
+        bookmarks: List of bookmark dicts with 'message_id' and 'chat_id'.
 
     Returns:
-        InlineKeyboardMarkup mit zwei Buttons pro Bookmark-Zeile.
+        InlineKeyboardMarkup with two buttons per bookmark row.
     """
     rows: list[list[InlineKeyboardButton]] = []
     for i, bm in enumerate(bookmarks, 1):
@@ -232,11 +232,11 @@ def build_bookmarks_keyboard(bookmarks: list[dict[str, Any]]) -> InlineKeyboardM
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"#{i} Volltext",
+                    text=f"#{i} Full text",
                     callback_data=f"bm_show:{bm_chat_id}:{msg_id}",
                 ),
                 InlineKeyboardButton(
-                    text=f"#{i} Entfernen",
+                    text=f"#{i} Remove",
                     callback_data=f"bm_del:{bm_chat_id}:{msg_id}",
                 ),
             ]
@@ -308,27 +308,27 @@ HELP_TEXT_EN: str = (
 HELP_TEXT: str = HELP_TEXT_DE
 
 START_TEXT: str = (
-    "Axolent ist bereit.\n\n"
-    "Schick mir eine Frage und ich beantworte sie.\n\n"
-    "Tipp: Du kannst Bot-Nachrichten als Bookmark speichern. "
-    "Antworte einfach mit /save."
+    "Axolent is ready.\n\n"
+    "Send me a question and I will answer it.\n\n"
+    "Tip: You can bookmark bot messages. "
+    "Just reply with /save."
 )
 
 
 def _get_persistent_provider(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> Any:
-    """Holt den PersistentProvider aus bot_data (kann None sein).
+    """Gets the PersistentProvider from bot_data (can be None).
 
-    Typ: ClaudePersistentProvider | None
-    (Typ-Annotation als Any wegen Hexagonal-Layer-Contract:
-    presentation darf infrastructure nicht direkt importieren.)
+    Type: ClaudePersistentProvider | None
+    (Type annotation as Any due to hexagonal layer contract:
+    presentation must not import infrastructure directly.)
 
     Args:
-        context: Telegram-Handler-Context.
+        context: Telegram handler context.
 
     Returns:
-        ClaudePersistentProvider-Instanz oder None.
+        ClaudePersistentProvider instance or None.
     """
     return context.application.bot_data.get("persistent_provider")
 
@@ -336,19 +336,19 @@ def _get_persistent_provider(
 @require_whitelist
 @require_private_chat
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Verarbeitet eingehende Telegram-Nachrichten via Claude Code Subprozess.
+    """Processes incoming Telegram messages via Claude Code subprocess.
 
-    R04-Flow (Streaming):
-        1. Whitelist-Check (via Decorator)
-        2. Privacy-Check: nur private Chats (via Decorator)
-        3. Typing-Indicator senden
-        4. Pro-User Lock + globale Semaphore
-        5. Streaming-Nachricht erstellen ("...")
-        6. Token-Stream lesen, periodisch Telegram-Edits senden
-        7. Finale Edit mit vollständigem Text
-        8. History + Audit speichern
+    R04 flow (streaming):
+        1. Whitelist check (via decorator)
+        2. Privacy check: private chats only (via decorator)
+        3. Send typing indicator
+        4. Per-user lock + global semaphore
+        5. Create streaming message ("...")
+        6. Read token stream, periodically send Telegram edits
+        7. Final edit with complete text
+        8. Save history + audit
 
-    Fallback auf Legacy-Flow wenn PersistentProvider nicht verfügbar.
+    Falls back to legacy flow when PersistentProvider is not available.
     """
     chat_service = _get_chat_service(context)
     persistent_provider = _get_persistent_provider(context)
@@ -359,13 +359,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
     text: str = update.message.text or ""
 
-    # Reply-To-Kontext extrahieren
+    # Extract reply-to context
     reply_to_text: str | None = None
     if update.message.reply_to_message and update.message.reply_to_message.text:
         reply_to_text = update.message.reply_to_message.text
 
     log.info(
-        "Eingehende Nachricht von %s (%s): %d Zeichen%s",
+        "Incoming message from %s (%s): %d chars%s",
         username,
         user_id,
         len(text),
@@ -387,55 +387,54 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await update.message.reply_text(hint)
                 onboarding_storage.set_hint_shown(user_id)
 
-    # C-2: Rate-Limit prüfen (vor LLM-Call, vor Lock)
+    # C-2: Check rate limit (before LLM call, before lock)
     rate_limiter = _get_rate_limiter(context)
     if rate_limiter is not None:
         result: RateLimitResult = rate_limiter.check_and_consume(user_id)
         if not result.allowed:
             from datetime import datetime, timezone
 
-            # Menschliche Fehlermeldung mit aktiver Lösung
-            period_labels = {"minute": "Minute", "hour": "Stunde", "day": "Tag"}
+            # Human-readable error message with actionable solution
+            period_labels = {"minute": "minute", "hour": "hour", "day": "day"}
             period_label = period_labels.get(result.period or "", "")
             retry_display = int(result.retry_after) if result.retry_after else 0
 
             if result.period == "minute":
                 reset_info = f"Reset in {retry_display}s"
             elif result.period == "hour":
-                reset_info = f"Reset in {retry_display // 60} Minuten"
+                reset_info = f"Reset in {retry_display // 60} minutes"
             else:
                 reset_info = f"Reset in {retry_display // 3600}h"
 
-            # Profil-spezifische Upgrade-Optionen
+            # Profile-specific upgrade options
             if result.profile == "light":
                 options = (
-                    "Du kannst dein Limit jederzeit kostenlos ändern:\n"
-                    "• /usage — aktuelle Übersicht\n"
-                    "• /setlimit normal — mehr Spielraum "
-                    "(350/h, 1500/Tag)\n"
-                    "• /setlimit power — viel mehr "
-                    "(900/h, 10.000/Tag)"
+                    "You can change your limit anytime for free:\n"
+                    "• /usage — current overview\n"
+                    "• /setlimit normal — more headroom "
+                    "(350/h, 1,500/day)\n"
+                    "• /setlimit power — much more "
+                    "(900/h, 10,000/day)"
                 )
             elif result.profile == "normal":
                 options = (
-                    "Du kannst dein Limit jederzeit kostenlos ändern:\n"
-                    "• /usage — aktuelle Übersicht\n"
-                    "• /setlimit power — viel mehr Spielraum "
-                    "(900/h, 10.000/Tag)"
+                    "You can change your limit anytime for free:\n"
+                    "• /usage — current overview\n"
+                    "• /setlimit power — much more headroom "
+                    "(900/h, 10,000/day)"
                 )
             else:
                 options = (
-                    "• /usage — aktuelle Übersicht\n"
-                    "• /setlimit unlimited — alle Limits deaktivieren"
+                    "• /usage — current overview\n"
+                    "• /setlimit unlimited — disable all limits"
                 )
 
             limit_msg = (
-                f"Du hast dein "
-                f"{'Minuten' if result.period == 'minute' else period_label + 'n' if result.period == 'hour' else 'Tages'}"
-                f"-Limit erreicht "
+                f"You have reached your "
+                f"{period_label} limit "
                 f"({result.current_count}/{result.limit_value} "
-                f"{'in dieser ' + period_label if result.period != 'day' else 'heute'}"
-                f", {result.profile.capitalize()}-Profil).\n\n"
+                f"{'this ' + period_label if result.period != 'day' else 'today'}"
+                f", {result.profile.capitalize()} profile).\n\n"
                 f"{reset_info}.\n\n"
                 f"{options}"
             )
@@ -456,7 +455,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 }
             )
             log.info(
-                "Rate-Limit für User %s (%s): %s-Limit, retry_after=%.1fs",
+                "Rate limit for user %s (%s): %s limit, retry_after=%.1fs",
                 username,
                 user_id,
                 result.period,
@@ -464,59 +463,57 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
             return
 
-        # 70%-Warnung (einmalig pro Window)
+        # 70% warning (once per window)
         if result.warning_70 and result.warning_period:
             usage = rate_limiter.get_usage(user_id)
             if result.warning_period == "minute":
                 warn_used = usage.minute_used
                 warn_limit = usage.minute_limit
                 warn_reset = f"Reset in {int(usage.minute_reset_seconds)}s"
-                warn_period_label = "Minute"
+                warn_period_label = "minute"
             elif result.warning_period == "hour":
                 warn_used = usage.hour_used
                 warn_limit = usage.hour_limit
-                warn_reset = f"Reset in {int(usage.hour_reset_seconds) // 60} Minuten"
-                warn_period_label = "Stunde"
+                warn_reset = f"Reset in {int(usage.hour_reset_seconds) // 60} minutes"
+                warn_period_label = "hour"
             else:
                 warn_used = usage.day_used
                 warn_limit = usage.day_limit
                 warn_reset = f"Reset in {int(usage.day_reset_seconds) // 3600}h"
-                warn_period_label = "Tag"
+                warn_period_label = "day"
 
-            # Nächsthöheres Profil als Upgrade-Vorschlag
+            # Next higher profile as upgrade suggestion
             user_profile = result.profile
             if user_profile == "light":
                 upgrade_hint = (
-                    "Falls du gerne noch mehr machen willst: "
-                    "/setlimit normal hebt das Limit auf 350/h."
+                    "Want to do more? /setlimit normal raises the limit to 350/h."
                 )
             elif user_profile == "normal":
                 upgrade_hint = (
-                    "Falls du gerne noch mehr machen willst: "
-                    "/setlimit power hebt das Limit auf 900/h."
+                    "Want to do more? /setlimit power raises the limit to 900/h."
                 )
             else:
-                upgrade_hint = "Profil ändern: /setlimit"
+                upgrade_hint = "Change profile: /setlimit"
 
             warn_msg = (
-                f"\U0001f4a1 Du nutzt Axolent fleißig "
-                f"— schon {warn_used}/{warn_limit} Anfragen "
-                f"diese {warn_period_label}.\n"
+                f"\U0001f4a1 You are using Axolent actively, "
+                f"already {warn_used}/{warn_limit} requests "
+                f"this {warn_period_label}.\n"
                 f"{warn_reset}.\n\n"
                 f"{upgrade_hint}"
             )
             await update.message.reply_text(warn_msg)
 
-        # Unlimited-Reminder
+        # Unlimited reminder
         if result.unlimited_reminder:
             reminder_msg = (
-                "\U0001f513 Hinweis: Du bist im Unlimited-Modus. "
-                "Keine Limits aktiv.\n"
-                "Falls du wieder strukturierter arbeiten willst: "
+                "\U0001f513 Note: You are in unlimited mode. "
+                "No limits active.\n"
+                "If you want more structure: "
                 "/setlimit normal"
             )
             await update.message.reply_text(reminder_msg)
-            # Audit für Unlimited-Reminder
+            # Audit for unlimited reminder
             from datetime import datetime, timezone
 
             write_raw_audit(
@@ -530,14 +527,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 }
             )
 
-    # Typing-Indicator
+    # Typing indicator
     await context.bot.send_chat_action(update.effective_chat.id, ChatAction.TYPING)
 
-    # Pro-User Lock + globale Semaphore
+    # Per-user lock + global semaphore
     user_lock = _get_user_lock(user_id)
     async with user_lock:
         async with GLOBAL_CLAUDE_SEMAPHORE:
-            # R04: Streaming-Pfad wenn PersistentProvider verfügbar
+            # R04: Streaming path when PersistentProvider available
             # Type-Safety: hasattr statt isinstance wegen Layer-Contract
             # (presentation darf infrastructure.providers.base nicht importieren)
             if (
@@ -581,18 +578,18 @@ async def _handle_message_streaming(
     text: str,
     reply_to_text: str | None,
 ) -> None:
-    """Streaming-Message-Handler (R04).
+    """Streaming message handler (R04).
 
-    Erstellt eine Placeholder-Nachricht und editiert sie
-    inkrementell mit eingehenden Tokens.
+    Creates a placeholder message and incrementally edits it
+    with incoming tokens.
 
-    Fehler-Handling:
-        - Error-Events: generische Meldung mit error_id an User,
-          Originaltext ins Audit-Log + Application-Log
-        - RuntimeError: analog
-        - Outer Exceptions (z.B. create_streaming_message fehlschlägt):
-          generische Fehlermeldung, Audit-Eintrag
-        - Audit: immer 2 Einträge (started + completed/crashed)
+    Error handling:
+        - Error events: generic message with error_id to user,
+          original text to audit log + application log
+        - RuntimeError: same approach
+        - Outer exceptions (e.g. create_streaming_message throws):
+          generic error message, audit entry
+        - Audit: always 2 entries (started + completed/crashed)
     """
     from datetime import datetime, timezone
 
@@ -636,22 +633,22 @@ async def _handle_message_streaming(
 
         status_session: StatusSession | None = None
         if SHOW_STATUS_UPDATES:
-            # Sprache für Status-Texte bestimmen
+            # Determine language for status texts
             chat_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
 
             async def _status_callback(status_text: str) -> None:
-                """Editiert die Placeholder-Nachricht mit Status-Text."""
+                """Edits the placeholder message with status text."""
                 try:
                     await streaming_msg.edit_text(status_text)
                 except Exception as e:
-                    log.debug("Status-Edit fehlgeschlagen: %s", e)
+                    log.debug("Status edit failed: %s", e)
 
             status_session = StatusSession(
                 callback=_status_callback,
                 language=chat_lang,
             )
 
-        # Typing-Keepalive parallel zum Stream
+        # Typing keepalive parallel to stream
         keepalive = asyncio.create_task(
             _typing_keepalive(
                 update.effective_chat,
@@ -692,14 +689,14 @@ async def _handle_message_streaming(
                 elif event.event_type == "error":
                     had_error = True
                     error_id = uuid.uuid4().hex[:8]
-                    # Originaltext ins Log (nicht zum User)
+                    # Original text to log (not to user)
                     log.error(
                         "Streaming error event (ref: %s): %s | raw: %s",
                         error_id,
                         event.text,
                         event.raw,
                     )
-                    # Generische Meldung an User
+                    # Generic message to user
                     await abort_streaming(
                         session,
                         "Der Sprachmodell-Anbieter meldet ein Problem "
@@ -725,12 +722,12 @@ async def _handle_message_streaming(
 
         duration = time.monotonic() - t_start
 
-        # Fallback: wenn kein finaler Text aber akkumulierter Text vorhanden
+        # Fallback: no final text but accumulated text available
         if not final_text and session.accumulated_text and not had_error:
             final_text = session.accumulated_text
             await finalize_streaming(session, final_text)
 
-        # History + Audit speichern (+ C-3 Leakage-Check)
+        # Save history + audit (+ C-3 leakage check)
         if final_text and not had_error:
             checked_text = await chat_service.save_streaming_result(
                 user_id=user_id,
@@ -746,18 +743,18 @@ async def _handle_message_streaming(
                 system_prompt=_get_system_prompt(context),
                 task_meta=task_meta,
             )
-            # C-3: Wenn Leakage erkannt, finales Edit mit Refusal
+            # C-3: If leakage detected, final edit with refusal
             if checked_text != final_text:
                 await finalize_streaming(session, checked_text)
                 final_text = checked_text
             log.info(
-                "Streaming-Antwort: %d Zeichen, %d Chunks, %.1fs",
+                "Streaming response: %d chars, %d chunks, %.1fs",
                 len(final_text),
                 streaming_chunks,
                 duration,
             )
         elif had_error:
-            # Audit für Fehler-Fall
+            # Audit for error case
             audit_error: dict[str, Any] = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "event_type": "stream_error",
@@ -773,17 +770,17 @@ async def _handle_message_streaming(
             }
             write_raw_audit(audit_error)
             log.warning(
-                "Streaming fehlgeschlagen nach %.1fs (ref: %s)",
+                "Streaming failed after %.1fs (ref: %s)",
                 duration,
                 error_id,
             )
 
     except Exception as outer_exc:
-        # P1-8: Outer Exception Coverage (z.B. create_streaming_message wirft)
+        # P1-8: Outer exception coverage (e.g. create_streaming_message throws)
         duration = time.monotonic() - t_start
         error_id = uuid.uuid4().hex[:8]
         log.exception("Outer streaming exception (ref: %s): %s", error_id, outer_exc)
-        # Audit-Eintrag für Crash
+        # Audit entry for crash
         audit_crash: dict[str, Any] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "event_type": "stream_error",
@@ -797,7 +794,7 @@ async def _handle_message_streaming(
         }
         write_raw_audit(audit_crash)
 
-        # User-facing Fehlermeldung
+        # User-facing error message
         error_msg = f"Interner Fehler (ref: {error_id})."
         try:
             if session is not None:
@@ -806,7 +803,7 @@ async def _handle_message_streaming(
                 await update.message.reply_text(error_msg)
         except Exception as notify_exc:
             log.warning(
-                "Konnte User nicht über Fehler benachrichtigen: %s",
+                "Could not notify user about error: %s",
                 notify_exc,
             )
 
@@ -821,7 +818,7 @@ async def _handle_message_legacy(
     text: str,
     reply_to_text: str | None,
 ) -> None:
-    """Legacy-Message-Handler (pre-R04, non-streaming Fallback)."""
+    """Legacy message handler (pre-R04, non-streaming fallback)."""
     keepalive = asyncio.create_task(
         _typing_keepalive(
             update.effective_chat,
@@ -851,7 +848,7 @@ async def _handle_message_legacy(
     await send_response(update, result.response)
 
     log.info(
-        "Legacy-Antwort gesendet: %d Zeichen in %.1fs",
+        "Legacy response sent: %d chars in %.1fs",
         len(result.response),
         result.duration,
     )
@@ -867,7 +864,7 @@ _RESET_TEXTS: dict[str, str] = {
 async def handle_reset_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /reset. Löscht Conversation-History und Sticky-Language für diesen Chat."""
+    """Handles /reset. Clears conversation history and sticky language for this chat."""
     chat_service = _get_chat_service(context)
 
     user = update.effective_user
@@ -898,9 +895,9 @@ async def handle_reset_command(
 async def handle_lang_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /lang <code>. Setzt die Sticky-Language für diesen Chat.
+    """Handles /lang <code>. Sets the sticky language for this chat.
 
-    Benutzung: /lang de, /lang en, /lang es, /lang fr, etc.
+    Usage: /lang de, /lang en, /lang es, /lang fr, etc.
     """
     chat_service = _get_chat_service(context)
 
@@ -912,9 +909,9 @@ async def handle_lang_command(
     if not args:
         supported = ", ".join(sorted(_SUPPORTED_LANGUAGES))
         await update.message.reply_text(
-            f"Benutzung: /lang <code>\n\n"
-            f"Unterstützte Sprachen: {supported}\n\n"
-            f"Beispiel: /lang en"
+            f"Usage: /lang <code>\n\n"
+            f"Supported languages: {supported}\n\n"
+            f"Example: /lang en"
         )
         return
 
@@ -922,11 +919,11 @@ async def handle_lang_command(
     if lang_code not in _SUPPORTED_LANGUAGES:
         supported = ", ".join(sorted(_SUPPORTED_LANGUAGES))
         await update.message.reply_text(
-            f"Unbekannte Sprache: '{lang_code}'\n\nUnterstützte Sprachen: {supported}"
+            f"Unknown language: '{lang_code}'\n\nSupported languages: {supported}"
         )
         return
 
-    # Alte Sprache merken für Audit-Details
+    # Remember old language for audit details
     old_lang = await chat_service.get_chat_language(user_id, chat_id) or "auto"
 
     await chat_service.set_chat_language(user_id, chat_id, lang_code)
@@ -975,7 +972,7 @@ async def handle_lang_command(
 async def handle_new_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /new. Alias für /reset."""
+    """Handles /new. Alias for /reset."""
     await handle_reset_command(update, context)
 
 
@@ -984,31 +981,31 @@ async def handle_new_command(
 async def handle_save_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /save als Reply auf eine Bot-Nachricht (Toggle-Bookmark).
+    """Handles /save as reply to a bot message (toggle bookmark).
 
-    Benutzung: Reply auf eine Bot-Nachricht mit /save zum Speichern/Entfernen.
+    Usage: Reply to a bot message with /save to save/remove.
     """
     user = update.effective_user
     user_id: int = user.id if user else 0
     username: str | None = user.username if user else None
 
-    # Muss eine Antwort auf eine andere Nachricht sein
+    # Must be a reply to another message
     reply_msg = update.message.reply_to_message
     if reply_msg is None:
         await update.message.reply_text(
-            "Antworte auf eine Bot-Nachricht mit /save um sie als Bookmark zu speichern."
+            "Reply to a bot message with /save to bookmark it."
         )
         return
 
     msg_id: int = reply_msg.message_id
     chat_id: int = update.effective_chat.id
 
-    # Inhalt ermitteln: Cache zuerst, dann Message-Text
+    # Determine content: cache first, then message text
     content: str | None = get_cached_response(chat_id, msg_id)
     if content is None:
         content = reply_msg.text or ""
     if not content:
-        content = "(Inhalt nicht verfügbar)"
+        content = "(content not available)"
 
     bookmark_service = _get_bookmark_service(context)
     was_saved, user_message = bookmark_service.save_or_toggle_bookmark(
@@ -1021,7 +1018,7 @@ async def handle_save_command(
     await update.message.reply_text(f"✓ {user_message}")
     log.info(
         "Bookmark %s via /save: user=%s message_id=%d",
-        "gespeichert" if was_saved else "entfernt",
+        "saved" if was_saved else "removed",
         username,
         msg_id,
     )
@@ -1040,11 +1037,11 @@ async def handle_save_command(
 async def handle_bookmarks_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /bookmarks und /bookmarks search <query>.
+    """Handles /bookmarks and /bookmarks search <query>.
 
-    Benutzung:
-        /bookmarks              -> Letzte 10 Bookmarks anzeigen
-        /bookmarks search term  -> Bookmarks nach Inhalt durchsuchen
+    Usage:
+        /bookmarks              -> Show last 10 bookmarks
+        /bookmarks search term  -> Search bookmarks by content
     """
     user = update.effective_user
     user_id: int = user.id if user else 0
@@ -1062,7 +1059,7 @@ async def handle_bookmarks_command(
 
         if not results:
             await update.message.reply_text(
-                f"Keine Bookmarks mit '{query_term}' gefunden."
+                f"No bookmarks matching '{query_term}' found."
             )
             log_command_audit(
                 action="list_bookmarks",
@@ -1073,7 +1070,7 @@ async def handle_bookmarks_command(
             )
             return
 
-        header = f"Suchergebnisse für '{query_term}' ({len(results)} Treffer):\n\n"
+        header = f"Search results for '{query_term}' ({len(results)} matches):\n\n"
         lines: list[str] = [header]
 
         for i, bm in enumerate(results, 1):
@@ -1104,8 +1101,8 @@ async def handle_bookmarks_command(
 
     if not bookmarks:
         await update.message.reply_text(
-            "Du hast noch keine Bookmarks. "
-            "Antworte auf eine Bot-Nachricht mit /save um sie zu speichern."
+            "You have no bookmarks yet. "
+            "Reply to a bot message with /save to bookmark it."
         )
         log_command_audit(
             action="list_bookmarks",
@@ -1116,7 +1113,7 @@ async def handle_bookmarks_command(
         )
         return
 
-    header = f"Deine letzten {len(bookmarks)} Bookmarks:\n\n"
+    header = f"Your last {len(bookmarks)} bookmarks:\n\n"
     lines: list[str] = [header]
 
     for i, bm in enumerate(bookmarks, 1):
@@ -1145,7 +1142,7 @@ async def handle_bookmarks_command(
 async def handle_help_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /help. Zeigt verfügbare Commands an (DE/EN je nach Sprache)."""
+    """Handles /help. Shows available commands (DE/EN depending on language)."""
     chat_service = _get_chat_service(context)
 
     user = update.effective_user
@@ -1170,7 +1167,7 @@ async def handle_help_command(
 async def handle_start_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /start. Zeigt Setup-Wizard für neue User, Welcome für onboarded User."""
+    """Handles /start. Shows setup wizard for new users, welcome for onboarded users."""
     chat_service = _get_chat_service(context)
 
     user = update.effective_user
@@ -1200,7 +1197,7 @@ async def handle_start_command(
 async def handle_onboarding_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /onboarding. Startet den Setup-Wizard manuell (auch für onboarded User)."""
+    """Handles /onboarding. Starts the setup wizard manually (also for onboarded users)."""
     from presentation.onboarding_callbacks import start_wizard
 
     await start_wizard(update, context, is_restart=True)
@@ -1211,45 +1208,45 @@ async def handle_onboarding_command(
 async def handle_remember_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /remember <text>.
+    """Handles /remember <text>.
 
-    Speichert Text als Episodic Memory.
-    Als Reply auf Bot-Nachricht: speichert die Bot-Antwort.
-    Ohne Reply: speichert den mitgegebenen Text.
+    Saves text as episodic memory.
+    As reply to bot message: saves the bot response.
+    Without reply: saves the provided text.
     """
     memory_service = _get_memory_service(context)
     if memory_service is None:
-        await update.message.reply_text("Memory-System nicht initialisiert.")
+        await update.message.reply_text("Memory system not initialized.")
         return
 
     user = update.effective_user
     user_id: int = user.id if user else 0
     args: list[str] = context.args or []
 
-    # Inhalt bestimmen
+    # Determine content
     content: str = ""
     reply_msg = update.message.reply_to_message
 
     if reply_msg and reply_msg.text:
-        # Reply auf Bot-Nachricht: Bot-Antwort speichern
+        # Reply to bot message: save bot response
         content = reply_msg.text
-        # Wenn zusätzlich Text angegeben: als Kontext-Label verwenden
+        # If additional text provided: use as context label
         if args:
             label = " ".join(args)
             content = f"[{label}] {content}"
     elif args:
-        # Kein Reply: Text direkt speichern
+        # No reply: save text directly
         content = " ".join(args)
     else:
         await update.message.reply_text(
-            "Benutzung:\n"
-            "/remember <text>  Text speichern\n"
-            "/remember <label>  (als Reply)  Bot-Antwort mit Label speichern"
+            "Usage:\n"
+            "/remember <text>  save text\n"
+            "/remember <label>  (as reply)  save bot response with label"
         )
         return
 
     entry_id = memory_service.remember_episodic(user_id=user_id, content=content)
-    await update.message.reply_text(f"Gespeichert. [{entry_id}]")
+    await update.message.reply_text(f"Saved. [{entry_id}]")
     log.info("User %d remembered: %s (id=%s)", user_id, content[:50], entry_id)
     log_command_audit(
         action="remember",
@@ -1265,14 +1262,14 @@ async def handle_remember_command(
 async def handle_memory_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /memory und /memory search <query>.
+    """Handles /memory and /memory search <query>.
 
-    /memory              Letzte 10 episodische Einträge anzeigen
-    /memory search <q>   Memory durchsuchen
+    /memory              Show last 10 episodic entries
+    /memory search <q>   Search memory
     """
     memory_service = _get_memory_service(context)
     if memory_service is None:
-        await update.message.reply_text("Memory-System nicht initialisiert.")
+        await update.message.reply_text("Memory system not initialized.")
         return
 
     user = update.effective_user
@@ -1286,28 +1283,28 @@ async def handle_memory_command(
 
         if not results:
             await update.message.reply_text(
-                f"Keine Erinnerungen mit '{query_term}' gefunden."
+                f"No memories matching '{query_term}' found."
             )
             return
 
         lines: list[str] = [
-            f"Suchergebnisse für '{query_term}' ({len(results)} Treffer):\n"
+            f"Search results for '{query_term}' ({len(results)} matches):\n"
         ]
         for entry in results[:10]:
             lines.append(f"  [{entry['id']}] {entry['content'][:80]}")
         await update.message.reply_text("\n".join(lines))
         return
 
-    # /memory (keine Argumente): letzte 10 anzeigen
+    # /memory (no arguments): show last 10
     entries = memory_service.list_recent(user_id, layer="episodic", limit=10)
 
     if not entries:
         await update.message.reply_text(
-            "Noch keine Erinnerungen gespeichert. Nutze /remember <text> um etwas zu merken."
+            "No memories saved yet. Use /remember <text> to save something."
         )
         return
 
-    lines: list[str] = [f"Letzte {len(entries)} Erinnerungen:\n"]
+    lines: list[str] = [f"Last {len(entries)} memories:\n"]
     for entry in entries:
         lines.append(f"  [{entry['id']}] {entry['content'][:80]}")
     await update.message.reply_text("\n".join(lines))
@@ -1318,13 +1315,13 @@ async def handle_memory_command(
 async def handle_forget_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /forget <entry_id>.
+    """Handles /forget <entry_id>.
 
-    Löscht einen Memory-Eintrag anhand seiner ID.
+    Deletes a memory entry by its ID.
     """
     memory_service = _get_memory_service(context)
     if memory_service is None:
-        await update.message.reply_text("Memory-System nicht initialisiert.")
+        await update.message.reply_text("Memory system not initialized.")
         return
 
     user = update.effective_user
@@ -1333,7 +1330,7 @@ async def handle_forget_command(
 
     if not args:
         await update.message.reply_text(
-            "Benutzung: /forget <entry_id>\n\nIDs findest du via /memory"
+            "Usage: /forget <entry_id>\n\nFind IDs via /memory"
         )
         return
 
@@ -1342,15 +1339,15 @@ async def handle_forget_command(
 
     if deleted:
         forget_msg = (
-            f"Vergessen: {entry_id}\n\n"
-            "Hinweis: Falls der Inhalt in der laufenden Konversation steht, "
-            "nutze /reset für vollständigen Neustart."
+            f"Forgotten: {entry_id}\n\n"
+            "Note: If the content is in the current conversation, "
+            "use /reset for a full restart."
         )
         await update.message.reply_text(forget_msg)
         log.info("User %d forgot memory: %s", user_id, entry_id)
     else:
         await update.message.reply_text(
-            f"Eintrag '{entry_id}' nicht gefunden oder gehört dir nicht."
+            f"Entry '{entry_id}' not found or does not belong to you."
         )
     log_command_audit(
         action="forget",
@@ -1367,10 +1364,10 @@ async def handle_forget_command(
 async def handle_usage_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /usage. Zeigt aktuellen Verbrauch und Limits an."""
+    """Handles /usage. Shows current usage and limits."""
     rate_limiter = _get_rate_limiter(context)
     if rate_limiter is None:
-        await update.message.reply_text("Rate-Limiter nicht initialisiert.")
+        await update.message.reply_text("Rate limiter not initialized.")
         return
 
     user = update.effective_user
@@ -1380,10 +1377,10 @@ async def handle_usage_command(
 
     if usage.profile == "unlimited":
         msg = (
-            "\U0001f4ca Deine Nutzung & dein Profil:\n\n"
-            "Profil: Unlimited\n\n"
-            "\U0001f513 Keine Limits aktiv.\n\n"
-            "Profil ändern: /setlimit normal"
+            "\U0001f4ca Your usage & profile:\n\n"
+            "Profile: Unlimited\n\n"
+            "\U0001f513 No limits active.\n\n"
+            "Change profile: /setlimit normal"
         )
     else:
         profile_display = usage.profile.capitalize()
@@ -1408,15 +1405,15 @@ async def handle_usage_command(
         day_bar = _bar(usage.day_used, usage.day_limit)
 
         msg = (
-            f"\U0001f4ca Deine Nutzung & dein Profil:\n\n"
-            f"Profil: {profile_display}\n\n"
-            f"Diese Minute: {usage.minute_used}/{usage.minute_limit} "
+            f"\U0001f4ca Your usage & profile:\n\n"
+            f"Profile: {profile_display}\n\n"
+            f"This minute: {usage.minute_used}/{usage.minute_limit} "
             f"{min_bar} (Reset in {min_reset})\n"
-            f"Diese Stunde: {usage.hour_used}/{usage.hour_limit} "
+            f"This hour: {usage.hour_used}/{usage.hour_limit} "
             f"{hour_bar} (Reset in {hour_reset})\n"
-            f"Heute: {usage.day_used}/{usage.day_limit} "
-            f"{day_bar} (Reset um {day_reset})\n\n"
-            f"Profil ändern: /setlimit <light|normal|power|unlimited>"
+            f"Today: {usage.day_used}/{usage.day_limit} "
+            f"{day_bar} (Reset at {day_reset})\n\n"
+            f"Change profile: /setlimit <light|normal|power|unlimited>"
         )
 
     await update.message.reply_text(msg)
@@ -1434,14 +1431,14 @@ async def handle_usage_command(
 async def handle_setlimit_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /setlimit <profil>. Wechselt das Rate-Limit-Profil.
+    """Handles /setlimit <profile>. Changes the rate limit profile.
 
-    Akzeptiert: light, normal, power, unlimited.
-    Bei unlimited: Zwei-Stufen-Bestätigung erforderlich.
+    Accepts: light, normal, power, unlimited.
+    For unlimited: two-step confirmation required.
     """
     rate_limiter = _get_rate_limiter(context)
     if rate_limiter is None:
-        await update.message.reply_text("Rate-Limiter nicht initialisiert.")
+        await update.message.reply_text("Rate limiter not initialized.")
         return
 
     user = update.effective_user
@@ -1453,31 +1450,31 @@ async def handle_setlimit_command(
         current = rate_limiter.get_user_profile(user_id)
         available = ", ".join(PROFILES.keys())
         await update.message.reply_text(
-            f"Aktuelles Profil: {current.capitalize()}\n\n"
-            f"Benutzung: /setlimit <profil>\n"
-            f"Verfügbar: {available}"
+            f"Current profile: {current.capitalize()}\n\n"
+            f"Usage: /setlimit <profile>\n"
+            f"Available: {available}"
         )
         return
 
     target_profile = args[0].lower().strip()
 
-    # Unlimited: Zwei-Stufen-Bestätigung
+    # Unlimited: two-step confirmation
     if target_profile == "unlimited":
         if len(args) < 2 or args[1].lower() != "confirm":
             await update.message.reply_text(
-                "⚠️ Du willst alle Limits deaktivieren.\n\n"
-                "Risiko:\n"
-                "• Telegram kann den Bot zeitweise sperren bei zu vielen Edits\n"
-                "• Deine Subscription wird schneller leer\n"
-                "• Du bekommst alle 100 Anfragen einen Reminder\n\n"
-                "Falls du sicher bist: /setlimit unlimited confirm"
+                "⚠️ You want to disable all limits.\n\n"
+                "Risk:\n"
+                "• Telegram may temporarily block the bot with too many edits\n"
+                "• Your subscription will be used up faster\n"
+                "• You will get a reminder every 100 requests\n\n"
+                "If you are sure: /setlimit unlimited confirm"
             )
             return
 
     if target_profile not in PROFILES:
         available = ", ".join(PROFILES.keys())
         await update.message.reply_text(
-            f"Unbekanntes Profil: '{target_profile}'\n\nVerfügbar: {available}"
+            f"Unknown profile: '{target_profile}'\n\nAvailable: {available}"
         )
         return
 
@@ -1488,23 +1485,23 @@ async def handle_setlimit_command(
         limits = PROFILES[target_profile]
         if target_profile == "unlimited":
             confirm_msg = (
-                f"\U0001f513 Profil gewechselt: {old_profile.capitalize()} → "
+                f"\U0001f513 Profile changed: {old_profile.capitalize()} → "
                 f"Unlimited\n\n"
-                f"Keine Limits aktiv. Reminder alle 100 Anfragen.\n"
-                f"Zurück: /setlimit normal"
+                f"No limits active. Reminder every 100 requests.\n"
+                f"Revert: /setlimit normal"
             )
         else:
             confirm_msg = (
-                f"✓ Profil gewechselt: {old_profile.capitalize()} → "
+                f"✓ Profile changed: {old_profile.capitalize()} → "
                 f"{target_profile.capitalize()}\n\n"
-                f"Neue Limits:\n"
-                f"• {limits['per_minute']}/Min\n"
-                f"• {limits['per_hour']}/Stunde\n"
-                f"• {limits['per_day']}/Tag"
+                f"New limits:\n"
+                f"• {limits['per_minute']}/min\n"
+                f"• {limits['per_hour']}/hour\n"
+                f"• {limits['per_day']}/day"
             )
         await update.message.reply_text(confirm_msg)
     else:
-        await update.message.reply_text("Fehler beim Profilwechsel.")
+        await update.message.reply_text("Error changing profile.")
 
     log_command_audit(
         action="setlimit",
@@ -1592,7 +1589,7 @@ def _get_model_strings(lang: str = "de") -> dict[str, str]:
 
 
 def _get_model_service(context: ContextTypes.DEFAULT_TYPE) -> Any:
-    """Holt den ModelService aus bot_data (kann None sein)."""
+    """Gets the ModelService from bot_data (can be None)."""
     return context.application.bot_data.get("model_service")
 
 
@@ -1601,19 +1598,19 @@ def _get_model_service(context: ContextTypes.DEFAULT_TYPE) -> Any:
 async def handle_setmodel_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /setmodel in mehreren Varianten.
+    """Handles /setmodel in multiple variants.
 
-    Phase 2a Syntax:
-      /setmodel <model>           global setzen
-      /setmodel <slot> <model>    pro Slot setzen
-      /setmodel reset             alles zurücksetzen
-      /setmodel reset <slot>      einen Slot zurücksetzen
+    Phase 2a syntax:
+      /setmodel <model>           set globally
+      /setmodel <slot> <model>    set per slot
+      /setmodel reset             reset all
+      /setmodel reset <slot>      reset one slot
     """
     from domain.task_slot import TaskSlot
 
     model_service = _get_model_service(context)
     if model_service is None or not isinstance(model_service, ModelService):
-        await update.message.reply_text("Modell-System nicht initialisiert.")
+        await update.message.reply_text("Model system not initialized.")
         return
 
     chat_service = _get_chat_service(context)
@@ -1685,7 +1682,7 @@ async def handle_setmodel_command(
             )
         return
 
-    # Prüfen ob erstes Argument ein Slot ist
+    # Check if first argument is a slot
     slot = TaskSlot.from_string(first)
 
     if slot is not None and len(args) >= 2:
@@ -1759,15 +1756,15 @@ async def handle_setmodel_command(
 async def handle_resetmodel_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /resetmodel. Shortcut für /setmodel reset.
+    """Handles /resetmodel. Shortcut for /setmodel reset.
 
-    Eigenständiger Command damit Telegram ihn als klickbaren
-    blauen Link im Help-Text anzeigt (Commands mit Argumenten
-    werden nicht verlinkt).
+    Standalone command so Telegram shows it as a clickable
+    blue link in the help text (commands with arguments
+    are not linked).
     """
     model_service = _get_model_service(context)
     if model_service is None or not isinstance(model_service, ModelService):
-        await update.message.reply_text("Modell-System nicht initialisiert.")
+        await update.message.reply_text("Model system not initialized.")
         return
 
     chat_service = _get_chat_service(context)
@@ -1800,12 +1797,12 @@ async def handle_resetmodel_command(
 async def handle_models_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /models. Zeigt pro-Slot Modell-Belegung."""
+    """Handles /models. Shows per-slot model assignment."""
     from domain.task_slot import TaskSlot
 
     model_service = _get_model_service(context)
     if model_service is None or not isinstance(model_service, ModelService):
-        await update.message.reply_text("Modell-System nicht initialisiert.")
+        await update.message.reply_text("Model system not initialized.")
         return
 
     chat_service = _get_chat_service(context)
@@ -1816,29 +1813,29 @@ async def handle_models_command(
     lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
     s = _get_model_strings(lang)
 
-    # TaskRouter für Slot-Defaults holen
+    # Get TaskRouter for slot defaults
     task_router = context.application.bot_data.get("task_router")
 
-    # Slot-Defaults ermitteln
+    # Determine slot defaults
     slot_defaults: dict[str, str] = {}
     if task_router is not None and hasattr(task_router, "get_slot_defaults"):
         for slot, alias in task_router.get_slot_defaults().items():
-            # Alias -> volle Modell-ID aufloesen
+            # Alias -> resolve to full model ID
             from application.model_service import resolve_alias
 
             resolved = resolve_alias(alias)
             slot_defaults[slot.value] = resolved if resolved else alias
 
-    # User-Overrides laden
+    # Load user overrides
     overrides = model_service.get_all_slot_overrides(user_id)
     global_override = overrides.get("global")
 
-    # Pro-Slot Zeilen bauen
+    # Build per-slot lines
     slot_lines: list[str] = []
     for slot in TaskSlot:
         slot_name = slot.value.upper()
 
-        # Effektives Modell bestimmen: Slot-Override > Global > Slot-Default > System-Default
+        # Determine effective model: slot override > global > slot default > system default
         slot_override = overrides.get(slot.value)
         if slot_override:
             display = model_service.get_model_display_name(slot_override)
@@ -1880,14 +1877,14 @@ async def handle_models_command(
 async def handle_settings_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /settings. Öffnet Inline-Keyboard-Einstellungsmenü.
+    """Handles /settings. Opens inline keyboard settings menu.
 
-    Zeigt Ebene A: Slot-Belegung, Sprache, Reset-All.
-    Alle Interaktionen laufen über Callback-Handler in settings_callbacks.py.
+    Shows level A: slot assignment, language, reset all.
+    All interactions are handled by callback handlers in settings_callbacks.py.
     """
     model_service = _get_model_service(context)
     if model_service is None or not isinstance(model_service, ModelService):
-        await update.message.reply_text("Modell-System nicht initialisiert.")
+        await update.message.reply_text("Model system not initialized.")
         return
 
     chat_service = _get_chat_service(context)
@@ -1925,8 +1922,8 @@ _PROVIDER_DISPLAY_NAMES: dict[str, str] = {
 }
 
 DEBATE_HELP_TEXT: str = (
-    "Nutze /debate <Frage> um mehrere KIs parallel zu befragen.\n\n"
-    "Beispiel: /debate Was ist Bitcoin?"
+    "Use /debate <question> to query multiple AIs in parallel.\n\n"
+    "Example: /debate What is Bitcoin?"
 )
 
 
@@ -1988,23 +1985,23 @@ def _get_debate_strings(lang: str = "de") -> dict[str, str]:
 
 
 def _format_debate_result(result: Any, lang: str = "de") -> str:
-    """Formatiert ein DebateResult als Telegram-Text (BLUF-Reihenfolge).
+    """Formats a DebateResult as Telegram text (BLUF order).
 
-    Block-Reihenfolge (Bottom Line Up Front):
-    1. Frage
-    2. Kernaussage (kompakte Antwort auf die Frage)
-    3. Stärkster Beitrag (bester einzelner Provider)
-    4. Synthese (kombinierte Kern-Antwort)
-    5. Detail-Antworten der KIs (Claude + Llama als Original)
-    6. Pro/Contra je Provider (Analyse der Originale)
+    Block order (Bottom Line Up Front):
+    1. Question
+    2. Key takeaway (compact answer to the question)
+    3. Strongest contribution (best single provider)
+    4. Synthesis (combined core answer)
+    5. Detail responses from AIs (Claude + Llama as originals)
+    6. Pro/con per provider (analysis of originals)
     7. Timer
 
     Args:
-        result: DebateResult-Instanz.
-        lang: Sprache für Labels (Default: "de").
+        result: DebateResult instance.
+        lang: Language for labels (default: "de").
 
     Returns:
-        Formatierter Text für Telegram.
+        Formatted text for Telegram.
     """
     s = _get_debate_strings(lang)
     lines: list[str] = []
@@ -2026,7 +2023,7 @@ def _format_debate_result(result: Any, lang: str = "de") -> str:
             )
             lines.append("")
 
-        # --- Block 3: Stärkster Beitrag ---
+        # --- Block 3: Strongest contribution ---
         winner_display = _PROVIDER_DISPLAY_NAMES.get(
             result.final_verdict.winner, result.final_verdict.winner
         )
@@ -2050,7 +2047,7 @@ def _format_debate_result(result: Any, lang: str = "de") -> str:
             )
 
     elif result.consensus_analysis:
-        # Fallback: alte Konsens-Heuristik wenn Judge fehlschlägt
+        # Fallback: old consensus heuristic when judge fails
         lines.append("━" * 20)
         lines.append(f"{s['consensus_header']}:\n{result.consensus_analysis}")
 
@@ -2078,7 +2075,7 @@ def _format_debate_result(result: Any, lang: str = "de") -> str:
                 lines.append(f"❌ {eval_display}: {cons_str}")
         lines.append("")
 
-    # Fehler anzeigen (falls einige Provider crashed sind)
+    # Show errors (if some providers crashed)
     if result.errors:
         lines.append("━" * 20)
         lines.append(s["errors_section"])
@@ -2087,7 +2084,7 @@ def _format_debate_result(result: Any, lang: str = "de") -> str:
             lines.append(f"  {display_name}: {error_msg}")
         lines.append("")
 
-    # Nur 1 Provider Hinweis
+    # Single provider hint
     if len(result.responses) == 1 and not result.errors:
         lines.append(f"\n{s['single_provider_hint']}")
 
@@ -2102,9 +2099,9 @@ def _format_debate_result(result: Any, lang: str = "de") -> str:
 async def handle_debate_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Verarbeitet /debate <Frage>. Multi-AI-Debate Feature (R10).
+    """Handles /debate <question>. Multi-AI debate feature (R10).
 
-    Fragt mehrere Provider parallel und zeigt Antworten side-by-side.
+    Queries multiple providers in parallel and shows answers side-by-side.
     """
     from datetime import datetime, timezone
 
@@ -2115,7 +2112,7 @@ async def handle_debate_command(
     username: str | None = user.username if user else None
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
-    # Frage aus Command-Argumenten extrahieren
+    # Extract question from command arguments
     args: list[str] = context.args or []
     if not args:
         await update.message.reply_text(DEBATE_HELP_TEXT)
@@ -2123,14 +2120,14 @@ async def handle_debate_command(
 
     question = " ".join(args)
 
-    # Rate-Limit prüfen (gleiche Logik wie handle_message)
+    # Check rate limit (same logic as handle_message)
     rate_limiter = _get_rate_limiter(context)
     if rate_limiter is not None:
         result_rl: RateLimitResult = rate_limiter.check_and_consume(user_id)
         if not result_rl.allowed:
             await update.message.reply_text(
-                "Du hast dein Limit erreicht. Warte einen Moment oder "
-                "erhöhe dein Profil mit /setlimit."
+                "You have reached your limit. Wait a moment or "
+                "increase your profile with /setlimit."
             )
             write_raw_audit(
                 {
@@ -2146,12 +2143,12 @@ async def handle_debate_command(
             )
             return
 
-    # Status-Nachricht senden
+    # Send status message
     status_msg = await update.message.reply_text(
-        "\U0001f3af Frage KIs parallel... kann 30-60 Sekunden dauern."
+        "\U0001f3af Querying AIs in parallel... may take 30-60 seconds."
     )
 
-    # Typing-Keepalive während der Debate
+    # Typing keepalive during debate
     keepalive = asyncio.create_task(
         _typing_keepalive(
             update.effective_chat,
@@ -2160,7 +2157,7 @@ async def handle_debate_command(
     )
 
     try:
-        # DebateOrchestrator aus bot_data oder neu erstellen
+        # Get or create DebateOrchestrator
         chat_service = _get_chat_service(context)
         orchestrator = DebateOrchestrator(
             provider_router=chat_service.provider_router,
@@ -2178,22 +2175,22 @@ async def handle_debate_command(
         except asyncio.CancelledError:
             pass
 
-    # Status-Nachricht löschen (best-effort, unkritisch wenn fehlschlägt)
+    # Delete status message (best-effort, non-critical if it fails)
     try:
         await status_msg.delete()
     except Exception:  # nosec B110
         pass
 
-    # Sprache für Debate-Output bestimmen
+    # Determine language for debate output
     debate_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
 
-    # Ergebnis formatieren und senden
+    # Format and send result
     formatted = _format_debate_result(debate_result, lang=debate_lang)
     chunks = split_message(formatted)
     for chunk in chunks:
         await update.message.reply_text(chunk)
 
-    # Audit-Log
+    # Audit log
     write_raw_audit(
         {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -2210,7 +2207,7 @@ async def handle_debate_command(
     )
 
     log.info(
-        "Debate abgeschlossen für User %s: %d Provider, %.1fs",
+        "Debate completed for user %s: %d providers, %.1fs",
         username,
         len(debate_result.responses),
         debate_result.duration_seconds,

@@ -1,4 +1,4 @@
-"""Tests für MemoryService: CRUD-Flows über alle drei Layer."""
+"""Tests for MemoryService: CRUD flows across all three layers."""
 
 from __future__ import annotations
 

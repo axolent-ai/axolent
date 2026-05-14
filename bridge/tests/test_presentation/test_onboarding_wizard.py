@@ -1,7 +1,7 @@
-"""Tests für den Setup-Wizard (Onboarding).
+"""Tests for the setup wizard (onboarding).
 
-Testet den kompletten Wizard-Flow: Start, Sprach-Auswahl, Completion,
-Skip-Verhalten, /onboarding-Command, und die 3-Nachrichten-Hint-Logik.
+Tests the complete wizard flow: start, language selection, completion,
+skip behavior, /onboarding command, and the 3-message hint logic.
 """
 
 from __future__ import annotations
@@ -138,8 +138,9 @@ class TestWizardStart:
     async def test_start_shows_welcome_for_onboarded_user(
         self, onboarding_storage: OnboardingStorage
     ) -> None:
-        """/start zeigt normale Welcome-Message für onboarded User."""
-        from presentation.handlers import START_TEXT, handle_start_command
+        """/start shows normal welcome message for onboarded user."""
+        from domain.onboarding import get_start_welcome_text
+        from presentation.handlers import handle_start_command
 
         onboarding_storage.set_onboarded(1)
 
@@ -148,9 +149,11 @@ class TestWizardStart:
 
         await handle_start_command(update, context)
 
+        # Default language is "de" (no sticky language set), so DE welcome text
+        expected = get_start_welcome_text("de")
         update.message.reply_text.assert_called_once()
         text = update.message.reply_text.call_args[0][0]
-        assert text == START_TEXT
+        assert text == expected
 
     async def test_start_after_wizard_respects_sticky_language(
         self, onboarding_storage: OnboardingStorage

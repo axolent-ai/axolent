@@ -1,7 +1,7 @@
-"""Tests für infrastructure.bookmark_storage: JSONL-Persistenz mit FileLock.
+"""Tests for infrastructure.bookmark_storage: JSONL persistence with FileLock.
 
-Testet CRUD-Operationen, Chat-ID-Scoping und Concurrent-Access.
-Nutzt tmp_path-Fixtures für isolierte Test-Dateien.
+Tests CRUD operations, chat ID scoping, and concurrent access.
+Uses tmp_path fixtures for isolated test files.
 """
 
 from __future__ import annotations

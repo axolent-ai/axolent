@@ -1,1 +1,1 @@
-"""Tests für infrastructure/providers/."""
+"""Tests for infrastructure/providers/."""

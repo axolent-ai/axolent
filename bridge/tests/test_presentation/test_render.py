@@ -1,6 +1,6 @@
-"""Tests für presentation.render: Chunking und Response-Cache.
+"""Tests for presentation.render: chunking and response cache.
 
-Testet Message-Splitting, Cache-Logik und den send_response Flow.
+Tests message splitting, cache logic, and the send_response flow.
 """
 
 from __future__ import annotations

@@ -1,9 +1,9 @@
-"""Globale pytest-Fixtures für die Axolent Bridge Test-Suite.
+"""Global pytest fixtures for the Axolent Bridge test suite.
 
-Stellt bereit:
-    - tmp_data_dir: temporäres Verzeichnis für Bookmark-JSONL und andere Testdaten
-    - sample_bookmark: ein Beispiel-Bookmark-Dict
-    - event_loop: asyncio Event-Loop für async Tests
+Provides:
+    - tmp_data_dir: temporary directory for bookmark JSONL and other test data
+    - sample_bookmark: a sample bookmark dict
+    - event_loop: asyncio event loop for async tests
 """
 
 from __future__ import annotations
@@ -16,10 +16,10 @@ import pytest
 
 @pytest.fixture
 def tmp_data_dir(tmp_path: Path) -> Path:
-    """Erstellt ein temporäres Verzeichnis für isolierte Testdaten.
+    """Create a temporary directory for isolated test data.
 
-    Nutzt pytests eingebautes tmp_path, liefert einen sauberen Ordner
-    der nach dem Test automatisch aufgeräumt wird.
+    Uses pytest's built-in tmp_path, provides a clean directory
+    that is automatically cleaned up after the test.
     """
     data_dir = tmp_path / "data"
     data_dir.mkdir()
@@ -28,7 +28,7 @@ def tmp_data_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def sample_bookmark() -> dict[str, Any]:
-    """Liefert ein Beispiel-Bookmark-Dict für Tests."""
+    """Provide a sample bookmark dict for tests."""
     return {
         "timestamp": "2026-05-06T12:00:00+00:00",
         "user_id": 12345,

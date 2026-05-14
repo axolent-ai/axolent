@@ -1,4 +1,4 @@
-"""Tests fuer TaskSlot Enum und Hilfsfunktionen."""
+"""Tests for TaskSlot enum and helper functions."""
 
 from __future__ import annotations
 

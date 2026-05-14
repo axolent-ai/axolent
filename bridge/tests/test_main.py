@@ -1,9 +1,9 @@
-"""Tests für main.py: ALLOW_ALL_USERS-Safeguard (C-1).
+"""Tests for main.py: ALLOW_ALL_USERS safeguard (C-1).
 
-Testet validate_allow_all_users() in allen drei Szenarien:
-1. ALLOW_ALL_USERS=true ohne DEV_MODE -> SystemExit
-2. ALLOW_ALL_USERS=true mit DEV_MODE -> nur Warning
-3. ALLOW_ALL_USERS nicht gesetzt -> kein Output, normales Verhalten
+Tests validate_allow_all_users() in all three scenarios:
+1. ALLOW_ALL_USERS=true without DEV_MODE -> SystemExit
+2. ALLOW_ALL_USERS=true with DEV_MODE -> warning only
+3. ALLOW_ALL_USERS not set -> no output, normal behavior
 """
 
 from __future__ import annotations
@@ -15,10 +15,10 @@ import pytest
 
 
 class TestValidateAllowAllUsers:
-    """Tests für validate_allow_all_users Safeguard."""
+    """Tests for validate_allow_all_users safeguard."""
 
     def test_allow_all_without_dev_mode_exits(self) -> None:
-        """ALLOW_ALL_USERS=true ohne AXOLENT_DEV_MODE=true blockiert Start."""
+        """ALLOW_ALL_USERS=true without AXOLENT_DEV_MODE=true blocks start."""
         with (
             patch("main.ALLOW_ALL_USERS", True),
             patch("main.AXOLENT_DEV_MODE", False),
@@ -32,7 +32,7 @@ class TestValidateAllowAllUsers:
     def test_allow_all_with_dev_mode_warns(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """ALLOW_ALL_USERS=true mit AXOLENT_DEV_MODE=true warnt nur."""
+        """ALLOW_ALL_USERS=true with AXOLENT_DEV_MODE=true only warns."""
         with (
             patch("main.ALLOW_ALL_USERS", True),
             patch("main.AXOLENT_DEV_MODE", True),
@@ -40,7 +40,7 @@ class TestValidateAllowAllUsers:
         ):
             from main import validate_allow_all_users
 
-            # Darf NICHT raisen
+            # Must NOT raise
             validate_allow_all_users()
 
             assert any(
@@ -50,7 +50,7 @@ class TestValidateAllowAllUsers:
     def test_allow_all_disabled_no_output(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Ohne ALLOW_ALL_USERS: kein Output, kein SystemExit."""
+        """Without ALLOW_ALL_USERS: no output, no SystemExit."""
         with (
             patch("main.ALLOW_ALL_USERS", False),
             patch("main.AXOLENT_DEV_MODE", False),
@@ -60,7 +60,7 @@ class TestValidateAllowAllUsers:
 
             validate_allow_all_users()
 
-            # Kein Log-Output von validate_allow_all_users erwartet
+            # No log output from validate_allow_all_users expected
             relevant = [
                 r
                 for r in caplog.records
@@ -69,7 +69,7 @@ class TestValidateAllowAllUsers:
             assert len(relevant) == 0
 
     def test_allow_all_exit_message_is_descriptive(self) -> None:
-        """Die Exit-Meldung erklaert klar was zu tun ist."""
+        """The exit message clearly explains what to do."""
         with (
             patch("main.ALLOW_ALL_USERS", True),
             patch("main.AXOLENT_DEV_MODE", False),

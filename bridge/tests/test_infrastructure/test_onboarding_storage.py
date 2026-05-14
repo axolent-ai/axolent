@@ -1,7 +1,7 @@
-"""Tests für infrastructure.onboarding_storage: SQLite-basierter Onboarding-State.
+"""Tests for infrastructure.onboarding_storage: SQLite-based onboarding state.
 
-Testet CRUD-Operationen, Migration bestehender User, Skip-Counter
-und Hint-Shown-Flag.
+Tests CRUD operations, migration of existing users, skip counter,
+and hint-shown flag.
 """
 
 from __future__ import annotations

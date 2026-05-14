@@ -1,10 +1,10 @@
-"""Tests für /setmodel reset + /resetmodel Handler.
+"""Tests for /setmodel reset + /resetmodel handler.
 
-Testet:
-  - /setmodel reset zeigt Default-Modell-Name in der Antwort
-  - /resetmodel funktioniert als eigenständiger Command
-  - /resetmodel ohne Override zeigt Default-Modell-Name
-  - /resetmodel mit Override entfernt ihn und zeigt Default
+Tests:
+  - /setmodel reset shows default model name in the response
+  - /resetmodel works as a standalone command
+  - /resetmodel without override shows default model name
+  - /resetmodel with override removes it and shows default
 """
 
 from __future__ import annotations
@@ -197,7 +197,7 @@ class TestResetmodelCommand:
         await handle_resetmodel_command(update, context)
 
         reply_text = update.message.reply_text.call_args[0][0]
-        assert "nicht initialisiert" in reply_text.lower()
+        assert "not initialized" in reply_text.lower()
 
     async def test_resetmodel_english_locale(self, model_service: ModelService) -> None:
         """/resetmodel mit englischer Sprache zeigt englische Meldung."""

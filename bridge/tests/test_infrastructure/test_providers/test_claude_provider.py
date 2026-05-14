@@ -1,10 +1,10 @@
-"""Tests für ClaudeProvider.
+"""Tests for ClaudeProvider.
 
-Verifiziert:
-    - is_available() prüft ob claude im PATH ist
-    - query() ruft Subprozess korrekt auf (gemockt)
-    - Timeout-Handling funktioniert
-    - Fehler-Handling bei non-zero exit code
+Verifies:
+    - is_available() checks whether claude is in PATH
+    - query() calls subprocess correctly (mocked)
+    - Timeout handling works
+    - Error handling on non-zero exit code
 """
 
 from __future__ import annotations

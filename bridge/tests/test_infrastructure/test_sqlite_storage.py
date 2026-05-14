@@ -1,12 +1,12 @@
-"""Tests für SQLite-Storage: Bookmark + Memory + Migration + FTS5.
+"""Tests for SQLite storage: Bookmark + Memory + Migration + FTS5.
 
-Testet:
-  - SqliteBookmarkStorage: CRUD, User-Isolation, Concurrency
-  - SqliteMemoryStorage: CRUD, Layer-Validierung, Search (LIKE + FTS5)
-  - JSONL -> SQLite Migration (Idempotenz, Rollback, Corrupt-Handling)
-  - FTS5 Volltext-Suche
-  - Performance-Smoke-Test
-  - Crash-Recovery (DB-Integrität)
+Tests:
+  - SqliteBookmarkStorage: CRUD, user isolation, concurrency
+  - SqliteMemoryStorage: CRUD, layer validation, search (LIKE + FTS5)
+  - JSONL -> SQLite migration (idempotency, rollback, corrupt handling)
+  - FTS5 full-text search
+  - Performance smoke test
+  - Crash recovery (DB integrity)
 """
 
 from __future__ import annotations

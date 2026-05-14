@@ -1,7 +1,7 @@
-"""Tests fuer TaskRouter: Heuristik-Klassifikation, Modell-Resolution, YAML-Loading.
+"""Tests for TaskRouter: heuristic classification, model resolution, YAML loading.
 
-25+ Tests die alle Slot-Klassifikationen, Edge-Cases, Prioritaeten und Fallback abdecken.
-Inklusive Normalisierungs-Tests fuer ASCII-Umlaut-Eingaben.
+25+ tests covering all slot classifications, edge cases, priorities, and fallback.
+Including normalization tests for ASCII umlaut inputs.
 """
 
 from __future__ import annotations

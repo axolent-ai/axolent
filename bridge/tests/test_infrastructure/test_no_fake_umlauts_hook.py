@@ -1,12 +1,12 @@
-"""Tests für den no-fake-umlauts Pre-Commit-Hook.
+"""Tests for the no-fake-umlauts pre-commit hook.
 
-V8-R3: Strukturelle Lösung gegen ASCII-Umlaut-Regressionen.
+V8-R3: structural solution against ASCII umlaut regressions.
 
-Verifiziert dass das Script:
-  - ASCII-Umlaut-Umschreibungen in Production-Dateien erkennt
-  - Bei Treffern Exit-Code 1 liefert
-  - Saubere Dateien mit Exit-Code 0 durchlässt
-  - Englische Wörter nicht fälschlich flagged
+Verifies that the script:
+  - Detects ASCII umlaut substitutions in production files
+  - Returns exit code 1 on hits
+  - Passes clean files with exit code 0
+  - Does not falsely flag English words
 """
 
 from __future__ import annotations

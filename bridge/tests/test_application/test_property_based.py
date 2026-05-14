@@ -1,12 +1,12 @@
-"""Property-Based Tests mit Hypothesis.
+"""Property-based tests with Hypothesis.
 
-Hypothesis generiert automatisch Edge-Cases (leere Strings, Unicode,
-sehr lange Inputs, Grenzwerte) und findet Invarianten-Verletzungen.
+Hypothesis automatically generates edge cases (empty strings, Unicode,
+very long inputs, boundary values) and finds invariant violations.
 
-Getestete Properties:
-  1. TaskRouter.classify() gibt immer einen gültigen TaskSlot zurück
-  2. ModelService.set_user_model() validiert Aliases korrekt
-  3. SqliteModelStorage Roundtrip: set + get liefert immer den gesetzten Wert
+Tested properties:
+  1. TaskRouter.classify() always returns a valid TaskSlot
+  2. ModelService.set_user_model() validates aliases correctly
+  3. SqliteModelStorage roundtrip: set + get always returns the set value
 """
 
 from __future__ import annotations

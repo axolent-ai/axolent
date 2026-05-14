@@ -1,4 +1,4 @@
-"""Tests für SemanticEntry: Erstellung, Serialisierung, Deserialisierung."""
+"""Tests for SemanticEntry: creation, serialization, deserialization."""
 
 from __future__ import annotations
 

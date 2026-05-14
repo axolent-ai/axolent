@@ -1,16 +1,16 @@
-"""Tests für /settings Inline-Keyboard Callbacks (R18 Phase 2b).
+"""Tests for /settings inline keyboard callbacks (R18 Phase 2b).
 
-Testet:
-  - /settings Command öffnet Ebene A (Hauptmenü)
-  - Slot-Buttons öffnen Ebene B (Modell-Auswahl)
-  - Modell-Klick setzt Override und kehrt zu Ebene A zurück
-  - Reset-Slot setzt einen Slot zurück
-  - Reset-All zeigt Bestätigungs-Dialog
-  - Reset-All-Confirm setzt alles zurück
-  - Zurück-Button kehrt zum Hauptmenü zurück
-  - Sprachmenü öffnet und Sprachauswahl funktioniert
-  - Messages werden ge-editet, nicht neu gesendet
-  - i18n: EN-Strings funktionieren
+Tests:
+  - /settings command opens level A (main menu)
+  - Slot buttons open level B (model selection)
+  - Model click sets override and returns to level A
+  - Reset slot resets a single slot
+  - Reset all shows confirmation dialog
+  - Reset all confirm resets everything
+  - Back button returns to main menu
+  - Language menu opens and language selection works
+  - Messages are edited, not sent anew
+  - i18n: EN strings work
 """
 
 from __future__ import annotations

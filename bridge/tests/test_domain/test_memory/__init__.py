@@ -1,1 +1,1 @@
-"""Tests für domain/memory/."""
+"""Tests for domain/memory/."""

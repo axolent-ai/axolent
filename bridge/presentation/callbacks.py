@@ -1,7 +1,7 @@
-"""InlineKeyboard-Callbacks für Bookmark-Buttons.
+"""InlineKeyboard callbacks for bookmark buttons.
 
-Verarbeitet bm_show und bm_del Callback-Queries
-von der /bookmarks-Ansicht.
+Processes bm_show and bm_del callback queries
+from the /bookmarks view.
 """
 
 from __future__ import annotations
@@ -26,11 +26,11 @@ log = logging.getLogger(__name__)
 async def handle_bookmark_show_callback(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Zeigt den Volltext eines Bookmarks an (Button 'Volltext anzeigen').
+    """Shows the full text of a bookmark (button 'Show full text').
 
     Callback data format: 'bm_show:<chat_id>:<message_id>'.
-    Splittet Plain-Text zuerst, konvertiert dann pro Chunk zu HTML.
-    Verhindert dass HTML-Tags zerschnitten werden.
+    Splits plain text first, then converts each chunk to HTML.
+    Prevents HTML tags from being split across chunks.
     """
     query = update.callback_query
     data: str = query.data or ""
@@ -43,7 +43,7 @@ async def handle_bookmark_show_callback(
         bm_chat_id = int(parts[1])
         msg_id = int(parts[2])
     except (ValueError, IndexError):
-        await query.answer(text="Ungültige ID", show_alert=False)
+        await query.answer(text="Invalid ID", show_alert=False)
         return
 
     user = query.from_user
@@ -53,14 +53,12 @@ async def handle_bookmark_show_callback(
         "bookmark_service"
     )
     if bookmark_service is None:
-        await query.answer(
-            text="Bookmark-Service nicht initialisiert", show_alert=False
-        )
+        await query.answer(text="Bookmark service not initialized", show_alert=False)
         return
 
     bm = bookmark_service.get_bookmark(user_id, bm_chat_id, msg_id)
     if bm is None:
-        await query.answer(text="Bookmark nicht gefunden", show_alert=False)
+        await query.answer(text="Bookmark not found", show_alert=False)
         log_command_audit(
             action="bm_show",
             user_id=user_id,
@@ -74,8 +72,8 @@ async def handle_bookmark_show_callback(
 
     await query.answer()
 
-    content = bm.get("content", "(kein Inhalt)")
-    # Split Plain-Text zuerst, dann pro Chunk HTML konvertieren (FIX 7)
+    content = bm.get("content", "(no content)")
+    # Split plain text first, then convert each chunk to HTML (FIX 7)
     plain_chunks = split_message(content)
     used_fallback = False
 
@@ -105,7 +103,7 @@ async def handle_bookmark_show_callback(
 async def handle_bookmark_delete_callback(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Entfernt einen Bookmark (Button 'Entfernen').
+    """Removes a bookmark (button 'Remove').
 
     Callback data format: 'bm_del:<chat_id>:<message_id>'.
     """
@@ -120,7 +118,7 @@ async def handle_bookmark_delete_callback(
         bm_chat_id = int(parts[1])
         msg_id = int(parts[2])
     except (ValueError, IndexError):
-        await query.answer(text="Ungültige ID", show_alert=False)
+        await query.answer(text="Invalid ID", show_alert=False)
         return
 
     user = query.from_user
@@ -130,35 +128,33 @@ async def handle_bookmark_delete_callback(
         "bookmark_service"
     )
     if bookmark_service is None:
-        await query.answer(
-            text="Bookmark-Service nicht initialisiert", show_alert=False
-        )
+        await query.answer(text="Bookmark service not initialized", show_alert=False)
         return
 
-    # Bookmark-Daten VOR dem Löschen holen (für Datum in Bestätigung)
+    # Get bookmark data BEFORE deleting (for date in confirmation)
     bm_data = bookmark_service.get_bookmark(user_id, bm_chat_id, msg_id)
 
     deleted: bool = bookmark_service.remove_bookmark(user_id, bm_chat_id, msg_id)
     if deleted:
-        await query.answer(text="Entfernt", show_alert=False)
+        await query.answer(text="Removed", show_alert=False)
 
-        # Datum formatieren für Chat-Bestätigung
+        # Format date for chat confirmation
         date_display = ""
         if bm_data:
             ts = bm_data.get("timestamp", "")
             if ts:
                 try:
                     dt = datetime.fromisoformat(ts)
-                    date_display = f" vom {dt.strftime('%d.%m.%Y %H:%M')}"
+                    date_display = f" from {dt.strftime('%d.%m.%Y %H:%M')}"
                 except (ValueError, TypeError):
                     pass
 
-        await query.message.reply_text(f"✓ Bookmark{date_display} entfernt")
+        await query.message.reply_text(f"✓ Bookmark{date_display} removed")
         log.info(
-            "Bookmark entfernt via Button: user_id=%d message_id=%d", user_id, msg_id
+            "Bookmark removed via button: user_id=%d message_id=%d", user_id, msg_id
         )
     else:
-        await query.answer(text="Bookmark nicht gefunden", show_alert=False)
+        await query.answer(text="Bookmark not found", show_alert=False)
     log_command_audit(
         action="bm_del",
         user_id=user_id,

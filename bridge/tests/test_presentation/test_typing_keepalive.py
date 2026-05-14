@@ -1,10 +1,10 @@
-"""Tests für den Typing-Keepalive Mechanismus (R02-A).
+"""Tests for the typing keepalive mechanism (R02-A).
 
-Testet:
-    1. Keepalive sendet Typing-Action periodisch
-    2. Keepalive bricht sauber ab bei Cancel
-    3. Keepalive crashed nicht bei API-Fehler
-    4. Integration: handle_message startet und cancelt Keepalive korrekt
+Tests:
+    1. Keepalive sends typing action periodically
+    2. Keepalive aborts cleanly on cancel
+    3. Keepalive does not crash on API error
+    4. Integration: handle_message starts and cancels keepalive correctly
 """
 
 from __future__ import annotations

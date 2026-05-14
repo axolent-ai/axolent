@@ -1,1 +1,1 @@
-"""Presentation-Layer: Telegram-spezifischer Code (Handler, Callbacks, Rendering)."""
+"""Presentation layer: Telegram-specific code (handlers, callbacks, rendering)."""

@@ -108,8 +108,7 @@ no token reading from `~/.claude`.
 * pip-audit (dependency vulnerabilities)
 * semgrep (semantic security patterns)
 * no-fake-umlauts (prevents ASCII umlaut regression in any remaining German text)
-* en-only-production (planned) — blocks new German strings/comments in
-  production code
+* en-only-production — blocks new German strings/comments in production code
 
 All hooks must pass before commit.
 

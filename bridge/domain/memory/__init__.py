@@ -1,8 +1,8 @@
 """Trinity-Memory Domain: Episodic, Semantic, Procedural.
 
-Reine Datenstrukturen ohne I/O. Jede Entry-Klasse ist ein frozen Value-Object
-mit Serialisierung (to_dict / from_dict).
+Pure data structures without I/O. Each Entry class is a frozen value object
+with serialization (to_dict / from_dict).
 
-Phase 1: Skelett mit CRUD.
-Phase 1+: Konsolidierungs-Logik (Episodic -> Semantic via Skill-Compression).
+Phase 1: skeleton with CRUD.
+Phase 1+: consolidation logic (Episodic -> Semantic via Skill-Compression).
 """

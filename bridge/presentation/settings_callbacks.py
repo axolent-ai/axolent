@@ -1,14 +1,14 @@
-"""InlineKeyboard-Callbacks für /settings Menü.
+"""InlineKeyboard callbacks for the /settings menu.
 
-Verarbeitet settings_* Callback-Queries:
-  - settings_slot:<slot>        -> Zeigt Modell-Auswahl für einen Slot (Ebene B)
-  - settings_model:<slot>:<alias> -> Setzt Modell-Override für Slot
-  - settings_reset:<slot>       -> Setzt einen Slot auf Default zurück
-  - settings_reset_all          -> Zeigt Bestätigungs-Dialog
-  - settings_reset_all_confirm  -> Setzt alle Slots zurück
-  - settings_back               -> Zurück zum Hauptmenü (Ebene A)
-  - settings_lang:<code>        -> Setzt Sprache
-  - settings_lang_menu          -> Zeigt Sprachauswahl (Ebene B)
+Processes settings_* callback queries:
+  - settings_slot:<slot>        -> Shows model selection for a slot (level B)
+  - settings_model:<slot>:<alias> -> Sets model override for slot
+  - settings_reset:<slot>       -> Resets a slot to default
+  - settings_reset_all          -> Shows confirmation dialog
+  - settings_reset_all_confirm  -> Resets all slots
+  - settings_back               -> Back to main menu (level A)
+  - settings_lang:<code>        -> Sets language
+  - settings_lang_menu          -> Shows language selection (level B)
 """
 
 from __future__ import annotations
@@ -121,25 +121,25 @@ def _get_settings_strings(lang: str = "de") -> dict[str, str]:
 
 
 def _get_model_service(context: ContextTypes.DEFAULT_TYPE) -> Any:
-    """Holt den ModelService aus bot_data."""
+    """Gets the ModelService from bot_data."""
     return context.application.bot_data.get("model_service")
 
 
 def _get_chat_service(context: ContextTypes.DEFAULT_TYPE) -> Any:
-    """Holt den ChatService aus bot_data."""
+    """Gets the ChatService from bot_data."""
     return context.application.bot_data.get("chat_service")
 
 
 def _get_task_router(context: ContextTypes.DEFAULT_TYPE) -> Any:
-    """Holt den TaskRouter aus bot_data."""
+    """Gets the TaskRouter from bot_data."""
     return context.application.bot_data.get("task_router")
 
 
 def _get_slot_default_model(slot: TaskSlot, context: ContextTypes.DEFAULT_TYPE) -> str:
-    """Bestimmt das Default-Modell für einen Slot.
+    """Determines the default model for a slot.
 
-    Delegiert an TaskRouter.get_default_for_slot (Single Source of Truth).
-    Fällt auf DEFAULT_MODEL zurück wenn kein TaskRouter vorhanden.
+    Delegates to TaskRouter.get_default_for_slot (single source of truth).
+    Falls back to DEFAULT_MODEL when no TaskRouter is available.
     """
     task_router = _get_task_router(context)
     if task_router is not None and hasattr(task_router, "get_default_for_slot"):
@@ -158,13 +158,13 @@ def build_main_menu_keyboard(
     context: ContextTypes.DEFAULT_TYPE,
     lang: str = "de",
 ) -> tuple[str, InlineKeyboardMarkup]:
-    """Baut das Hauptmenü (Ebene A) für /settings.
+    """Builds the main menu (level A) for /settings.
 
-    Zeigt globalen Override prominent an, wenn aktiv.
-    Priorität der Anzeige pro Slot:
-      1. Slot-spezifischer Override (ohne Suffix)
-      2. Globaler Override (mit "(global)" Suffix)
-      3. Slot-Default (mit "(Default)" Suffix)
+    Shows global override prominently when active.
+    Display priority per slot:
+      1. Slot-specific override (no suffix)
+      2. Global override (with "(global)" suffix)
+      3. Slot default (with "(Default)" suffix)
 
     Returns:
         Tuple (message_text, keyboard_markup).
@@ -172,12 +172,12 @@ def build_main_menu_keyboard(
     s = _get_settings_strings(lang)
     overrides = model_service.get_all_slot_overrides(user_id)
 
-    # Globaler Override separat prüfen (slot="global" ist kein TaskSlot)
+    # Global override checked separately (slot="global" is not a TaskSlot)
     global_override = overrides.get("global")
 
     buttons: list[list[InlineKeyboardButton]] = []
 
-    # Globaler Override: nur Reset-Button im Keyboard (Headline geht in den Text)
+    # Global override: only reset button in keyboard (headline goes in the text)
     if global_override:
         buttons.append(
             [
@@ -191,11 +191,11 @@ def build_main_menu_keyboard(
     for slot in TaskSlot:
         slot_override = overrides.get(slot.value)
         if slot_override:
-            # Slot-spezifischer Override hat Vorrang
+            # Slot-specific override takes priority
             display = model_service.get_model_display_name(slot_override)
             label = f"{slot.value.upper()}: {display}"
         elif global_override:
-            # Globaler Override aktiv, Slot hat keinen eigenen
+            # Global override active, slot has no own override
             display = model_service.get_model_display_name(global_override)
             label = f"{slot.value.upper()}: {display} {s['global_override_suffix']}"
         else:
@@ -207,7 +207,7 @@ def build_main_menu_keyboard(
             [InlineKeyboardButton(label, callback_data=f"settings_slot:{slot.value}")]
         )
 
-    # Sprache
+    # Language button
     current_lang_name = _SETTINGS_LANGUAGES.get(lang, lang.upper())
     buttons.append(
         [
@@ -220,7 +220,7 @@ def build_main_menu_keyboard(
         ]
     )
 
-    # Reset all: nur anzeigen wenn mindestens ein pro-Slot Override existiert
+    # Reset all: only show when at least one per-slot override exists
     slot_overrides_count = sum(1 for key in overrides if key != "global")
     if slot_overrides_count > 0:
         buttons.append(
@@ -232,7 +232,7 @@ def build_main_menu_keyboard(
             ]
         )
 
-    # Message-Text: Headline für globalen Override im Text (nicht im Keyboard)
+    # Message text: headline for global override in text (not in keyboard)
     if global_override:
         global_display = model_service.get_model_display_name(global_override)
         override_line = s["global_override_text"].format(display_name=global_display)
@@ -249,15 +249,15 @@ def build_slot_menu_keyboard(
     context: ContextTypes.DEFAULT_TYPE,
     lang: str = "de",
 ) -> tuple[str, InlineKeyboardMarkup]:
-    """Baut das Slot-Modellauswahl-Menü (Ebene B).
+    """Builds the slot model selection menu (level B).
 
     Returns:
         Tuple (message_text, keyboard_markup).
     """
     s = _get_settings_strings(lang)
 
-    # Effektives Modell für diesen Slot bestimmen
-    # Priorität: Slot-Override > Global-Override > Slot-Default
+    # Determine effective model for this slot
+    # Priority: slot override > global override > slot default
     slot_override = model_service.get_user_model(user_id, slot.value)
     global_override = model_service.get_user_model(user_id, "global")
     default_model_id = _get_slot_default_model(slot, context)
@@ -303,7 +303,7 @@ def build_slot_menu_keyboard(
 def build_reset_confirm_keyboard(
     lang: str = "de",
 ) -> tuple[str, InlineKeyboardMarkup]:
-    """Baut den Reset-Bestätigungs-Dialog.
+    """Builds the reset confirmation dialog.
 
     Returns:
         Tuple (message_text, keyboard_markup).
@@ -329,7 +329,7 @@ def build_lang_menu_keyboard(
     current_lang: str = "de",
     lang: str = "de",
 ) -> tuple[str, InlineKeyboardMarkup]:
-    """Baut das Sprach-Auswahl-Menü (Grid-Layout, 4 Buttons pro Reihe).
+    """Builds the language selection menu (grid layout, 4 buttons per row).
 
     Returns:
         Tuple (message_text, keyboard_markup).
@@ -374,10 +374,10 @@ def build_lang_menu_keyboard(
 async def handle_settings_callback(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Zentraler Callback-Handler für alle settings_* Patterns.
+    """Central callback handler for all settings_* patterns.
 
-    Routet anhand des Callback-Data-Prefix an die richtige Sub-Logik.
-    Editiert immer die bestehende Nachricht (kein neues Senden).
+    Routes by callback data prefix to the right sub-logic.
+    Always edits the existing message (no new sends).
     """
     query = update.callback_query
     data: str = query.data or ""
@@ -393,7 +393,7 @@ async def handle_settings_callback(
 
     model_service = _get_model_service(context)
     if model_service is None or not isinstance(model_service, ModelService):
-        await query.edit_message_text("Settings nicht verfügbar.")
+        await query.edit_message_text("Settings not available.")
         return
 
     chat_service = _get_chat_service(context)
@@ -404,11 +404,11 @@ async def handle_settings_callback(
     # --- Route by callback data ---
 
     if data == "settings_noop":
-        # Headline-Button ohne Aktion (nur informativ)
+        # Headline button without action (informational only)
         return
 
     if data == "settings_reset_global":
-        # Globalen Override entfernen
+        # Remove global override
         deleted = model_service.reset_user_model(user_id, slot="global")
         log_command_audit(
             action="settings_reset_global",
@@ -417,17 +417,17 @@ async def handle_settings_callback(
             username=user.username if user else None,
             details=f"reset global (was_active={deleted})",
         )
-        # Zurück zum Hauptmenü
+        # Back to main menu
         text, keyboard = build_main_menu_keyboard(user_id, model_service, context, lang)
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
         return
 
     if data.startswith("settings_slot:"):
-        # Ebene B: Slot-Modellauswahl
+        # Level B: slot model selection
         slot_name = data.split(":")[1]
         slot = TaskSlot.from_string(slot_name)
         if slot is None:
-            await query.edit_message_text("Unbekannter Slot.")
+            await query.edit_message_text("Unknown slot.")
             return
         text, keyboard = build_slot_menu_keyboard(
             slot, user_id, model_service, context, lang
@@ -436,7 +436,7 @@ async def handle_settings_callback(
         return
 
     if data.startswith("settings_model:"):
-        # Modell setzen: settings_model:<slot>:<alias>
+        # Set model: settings_model:<slot>:<alias>
         parts = data.split(":")
         if len(parts) < 3:
             return
@@ -476,13 +476,13 @@ async def handle_settings_callback(
                 details=details,
             )
 
-        # Zurück zum Hauptmenü mit aktualisierten Werten
+        # Back to main menu mit aktualisierten Werten
         text, keyboard = build_main_menu_keyboard(user_id, model_service, context, lang)
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
         return
 
     if data.startswith("settings_reset:"):
-        # Einzelnen Slot resetten: settings_reset:<slot>
+        # Reset single slot: settings_reset:<slot>
         slot_name = data.split(":")[1]
         slot = TaskSlot.from_string(slot_name)
         if slot is None:
@@ -496,19 +496,19 @@ async def handle_settings_callback(
             details=f"reset slot={slot.value} (was_active={deleted})",
         )
 
-        # Zurück zum Hauptmenü
+        # Back to main menu
         text, keyboard = build_main_menu_keyboard(user_id, model_service, context, lang)
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
         return
 
     if data == "settings_reset_all":
-        # Bestätigungs-Dialog anzeigen
+        # Show confirmation dialog
         text, keyboard = build_reset_confirm_keyboard(lang)
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
         return
 
     if data == "settings_reset_all_confirm":
-        # Tatsächlich alle Slots resetten
+        # Actually reset all slots
         count = model_service.reset_all_slots(user_id)
         log_command_audit(
             action="settings_reset_all",
@@ -518,25 +518,25 @@ async def handle_settings_callback(
             details=f"reset all (removed={count})",
         )
 
-        # Zurück zum Hauptmenü
+        # Back to main menu
         text, keyboard = build_main_menu_keyboard(user_id, model_service, context, lang)
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
         return
 
     if data == "settings_back":
-        # Zurück zum Hauptmenü
+        # Back to main menu
         text, keyboard = build_main_menu_keyboard(user_id, model_service, context, lang)
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
         return
 
     if data == "settings_lang_menu":
-        # Sprachauswahl anzeigen
+        # Show language selection
         text, keyboard = build_lang_menu_keyboard(current_lang=lang, lang=lang)
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
         return
 
     if data.startswith("settings_lang:"):
-        # Sprache setzen
+        # Set language
         new_lang = data.split(":")[1]
         if new_lang not in _SETTINGS_LANGUAGES:
             return
@@ -553,7 +553,7 @@ async def handle_settings_callback(
         )
         log.info("Settings: User %d set language to '%s'", user_id, new_lang)
 
-        # Zurück zum Hauptmenü (in neuer Sprache)
+        # Back to main menu (in neuer Sprache)
         text, keyboard = build_main_menu_keyboard(
             user_id, model_service, context, new_lang
         )

@@ -1,8 +1,8 @@
-"""Tests für application.chat_service: LLM-Aufruf-Orchestration via ChatService-Klasse.
+"""Tests for application.chat_service: LLM call orchestration via ChatService class.
 
-Erstellt eine ChatService-Instanz mit gemockten Dependencies.
-Kein echter LLM-Aufruf.
-Testet History-Integration, Sprach-Detection, Error-Handling und Auto-Memory-Loading.
+Creates a ChatService instance with mocked dependencies.
+No real LLM call.
+Tests history integration, language detection, error handling, and auto memory loading.
 """
 
 from __future__ import annotations

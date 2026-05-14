@@ -133,12 +133,12 @@ class ClaudeProcessPool:
         if self._cleanup_task is None:
             self._cleanup_task = asyncio.create_task(self._cleanup_loop())
             log.info(
-                "ClaudeProcessPool gestartet (Cleanup-Intervall: %.0fs)",
+                "ClaudeProcessPool started (cleanup interval: %.0fs)",
                 CLEANUP_INTERVAL_SECONDS,
             )
 
     async def shutdown(self) -> None:
-        """Graceful Shutdown: terminiert alle aktiven Subprocesses."""
+        """Graceful shutdown: terminates all active subprocesses."""
         self._shutdown = True
 
         if self._cleanup_task is not None:
@@ -156,55 +156,55 @@ class ClaudeProcessPool:
             await self._terminate_process(key, reason="shutdown")
 
         log.info(
-            "ClaudeProcessPool heruntergefahren (%d Processes terminiert)",
+            "ClaudeProcessPool shut down (%d processes terminated)",
             len(keys),
         )
 
     async def get_or_create(
         self, user_id: int, chat_id: int, model: str | None = None
     ) -> tuple[ManagedProcess, bool]:
-        """Holt einen existierenden oder erstellt einen neuen Subprocess.
+        """Get an existing or create a new subprocess.
 
-        Phase 2c: Routing-Key ist (user_id, chat_id, model). Jedes Modell
-        bekommt seinen eigenen Subprocess. Kein Modell-Mismatch mehr,
-        kein Kill bei Slot-Wechsel: alle Modelle bleiben warm.
+        Phase 2c: routing key is (user_id, chat_id, model). Each model
+        gets its own subprocess. No model mismatch, no kill on slot switch:
+        all models stay warm.
 
-        On pool overflow (> POOL_MAX_SIZE) the longest
-        inaktive Subprocess per LRU-Eviction terminiert.
+        On pool overflow (> POOL_MAX_SIZE) the longest-inactive subprocess
+        is terminated via LRU eviction.
 
         Args:
-            user_id: Telegram-User-ID.
-            chat_id: Telegram-Chat-ID.
-            model: Optionale Modell-ID. None = CLAUDE_POOL_MODEL (Default).
+            user_id: Telegram user ID.
+            chat_id: Telegram chat ID.
+            model: Optional model ID. None = CLAUDE_POOL_MODEL (default).
 
         Returns:
-            Tuple von (ManagedProcess, was_cold: bool).
-            was_cold=True wenn ein neuer Subprocess gestartet wurde.
+            Tuple of (ManagedProcess, was_cold: bool).
+            was_cold=True if a new subprocess was started.
 
         Raises:
             RuntimeError: If CLI is not available or start fails.
         """
         if self._shutdown:
-            raise RuntimeError("ProcessPool ist im Shutdown-Modus")
+            raise RuntimeError("ProcessPool is in shutdown mode")
 
         effective_model = model or CLAUDE_POOL_MODEL
         key: PoolKey = (user_id, chat_id, effective_model)
 
-        # Schneller Pfad: existierender, lebendiger Process
+        # Fast path: existing, alive process
         async with self._pool_lock:
             managed = self._processes.get(key)
             if managed is not None and self._is_alive(managed):
                 managed.last_used = time.monotonic()
                 return managed, False
 
-            # Per-Key Creation Lock holen (oder erstellen)
+            # Get (or create) per-key creation lock
             if key not in self._creation_locks:
                 self._creation_locks[key] = asyncio.Lock()
             creation_lock = self._creation_locks[key]
 
-        # Per-Key Lock: nur ein Spawn pro Key gleichzeitig
+        # Per-key lock: only one spawn per key at a time
         async with creation_lock:
-            # Double-Check: vielleicht hat ein anderer Task inzwischen gespawnt
+            # Double-check: another task may have spawned in the meantime
             async with self._pool_lock:
                 managed = self._processes.get(key)
                 if managed is not None and self._is_alive(managed):
@@ -226,10 +226,10 @@ class ClaudeProcessPool:
             if old_managed_to_kill is not None:
                 await self._kill_process(old_managed_to_kill)
 
-            # LRU-Eviction wenn Pool-Limit erreicht
+            # LRU eviction when pool limit is reached
             await self._evict_if_needed()
 
-            # Neuen Subprocess starten
+            # Start new subprocess
             new_managed = await self._spawn_process(key, model=effective_model)
 
             async with self._pool_lock:
@@ -245,32 +245,32 @@ class ClaudeProcessPool:
         system_prompt: str = "",
         model: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
-        """Sendet eine Nachricht an den Subprocess und streamt die Antwort.
+        """Send a message to the subprocess and stream the response.
 
         Args:
-            user_id: Telegram-User-ID.
-            chat_id: Telegram-Chat-ID.
-            prompt: User-Nachricht.
-            system_prompt: Optionaler System-Prompt (wird in den Content integriert).
-            model: Optionale Modell-ID (None = Pool-Default).
+            user_id: Telegram user ID.
+            chat_id: Telegram chat ID.
+            prompt: User message.
+            system_prompt: Optional system prompt (integrated into the content).
+            model: Optional model ID (None = pool default).
 
         Yields:
-            StreamEvent-Objekte mit inkrementellem Text und finalem Result.
+            StreamEvent objects with incremental text and final result.
 
         Raises:
-            RuntimeError: Bei Subprocess-Crash oder Pipe-Fehler.
+            RuntimeError: On subprocess crash or pipe error.
         """
         effective_model = model or CLAUDE_POOL_MODEL
         key: PoolKey = (user_id, chat_id, effective_model)
         managed, was_cold = await self.get_or_create(user_id, chat_id, model=model)
 
         # Wait for init regardless of was_cold (pre-warm path can
-        # was_cold=False liefern obwohl is_ready noch False ist).
+        # return was_cold=False even when is_ready is still False).
         if not managed.is_ready:
             await self._wait_for_init(managed)
 
-        # Init-Event mit Process-Metadata yielden (vor dem Lock,
-        # damit der Caller was_cold/pid sofort kennt)
+        # Yield init event with process metadata (before the lock,
+        # so the caller knows was_cold/pid immediately)
         yield StreamEvent(
             event_type="init",
             was_cold=was_cold,
@@ -281,7 +281,7 @@ class ClaudeProcessPool:
             managed.last_used = time.monotonic()
             managed._accumulated_text = ""
 
-            # Prompt als stream-json User-Message formatieren
+            # Format prompt as stream-json user message
             if system_prompt:
                 combined_text = f"{system_prompt}\n\n---\n\nUser: {prompt}"
             else:
@@ -298,20 +298,20 @@ class ClaudeProcessPool:
                 ensure_ascii=False,
             )
 
-            # Health-Check: ist der Process noch am Leben?
+            # Health check: is the process still alive?
             if not self._is_alive(managed):
                 raise RuntimeError(f"Subprocess for key={key} died while locked")
 
-            # Nachricht senden
+            # Send message
             try:
                 managed.process.stdin.write((message + "\n").encode("utf-8"))
                 await managed.process.stdin.drain()
             except (BrokenPipeError, OSError, ConnectionResetError) as e:
-                log.error("Pipe-Fehler beim Senden an key=%s: %s", key, e)
+                log.error("Pipe error sending to key=%s: %s", key, e)
                 await self._terminate_process(key, reason="pipe_broken")
-                raise RuntimeError(f"Subprocess-Pipe gebrochen: {e}") from e
+                raise RuntimeError(f"Subprocess pipe broken: {e}") from e
 
-            # Antwort-Events lesen, last_used dabei aktualisieren
+            # Read response events, updating last_used along the way
             async for event in self._read_response(managed):
                 managed.last_used = time.monotonic()
                 yield event
@@ -319,18 +319,18 @@ class ClaudeProcessPool:
     async def terminate_session(
         self, user_id: int, chat_id: int, model: str | None = None
     ) -> bool:
-        """Terminiert Subprocess(e) einer bestimmten User-Session.
+        """Terminate subprocess(es) for a specific user session.
 
-        Wenn model angegeben: nur den spezifischen Subprocess terminieren.
-        Wenn model=None: alle Subprocesses dieses User/Chat terminieren.
+        If model is specified: terminate only that specific subprocess.
+        If model=None: terminate all subprocesses for this user/chat.
 
         Args:
-            user_id: Telegram-User-ID.
-            chat_id: Telegram-Chat-ID.
-            model: Optionale Modell-ID. None = alle Modelle dieses Chats.
+            user_id: Telegram user ID.
+            chat_id: Telegram chat ID.
+            model: Optional model ID. None = all models for this chat.
 
         Returns:
-            True wenn mindestens ein Subprocess terminiert wurde.
+            True if at least one subprocess was terminated.
         """
         if model is not None:
             effective_model = model or CLAUDE_POOL_MODEL
@@ -390,14 +390,14 @@ class ClaudeProcessPool:
 
             for key, mp in self._processes.items():
                 if mp.lock.locked():
-                    continue  # Aktiver Stream, nicht evicten
+                    continue  # Active stream, do not evict
                 if mp.last_used < oldest_time:
                     oldest_time = mp.last_used
                     candidate_key = key
 
             if candidate_key is None:
                 log.warning(
-                    "Pool voll (%d/%d) aber alle Processes sind gelockt. "
+                    "Pool full (%d/%d) but all processes are locked. "
                     "No eviction possible.",
                     len(self._processes),
                     POOL_MAX_SIZE,
@@ -406,7 +406,7 @@ class ClaudeProcessPool:
 
             evict_managed = self._processes.pop(candidate_key)
 
-        # Kill außerhalb des Pool-Locks
+        # Kill outside the pool lock
         log.info(
             "LRU-Eviction: key=%s, pid=%d (idle %.1fs)",
             candidate_key,
@@ -418,17 +418,17 @@ class ClaudeProcessPool:
     async def _spawn_process(
         self, key: PoolKey, model: str | None = None
     ) -> ManagedProcess:
-        """Startet einen neuen Claude-CLI-Subprocess.
+        """Start a new Claude CLI subprocess.
 
         Args:
-            key: (user_id, chat_id, model) 3-Tuple Routing-Key.
-            model: Optionale Modell-ID. None = CLAUDE_POOL_MODEL.
+            key: (user_id, chat_id, model) 3-tuple routing key.
+            model: Optional model ID. None = CLAUDE_POOL_MODEL.
 
         Raises:
             RuntimeError: If CLI is not available.
         """
         if not self.is_cli_available():
-            raise RuntimeError("claude CLI nicht im PATH gefunden")
+            raise RuntimeError("claude CLI not found in PATH")
 
         effective_model = model or CLAUDE_POOL_MODEL
 
@@ -439,12 +439,12 @@ class ClaudeProcessPool:
             "stream-json",
             "--output-format",
             "stream-json",
-            "--include-partial-messages",  # R04 Round 1: ohne dieses Flag emittiert die CLI keine content_block_delta-Events
+            "--include-partial-messages",  # R04 Round 1: without this flag the CLI does not emit content_block_delta events
             "--verbose",
             "--no-session-persistence",
-            # NOTE: --bare hier bewusst NICHT gesetzt.
+            # NOTE: --bare is intentionally NOT set here.
             # R10 introduced --bare to save ~5000 token init overhead,
-            # aber --bare verursacht "authentication_failed" bei Subscription-Usern
+            # but --bare causes "authentication_failed" for subscription users
             # (tested with claude-code 2.1.126). Without --bare, auth works correctly.
             "--model",
             effective_model,
@@ -459,7 +459,7 @@ class ClaudeProcessPool:
 
         pid = proc.pid or 0
         log.info(
-            "Neuer Claude-Subprocess gestartet: key=%s, pid=%d",
+            "New Claude subprocess started: key=%s, pid=%d",
             key,
             pid,
         )
@@ -477,11 +477,11 @@ class ClaudeProcessPool:
         return managed
 
     async def _wait_for_init(self, managed: ManagedProcess) -> None:
-        """Wartet bis der Subprocess seine Init-Phase abgeschlossen hat.
+        """Wait until the subprocess has completed its init phase.
 
-        Init-Events (system, init_session etc.) werden gelesen und verworfen.
+        Init events (system, init_session etc.) are read and discarded.
         Timeout after INIT_TIMEOUT_SECONDS. On EOF during init a
-        RuntimeError geworfen.
+        RuntimeError is raised.
         """
         deadline = time.monotonic() + INIT_TIMEOUT_SECONDS
         proc = managed.process
@@ -496,21 +496,21 @@ class ClaudeProcessPool:
                     timeout=2.0,
                 )
             except asyncio.TimeoutError:
-                # Keine weiteren Init-Events, Subprocess ist bereit
+                # No more init events, subprocess is ready
                 managed.is_ready = True
                 log.debug(
-                    "Subprocess pid=%d: Init abgeschlossen (Timeout-basiert)",
+                    "Subprocess pid=%d: init completed (timeout-based)",
                     managed.pid,
                 )
                 return
 
             if not line:
-                # EOF: Process hat sich beendet
+                # EOF: process has terminated
                 raise RuntimeError(
                     f"Subprocess pid={managed.pid} terminated during init"
                 )
 
-            # Init-Events loggen aber ignorieren
+            # Log but ignore init events
             line_str = line.decode("utf-8", "replace").strip()
             if line_str:
                 try:
@@ -522,42 +522,42 @@ class ClaudeProcessPool:
 
         managed.is_ready = True
         log.debug(
-            "Subprocess pid=%d: Init-Deadline erreicht, markiere als ready", managed.pid
+            "Subprocess pid=%d: init deadline reached, marking as ready", managed.pid
         )
 
     async def _read_response(
         self, managed: ManagedProcess
     ) -> AsyncIterator[StreamEvent]:
-        """Liest Antwort-Events aus stdout bis ein 'result'-Event kommt.
+        """Read response events from stdout until a 'result' event arrives.
 
         Yields:
-            StreamEvent-Objekte (content_delta, result, error).
+            StreamEvent objects (content_delta, result, error).
         """
         proc = managed.process
         if proc.stdout is None:
-            raise RuntimeError("Subprocess hat keinen stdout")
+            raise RuntimeError("Subprocess has no stdout")
 
         while True:
             try:
                 line = await asyncio.wait_for(
                     proc.stdout.readline(),
-                    timeout=120.0,  # 2 Minuten Timeout pro Zeile
+                    timeout=120.0,  # 2 minute timeout per line
                 )
             except asyncio.TimeoutError:
-                log.warning("Timeout beim Lesen von pid=%d", managed.pid)
+                log.warning("Timeout reading from pid=%d", managed.pid)
                 yield StreamEvent(
                     event_type="error",
-                    text="Timeout: keine Antwort vom Subprocess",
+                    text="Timeout: no response from subprocess",
                     is_final=True,
                 )
                 return
 
             if not line:
-                # EOF: Process ist gestorben
+                # EOF: process has died
                 log.error("EOF from pid=%d during response reading", managed.pid)
                 yield StreamEvent(
                     event_type="error",
-                    text="Subprocess unerwartet beendet",
+                    text="Subprocess terminated unexpectedly",
                     is_final=True,
                 )
                 return
@@ -589,16 +589,16 @@ class ClaudeProcessPool:
                         )
 
             elif event_type == "assistant":
-                # Partial assembled message (ignorieren, wir bauen selbst zusammen)
+                # Partial assembled message (ignored, we build our own)
                 pass
 
             elif event_type == "result":
-                # Antwort komplett
+                # Response complete
                 result_text = event.get("result", "")
                 if isinstance(result_text, str):
                     final_text = result_text
                 elif isinstance(result_text, dict):
-                    # Manchmal kommt result als dict mit content-Array
+                    # Sometimes result arrives as a dict with content array
                     blocks = result_text.get("content", [])
                     final_text = "".join(
                         b.get("text", "") for b in blocks if b.get("type") == "text"
@@ -606,7 +606,7 @@ class ClaudeProcessPool:
                 else:
                     final_text = str(result_text)
 
-                # Fallback: wenn result leer aber accumulated text vorhanden
+                # Fallback: if result is empty but accumulated text exists
                 if not final_text and managed._accumulated_text:
                     final_text = managed._accumulated_text
 
@@ -619,7 +619,7 @@ class ClaudeProcessPool:
                 return
 
             elif event_type == "error":
-                error_msg = event.get("error", {}).get("message", "Unbekannter Fehler")
+                error_msg = event.get("error", {}).get("message", "Unknown error")
                 yield StreamEvent(
                     event_type="error",
                     text=error_msg,
@@ -628,7 +628,7 @@ class ClaudeProcessPool:
                 )
                 return
 
-            # Andere Events (system, rate_limit etc.) werden ignoriert
+            # Other events (system, rate_limit etc.) are ignored
 
     @staticmethod
     def _is_alive(managed: ManagedProcess) -> bool:
@@ -636,14 +636,14 @@ class ClaudeProcessPool:
         return managed.process.returncode is None
 
     async def _terminate_process(self, key: PoolKey, reason: str = "") -> bool:
-        """Terminiert einen Subprocess sauber.
+        """Terminate a subprocess cleanly.
 
         Args:
-            key: (user_id, chat_id, model) 3-Tuple Routing-Key.
+            key: (user_id, chat_id, model) 3-tuple routing key.
             reason: Reason for termination (for logging).
 
         Returns:
-            True wenn ein Subprocess terminiert wurde.
+            True if a subprocess was terminated.
         """
         async with self._pool_lock:
             managed = self._processes.pop(key, None)
@@ -653,7 +653,7 @@ class ClaudeProcessPool:
 
         await self._kill_process(managed)
         log.info(
-            "Subprocess terminiert: key=%s, pid=%d, reason=%s",
+            "Subprocess terminated: key=%s, pid=%d, reason=%s",
             key,
             managed.pid,
             reason,
@@ -662,10 +662,10 @@ class ClaudeProcessPool:
 
     @staticmethod
     async def _kill_process(managed: ManagedProcess) -> None:
-        """Killt einen Subprocess (terminate, dann kill nach 3s)."""
+        """Kill a subprocess (terminate, then kill after 3s)."""
         proc = managed.process
         if proc.returncode is not None:
-            return  # Bereits beendet
+            return  # Already terminated
 
         try:
             proc.terminate()
@@ -675,7 +675,7 @@ class ClaudeProcessPool:
                 proc.kill()
                 await proc.wait()
         except ProcessLookupError:
-            pass  # Process war schon weg
+            pass  # Process was already gone
 
     async def _cleanup_loop(self) -> None:
         """Background task: terminate inactive subprocesses periodically."""
@@ -699,7 +699,7 @@ class ClaudeProcessPool:
             for key, managed in self._processes.items():
                 idle_time = now - managed.last_used
                 if idle_time > INACTIVITY_TIMEOUT_SECONDS:
-                    # Nicht terminieren wenn gerade ein Stream aktiv ist
+                    # Do not terminate while a stream is active
                     if managed.lock.locked():
                         log.debug(
                             "Cleanup skipped for key=%s: lock active",
@@ -713,7 +713,7 @@ class ClaudeProcessPool:
 
         if expired_keys:
             log.info(
-                "Cleanup: %d inaktive Subprocesses terminiert (keys: %s)",
+                "Cleanup: %d inactive subprocesses terminated (keys: %s)",
                 len(expired_keys),
                 expired_keys,
             )

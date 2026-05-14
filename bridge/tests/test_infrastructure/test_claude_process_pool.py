@@ -1,20 +1,20 @@
-"""Tests für ClaudeProcessPool (Phase 2c: 3-Tuple-Key).
+"""Tests for ClaudeProcessPool (Phase 2c: 3-tuple key).
 
-Verifiziert:
-    - Process-Spawn und Reuse (warm vs cold) mit (user_id, chat_id, model) 3-Tuple-Routing
-    - Verschiedene Modelle bekommen verschiedene Subprocesses (kein Mismatch-Kill)
-    - Inaktivitäts-Timeout terminiert idle Processes
-    - Crash-Recovery: toter Process wird neu gestartet
-    - Multi-User-Isolation: User A's Process != User B's Process
-    - Graceful Shutdown terminiert alle Processes
-    - Health-Check erkennt tote Processes
-    - Lock verhindert gleichzeitigen Zugriff auf eine Pipe
-    - CLI-Flags enthalten --include-partial-messages für Streaming
-    - _read_response parsed echtes CLI-Event-Format korrekt
-    - Race-Condition-Schutz: parallele get_or_create erzeugen nur 1 Spawn
-    - Cleanup übersprungen aktive (gelockte) Processes
-    - LRU-Eviction bei Pool-Überlauf
-    - 3-Tuple-Key: gleicher User verschiedene Modelle = verschiedene Processes
+Verifies:
+    - Process spawn and reuse (warm vs cold) with (user_id, chat_id, model) 3-tuple routing
+    - Different models get different subprocesses (no mismatch kill)
+    - Inactivity timeout terminates idle processes
+    - Crash recovery: dead process is restarted
+    - Multi-user isolation: User A's process != User B's process
+    - Graceful shutdown terminates all processes
+    - Health check detects dead processes
+    - Lock prevents concurrent access to a pipe
+    - CLI flags include --include-partial-messages for streaming
+    - _read_response parses real CLI event format correctly
+    - Race condition protection: parallel get_or_create creates only 1 spawn
+    - Cleanup skips active (locked) processes
+    - LRU eviction on pool overflow
+    - 3-tuple key: same user, different models = different processes
 """
 
 from __future__ import annotations
@@ -482,7 +482,7 @@ class TestProcessPoolShutdown:
         pool = ClaudeProcessPool()
         await pool.shutdown()
 
-        with pytest.raises(RuntimeError, match="Shutdown"):
+        with pytest.raises(RuntimeError, match="shutdown"):
             await pool.get_or_create(user_id=1, chat_id=600)
 
 

@@ -1,7 +1,7 @@
-"""Tests für application.bookmark_service: Bookmark Use-Case-Orchestration.
+"""Tests for application.bookmark_service: bookmark use-case orchestration.
 
-Testet Toggle-Logik, User-Scoping und Suche.
-Nutzt tmp_path für isolierte Testdaten.
+Tests toggle logic, user scoping, and search.
+Uses tmp_path for isolated test data.
 """
 
 from __future__ import annotations
@@ -49,14 +49,14 @@ class TestBookmarkService:
             user_id=1, username="t", chat_id=10, message_id=100, content="Test"
         )
         assert was_saved is True
-        assert "gespeichert" in msg.lower()
+        assert "saved" in msg.lower()
 
         # Zweiter Aufruf: löschen
         was_saved, msg = self.svc.save_or_toggle_bookmark(
             user_id=1, username="t", chat_id=10, message_id=100, content="Test"
         )
         assert was_saved is False
-        assert "entfernt" in msg.lower()
+        assert "removed" in msg.lower()
 
     def test_list_returns_user_specific(self) -> None:
         """list_bookmarks gibt nur Bookmarks des angegebenen Users zurück."""

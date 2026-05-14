@@ -1,8 +1,8 @@
-"""Tests für presentation.decorators: Whitelist-Guard und Privacy-Guard.
+"""Tests for presentation.decorators: whitelist guard and privacy guard.
 
-Testet Autorisierung via User-ID-Whitelist, ALLOW_ALL_USERS Bypass,
-require_private_chat Decorator und _parse_whitelist Validation.
-Mockt Telegram Update/Context Objekte.
+Tests authorization via user ID whitelist, ALLOW_ALL_USERS bypass,
+require_private_chat decorator, and _parse_whitelist validation.
+Mocks Telegram Update/Context objects.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ class TestRequireWhitelist:
             handler.assert_not_called()
             update.message.reply_text.assert_called_once()
             call_text = update.message.reply_text.call_args[0][0]
-            assert "nicht autorisiert" in call_text.lower()
+            assert "not authorized" in call_text.lower()
 
     async def test_require_whitelist_allows_authorized(self) -> None:
         """Whitelisted User werden durchgelassen."""
@@ -147,7 +147,7 @@ class TestRequirePrivateChat:
         handler.assert_not_called()
         update.message.reply_text.assert_called_once()
         call_text = update.message.reply_text.call_args[0][0]
-        assert "privaten Chat" in call_text
+        assert "private chat" in call_text.lower()
 
     async def test_blocks_supergroup_chat(self) -> None:
         """In Supergruppen-Chats wird der Handler blockiert."""

@@ -1,7 +1,7 @@
-"""Tests für domain.markdown: Markdown-zu-Telegram-HTML-Konvertierung.
+"""Tests for domain.markdown: Markdown-to-Telegram-HTML conversion.
 
-Testet Konvertierung, URL-Scheme-Whitelist und Plain-Text-Fallback.
-Die URL-Scheme-Tests sind sicherheitskritisch (XSS-Praevention).
+Tests conversion, URL scheme whitelist, and plain-text fallback.
+The URL scheme tests are security-critical (XSS prevention).
 """
 
 from domain.markdown import (
@@ -12,113 +12,113 @@ from domain.markdown import (
 
 
 class TestMarkdownToTelegramHtml:
-    """Konvertierung von Markdown zu Telegram-kompatiblem HTML."""
+    """Conversion from Markdown to Telegram-compatible HTML."""
 
     def test_headlines_to_bold(self) -> None:
-        """Markdown-Headlines werden zu <b>...</b>."""
+        """Markdown headlines are converted to <b>...</b>."""
         assert "<b>Titel</b>" in markdown_to_telegram_html("## Titel")
         assert "<b>H1</b>" in markdown_to_telegram_html("# H1")
         assert "<b>H6</b>" in markdown_to_telegram_html("###### H6")
 
     def test_bold_conversion(self) -> None:
-        """**text** wird zu <b>text</b>."""
+        """**text** is converted to <b>text</b>."""
         result = markdown_to_telegram_html("Das ist **wichtig** hier")
         assert "<b>wichtig</b>" in result
 
     def test_italic_conversion(self) -> None:
-        """*text* wird zu <i>text</i>."""
+        """*text* is converted to <i>text</i>."""
         result = markdown_to_telegram_html("Das ist *kursiv* hier")
         assert "<i>kursiv</i>" in result
 
     def test_underscore_italic(self) -> None:
-        """_text_ wird zu <i>text</i>."""
+        """_text_ is converted to <i>text</i>."""
         result = markdown_to_telegram_html("Das ist _kursiv_ hier")
         assert "<i>kursiv</i>" in result
 
     def test_inline_code(self) -> None:
-        """`code` wird zu <code>code</code>."""
+        """`code` is converted to <code>code</code>."""
         result = markdown_to_telegram_html("Nutze `pip install` hier")
         assert "<code>pip install</code>" in result
 
     def test_code_block(self) -> None:
-        """Fenced code blocks werden zu <pre>...</pre>."""
+        """Fenced code blocks are converted to <pre>...</pre>."""
         md = "```python\nprint('hello')\n```"
         result = markdown_to_telegram_html(md)
         assert "<pre>" in result
         assert "print(&#x27;hello&#x27;)" in result or "print('hello')" in result
 
     def test_html_escape_special_chars(self) -> None:
-        """HTML-Sonderzeichen (<, >, &) werden escaped."""
+        """HTML special characters (<, >, &) are escaped."""
         result = markdown_to_telegram_html("a < b && c > d")
         assert "&lt;" in result
         assert "&gt;" in result
         assert "&amp;" in result
 
     def test_url_scheme_whitelist_allowed(self) -> None:
-        """Erlaubte Schemes (http, https, tg, mailto) erzeugen <a>-Tags."""
+        """Allowed schemes (http, https, tg, mailto) produce <a> tags."""
         for scheme in ("http", "https", "tg", "mailto"):
             md = f"[Link]({scheme}://example.com)"
             result = markdown_to_telegram_html(md)
-            assert "<a href=" in result, f"Scheme '{scheme}' sollte erlaubt sein"
+            assert "<a href=" in result, f"Scheme '{scheme}' should be allowed"
 
     def test_url_scheme_whitelist_blocked(self) -> None:
-        """Gefährliche Schemes (javascript:, data:, file:) werden blockiert.
+        """Dangerous schemes (javascript:, data:, file:) are blocked.
 
-        Sicherheitskritisch: verhindert XSS via boeswillige Links.
+        Security-critical: prevents XSS via malicious links.
         """
         for scheme in ("javascript", "data", "file"):
             md = f"[Click]({scheme}:alert(1))"
             result = markdown_to_telegram_html(md)
-            assert "<a " not in result, f"Scheme '{scheme}:' MUSS blockiert werden"
-            # Der Link-Text soll trotzdem angezeigt werden
+            assert "<a " not in result, f"Scheme '{scheme}:' MUST be blocked"
+            # The link text should still be displayed
             assert "Click" in result
 
     def test_url_scheme_whitelist_set(self) -> None:
-        """Prüft dass die Whitelist genau die erwarteten Schemes enthält."""
+        """Verify that the whitelist contains exactly the expected schemes."""
         assert ALLOWED_URL_SCHEMES == {"http", "https", "tg", "mailto"}
 
     def test_link_conversion(self) -> None:
-        """[text](url) wird zu <a href="url">text</a>."""
+        """[text](url) is converted to <a href="url">text</a>."""
         md = "[Google](https://google.com)"
         result = markdown_to_telegram_html(md)
         assert '<a href="https://google.com">Google</a>' in result
 
     def test_link_no_double_escape(self) -> None:
-        """Links mit & im Text und URL werden nur einfach escaped, nicht doppelt.
+        """Links with & in text and URL are escaped only once, not double-escaped.
 
-        Regression-Test: globales html.escape lief VOR Link-Konvertierung,
-        dann wurde Link-Text und URL nochmal escaped -> &amp;amp;
+        Regression test: global html.escape ran BEFORE link conversion,
+        then link text and URL were escaped again -> &amp;amp;
         """
         md = "[Tom & Jerry](https://example.com?a=1&b=2)"
         result = markdown_to_telegram_html(md)
         assert '<a href="https://example.com?a=1&amp;b=2">Tom &amp; Jerry</a>' in result
-        # Darf NICHT doppelt escaped sein
+        # Must NOT be double-escaped
         assert "&amp;amp;" not in result
 
     def test_link_with_special_chars_in_text(self) -> None:
-        """HTML-Sonderzeichen im Link-Text werden korrekt escaped."""
+        """HTML special characters in link text are correctly escaped."""
         md = "[a < b](https://example.com)"
         result = markdown_to_telegram_html(md)
         assert "a &lt; b" in result
         assert "<a href=" in result
 
     def test_nested_bold_in_headline_stripped(self) -> None:
-        """Bold-Marker innerhalb von Headlines werden entfernt (kein verschachteltes <b>)."""
+        """Bold markers inside headlines are removed (no nested <b>)."""
         result = markdown_to_telegram_html("## **Fette Headline**")
         assert "**" not in result
         assert "<b>Fette Headline</b>" in result
 
     def test_orphaned_bold_markers_cleaned(self) -> None:
-        """Ungepaarte ** werden entfernt statt im Output zu landen."""
+        """Unpaired ** are removed instead of appearing in the output."""
         result = markdown_to_telegram_html("Text ** mit ** ungepaarten Markern")
         assert "**" not in result
 
 
 class TestStripMarkdown:
-    """strip_markdown entfernt Syntax für Plain-Text-Fallback."""
+    """strip_markdown removes syntax for plain-text fallback."""
 
     def test_strip_markdown_for_fallback(self) -> None:
-        """Alle Markdown-Syntax wird entfernt, reiner Inhalt bleibt."""
+        """All Markdown syntax is removed, only plain content remains."""
         md = "## Headline\n**bold** and *italic*\n`code`"
         result = strip_markdown(md)
         assert "##" not in result
@@ -131,14 +131,14 @@ class TestStripMarkdown:
         assert "code" in result
 
     def test_strip_code_block(self) -> None:
-        """Code-Block-Fences werden entfernt, Inhalt bleibt."""
+        """Code block fences are removed, content remains."""
         md = "```python\nprint('hi')\n```"
         result = strip_markdown(md)
         assert "```" not in result
         assert "print('hi')" in result
 
     def test_strip_links_keep_text_and_url(self) -> None:
-        """Links werden zu 'text (url)' Format."""
+        """Links are converted to 'text (url)' format."""
         md = "[Google](https://google.com)"
         result = strip_markdown(md)
         assert "Google" in result

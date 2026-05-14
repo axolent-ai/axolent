@@ -27,16 +27,16 @@ repos:
         files: ^bridge/
         exclude: ^bridge/tests/
 
-  # Security: gitleaks (Secrets scanner)
-  # STATUS: Deaktiviert (Stand 2026-05-14).
-  # GRUND: gitleaks pre-commit mirror nutzt wasm-basierte go-re2 die auf
-  #   Windows mit panic: "wasm error: invalid table access" crasht.
+  # Security: gitleaks (secrets scanner)
+  # STATUS: Disabled (as of 2026-05-14).
+  # REASON: gitleaks pre-commit mirror uses wasm-based go-re2 which crashes on
+  #   Windows with panic: "wasm error: invalid table access".
   #   Tracking: https://github.com/gitleaks/gitleaks/issues
-  # MANUELLE NUTZUNG (empfohlen vor jedem Release):
-  #   1. Installieren: `scoop install gitleaks` oder `winget install gitleaks`
-  #   2. Scan aktueller Tree: `gitleaks detect --source . --config .gitleaks.toml`
-  #   3. Scan Git-History: `gitleaks detect --source . --config .gitleaks.toml --log-opts="--all"`
-  # REAKTIVIERUNG: Wenn der Upstream-Bug gefixt ist, folgendes einkommentieren:
+  # MANUAL USAGE (recommended before every release):
+  #   1. Install: `scoop install gitleaks` or `winget install gitleaks`
+  #   2. Scan current tree: `gitleaks detect --source . --config .gitleaks.toml`
+  #   3. Scan git history: `gitleaks detect --source . --config .gitleaks.toml --log-opts="--all"`
+  # REACTIVATION: When the upstream bug is fixed, uncomment the following:
   # - repo: https://github.com/gitleaks/gitleaks
   #   rev: v8.22.1
   #   hooks:
@@ -44,8 +44,15 @@ repos:
 
   - repo: local
     hooks:
+      - id: en-only-production
+        name: English-only in production code (EN-only policy)
+        entry: python scripts/check_en_only_production.py
+        language: python
+        files: ^(bridge/(application|domain|infrastructure|presentation)/|scripts/|\.pre-commit-config\.yaml$|start-bot\.bat$)
+        pass_filenames: true
+
       - id: no-fake-umlauts
-        name: Keine ASCII-Umlaute (ae/oe/ue/ss) in deutschem Production-Text
+        name: No ASCII umlauts (ae/oe/ue/ss) in German production text
         entry: python scripts/check_no_fake_umlauts.py
         language: python
         files: ^bridge/(application|domain|infrastructure|presentation|config)/.*\.(py|ya?ml)$
@@ -66,8 +73,8 @@ repos:
         always_run: true
         stages: [pre-commit]
 
-      # Security: pip-audit (Dependency vulnerability scanner)
-      # Nutzt scripts/run_with_venv.py für plattform-portablen venv-Zugriff.
+      # Security: pip-audit (dependency vulnerability scanner)
+      # Uses scripts/run_with_venv.py for platform-portable venv access.
       - id: pip-audit
         name: pip-audit
         entry: python scripts/run_with_venv.py pip_audit
@@ -76,15 +83,15 @@ repos:
         stages: [pre-commit]
 
       - id: pytest-coverage-report
-        name: Test-Coverage-Report generieren
+        name: Generate test coverage report
         entry: python scripts/pytest_coverage.py
         language: python
         pass_filenames: false
         always_run: true
-        stages: [manual]  # Nur manuell, nicht bei jedem Commit
+        stages: [manual]  # Manual only, not on every commit
 
       # Security: semgrep (SAST with 2000+ rules, on changed files only)
-      # Nutzt scripts/run_with_venv.py für plattform-portablen venv-Zugriff.
+      # Uses scripts/run_with_venv.py for platform-portable venv access.
       - id: semgrep
         name: semgrep
         entry: python scripts/run_with_venv.py semgrep --config=auto --quiet --error

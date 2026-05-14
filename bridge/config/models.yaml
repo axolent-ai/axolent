@@ -1,25 +1,25 @@
 # Axolent Model Registry
-# Stand: 2026-05-12, manuelle Pflege (Phase 2c wird das durch Scraping ersetzen)
+# As of: 2026-05-12, manually maintained (Phase 2c will replace this with scraping)
 #
 # Schema:
-#   id:                     Offizielle Modell-ID (API-Identifier)
-#   display_name:           Menschenlesbarer Name für UI
-#   provider:               Provider-Key (anthropic, openai, google, moonshot, ollama)
-#   aliases:                Liste von Kurzbezeichnungen für User-Input
-#   context_window:         Max. Tokens im Kontext
-#   pricing_input_per_mtok: Kosten pro Million Input-Tokens (USD)
-#   pricing_output_per_mtok: Kosten pro Million Output-Tokens (USD)
-#   scores:                 Leistungswerte (0-100)
-#     coding:               Code-Generierung und -Verständnis
-#     reasoning:            Logisches Denken und Problemlösung
-#     knowledge:            Allgemeinwissen und Faktentreue
-#     speed:                Relative Geschwindigkeit (höher = schneller)
-#   supports_thinking:      Extended Thinking / Chain-of-Thought nativ
-#   supports_effort:        Effort/Budget-Parameter unterstützt
-#   is_open_source:         Open-Source-Modell (Weights verfügbar)
+#   id:                     Official model ID (API identifier)
+#   display_name:           Human-readable name for UI
+#   provider:               Provider key (anthropic, openai, google, moonshot, ollama)
+#   aliases:                List of short names for user input
+#   context_window:         Max tokens in context
+#   pricing_input_per_mtok: Cost per million input tokens (USD)
+#   pricing_output_per_mtok: Cost per million output tokens (USD)
+#   scores:                 Performance scores (0-100)
+#     coding:               Code generation and comprehension
+#     reasoning:            Logical reasoning and problem solving
+#     knowledge:            General knowledge and factual accuracy
+#     speed:                Relative speed (higher = faster)
+#   supports_thinking:      Extended Thinking / Chain-of-Thought natively
+#   supports_effort:        Effort/Budget parameter supported
+#   is_open_source:         Open-source model (weights available)
 
 models:
-  # === Anthropic Claude ===
+  # === Anthropic Claude (Mode B: subprocess wrapper) ===
   - id: claude-opus-4-7
     display_name: Opus 4.7
     provider: anthropic
@@ -167,7 +167,7 @@ models:
     supports_effort: false
     is_open_source: false
 
-  # === Ollama (lokal, kostenlos) ===
+  # === Ollama (local, free) ===
   - id: llama4-scout
     display_name: Llama 4 Scout
     provider: ollama

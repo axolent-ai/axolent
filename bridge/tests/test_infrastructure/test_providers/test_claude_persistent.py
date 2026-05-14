@@ -1,13 +1,13 @@
-"""Tests für ClaudePersistentProvider.
+"""Tests for ClaudePersistentProvider.
 
-Verifiziert:
-    - is_available() prüft CLI-Verfügbarkeit
-    - query() sammelt Stream-Events zu ProviderResponse
-    - query() handelt Fehler-Events korrekt
-    - query() handelt leere Responses
-    - query_streaming() liefert StreamEvents
-    - Capabilities korrekt gesetzt
-    - user_id und chat_id sind Pflichtparameter (ValueError wenn None)
+Verifies:
+    - is_available() checks CLI availability
+    - query() collects stream events into ProviderResponse
+    - query() handles error events correctly
+    - query() handles empty responses
+    - query_streaming() yields StreamEvents
+    - Capabilities are set correctly
+    - user_id and chat_id are required parameters (ValueError when None)
 """
 
 from __future__ import annotations

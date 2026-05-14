@@ -1,12 +1,12 @@
-# Task-Slot-Konfiguration für automatisches Modell-Routing
-# Jeder Slot hat: default_model, patterns, keywords, thresholds
+# Task slot configuration for automatic model routing
+# Each slot has: default_model, patterns, keywords, thresholds
 #
-# Score-Berechnung:
-#   - Jedes gematchte Pattern: +3 Punkte (starkes Signal)
-#   - Jedes gematchtes Keyword: +1 Punkt
-#   - Code-Block (```): +100 Punkte (direkt CODE-Slot)
+# Score calculation:
+#   - Each matched pattern: +3 points (strong signal)
+#   - Each matched keyword: +1 point
+#   - Code block (```): +100 points (direct CODE slot)
 #
-# Bei Score-Gleichstand gilt Priorität: CODE > REASON > RESEARCH > CREATIVE > QUICK > CHAT
+# On score tie, priority applies: CODE > REASON > RESEARCH > CREATIVE > QUICK > CHAT
 
 slots:
   code:
@@ -21,14 +21,13 @@ slots:
       - "const "
       - "SELECT "
     keywords:
+      # DE keywords (feature: German input classification)
       - debug
       - refactor
       - implementier
-      - implement
       - programmier
       - bug
       - fehler im code
-      - error
       - syntax
       - traceback
       - exception
@@ -40,15 +39,29 @@ slots:
       - SyntaxError
       - code review
       - pull request
+      # EN keywords
+      - implement
+      - error
+      - fix the code
+      - write code
+      - coding
+      - compile
+      - runtime error
+      - stack trace
+      - function
+      - variable
+      - algorithm
+      - deploy
+      - script
     min_keyword_matches: 2
 
   reason:
     default_model: opus
     keywords:
+      # DE keywords
       - analysier
       - vergleich
       - pro und contra
-      - step by step
       - schritt für schritt
       - berechn
       - kalkulier
@@ -60,25 +73,53 @@ slots:
       - break even
       - marge
       - roi
+      # EN keywords
+      - step by step
+      - analyze
+      - compare
+      - pros and cons
+      - calculate
+      - strategy
+      - hypothesis
+      - logical
+      - derive
+      - conclude
+      - margin
+      - tradeoff
+      - evaluate
+      - reasoning
     min_keyword_matches: 2
     min_word_count: 50
 
   research:
     default_model: opus
     keywords:
+      # DE keywords
       - recherchier
-      - research
       - zusammenfass
       - markt
       - wettbewerb
       - benchmark
       - trend
       - branche
-      - deep dive
       - umfassend
       - detailliert
       - quellen
       - studie
+      # EN keywords
+      - research
+      - deep dive
+      - summarize
+      - market
+      - competitor
+      - industry
+      - comprehensive
+      - detailed
+      - sources
+      - study
+      - survey
+      - report
+      - investigation
     patterns:
       - "http://"
       - "https://"
@@ -87,6 +128,7 @@ slots:
   creative:
     default_model: sonnet
     keywords:
+      # DE keywords
       - brainstorm
       - ideen
       - vorschläge
@@ -103,11 +145,26 @@ slots:
       - artikel
       - naming
       - produktname
+      # EN keywords
+      - ideas
+      - suggestions
+      - alternatives
+      - write
+      - compose
+      - draft
+      - tagline
+      - article
+      - product name
+      - creative
+      - story
+      - poem
+      - catchy
     min_keyword_matches: 2
 
   quick:
     default_model: haiku
     keywords:
+      # DE keywords
       - klassifizier
       - kategorisier
       - extrahier
@@ -117,6 +174,17 @@ slots:
       - formatier
       - konvertier
       - übersetze
+      # EN keywords
+      - classify
+      - categorize
+      - extract
+      - is this
+      - yes or no
+      - translate
+      - format
+      - convert
+      - quick question
+      - short answer
     min_keyword_matches: 1
     max_word_count: 50
 

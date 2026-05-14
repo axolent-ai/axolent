@@ -1,4 +1,4 @@
-"""Tests für EpisodicEntry: Erstellung, Serialisierung, Deserialisierung."""
+"""Tests for EpisodicEntry: creation, serialization, deserialization."""
 
 from __future__ import annotations
 

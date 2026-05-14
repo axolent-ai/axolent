@@ -1,10 +1,10 @@
-"""InlineKeyboard-Callbacks für den Setup-Wizard (Onboarding).
+"""InlineKeyboard callbacks for the setup wizard (onboarding).
 
-Verarbeitet wizard_* Callback-Queries:
-  - wizard_lang:<code>     -> Sprache gewählt, weiter zu Step 2
-  - wizard_lang_auto       -> Auto-Detect gewählt, weiter zu Step 2
-  - wizard_skip            -> Wizard übersprungen
-  - wizard_done            -> Step 2 abgeschlossen, User onboarded
+Processes wizard_* callback queries:
+  - wizard_lang:<code>     -> Language chosen, proceed to step 2
+  - wizard_lang_auto       -> Auto-detect chosen, proceed to step 2
+  - wizard_skip            -> Wizard skipped
+  - wizard_done            -> Step 2 completed, user onboarded
 """
 
 from __future__ import annotations
@@ -177,7 +177,7 @@ async def handle_wizard_callback(
 
     onboarding_storage = _get_onboarding_storage(context)
     if onboarding_storage is None:
-        await query.edit_message_text("Onboarding nicht verfügbar.")
+        await query.edit_message_text("Onboarding not available.")
         return
 
     chat_service = _get_chat_service(context)

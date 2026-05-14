@@ -1,8 +1,8 @@
-"""Tests für domain.language: Sprach-Detection via Heuristik.
+"""Tests for domain.language: language detection via heuristics.
 
-Testet die korrekte Erkennung der gängigsten Sprachen
-sowie Edge-Cases (kurze Nachrichten, Emojis, exotische Schriften).
-Seit R02-B: auch detect_language_with_confidence().
+Tests correct detection of the most common languages
+as well as edge cases (short messages, emojis, exotic scripts).
+Since R02-B: also detect_language_with_confidence().
 """
 
 from domain.language import detect_language, detect_language_with_confidence

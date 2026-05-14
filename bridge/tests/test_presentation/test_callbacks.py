@@ -1,7 +1,7 @@
-"""Tests für presentation.callbacks: Bookmark Inline-Button Callbacks.
+"""Tests for presentation.callbacks: Bookmark inline-button callbacks.
 
-Testet handle_bookmark_show_callback und handle_bookmark_delete_callback
-mit gemockten Telegram-Objekten und Bookmark-Storage.
+Tests handle_bookmark_show_callback and handle_bookmark_delete_callback
+with mocked Telegram objects and bookmark storage.
 """
 
 from __future__ import annotations
@@ -20,14 +20,14 @@ def _make_callback_update(
     user_id: int = 1,
     chat_type: str = "private",
 ) -> MagicMock:
-    """Erstellt ein gemocktes Telegram-Update für CallbackQuery."""
+    """Create a mocked Telegram update for CallbackQuery."""
     update = MagicMock()
     update.effective_user = MagicMock()
     update.effective_user.id = user_id
     update.effective_user.username = "testuser"
     update.effective_chat = MagicMock()
     update.effective_chat.type = chat_type
-    # message für require_private_chat Fehlermeldung
+    # message for require_private_chat error message
     update.message = MagicMock()
     update.message.reply_text = AsyncMock()
 
@@ -44,7 +44,7 @@ def _make_callback_update(
 
 
 def _make_context(bookmark_service: object | None = None) -> MagicMock:
-    """Erstellt einen gemockten Telegram-Context mit bot_data."""
+    """Create a mocked Telegram context with bot_data."""
     context = MagicMock()
     context.application = MagicMock()
     context.application.bot_data = {
@@ -54,11 +54,11 @@ def _make_context(bookmark_service: object | None = None) -> MagicMock:
 
 
 class TestBookmarkShowCallback:
-    """Tests für handle_bookmark_show_callback (bm_show)."""
+    """Tests for handle_bookmark_show_callback (bm_show)."""
 
     @pytest.fixture(autouse=True)
     def _isolate(self, tmp_path: Path) -> None:
-        """Patcht Bookmark-Storage und Whitelist für Isolation."""
+        """Patch bookmark storage and whitelist for isolation."""
         bm_path = tmp_path / "bookmarks.jsonl"
         lock_path = str(bm_path) + ".lock"
         new_lock = FileLock(lock_path)
@@ -83,7 +83,7 @@ class TestBookmarkShowCallback:
             p.stop()
 
     async def test_show_existing_bookmark(self) -> None:
-        """bm_show mit gültiger ID zeigt den Bookmark-Inhalt an."""
+        """bm_show with valid ID displays the bookmark content."""
         from presentation.callbacks import handle_bookmark_show_callback
 
         save_bookmark(
@@ -100,15 +100,15 @@ class TestBookmarkShowCallback:
         await handle_bookmark_show_callback(update, context)
 
         query = update.callback_query
-        # answer() muss aufgerufen werden (Pflicht bei Telegram)
+        # answer() must be called (mandatory for Telegram)
         query.answer.assert_called()
-        # Inhalt muss als reply_text gesendet werden
+        # Content must be sent as reply_text
         query.message.reply_text.assert_called()
         sent_text = query.message.reply_text.call_args[0][0]
         assert "Bookmark-Volltext" in sent_text or "äöüß" in sent_text
 
     async def test_show_nonexistent_bookmark(self) -> None:
-        """bm_show mit nicht-existierender ID zeigt 'nicht gefunden'."""
+        """bm_show with non-existent ID shows 'not found'."""
         from presentation.callbacks import handle_bookmark_show_callback
 
         update = _make_callback_update("bm_show:10:999", user_id=1)
@@ -120,12 +120,12 @@ class TestBookmarkShowCallback:
         query.answer.assert_called_once()
         answer_kwargs = query.answer.call_args
         assert (
-            "nicht gefunden" in answer_kwargs.kwargs.get("text", "").lower()
-            or "nicht gefunden" in str(answer_kwargs).lower()
+            "not found" in answer_kwargs.kwargs.get("text", "").lower()
+            or "not found" in str(answer_kwargs).lower()
         )
 
     async def test_show_invalid_callback_data(self) -> None:
-        """bm_show mit ungültigen Daten zeigt 'Ungültige ID'."""
+        """bm_show with invalid data shows 'Invalid ID'."""
         from presentation.callbacks import handle_bookmark_show_callback
 
         update = _make_callback_update("bm_show:abc:xyz", user_id=1)
@@ -135,15 +135,12 @@ class TestBookmarkShowCallback:
 
         query = update.callback_query
         query.answer.assert_called_once()
-        # Muss "Ungültige ID" melden
+        # Must report "Invalid ID"
         answer_call = query.answer.call_args
-        assert (
-            "Ungültige ID" in str(answer_call)
-            or "ungültige" in str(answer_call).lower()
-        )
+        assert "Invalid ID" in str(answer_call) or "invalid" in str(answer_call).lower()
 
     async def test_show_ignores_wrong_prefix(self) -> None:
-        """Callback mit falschem Prefix wird ignoriert (kein Crash)."""
+        """Callback with wrong prefix is ignored (no crash)."""
         from presentation.callbacks import handle_bookmark_show_callback
 
         update = _make_callback_update("bm_del:10:100", user_id=1)
@@ -151,17 +148,17 @@ class TestBookmarkShowCallback:
 
         await handle_bookmark_show_callback(update, context)
 
-        # Nichts sollte passieren
+        # Nothing should happen
         update.callback_query.answer.assert_not_called()
         update.callback_query.message.reply_text.assert_not_called()
 
 
 class TestBookmarkDeleteCallback:
-    """Tests für handle_bookmark_delete_callback (bm_del)."""
+    """Tests for handle_bookmark_delete_callback (bm_del)."""
 
     @pytest.fixture(autouse=True)
     def _isolate(self, tmp_path: Path) -> None:
-        """Patcht Bookmark-Storage und Whitelist für Isolation."""
+        """Patch bookmark storage and whitelist for isolation."""
         bm_path = tmp_path / "bookmarks.jsonl"
         lock_path = str(bm_path) + ".lock"
         new_lock = FileLock(lock_path)
@@ -186,7 +183,7 @@ class TestBookmarkDeleteCallback:
             p.stop()
 
     async def test_delete_existing_bookmark(self) -> None:
-        """bm_del mit gültiger ID löscht den Bookmark und sendet Bestätigung."""
+        """bm_del with valid ID deletes the bookmark and sends confirmation."""
         from presentation.callbacks import handle_bookmark_delete_callback
 
         save_bookmark(
@@ -205,19 +202,19 @@ class TestBookmarkDeleteCallback:
         query = update.callback_query
         query.answer.assert_called_once()
         answer_call = query.answer.call_args
-        assert "Entfernt" in str(answer_call) or "entfernt" in str(answer_call).lower()
+        assert "Removed" in str(answer_call) or "removed" in str(answer_call).lower()
 
-        # Chat-Bestätigung muss gesendet worden sein
+        # Chat confirmation must have been sent
         query.message.reply_text.assert_called_once()
         confirm_text = query.message.reply_text.call_args[0][0]
         assert "Bookmark" in confirm_text
-        assert "entfernt" in confirm_text
+        assert "removed" in confirm_text
 
-        # Bookmark sollte wirklich weg sein
+        # Bookmark should actually be gone
         assert self._bookmark_svc.get_bookmark(1, 10, 200) is None
 
     async def test_delete_confirmation_includes_date(self) -> None:
-        """bm_del Bestätigung enthält Datum des Bookmarks."""
+        """bm_del confirmation includes the bookmark date."""
         from presentation.callbacks import handle_bookmark_delete_callback
 
         save_bookmark(
@@ -235,12 +232,12 @@ class TestBookmarkDeleteCallback:
 
         query = update.callback_query
         confirm_text = query.message.reply_text.call_args[0][0]
-        # Datum im Format DD.MM.YYYY muss enthalten sein
-        assert "vom" in confirm_text
+        # Date in DD.MM.YYYY format must be present
+        assert "from" in confirm_text
         assert "2026" in confirm_text or "20" in confirm_text
 
     async def test_delete_nonexistent_bookmark(self) -> None:
-        """bm_del mit nicht-existierender ID meldet 'nicht gefunden', keine Chat-Nachricht."""
+        """bm_del with non-existent ID reports 'not found', no chat message."""
         from presentation.callbacks import handle_bookmark_delete_callback
 
         update = _make_callback_update("bm_del:10:999", user_id=1)
@@ -251,12 +248,12 @@ class TestBookmarkDeleteCallback:
         query = update.callback_query
         query.answer.assert_called_once()
         answer_call = query.answer.call_args
-        assert "nicht gefunden" in str(answer_call).lower()
-        # Keine Chat-Bestätigung bei nicht-existentem Bookmark
+        assert "not found" in str(answer_call).lower()
+        # No chat confirmation for non-existent bookmark
         query.message.reply_text.assert_not_called()
 
     async def test_delete_invalid_callback_data(self) -> None:
-        """bm_del mit ungültigen Daten zeigt 'Ungültige ID'."""
+        """bm_del with invalid data shows 'Invalid ID'."""
         from presentation.callbacks import handle_bookmark_delete_callback
 
         update = _make_callback_update("bm_del:abc:xyz", user_id=1)
@@ -267,13 +264,10 @@ class TestBookmarkDeleteCallback:
         query = update.callback_query
         query.answer.assert_called_once()
         answer_call = query.answer.call_args
-        assert (
-            "Ungültige ID" in str(answer_call)
-            or "ungültige" in str(answer_call).lower()
-        )
+        assert "Invalid ID" in str(answer_call) or "invalid" in str(answer_call).lower()
 
     async def test_delete_ignores_wrong_prefix(self) -> None:
-        """Callback mit falschem Prefix wird ignoriert."""
+        """Callback with wrong prefix is ignored."""
         from presentation.callbacks import handle_bookmark_delete_callback
 
         update = _make_callback_update("bm_show:10:100", user_id=1)
@@ -285,11 +279,11 @@ class TestBookmarkDeleteCallback:
 
 
 class TestCallbackPrivacyGuard:
-    """Tests: Callbacks werden in Gruppen vom Decorator blockiert."""
+    """Tests: callbacks are blocked in groups by the decorator."""
 
     @pytest.fixture(autouse=True)
     def _isolate(self, tmp_path: Path) -> None:
-        """Patcht Whitelist (erlaubt), aber kein private-chat."""
+        """Patch whitelist (allowed) but no private chat."""
         self._patches = [
             patch("presentation.decorators.ALLOW_ALL_USERS", True),
         ]
@@ -302,7 +296,7 @@ class TestCallbackPrivacyGuard:
             p.stop()
 
     async def test_show_blocked_in_group(self) -> None:
-        """bm_show in Gruppe wird vom require_private_chat Decorator blockiert."""
+        """bm_show in a group is blocked by the require_private_chat decorator."""
         from presentation.callbacks import handle_bookmark_show_callback
 
         update = _make_callback_update("bm_show:10:100", user_id=1, chat_type="group")
@@ -310,14 +304,14 @@ class TestCallbackPrivacyGuard:
 
         await handle_bookmark_show_callback(update, context)
 
-        # Callback body darf nicht ausgeführt worden sein (kein query.answer)
-        # Der Decorator sendet eine Fehlermeldung über update.message
+        # Callback body must not have been executed (no query.answer)
+        # The decorator sends an error message via update.message
         update.message.reply_text.assert_called_once()
         msg = update.message.reply_text.call_args[0][0]
-        assert "privaten Chat" in msg
+        assert "private chat" in msg.lower()
 
     async def test_delete_blocked_in_group(self) -> None:
-        """bm_del in Gruppe wird vom require_private_chat Decorator blockiert."""
+        """bm_del in a group is blocked by the require_private_chat decorator."""
         from presentation.callbacks import handle_bookmark_delete_callback
 
         update = _make_callback_update("bm_del:10:200", user_id=1, chat_type="group")
@@ -327,15 +321,15 @@ class TestCallbackPrivacyGuard:
 
         update.message.reply_text.assert_called_once()
         msg = update.message.reply_text.call_args[0][0]
-        assert "privaten Chat" in msg
+        assert "private chat" in msg.lower()
 
 
 class TestAuditLoggingBmShow:
-    """Tests: bm_show Callback schreibt Audit-Log-Eintrag."""
+    """Tests: bm_show callback writes audit log entry."""
 
     @pytest.fixture(autouse=True)
     def _isolate(self, tmp_path: Path) -> None:
-        """Patcht Bookmark-Storage und Whitelist für Isolation."""
+        """Patch bookmark storage and whitelist for isolation."""
         bm_path = tmp_path / "bookmarks.jsonl"
         lock_path = str(bm_path) + ".lock"
         new_lock = FileLock(lock_path)
@@ -361,7 +355,7 @@ class TestAuditLoggingBmShow:
 
     @patch("application.audit_service.write_audit_log")
     async def test_bm_show_existing_writes_audit(self, mock_audit: MagicMock) -> None:
-        """bm_show mit gültigem Bookmark schreibt Audit mit success=True."""
+        """bm_show with valid bookmark writes audit with success=True."""
         from presentation.callbacks import handle_bookmark_show_callback
 
         save_bookmark(
@@ -387,7 +381,7 @@ class TestAuditLoggingBmShow:
 
     @patch("application.audit_service.write_audit_log")
     async def test_bm_show_not_found_writes_audit(self, mock_audit: MagicMock) -> None:
-        """bm_show mit nicht-existierendem Bookmark schreibt Audit mit success=False."""
+        """bm_show with non-existent bookmark writes audit with success=False."""
         from presentation.callbacks import handle_bookmark_show_callback
 
         update = _make_callback_update("bm_show:10:999", user_id=1)
@@ -404,11 +398,11 @@ class TestAuditLoggingBmShow:
 
 
 class TestAuditLoggingBmDel:
-    """Tests: bm_del Callback schreibt Audit-Log-Eintrag."""
+    """Tests: bm_del callback writes audit log entry."""
 
     @pytest.fixture(autouse=True)
     def _isolate(self, tmp_path: Path) -> None:
-        """Patcht Bookmark-Storage und Whitelist für Isolation."""
+        """Patch bookmark storage and whitelist for isolation."""
         bm_path = tmp_path / "bookmarks.jsonl"
         lock_path = str(bm_path) + ".lock"
         new_lock = FileLock(lock_path)
@@ -434,7 +428,7 @@ class TestAuditLoggingBmDel:
 
     @patch("application.audit_service.write_audit_log")
     async def test_bm_del_existing_writes_audit(self, mock_audit: MagicMock) -> None:
-        """bm_del mit gültigem Bookmark schreibt Audit mit success=True."""
+        """bm_del with valid bookmark writes audit with success=True."""
         from presentation.callbacks import handle_bookmark_delete_callback
 
         save_bookmark(
@@ -460,7 +454,7 @@ class TestAuditLoggingBmDel:
 
     @patch("application.audit_service.write_audit_log")
     async def test_bm_del_not_found_writes_audit(self, mock_audit: MagicMock) -> None:
-        """bm_del mit nicht-existierendem Bookmark schreibt Audit mit success=False."""
+        """bm_del with non-existent bookmark writes audit with success=False."""
         from presentation.callbacks import handle_bookmark_delete_callback
 
         update = _make_callback_update("bm_del:10:999", user_id=1)

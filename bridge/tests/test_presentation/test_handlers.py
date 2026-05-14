@@ -1,7 +1,7 @@
-"""Tests für presentation.handlers: Telegram Command-Handler.
+"""Tests for presentation.handlers: Telegram command handlers.
 
-Testet /save, /lang, /reset Commands mit gemockten Telegram-Objekten.
-Kein echter Bot, keine echten API-Aufrufe.
+Tests /save, /lang, /reset commands with mocked Telegram objects.
+No real bot, no real API calls.
 """
 
 from __future__ import annotations
@@ -19,14 +19,14 @@ from infrastructure.providers.base import ProviderResponse
 
 @pytest.fixture(autouse=True)
 def _clear_storage() -> None:
-    """Räumt Conversation-Storage vor jedem Test auf."""
+    """Clear conversation storage before each test."""
     _reset_all_for_tests()
 
 
 def _make_mock_chat_service(
     route_return: ProviderResponse | None = None,
 ) -> ChatService:
-    """Erstellt einen ChatService mit gemocktem ProviderRouter."""
+    """Create a ChatService with a mocked ProviderRouter."""
     mock_router = MagicMock()
     mock_router.route = AsyncMock(
         return_value=route_return
@@ -40,7 +40,7 @@ def _make_mock_chat_service(
 
 
 def _make_update(user_id: int = 1, chat_id: int = 10, text: str = "") -> MagicMock:
-    """Erstellt ein gemocktes Telegram-Update."""
+    """Create a mocked Telegram update."""
     update = MagicMock()
     update.effective_user = MagicMock()
     update.effective_user.id = user_id
@@ -65,7 +65,7 @@ def _make_context(
     rate_limiter: object | None = None,
     bookmark_service: object | None = None,
 ) -> MagicMock:
-    """Erstellt einen gemockten Telegram-Context mit bot_data."""
+    """Create a mocked Telegram context with bot_data."""
     context = MagicMock()
     context.args = args or []
     context.bot = MagicMock()
@@ -86,11 +86,11 @@ def _make_context(
 
 
 class TestHandleSaveCommand:
-    """Tests für /save Command."""
+    """Tests for /save command."""
 
     @pytest.fixture(autouse=True)
     def _isolate_bookmark_storage(self, tmp_path: Path) -> None:
-        """Patcht Bookmark-Storage und erstellt BookmarkService."""
+        """Patch bookmark storage and create BookmarkService."""
         bm_path = tmp_path / "bookmarks.jsonl"
         lock_path = str(bm_path) + ".lock"
         new_lock = FileLock(lock_path)
@@ -116,7 +116,7 @@ class TestHandleSaveCommand:
             p.stop()
 
     async def test_save_command_creates_bookmark(self) -> None:
-        """/save als Reply auf Bot-Nachricht erstellt einen Bookmark."""
+        """/save as reply to bot message creates a bookmark."""
         from presentation.handlers import handle_save_command
 
         update = _make_update(user_id=1, chat_id=10)
@@ -135,7 +135,7 @@ class TestHandleSaveCommand:
         assert "gespeichert" in reply_text.lower() or "Bookmark" in reply_text
 
     async def test_save_command_without_reply(self) -> None:
-        """/save ohne Reply sendet Hilfe-Text."""
+        """/save without reply sends help text."""
         from presentation.handlers import handle_save_command
 
         update = _make_update(user_id=1, chat_id=10)
@@ -150,16 +150,16 @@ class TestHandleSaveCommand:
 
 
 class TestHandleLangCommand:
-    """Tests für /lang Command."""
+    """Tests for /lang command."""
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
-        """Whitelist-Bypass."""
+        """Whitelist bypass."""
         with patch("presentation.decorators.ALLOW_ALL_USERS", True):
             yield  # type: ignore[misc]
 
     async def test_lang_command_sets_sticky_language(self) -> None:
-        """/lang en setzt die Sprache korrekt."""
+        """/lang en sets the language correctly."""
         from infrastructure.conversation_storage import get_language
         from presentation.handlers import handle_lang_command
 
@@ -171,13 +171,13 @@ class TestHandleLangCommand:
         lang = await get_language(1, 10)
         assert lang == "en"
 
-        # Bestaetigung gesendet
+        # Confirmation sent
         update.message.reply_text.assert_called_once()
         reply_text = update.message.reply_text.call_args[0][0]
         assert "English" in reply_text or "en" in reply_text
 
     async def test_lang_command_no_args_shows_help(self) -> None:
-        """/lang ohne Argument zeigt Hilfe."""
+        """/lang without argument shows help."""
         from presentation.handlers import handle_lang_command
 
         update = _make_update()
@@ -189,7 +189,7 @@ class TestHandleLangCommand:
         assert "Benutzung" in reply_text or "/lang" in reply_text
 
     async def test_lang_command_invalid_code(self) -> None:
-        """/lang xyz mit ungültigem Code gibt Fehler."""
+        """/lang xyz with invalid code returns error."""
         from presentation.handlers import handle_lang_command
 
         update = _make_update()
@@ -202,16 +202,16 @@ class TestHandleLangCommand:
 
 
 class TestHandleResetCommand:
-    """Tests für /reset Command."""
+    """Tests for /reset command."""
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
-        """Whitelist-Bypass."""
+        """Whitelist bypass."""
         with patch("presentation.decorators.ALLOW_ALL_USERS", True):
             yield  # type: ignore[misc]
 
     async def test_reset_command_clears_history(self) -> None:
-        """/reset löscht History und Language, speichert dann die Reset-Bestätigung."""
+        """/reset clears history and language, then saves the reset confirmation."""
         from domain.conversation import ConversationTurn
         from infrastructure.conversation_storage import (
             get_history,
@@ -243,7 +243,7 @@ class TestHandleResetCommand:
         )
         assert lang is None
 
-        # Bestaetigung gesendet
+        # Confirmation sent
         update.message.reply_text.assert_called_once()
         reply_text = update.message.reply_text.call_args[0][0]
         assert (
@@ -259,24 +259,27 @@ class TestStartCommandHistory:
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
-        """Whitelist-Bypass."""
+        """Whitelist bypass."""
         with patch("presentation.decorators.ALLOW_ALL_USERS", True):
             yield  # type: ignore[misc]
 
     async def test_start_command_saves_to_history(self) -> None:
-        """/start speichert START_TEXT als assistant-Turn in History."""
+        """/start saves welcome text as assistant turn in history."""
+        from domain.onboarding import get_start_welcome_text
         from infrastructure.conversation_storage import get_history
-        from presentation.handlers import START_TEXT, handle_start_command
+        from presentation.handlers import handle_start_command
 
         update = _make_update(user_id=1, chat_id=10)
         context = _make_context()
 
         await handle_start_command(update, context)
 
+        # Default language is "de" (no sticky language set), so DE welcome text
+        expected = get_start_welcome_text("de")
         history = await get_history(1, 10)
         assert len(history) == 1
         assert history[0].role == "assistant"
-        assert history[0].content == START_TEXT
+        assert history[0].content == expected
 
     async def test_help_command_saves_to_history(self) -> None:
         """/help speichert HELP_TEXT als assistant-Turn in History."""
@@ -294,7 +297,7 @@ class TestStartCommandHistory:
         assert history[0].content == HELP_TEXT
 
     async def test_help_text_contains_all_commands(self) -> None:
-        """/help Text enthält alle tatsächlich existierenden Commands."""
+        """/help text contains all actually existing commands."""
         from presentation.handlers import HELP_TEXT
 
         expected_commands = [
@@ -316,7 +319,7 @@ class TestStartCommandHistory:
             assert cmd in HELP_TEXT, f"Command {cmd} fehlt im HELP_TEXT"
 
     async def test_help_text_does_not_contain_nonexistent_commands(self) -> None:
-        """/help Text enthält KEINE nicht-existenten Commands."""
+        """/help text does NOT contain non-existent commands."""
         from presentation.handlers import HELP_TEXT
 
         nonexistent = ["/unsave", "/delete", "/clear", "/config"]
@@ -324,7 +327,7 @@ class TestStartCommandHistory:
             assert cmd not in HELP_TEXT, f"Nicht-existenter Command {cmd} im HELP_TEXT"
 
     async def test_help_text_is_structured(self) -> None:
-        """/help Text hat die gewünschte Struktur mit Kategorien."""
+        """/help text has the desired structure with categories."""
         from presentation.handlers import HELP_TEXT_DE, HELP_TEXT_EN
 
         # DE version
@@ -344,16 +347,16 @@ class TestStartCommandHistory:
 
 
 class TestReplyToContext:
-    """Tests: Telegram-Reply-To wird als Kontext extrahiert (Fix B)."""
+    """Tests: Telegram reply-to is extracted as context (Fix B)."""
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
-        """Whitelist-Bypass."""
+        """Whitelist bypass."""
         with patch("presentation.decorators.ALLOW_ALL_USERS", True):
             yield  # type: ignore[misc]
 
     def _make_reply_chat_service(self) -> tuple[ChatService, MagicMock]:
-        """Erstellt ChatService mit mockbarem Router für Reply-Tests."""
+        """Create ChatService with mockable router for reply tests."""
         mock_router = MagicMock()
         mock_router.route = AsyncMock(
             return_value=ProviderResponse(
@@ -366,7 +369,7 @@ class TestReplyToContext:
         return svc, mock_router
 
     async def test_reply_to_context_passed_to_provider(self) -> None:
-        """Wenn User auf Bot-Nachricht antwortet, wird Reply-Text im Prompt eingefügt."""
+        """When user replies to a bot message, the reply text is inserted into the prompt."""
         from presentation.handlers import handle_message
 
         svc, mock_router = self._make_reply_chat_service()
@@ -389,7 +392,7 @@ class TestReplyToContext:
         assert "Was bedeutet das?" in prompt_sent
 
     async def test_no_reply_to_sends_plain_text(self) -> None:
-        """Ohne Reply wird nur der normale Text gesendet."""
+        """Without reply, only the normal text is sent."""
         from presentation.handlers import handle_message
 
         svc, mock_router = self._make_reply_chat_service()
@@ -412,13 +415,13 @@ class TestAuditLoggingReset:
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
-        """Whitelist-Bypass."""
+        """Whitelist bypass."""
         with patch("presentation.decorators.ALLOW_ALL_USERS", True):
             yield  # type: ignore[misc]
 
     @patch("application.audit_service.write_audit_log")
     async def test_reset_writes_audit(self, mock_audit: MagicMock) -> None:
-        """/reset schreibt einen Audit-Eintrag mit action='reset'."""
+        """/reset writes an audit entry with action='reset'."""
         from presentation.handlers import handle_reset_command
 
         update = _make_update(user_id=42, chat_id=99)
@@ -440,13 +443,13 @@ class TestAuditLoggingLang:
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
-        """Whitelist-Bypass."""
+        """Whitelist bypass."""
         with patch("presentation.decorators.ALLOW_ALL_USERS", True):
             yield  # type: ignore[misc]
 
     @patch("application.audit_service.write_audit_log")
     async def test_lang_change_writes_audit(self, mock_audit: MagicMock) -> None:
-        """/lang en schreibt Audit mit alter und neuer Sprache."""
+        """/lang en writes audit with old and new language."""
         from presentation.handlers import handle_lang_command
 
         update = _make_update(user_id=42, chat_id=99)
@@ -463,7 +466,7 @@ class TestAuditLoggingLang:
 
     @patch("application.audit_service.write_audit_log")
     async def test_lang_invalid_no_audit(self, mock_audit: MagicMock) -> None:
-        """/lang xyz (ungültig) schreibt KEINEN Audit-Eintrag."""
+        """/lang xyz (invalid) writes NO audit entry."""
         from presentation.handlers import handle_lang_command
 
         update = _make_update(user_id=42, chat_id=99)
@@ -479,7 +482,7 @@ class TestAuditLoggingSave:
 
     @pytest.fixture(autouse=True)
     def _isolate_bookmark_storage(self, tmp_path: Path) -> None:
-        """Patcht Bookmark-Storage und erstellt BookmarkService."""
+        """Patch bookmark storage and create BookmarkService."""
         bm_path = tmp_path / "bookmarks.jsonl"
         lock_path = str(bm_path) + ".lock"
         new_lock = FileLock(lock_path)
@@ -505,7 +508,7 @@ class TestAuditLoggingSave:
 
     @patch("application.audit_service.write_audit_log")
     async def test_save_bookmark_writes_audit(self, mock_audit: MagicMock) -> None:
-        """/save als Reply erstellt Audit-Eintrag mit action='save_bookmark'."""
+        """/save as reply creates audit entry with action='save_bookmark'."""
         from presentation.handlers import handle_save_command
 
         update = _make_update(user_id=1, chat_id=10)
@@ -530,7 +533,7 @@ class TestAuditLoggingBookmarks:
 
     @pytest.fixture(autouse=True)
     def _isolate_bookmark_storage(self, tmp_path: Path) -> None:
-        """Patcht Bookmark-Storage und erstellt BookmarkService."""
+        """Patch bookmark storage and create BookmarkService."""
         bm_path = tmp_path / "bookmarks.jsonl"
         lock_path = str(bm_path) + ".lock"
         new_lock = FileLock(lock_path)
@@ -556,7 +559,7 @@ class TestAuditLoggingBookmarks:
 
     @patch("application.audit_service.write_audit_log")
     async def test_bookmarks_empty_writes_audit(self, mock_audit: MagicMock) -> None:
-        """/bookmarks ohne Bookmarks schreibt Audit mit '0 bookmarks'."""
+        """/bookmarks without bookmarks writes audit with '0 bookmarks'."""
         from presentation.handlers import handle_bookmarks_command
 
         update = _make_update(user_id=1, chat_id=10)
@@ -575,13 +578,13 @@ class TestAuditLoggingRemember:
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
-        """Whitelist-Bypass."""
+        """Whitelist bypass."""
         with patch("presentation.decorators.ALLOW_ALL_USERS", True):
             yield  # type: ignore[misc]
 
     @patch("application.audit_service.write_audit_log")
     async def test_remember_writes_audit(self, mock_audit: MagicMock) -> None:
-        """/remember text schreibt Audit mit action='remember' und entry_id."""
+        """/remember text writes audit with action='remember' and entry_id."""
         from presentation.handlers import handle_remember_command
 
         mock_memory = MagicMock()
@@ -604,13 +607,13 @@ class TestAuditLoggingForget:
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
-        """Whitelist-Bypass."""
+        """Whitelist bypass."""
         with patch("presentation.decorators.ALLOW_ALL_USERS", True):
             yield  # type: ignore[misc]
 
     @patch("application.audit_service.write_audit_log")
     async def test_forget_success_writes_audit(self, mock_audit: MagicMock) -> None:
-        """/forget ep_123 (gefunden) schreibt Audit mit success=True."""
+        """/forget ep_123 (found) writes audit with success=True."""
         from presentation.handlers import handle_forget_command
 
         mock_memory = MagicMock()
@@ -629,7 +632,7 @@ class TestAuditLoggingForget:
 
     @patch("application.audit_service.write_audit_log")
     async def test_forget_success_shows_reset_hint(self, mock_audit: MagicMock) -> None:
-        """/forget ep_123 zeigt Hinweis auf /reset für History-Bereinigung."""
+        """/forget ep_123 shows hint about /reset for history cleanup."""
         from presentation.handlers import handle_forget_command
 
         mock_memory = MagicMock()
@@ -643,11 +646,11 @@ class TestAuditLoggingForget:
         reply_text = update.message.reply_text.call_args[0][0]
         assert "ep_123" in reply_text
         assert "/reset" in reply_text
-        assert "Hinweis" in reply_text
+        assert "Note" in reply_text
 
     @patch("application.audit_service.write_audit_log")
     async def test_forget_not_found_writes_audit(self, mock_audit: MagicMock) -> None:
-        """/forget ep_999 (nicht gefunden) schreibt Audit mit success=False."""
+        """/forget ep_999 (not found) writes audit with success=False."""
         from presentation.handlers import handle_forget_command
 
         mock_memory = MagicMock()
@@ -670,7 +673,7 @@ class TestPrivacyGuardHandleMessage:
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
-        """Whitelist-Bypass."""
+        """Whitelist bypass."""
         with patch("presentation.decorators.ALLOW_ALL_USERS", True):
             yield  # type: ignore[misc]
 
@@ -686,7 +689,7 @@ class TestPrivacyGuardHandleMessage:
 
         update.message.reply_text.assert_called_once()
         reply_text = update.message.reply_text.call_args[0][0]
-        assert "privaten Chat" in reply_text
+        assert "private chat" in reply_text.lower()
 
     async def test_private_chat_allowed(self) -> None:
         """handle_message im privaten Chat funktioniert normal."""
@@ -696,21 +699,21 @@ class TestPrivacyGuardHandleMessage:
         update.effective_chat.type = "private"
 
         context = _make_context()
-        # Kein persistent_provider => Legacy-Fallback
+        # No persistent_provider => legacy fallback
         await handle_message(update, context)
 
         # Sollte KEINE Privacy-Block-Meldung sein
         if update.message.reply_text.called:
             reply_text = update.message.reply_text.call_args[0][0]
-            assert "privaten Chat" not in reply_text
+            assert "private chat" not in reply_text.lower()
 
 
 class TestStreamingErrorRedaction:
-    """Tests: Streaming-Fehler werden redacted an User gesendet (P0-2)."""
+    """Tests: streaming errors are redacted before being sent to user (P0-2)."""
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
-        """Whitelist-Bypass."""
+        """Whitelist bypass."""
         with patch("presentation.decorators.ALLOW_ALL_USERS", True):
             yield  # type: ignore[misc]
 
@@ -718,7 +721,7 @@ class TestStreamingErrorRedaction:
     async def test_error_event_shows_generic_message(
         self, mock_audit: MagicMock
     ) -> None:
-        """Error-Event mit sensiblem Text zeigt nur generische Meldung mit ref."""
+        """Error event with sensitive text shows only generic message with ref."""
         from infrastructure.claude_process_pool import StreamEvent
         from presentation.handlers import _handle_message_streaming
 
@@ -796,7 +799,7 @@ class TestStreamingErrorRedaction:
     async def test_runtime_error_shows_generic_message(
         self, mock_audit: MagicMock
     ) -> None:
-        """RuntimeError mit Path-Info zeigt nur generische Meldung."""
+        """RuntimeError with path info shows only generic message."""
         from presentation.handlers import _handle_message_streaming
 
         mock_provider = MagicMock()
@@ -851,11 +854,11 @@ class TestStreamingErrorRedaction:
 
 
 class TestStreamingAuditEntries:
-    """Tests: Streaming erzeugt 2 Audit-Einträge (started + completed/crashed)."""
+    """Tests: streaming produces 2 audit entries (started + completed/crashed)."""
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
-        """Whitelist-Bypass."""
+        """Whitelist bypass."""
         with patch("presentation.decorators.ALLOW_ALL_USERS", True):
             yield  # type: ignore[misc]
 
@@ -920,13 +923,13 @@ class TestStreamingAuditEntries:
                 reply_to_text=None,
             )
 
-        # Mindestens 1 Audit-Eintrag (stream_started)
+        # At least 1 audit entry (stream_started)
         assert mock_audit.call_count >= 1
         first_entry = mock_audit.call_args_list[0][0][0]
         assert first_entry["event_type"] == "stream_started"
         assert first_entry["user_id"] == 42
 
-        # save_streaming_result wurde aufgerufen (= zweiter Audit)
+        # save_streaming_result was called (= second audit)
         mock_svc.save_streaming_result.assert_called_once()
         save_kwargs = mock_svc.save_streaming_result.call_args
         assert save_kwargs.kwargs.get("was_cold") is True
@@ -990,13 +993,13 @@ class TestStreamingAuditEntries:
                 reply_to_text=None,
             )
 
-        # Mindestens 2 Audit-Einträge: stream_started + stream_error
+        # At least 2 audit entries: stream_started + stream_error
         assert mock_audit.call_count >= 2
         event_types = [c[0][0]["event_type"] for c in mock_audit.call_args_list]
         assert "stream_started" in event_types
         assert "stream_error" in event_types
 
-        # stream_error muss error_id haben
+        # stream_error must have error_id
         error_entries = [
             c[0][0]
             for c in mock_audit.call_args_list
@@ -1083,7 +1086,7 @@ class TestOuterExceptionCoverage:
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
-        """Whitelist-Bypass."""
+        """Whitelist bypass."""
         with patch("presentation.decorators.ALLOW_ALL_USERS", True):
             yield  # type: ignore[misc]
 
@@ -1134,11 +1137,11 @@ class TestOuterExceptionCoverage:
 
 
 class TestHandleMessageRateLimit:
-    """Tests für Rate-Limiting im handle_message Handler (C-2)."""
+    """Tests for rate limiting in the handle_message handler (C-2)."""
 
     @pytest.fixture(autouse=True)
     def _bypass_whitelist(self) -> None:
-        """Whitelist-Bypass für Handler-Tests."""
+        """Whitelist bypass for handler tests."""
         self._patches = [
             patch("presentation.decorators.ALLOW_ALL_USERS", True),
         ]
@@ -1149,12 +1152,12 @@ class TestHandleMessageRateLimit:
             p.stop()
 
     async def test_rate_limit_blocks_message(self) -> None:
-        """Rate-Limited User bekommt Meldung, kein LLM-Call."""
+        """Rate-limited user gets message, no LLM call."""
         from application.rate_limiter import PROFILES, RateLimiter
         from presentation.handlers import handle_message
 
         limiter = RateLimiter()
-        # Alle Minute-Tokens verbrauchen (Normal: 25/min)
+        # Consume all minute tokens (Normal: 25/min)
         normal_min = PROFILES["normal"]["per_minute"]
         for _ in range(normal_min):
             limiter.check_and_consume(user_id=1)
@@ -1165,17 +1168,17 @@ class TestHandleMessageRateLimit:
         with patch("presentation.handlers.write_raw_audit") as mock_audit:
             await handle_message(update, context)
 
-        # User bekommt Limit-Meldung
+        # User gets limit message
         # Beachte: 70%-Warnung kann vorher reply_text aufrufen
         calls = update.message.reply_text.call_args_list
         # Letzter oder einziger Call muss Limit-Meldung sein
         limit_reply = calls[-1][0][0]
-        assert "Limit" in limit_reply
+        assert "limit" in limit_reply.lower()
 
-        # Kein Typing-Indicator gesendet (kein LLM-Call)
+        # No typing indicator sent (no LLM call)
         context.bot.send_chat_action.assert_not_called()
 
-        # Audit-Log enthält rate_limit_exceeded
+        # Audit log contains rate_limit_exceeded
         mock_audit.assert_called()
         audit_entry = mock_audit.call_args[0][0]
         assert audit_entry["event_type"] == "rate_limit_exceeded"
@@ -1184,7 +1187,7 @@ class TestHandleMessageRateLimit:
         assert audit_entry["period"] == "minute"
 
     async def test_rate_limit_allows_normal_request(self) -> None:
-        """Unter dem Limit: normaler LLM-Call Ablauf."""
+        """Below the limit: normal LLM call flow."""
         from application.rate_limiter import RateLimiter
         from presentation.handlers import handle_message
 
@@ -1200,7 +1203,7 @@ class TestHandleMessageRateLimit:
         context.bot.send_chat_action.assert_called()
 
     async def test_no_rate_limiter_in_context_allows(self) -> None:
-        """Wenn kein RateLimiter in bot_data: normal durchlassen."""
+        """If no RateLimiter in bot_data: let through normally."""
         from presentation.handlers import handle_message
 
         update = _make_update(user_id=3, chat_id=30, text="Test")
@@ -1212,14 +1215,14 @@ class TestHandleMessageRateLimit:
         context.bot.send_chat_action.assert_called()
 
     async def test_rate_limit_exceeded_shows_profile_info(self) -> None:
-        """Rate-Limit-Meldung zeigt Profil-Info und Optionen."""
+        """Rate limit message shows profile info and options."""
         from application.rate_limiter import PROFILES, RateLimiter
         from presentation.handlers import handle_message
 
         limiter = RateLimiter()
         normal_min = PROFILES["normal"]["per_minute"]
 
-        # Alle Minute-Tokens verbrauchen
+        # Consume all minute tokens
         for _ in range(normal_min):
             limiter.check_and_consume(user_id=1)
 
@@ -1230,27 +1233,27 @@ class TestHandleMessageRateLimit:
             await handle_message(update, context)
 
         reply_text = update.message.reply_text.call_args[0][0]
-        assert "Normal-Profil" in reply_text
+        assert "Normal profile" in reply_text
         assert "/usage" in reply_text
         assert "/setlimit" in reply_text
 
-        # Audit enthält Profil- und Period-Info
+        # Audit contains profile and period info
         audit_entry = mock_audit.call_args[0][0]
         assert audit_entry["profile"] == "normal"
         assert audit_entry["period"] == "minute"
 
 
 class TestHandleUsageCommand:
-    """Tests für /usage Command."""
+    """Tests for /usage command."""
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
-        """Whitelist-Bypass."""
+        """Whitelist bypass."""
         with patch("presentation.decorators.ALLOW_ALL_USERS", True):
             yield  # type: ignore[misc]
 
     async def test_usage_shows_profile_and_limits(self) -> None:
-        """/usage zeigt Profil und Limits."""
+        """/usage shows profile and limits."""
         from application.rate_limiter import RateLimiter
         from presentation.handlers import handle_usage_command
 
@@ -1265,14 +1268,14 @@ class TestHandleUsageCommand:
         await handle_usage_command(update, context)
 
         reply_text = update.message.reply_text.call_args[0][0]
-        assert "Profil: Normal" in reply_text
-        assert "Diese Minute" in reply_text
-        assert "Diese Stunde" in reply_text
-        assert "Heute" in reply_text
+        assert "Profile: Normal" in reply_text
+        assert "This minute" in reply_text
+        assert "This hour" in reply_text
+        assert "Today" in reply_text
         assert "/setlimit" in reply_text
 
     async def test_usage_unlimited_profile(self, tmp_path: Path) -> None:
-        """/usage zeigt Unlimited-Info wenn Profil unlimited."""
+        """/usage shows unlimited info when profile is unlimited."""
         from application.rate_limiter import RateLimiter
         from presentation.handlers import handle_usage_command
 
@@ -1290,10 +1293,10 @@ class TestHandleUsageCommand:
 
         reply_text = update.message.reply_text.call_args[0][0]
         assert "Unlimited" in reply_text
-        assert "Keine Limits" in reply_text
+        assert "No limits" in reply_text
 
     async def test_usage_no_limiter_shows_error(self) -> None:
-        """/usage ohne Rate-Limiter zeigt Fehlermeldung."""
+        """/usage without rate limiter shows error message."""
         from presentation.handlers import handle_usage_command
 
         update = _make_update(user_id=1, chat_id=10)
@@ -1302,20 +1305,20 @@ class TestHandleUsageCommand:
         await handle_usage_command(update, context)
 
         reply_text = update.message.reply_text.call_args[0][0]
-        assert "nicht initialisiert" in reply_text
+        assert "not initialized" in reply_text.lower()
 
 
 class TestHandleDebateCommand:
-    """Tests für /debate Command (R10: Multi-AI-Debate)."""
+    """Tests for /debate command (R10: Multi-AI debate)."""
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
-        """Whitelist-Bypass."""
+        """Whitelist bypass."""
         with patch("presentation.decorators.ALLOW_ALL_USERS", True):
             yield  # type: ignore[misc]
 
     async def test_debate_without_args_shows_help(self) -> None:
-        """/debate ohne Argumente zeigt Hilfe-Text."""
+        """/debate without arguments shows help text."""
         from presentation.handlers import handle_debate_command
 
         update = _make_update(user_id=1, chat_id=10)
@@ -1326,13 +1329,13 @@ class TestHandleDebateCommand:
         update.message.reply_text.assert_called_once()
         reply_text = update.message.reply_text.call_args[0][0]
         assert "/debate" in reply_text
-        assert "Frage" in reply_text
+        assert "question" in reply_text
 
     @patch("presentation.handlers.write_raw_audit")
     async def test_debate_with_question_calls_orchestrator(
         self, mock_audit: MagicMock
     ) -> None:
-        """/debate mit Frage ruft DebateOrchestrator auf."""
+        """/debate with question calls DebateOrchestrator."""
         from application.debate_orchestrator import DebateResult
         from presentation.handlers import handle_debate_command
 
@@ -1366,7 +1369,7 @@ class TestHandleDebateCommand:
         # Mindestens 2 reply_text calls: Status + Ergebnis
         assert update.message.reply_text.call_count >= 2
 
-        # Audit-Log geschrieben
+        # Audit log written
         mock_audit.assert_called()
         audit_entry = mock_audit.call_args[0][0]
         assert audit_entry["event_type"] == "debate"
@@ -1374,7 +1377,7 @@ class TestHandleDebateCommand:
         assert audit_entry["providers_queried"] == ["claude_persistent"]
 
     async def test_debate_privacy_guard_blocks_group(self) -> None:
-        """/debate in Gruppe wird blockiert (Privacy-Guard)."""
+        """/debate in group is blocked (privacy guard)."""
         from presentation.handlers import handle_debate_command
 
         update = _make_update(user_id=1, chat_id=10, text="/debate Test")
@@ -1384,16 +1387,16 @@ class TestHandleDebateCommand:
         await handle_debate_command(update, context)
 
         reply_text = update.message.reply_text.call_args[0][0]
-        assert "privaten Chat" in reply_text
+        assert "private chat" in reply_text.lower()
 
     @patch("presentation.handlers.write_raw_audit")
     async def test_debate_rate_limit_blocks(self, mock_audit: MagicMock) -> None:
-        """/debate respektiert Rate-Limiting."""
+        """/debate respects rate limiting."""
         from application.rate_limiter import PROFILES, RateLimiter
         from presentation.handlers import handle_debate_command
 
         limiter = RateLimiter()
-        # Alle Minute-Tokens verbrauchen
+        # Consume all minute tokens
         normal_min = PROFILES["normal"]["per_minute"]
         for _ in range(normal_min):
             limiter.check_and_consume(user_id=1)
@@ -1403,9 +1406,9 @@ class TestHandleDebateCommand:
 
         await handle_debate_command(update, context)
 
-        # User bekommt Limit-Meldung
+        # User gets limit message
         reply_text = update.message.reply_text.call_args[0][0]
-        assert "Limit" in reply_text
+        assert "limit" in reply_text
 
         # Audit: rate_limit_exceeded
         mock_audit.assert_called()
@@ -1415,10 +1418,10 @@ class TestHandleDebateCommand:
 
 
 class TestFormatDebateSynthesis:
-    """Tests für die Synthesis-Anzeige im Debate-Formatter."""
+    """Tests for the synthesis display in the debate formatter."""
 
     def test_format_debate_shows_synthesis_prominently(self) -> None:
-        """Synthese wird als prominentes Element im Output angezeigt."""
+        """Synthesis is displayed as a prominent element in the output."""
         from application.debate_orchestrator import (
             DebateResult,
             FinalVerdict,
@@ -1476,7 +1479,7 @@ class TestFormatDebateSynthesis:
         assert emp_pos < syn_pos < detail_pos
 
     def test_format_debate_bluf_order_detail_answers_last(self) -> None:
-        """Detail-Antworten der KIs stehen am Ende (vor Timer)."""
+        """Detail responses from the AIs appear at the end (before timer)."""
         from application.debate_orchestrator import (
             DebateResult,
             FinalVerdict,
@@ -1535,7 +1538,7 @@ class TestFormatDebateSynthesis:
         assert "Llama-Antwort hier." in formatted
 
     def test_format_debate_english_labels(self) -> None:
-        """English labels werden korrekt verwendet wenn lang='en'."""
+        """English labels are used correctly when lang='en'."""
         from application.debate_orchestrator import (
             DebateResult,
             FinalVerdict,
@@ -1581,7 +1584,7 @@ class TestFormatDebateSynthesis:
         assert "Stärkster Beitrag:" not in formatted
 
     def test_format_debate_without_synthesis_shows_no_empty_block(self) -> None:
-        """Wenn synthesis leer ist, wird kein leerer Block angezeigt."""
+        """When synthesis is empty, no empty block is displayed."""
         from application.debate_orchestrator import DebateResult, FinalVerdict
         from presentation.handlers import _format_debate_result
 
@@ -1620,11 +1623,11 @@ class TestFormatDebateSynthesis:
 
 
 class TestHandleSetlimitCommand:
-    """Tests für /setlimit Command."""
+    """Tests for /setlimit command."""
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
-        """Whitelist-Bypass."""
+        """Whitelist bypass."""
         with patch("presentation.decorators.ALLOW_ALL_USERS", True):
             yield  # type: ignore[misc]
 
@@ -1683,7 +1686,7 @@ class TestHandleSetlimitCommand:
         assert "900" in reply_text
 
     async def test_setlimit_unlimited_requires_confirm(self) -> None:
-        """/setlimit unlimited ohne confirm zeigt Warnung."""
+        """/setlimit unlimited without confirm shows warning."""
         from application.rate_limiter import RateLimiter
         from presentation.handlers import handle_setlimit_command
 
@@ -1732,10 +1735,10 @@ class TestHandleSetlimitCommand:
         await handle_setlimit_command(update, context)
 
         reply_text = update.message.reply_text.call_args[0][0]
-        assert "Unbekanntes Profil" in reply_text
+        assert "Unknown profile" in reply_text
 
     async def test_setlimit_no_args_shows_current(self) -> None:
-        """/setlimit ohne Argumente zeigt aktuelles Profil."""
+        """/setlimit without arguments shows current profile."""
         from application.rate_limiter import RateLimiter
         from presentation.handlers import handle_setlimit_command
 
@@ -1747,5 +1750,5 @@ class TestHandleSetlimitCommand:
         await handle_setlimit_command(update, context)
 
         reply_text = update.message.reply_text.call_args[0][0]
-        assert "Aktuelles Profil" in reply_text
+        assert "Current profile" in reply_text
         assert "Normal" in reply_text

@@ -92,7 +92,7 @@ class BookmarkService:
                 chat_id,
                 message_id,
             )
-            return False, "Bookmark entfernt"
+            return False, "Bookmark removed"
 
         self._storage.save_bookmark(
             user_id=user_id,
@@ -101,7 +101,7 @@ class BookmarkService:
             chat_id=chat_id,
             content=content,
         )
-        return True, "Bookmark gespeichert"
+        return True, "Bookmark saved"
 
     def list_bookmarks(self, user_id: int, limit: int = 10) -> list[dict[str, Any]]:
         """Return the most recent bookmarks for a user.

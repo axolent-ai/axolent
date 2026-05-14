@@ -1,11 +1,11 @@
-"""Tests für ModelRegistry: YAML-Loading, Alias-Lookup, Best-for-Dimension.
+"""Tests for ModelRegistry: YAML loading, alias lookup, best-for-dimension.
 
-Testet:
-  - YAML-Loading mit korrekten Daten
-  - Alias-Aufloesung (case-insensitive, whitespace-tolerant)
-  - Provider-Filterung
-  - best_for_dimension (mit und ohne Provider-Filter)
-  - Edge-Cases: YAML fehlt, YAML korrupt, doppelter Alias
+Tests:
+  - YAML loading with correct data
+  - Alias resolution (case-insensitive, whitespace-tolerant)
+  - Provider filtering
+  - best_for_dimension (with and without provider filter)
+  - Edge cases: YAML missing, YAML corrupt, duplicate alias
   - get_display_name
   - all_ids / all_aliases
 """

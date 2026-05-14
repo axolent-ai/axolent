@@ -1,13 +1,13 @@
-"""Tests für OllamaProvider.
+"""Tests for OllamaProvider.
 
-Verifiziert:
-    - is_available() prüft Ollama via HTTP mit Mock
-    - is_available() gibt False bei Connection-Error
-    - query() extrahiert response-Feld korrekt (gemockt)
-    - query() handelt Timeout korrekt
-    - query() handelt HTTP-Fehler korrekt
+Verifies:
+    - is_available() checks Ollama via HTTP with mock
+    - is_available() returns False on connection error
+    - query() extracts response field correctly (mocked)
+    - query() handles timeout correctly
+    - query() handles HTTP errors correctly
     - Capabilities: privacy_class == "local", cost_class == "free"
-    - user_id/chat_id werden akzeptiert ohne Crash
+    - user_id/chat_id are accepted without crash
     - Provider-Name ist "ollama_local"
 """
 

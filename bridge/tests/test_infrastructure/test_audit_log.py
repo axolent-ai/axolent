@@ -1,7 +1,7 @@
-"""Tests für infrastructure.audit_log: JSONL Audit-Log mit Rotation.
+"""Tests for infrastructure.audit_log: JSONL audit log with rotation.
 
-Testet dass Audit-Einträge korrekt geschrieben werden
-und die Rotation bei Überschreiten der Max-Größe greift.
+Tests that audit entries are written correctly
+and that rotation triggers when the max size is exceeded.
 """
 
 from __future__ import annotations

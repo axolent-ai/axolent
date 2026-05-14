@@ -1,11 +1,11 @@
-"""Tests für das Provider-Interface (Abstract Base Class).
+"""Tests for the provider interface (abstract base class).
 
-Verifiziert:
-    - LLMProvider kann nicht direkt instanziiert werden
-    - Konkrete Subklassen müssen query(), is_available() und get_capabilities() implementieren
-    - ProviderResponse hat korrektes success-Property
-    - ProviderCapabilities ist frozen
-    - Error-Hierarchie: ProviderError, ProviderTimeout, ProviderUnavailable, ProviderNotImplemented
+Verifies:
+    - LLMProvider cannot be instantiated directly
+    - Concrete subclasses must implement query(), is_available(), and get_capabilities()
+    - ProviderResponse has correct success property
+    - ProviderCapabilities is frozen
+    - Error hierarchy: ProviderError, ProviderTimeout, ProviderUnavailable, ProviderNotImplemented
 """
 
 from __future__ import annotations

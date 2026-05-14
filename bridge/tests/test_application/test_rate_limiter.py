@@ -1,17 +1,17 @@
-"""Tests für application.rate_limiter: Profile-basiertes Rate-Limiting (C-2).
+"""Tests for application.rate_limiter: profile-based rate limiting (C-2).
 
-Testet:
-    - Profil-Limits (Light, Normal, Power, Unlimited)
-    - Token-Refill nach Wartezeit
-    - Getrennte Buckets pro User-ID
-    - Eviction nach Inaktivitaet
-    - Profil-Persistierung über Bot-Restart
-    - /usage Output (UsageInfo)
-    - /setlimit Profilwechsel
-    - Unlimited Two-Step Confirmation (Handler-Level)
-    - 70%-Warnung (genau einmal pro Window)
-    - Unlimited-Reminder bei N=100, 200, 300
-    - Audit-Log Integration
+Tests:
+    - Profile limits (light, normal, power, unlimited)
+    - Token refill after wait time
+    - Separate buckets per user ID
+    - Eviction after inactivity
+    - Profile persistence across bot restart
+    - /usage output (UsageInfo)
+    - /setlimit profile switching
+    - Unlimited two-step confirmation (handler level)
+    - 70% warning (exactly once per window)
+    - Unlimited reminder at N=100, 200, 300
+    - Audit log integration
 """
 
 from __future__ import annotations

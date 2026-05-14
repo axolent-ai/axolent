@@ -1,20 +1,20 @@
-"""Tests für den Streaming-Handler.
+"""Tests for the streaming handler.
 
-Verifiziert:
-    - Token-Aggregation und Rate-Limiting
-    - Erste Edit erst nach FIRST_EDIT_DELAY_SECONDS
-    - Finalize setzt vollständigen Text
-    - Multi-Message-Split bei langen Antworten (>4096 Zeichen)
-    - Abort zeigt Fehlermeldung
-    - Telegram-API-Fehler werden leise geschluckt
-    - Telegram-Längen-Limit wird eingehalten
-    - Zwischen-Edits als HTML mit smart-trim (Option A)
-    - Finale Edit als HTML mit Markdown-Konvertierung
-    - split_text_for_telegram() respektiert Markdown-Grenzen
-    - find_safe_markdown_end() findet sichere Positionen
-    - Adaptive Flood-Control (RetryAfter/429)
-    - Final-Edit Retry bei 429
-    - Throttle-Backoff und Recovery
+Verifies:
+    - Token aggregation and rate limiting
+    - First edit only after FIRST_EDIT_DELAY_SECONDS
+    - Finalize sets full text
+    - Multi-message split for long responses (>4096 chars)
+    - Abort shows error message
+    - Telegram API errors are silently swallowed
+    - Telegram length limit is respected
+    - Intermediate edits as HTML with smart-trim (Option A)
+    - Final edit as HTML with Markdown conversion
+    - split_text_for_telegram() respects Markdown boundaries
+    - find_safe_markdown_end() finds safe positions
+    - Adaptive flood control (RetryAfter/429)
+    - Final edit retry on 429
+    - Throttle backoff and recovery
 """
 
 from __future__ import annotations

@@ -1,11 +1,11 @@
-"""Tests für den Status-Manager (R02-B).
+"""Tests for the status manager (R02-B).
 
-Verifiziert:
-    - Status-Update Rate-Limiting (max alle 0.5s)
-    - Mindest-Anzeigedauer (MIN_STATUS_DISPLAY_MS)
-    - Status-Updates stoppen wenn Stream beginnt
-    - Sprach-Auswahl (Sticky-Language)
-    - Status zeigt Memory-Anzahl korrekt
+Verifies:
+    - Status update rate limiting (max every 0.5s)
+    - Minimum display duration (MIN_STATUS_DISPLAY_MS)
+    - Status updates stop when stream begins
+    - Language selection (sticky language)
+    - Status shows memory count correctly
     - SHOW_STATUS_UPDATES toggle
 """
 

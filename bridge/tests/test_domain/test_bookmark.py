@@ -1,6 +1,6 @@
-"""Tests für domain.bookmark: Bookmark-Dataclass und Serialisierung.
+"""Tests for domain.bookmark: bookmark dataclass and serialization.
 
-Testet Erstellung, Serialisierung und Deserialisierung der Bookmark-Entity.
+Tests creation, serialization, and deserialization of the bookmark entity.
 """
 
 from domain.bookmark import Bookmark, format_bookmark_preview

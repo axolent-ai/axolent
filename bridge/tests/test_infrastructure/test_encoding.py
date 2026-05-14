@@ -1,7 +1,7 @@
-"""Tests für infrastructure.encoding: UTF-8-Helper.
+"""Tests for infrastructure.encoding: UTF-8 helper.
 
-Testet dass alle I/O-Operationen konsistent UTF-8 verwenden
-und Unicode-Zeichen korrekt erhalten bleiben.
+Tests that all I/O operations consistently use UTF-8
+and that Unicode characters are correctly preserved.
 """
 
 import json

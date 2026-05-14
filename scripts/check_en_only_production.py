@@ -1,0 +1,321 @@
+"""Pre-commit hook: enforce English-only in production code.
+
+Blocks commits that introduce German text in production source files.
+This is the structural counterpart to AXOLENT AI's EN-only policy
+defined in CLAUDE.md.
+
+Scope (German blocked):
+    bridge/application/**/*.py
+    bridge/domain/**/*.py
+    bridge/infrastructure/**/*.py
+    bridge/presentation/**/*.py
+    scripts/**/*.py (except check_no_fake_umlauts.py)
+    bridge/config/**.md (system_prompt.example, user_constitution.example)
+    bridge/.env.example
+    .pre-commit-config.yaml
+    start-bot.bat
+    bridge/pyproject.toml
+
+Whitelist (German allowed):
+    bridge/config/task_slots.yaml      (German keywords are a feature)
+    scripts/check_no_fake_umlauts.py   (wordlist with German stems)
+    bridge/tests/**                    (test docstrings, future hardening)
+    docs/**                            (historical context, removed via filter-repo)
+    README.md, bridge/README.md        (already EN, this hook double-checks)
+    CLAUDE.md                          (already EN)
+
+Detection (Tier 1, strict):
+    - German umlauts (ae/oe/ue/AE/OE/UE/ss already covered by no-fake-umlauts;
+      THIS hook checks for real umlauts in strings/comments: ä ö ü ß Ä Ö Ü)
+    - German marker words with word boundaries: die, der, das, und, oder,
+      nicht, eine, einen, eines, einer, mit, fuer, aus, auf, ist, sind,
+      werden, wird, dem, des, von, im, am, zu, kann, koennen, soll, sollen,
+      muss, muessen, hat, haben, war, waren
+
+Exit codes:
+    0 = clean (no German detected in production files)
+    1 = German detected (commit blocked)
+"""
+
+from __future__ import annotations
+
+import io
+import re
+import sys
+from pathlib import Path
+from typing import Iterable
+
+# Force UTF-8 stdout on Windows so umlauts and emojis don't crash the hook.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+else:
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# ---------------------------------------------------------------
+# Scope: files to check
+# ---------------------------------------------------------------
+
+PRODUCTION_GLOBS = [
+    "bridge/application/**/*.py",
+    "bridge/domain/**/*.py",
+    "bridge/infrastructure/**/*.py",
+    "bridge/presentation/**/*.py",
+    "scripts/*.py",
+    "bridge/config/system_prompt.example.md",
+    "bridge/config/user_constitution.example.md",
+    "bridge/.env.example",
+    ".pre-commit-config.yaml",
+    "start-bot.bat",
+    "bridge/pyproject.toml",
+]
+
+WHITELIST_PATHS = {
+    "bridge/config/task_slots.yaml",
+    "scripts/check_no_fake_umlauts.py",
+    "scripts/check_en_only_production.py",  # self-exclude
+    "README.md",
+    "bridge/README.md",
+    "CLAUDE.md",
+    # i18n lookup tables: hold translations for 20+ languages, intentionally
+    # multilingual. Their German strings are user-facing translations, not
+    # production logic.
+    "bridge/domain/onboarding.py",
+    "bridge/domain/language.py",
+    "bridge/domain/personality.py",
+    "bridge/presentation/handlers.py",
+    "bridge/presentation/settings_callbacks.py",
+    "bridge/presentation/onboarding_callbacks.py",
+    "bridge/presentation/callbacks.py",
+    "bridge/presentation/render.py",
+    # Feature data: German stop words, umlaut normalization, i18n status messages.
+    # The German content IS the feature.
+    "bridge/application/chat_service.py",
+    "bridge/application/task_router.py",
+    "bridge/application/status_manager.py",
+}
+
+WHITELIST_DIR_PREFIXES = (
+    "bridge/tests/",
+    "docs/",
+    "bridge/data/",
+    "bridge/logs/",
+    "bridge/.venv/",
+)
+
+# ---------------------------------------------------------------
+# Detection patterns
+# ---------------------------------------------------------------
+
+# Real umlauts in any context (strings, comments, docstrings).
+# These cannot appear in identifiers (Python doesn't allow them in usual
+# code style), so any hit is German text.
+UMLAUT_PATTERN = re.compile(r"[äöüßÄÖÜ]")
+
+# German marker words with word boundaries.
+# Each entry is a regex pattern that matches the word as a standalone token.
+GERMAN_MARKERS = [
+    r"\bdie\b",
+    r"\bder\b",
+    r"\bdas\b",
+    r"\bund\b",
+    r"\boder\b",
+    r"\bnicht\b",
+    r"\beine\b",
+    r"\beinen\b",
+    r"\beines\b",
+    r"\beiner\b",
+    r"\bein\b",
+    r"\bmit\b",
+    r"\baus\b",
+    r"\bauf\b",
+    r"\bist\b",
+    r"\bsind\b",
+    r"\bwerden\b",
+    r"\bwird\b",
+    r"\bdem\b",
+    r"\bdes\b",
+    r"\bvon\b",
+    r"\bkann\b",
+    r"\bkoennen\b",
+    r"\bsoll\b",
+    r"\bsollen\b",
+    r"\bmuss\b",
+    r"\bmuessen\b",
+    r"\bhat\b",
+    r"\bhaben\b",
+    r"\bwar\b",
+    r"\bwaren\b",
+    r"\bauch\b",
+    r"\bwenn\b",
+    r"\bdann\b",
+    r"\bdoch\b",
+    r"\bnoch\b",
+    r"\bnur\b",
+    r"\bsehr\b",
+    r"\bsich\b",
+    r"\bbei\b",
+    r"\bnach\b",
+    r"\bvor\b",
+    r"\bueber\b",
+    r"\bzwischen\b",
+    r"\bohne\b",
+    r"\bgegen\b",
+    r"\bdurch\b",
+]
+
+GERMAN_MARKER_PATTERN = re.compile("|".join(GERMAN_MARKERS), re.IGNORECASE)
+
+
+# ---------------------------------------------------------------
+# Whitelist helpers
+# ---------------------------------------------------------------
+
+
+def _is_whitelisted(path: Path) -> bool:
+    """Return True if the given path is exempt from the EN check."""
+    try:
+        rel = path.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        # Path is outside the repo root (e.g. tmp file passed explicitly).
+        # Not whitelisted by default.
+        return False
+
+    if rel in WHITELIST_PATHS:
+        return True
+
+    for prefix in WHITELIST_DIR_PREFIXES:
+        if rel.startswith(prefix):
+            return True
+
+    return False
+
+
+# ---------------------------------------------------------------
+# File discovery
+# ---------------------------------------------------------------
+
+
+def _collect_files(explicit_paths: Iterable[str]) -> list[Path]:
+    """Resolve the list of files to scan.
+
+    If explicit paths are given (from pre-commit), use those.
+    Otherwise glob the full production scope.
+    """
+    files: list[Path] = []
+
+    if explicit_paths:
+        for raw in explicit_paths:
+            p = Path(raw)
+            if not p.is_absolute():
+                p = REPO_ROOT / p
+            if p.is_file():
+                files.append(p)
+        return files
+
+    for pattern in PRODUCTION_GLOBS:
+        files.extend(REPO_ROOT.glob(pattern))
+
+    return sorted(set(files))
+
+
+# ---------------------------------------------------------------
+# Scanner
+# ---------------------------------------------------------------
+
+
+def _scan_file(path: Path) -> list[tuple[int, str, str]]:
+    """Scan a single file for German markers.
+
+    Returns:
+        List of (line_number, matched_token, line_excerpt) tuples.
+        Empty list means file is clean.
+    """
+    hits: list[tuple[int, str, str]] = []
+
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return hits
+
+    for line_no, raw_line in enumerate(content.splitlines(), start=1):
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        # Skip lines that are clearly URLs or imports (low false-positive risk).
+        if line.startswith(("http://", "https://", "git@")):
+            continue
+
+        # Inline suppress marker: "# noqa: en-only" allows intentional
+        # German terms in English comments (e.g. quoting a concept).
+        if "noqa: en-only" in line:
+            continue
+
+        # Check umlauts
+        m_umlaut = UMLAUT_PATTERN.search(line)
+        if m_umlaut:
+            hits.append((line_no, m_umlaut.group(0), line[:120]))
+            continue  # one hit per line is enough to flag
+
+        # Check German marker words
+        m_marker = GERMAN_MARKER_PATTERN.search(line)
+        if m_marker:
+            hits.append((line_no, m_marker.group(0), line[:120]))
+
+    return hits
+
+
+# ---------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------
+
+
+def main(argv: list[str]) -> int:
+    explicit = argv[1:] if len(argv) > 1 else []
+    files = _collect_files(explicit)
+
+    if not files:
+        print("check_en_only_production: no files to scan")
+        return 0
+
+    failures: dict[Path, list[tuple[int, str, str]]] = {}
+
+    for path in files:
+        if _is_whitelisted(path):
+            continue
+        hits = _scan_file(path)
+        if hits:
+            failures[path] = hits
+
+    if not failures:
+        return 0
+
+    print("check_en_only_production: German text found in production files")
+    print("(AXOLENT AI is English-only per CLAUDE.md)")
+    print()
+
+    total_hits = 0
+    for path, hits in sorted(failures.items()):
+        try:
+            rel = path.relative_to(REPO_ROOT).as_posix()
+        except ValueError:
+            rel = str(path)
+        print(f"{rel}")
+        for line_no, token, excerpt in hits:
+            print(f"  {line_no}: '{token}'  ->  {excerpt}")
+            total_hits += 1
+        print()
+
+    print(f"Total: {total_hits} German hits across {len(failures)} files")
+    print()
+    print("Fix: translate the lines above to English.")
+    print("If a German term is intentional (e.g. proper noun, quote, glossary),")
+    print("move it into the whitelist in scripts/check_en_only_production.py.")
+
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
