@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AXOLENT AI Features</title>
+    <style>
+
+
+
+:root {
+    --color-bg: #fafbfc;
+    --color-surface: #ffffff;
+    --color-text: #1a1a2e;
+    --color-text-muted: #555770;
+    --color-accent: #2563eb;
+    --color-accent-light: #dbeafe;
+    --color-border: #e2e8f0;
+    --color-code-bg: #f1f5f9;
+    --color-code-border: #e2e8f0;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html {
+    font-size: 16px;
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: var(--font-sans);
+    background: var(--color-bg);
+    color: var(--color-text);
+    line-height: 1.7;
+    padding: 2rem 1rem;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+main {
+    max-width: 800px;
+    margin: 0 auto;
+    background: var(--color-surface);
+    padding: 3rem 3.5rem;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06);
+}
+
+h1 {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--color-accent);
+    margin-bottom: 0.25rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 3px solid var(--color-accent);
+    letter-spacing: -0.02em;
+}
+
+h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--color-text);
+    margin-top: 2.5rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--color-border);
+}
+
+h3 {
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--color-text);
+    margin-top: 1.75rem;
+    margin-bottom: 0.75rem;
+}
+
+p {
+    margin-bottom: 1rem;
+    color: var(--color-text-muted);
+}
+
+ul, ol {
+    margin-bottom: 1.25rem;
+    padding-left: 1.5rem;
+}
+
+li {
+    margin-bottom: 0.4rem;
+    color: var(--color-text-muted);
+    line-height: 1.65;
+}
+
+li strong {
+    color: var(--color-text);
+}
+
+code {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    background: var(--color-code-bg);
+    border: 1px solid var(--color-code-border);
+    border-radius: 4px;
+    padding: 0.15em 0.4em;
+    color: #d63384;
+}
+
+pre {
+    background: #1e293b;
+    color: #e2e8f0;
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.5rem;
+    overflow-x: auto;
+    font-size: 0.875rem;
+    line-height: 1.6;
+}
+
+pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    color: inherit;
+    font-size: inherit;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+}
+
+thead th {
+    background: var(--color-accent-light);
+    color: var(--color-accent);
+    font-weight: 600;
+    text-align: left;
+    padding: 0.75rem 1rem;
+    border-bottom: 2px solid var(--color-accent);
+}
+
+tbody td {
+    padding: 0.65rem 1rem;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+}
+
+tbody tr:hover {
+    background: var(--color-code-bg);
+}
+
+blockquote {
+    border-left: 4px solid var(--color-accent);
+    background: var(--color-accent-light);
+    margin: 1.5rem 0;
+    padding: 1rem 1.5rem;
+    border-radius: 0 8px 8px 0;
+    color: var(--color-text-muted);
+    font-style: italic;
+}
+
+hr {
+    border: none;
+    height: 1px;
+    background: var(--color-border);
+    margin: 2rem 0;
+}
+
+a {
+    color: var(--color-accent);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.2s;
+}
+
+a:hover {
+    border-bottom-color: var(--color-accent);
+}
+
+@media (max-width: 640px) {
+    body {
+        padding: 1rem 0.5rem;
+    }
+    main {
+        padding: 1.5rem 1.25rem;
+        border-radius: 8px;
+    }
+    h1 {
+        font-size: 1.5rem;
+    }
+    h2 {
+        font-size: 1.25rem;
+    }
+    table {
+        font-size: 0.8rem;
+    }
+    thead th, tbody td {
+        padding: 0.5rem 0.6rem;
+    }
+}
+
+
+        </style>
+</head>
+<body>
+<main>
+<h1>AXOLENT AI Feature Overview</h1>
+<p>As of: 2026-05-10</p>
+<blockquote>
+<p><strong>Stop sending your private thoughts to someone else's server.</strong>
+Your AI. Your device. Your data. Period.</p>
+</blockquote>
+<h2>Implemented</h2>
+<h3>Architecture (R00, Foundation)</h3>
+<ul>
+<li>Hexagonal Architecture (Variant A): Domain / Application / Infrastructure / Presentation</li>
+<li>import-linter with 3/3 layer contracts</li>
+<li>Pre-commit hooks (13 hooks: ruff, ruff-format, trailing-whitespace, end-of-file-fixer, check-yaml, check-added-large-files, check-merge-conflict, mixed-line-ending, bandit, import-linter, pytest, pip-audit, semgrep)</li>
+<li>Mode B: local CLI wrapper for claude, no token hijacking</li>
+<li>UTF-8 enforced across all components (helper in bridge/utils/encoding.py)</li>
+<li>Audit logging with rotation</li>
+<li>Commits: 821aaba (Initial scaffold) .. f613961 (Mode B Bot)</li>
+</ul>
+<h3>Memory System</h3>
+<ul>
+<li>Trinity-Memory (Episodic, Semantic, Procedural)</li>
+<li>SQLite storage with FTS5 full-text search (since C-4/R03)</li>
+<li>LIKE fallback on FTS5 zero results (substring contract)</li>
+<li>Stop-word filtering + punctuation strip in keyword extraction</li>
+<li>Memory token budget (400 chars/entry, 4000 chars total)</li>
+<li>User isolation per user_id</li>
+<li>Consolidation hook (consolidator.py stub)</li>
+<li>Commit: 92be2da, 9954df8</li>
+</ul>
+<h3>Persistent Pipe + Streaming (R04)</h3>
+<ul>
+<li>ClaudeProcessPool: Persistent stdin pipe per (user_id, chat_id)</li>
+<li>60-minute inactivity timeout (previously 5 min)</li>
+<li>Crash recovery, graceful shutdown, health check</li>
+<li>NDJSON parser for stream events</li>
+<li>StreamingHandler with adaptive throttle (1.5s default, backoff up to 10s)</li>
+<li>Markdown smart trim (formatted text during streaming)</li>
+<li>Multi-message split (responses &gt;4096 characters)</li>
+<li>Final edit priority (retried on 429)</li>
+<li>74% faster than cold-start subprocess</li>
+<li>Commit: e07a7ef</li>
+</ul>
+<h3>Typing Keepalive (R02-A)</h3>
+<ul>
+<li>Background asyncio task triggers TYPING indicator every 4 seconds</li>
+<li>Commit: 051bc96</li>
+</ul>
+<h3>Status Manager (R02-B)</h3>
+<ul>
+<li>Contextual status indicators: Memory loading, Thinking, Formatting</li>
+<li>Language-aware (DE + EN based on sticky language)</li>
+<li>Rate-limited with phase-change bypass (new phase bypasses throttle)</li>
+<li>StatusSession architecture with callback protocol</li>
+<li>Automatic deactivation on stream start</li>
+</ul>
+<h3>Bookmarks</h3>
+<ul>
+<li>Reply-based /save</li>
+<li>/bookmarks with inline buttons (full text / remove)</li>
+<li>chat_id scoping</li>
+<li>BookmarkService with constructor injection (SQLite default, JSONL legacy adapter)</li>
+<li>Backward-compat migration for legacy entries (JSONL -&gt; SQLite on first start)</li>
+<li>Commits: 605d8ca .. 029e7eb</li>
+</ul>
+<h3>Conversation History</h3>
+<ul>
+<li>Sticky language per chat_id</li>
+<li>Max 20 turns</li>
+<li>Static bot responses in history (for /start, /help, /reset, /lang)</li>
+<li>Reply-to-bot-message context</li>
+<li>Currently in-memory only (see R07 for persistence)</li>
+</ul>
+<h3>Privacy &amp; Safety</h3>
+<ul>
+<li>Whitelist fail-closed with ALLOW_ALL_USERS override</li>
+<li>AXOLENT_DEV_MODE mandatory companion (tripwire guard)</li>
+<li>@require_whitelist + @require_private_chat decorators</li>
+<li>Group chat block (privacy)</li>
+<li>System prompt leakage guard (2 layers: instruction + output filter)</li>
+<li>Generic error messages with error_id (no stack trace leak)</li>
+<li>Commit: 029e7eb (Track-C hardening)</li>
+</ul>
+<h3>Rate Limiting</h3>
+<ul>
+<li>4 profiles: Light (100/h, 400/day), Normal (350/h, 1500/day), Power (900/h, 10k/day), Unlimited</li>
+<li>/usage command with progress bars + reset times</li>
+<li>/setlimit command (two-step for Unlimited)</li>
+<li>70% warning once per window</li>
+<li>Unlimited reminder every 100 requests</li>
+<li>Profiles persistent across bot restart</li>
+<li>Commit: 029e7eb</li>
+</ul>
+<h3>Security Tools</h3>
+<ul>
+<li>Local tools (pre-commit hooks): Bandit, Semgrep, pip-audit</li>
+<li>gitleaks configured (pre-commit hook commented out due to Windows go-re2 bug, binary not installed locally; config .gitleaks.toml exists for later use)</li>
+<li>SECURITY.md, .gitleaks.toml, .semgrepignore</li>
+<li>pip-audit + semgrep: venv-relative paths, work without activated venv</li>
+<li>Commit: 02b1da0</li>
+</ul>
+<h3>Markdown Rendering</h3>
+<ul>
+<li>Markdown-to-Telegram-HTML converter</li>
+<li>UUID sentinel for links (double-escape fix)</li>
+<li>URL scheme whitelist (http, https, tg, mailto)</li>
+<li>Commits: eeb89c5 .. bc3a05c</li>
+</ul>
+<h3>Multi-AI Debate (R10, MVP)</h3>
+<ul>
+<li>/debate command: queries all available providers in parallel</li>
+<li>DebateOrchestrator with asyncio.gather + return_exceptions=True</li>
+<li>Crash resilience: one crashing provider does not stop the others</li>
+<li>Per-provider 60s timeout (configurable)</li>
+<li>Consensus/dissent heuristic (Jaccard word overlap analysis)</li>
+<li>DEBATE_PROVIDERS env var for provider selection</li>
+<li>Audit log with event_type "debate"</li>
+<li>Privacy guard + rate limiting active</li>
+<li>Multi-message split for long outputs</li>
+</ul>
+<h3>Code Quality</h3>
+<ul>
+<li>602+ tests passing</li>
+<li>7 code reviews: V1, V2, V3, V4, V5, V6 (Codex + Claude)</li>
+<li>Threat model documented (docs/THREAT_MODEL.md)</li>
+<li>Commits: 916d234, eeb89c5, bc3a05c, 9954df8</li>
+</ul>
+<h2>Killer Features (Roadmap Highlights)</h2>
+<h3>R10: Multi-AI Debate (Implemented, MVP)</h3>
+<p>Multiple AI models answer a question in parallel. The user sees responses
+side-by-side with consensus/dissent analysis. Crash-resilient: if one provider
+fails, the others still respond. Foundation for NLnet application.</p>
+<h3>R11: Cross-Provider Memory</h3>
+<p>Memory entries work across all providers.
+Switch from Claude to another model: your context stays.
+No vendor lock-in at the knowledge level.</p>
+<h3>R12: Smart Privacy Routing</h3>
+<p>Automatic detection of sensitive content (health, finances, password queries).
+Sensitive requests are processed locally, non-critical ones may go to the cloud.
+Privacy by design without user overhead.</p>
+<h3>R15: Skill Marketplace with Premium + Revenue Sharing</h3>
+<p>Community-created skills (prompts, workflows, tool chains) as a marketplace.
+Creators earn revenue, premium skills for power users.
+An ecosystem that grows with the community.</p>
+<h3>R18: User Model Override (Phase 1 complete)</h3>
+<p>Phase 1: <code>/setmodel</code>, <code>/resetmodel</code>, <code>/models</code> commands. User can switch between
+Opus, Sonnet and Haiku. SQLite-persisted, alias resolution,
+model mismatch detection in the process pool.
+Phase 2 (planned): TaskRouter with 6 slots (chat, code, etc.).</p>
+<h2>Roadmap (all items R01-R18)</h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Name</th>
+<th>Description</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>R01</td>
+<td>Faster Responses</td>
+<td>System prompt optimization, multi-provider routing</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>R02-A</td>
+<td>Typing Keepalive</td>
+<td>TYPING indicator every 4s during processing</td>
+<td>Done</td>
+</tr>
+<tr>
+<td>R02-B</td>
+<td>Status Manager</td>
+<td>Contextual status indicators (Memory, Thinking, Formatting)</td>
+<td>Done</td>
+</tr>
+<tr>
+<td>R03</td>
+<td>SQLite Migration</td>
+<td>JSONL to SQLite/FTS5 (Memory + Bookmarks)</td>
+<td>Done</td>
+</tr>
+<tr>
+<td>R04</td>
+<td>Persistent Pipe + Streaming</td>
+<td>Live token streaming via persistent stdin pipe</td>
+<td>Done</td>
+</tr>
+<tr>
+<td>R05</td>
+<td>Desktop Client</td>
+<td>Local desktop client (Electron/Tauri)</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>R06</td>
+<td>Anthropic API Premium</td>
+<td>API-key-based premium provider (pay-per-use)</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>R07</td>
+<td>Persistent History</td>
+<td>Conversation history survives bot restart (SQLite)</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>R08</td>
+<td>Burst Edit Pattern</td>
+<td>Faster time-to-first-visible-text for Telegram + Desktop</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>R09</td>
+<td>/forget History Cleanup</td>
+<td>/forget also cleans conversation history</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>R10</td>
+<td>Multi-AI Debate</td>
+<td>Query multiple models in parallel, side-by-side + consensus analysis</td>
+<td>Done (MVP)</td>
+</tr>
+<tr>
+<td>R11</td>
+<td>Cross-Provider Memory</td>
+<td>Memory portable across all providers</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>R12</td>
+<td>Smart Privacy Routing</td>
+<td>Sensitive requests local, non-critical to the cloud</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>R13</td>
+<td>Voice Input/Output</td>
+<td>Voice input + voice output (Whisper + TTS)</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>R14</td>
+<td>Plugin System</td>
+<td>Extensible tool architecture for community plugins</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>R15</td>
+<td>Skill Marketplace</td>
+<td>Community skills with premium + revenue sharing</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>R16</td>
+<td>Team Collaboration</td>
+<td>Shared conversations + memory for teams</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>R17</td>
+<td>Self-Hosted Enterprise</td>
+<td>On-premise deployment for businesses</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>R18</td>
+<td>User Model Override</td>
+<td>/setmodel + /models + model switching logic in pool</td>
+<td>Phase 1 done</td>
+</tr>
+</tbody>
+</table>
+<h2>Consciously Accepted Risks (Phase 1)</h2>
+<ul>
+<li>SQLite storage without encryption-at-rest (Phase 1+: Fernet)</li>
+<li>Audit log without hash chain (tamper protection Phase 1+)</li>
+<li><code>_creation_locks</code> map grows unbounded (irrelevant for &lt;10 users)</li>
+<li><code>_reset_all_for_tests</code> technically reachable in production (low risk: module function)</li>
+</ul>
+<h2>Statistics (as of 2026-05-10)</h2>
+<ul>
+<li>Tests: 602+ passing</li>
+<li>Production code: ~9,700 LOC</li>
+<li>Test code: ~10,300 LOC</li>
+<li>Layer contracts: 3/3 kept</li>
+<li>Pre-commit hooks: 13/13 passing</li>
+<li>Local commits since Tier 1: 16</li>
+</ul>
+</main>
+</body>
+</html>
