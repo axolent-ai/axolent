@@ -1,10 +1,10 @@
-"""Encoding-Helper für Jarvis-LITE.
+"""Encoding-Helper für Axolent.
 
 Standard-Pattern für alle File-, Subprocess- und JSON-Operationen.
 Erzwingt UTF-8 explizit, damit Multi-User Multi-Language Robustheit
 ab Tag 1 garantiert ist.
 
-Niemals direkt open() oder subprocess.run() in Jarvis-LITE-Code,
+Niemals direkt open() oder subprocess.run() in Axolent-Code,
 sondern diese Helper benutzen.
 """
 

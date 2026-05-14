@@ -435,7 +435,7 @@ class TestDERegressionGuard:
 
         await handle_start_command(update, context)
         text = update.message.reply_text.call_args[0][0]
-        assert "Jarvis-LITE Bridge ist bereit" in text
+        assert "Axolent ist bereit" in text
         assert "Schick mir eine Frage" in text
 
     async def test_wizard_done_de_unchanged(

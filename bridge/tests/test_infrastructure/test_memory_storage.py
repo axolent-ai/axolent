@@ -145,14 +145,14 @@ class TestMemoryStorageSearch:
     def test_search_finds_match(self, storage: MemoryStorage) -> None:
         """Suche findet substring-Matches."""
         storage.append(
-            {"id": "ep_1", "user_id": 1, "content": "Jarvis-LITE Architektur"},
+            {"id": "ep_1", "user_id": 1, "content": "Axolent Architektur"},
             "episodic",
         )
         storage.append(
             {"id": "ep_2", "user_id": 1, "content": "Etwas anderes"}, "episodic"
         )
 
-        result = storage.search(user_id=1, query="Jarvis", layer="episodic")
+        result = storage.search(user_id=1, query="Axolent", layer="episodic")
         assert len(result) == 1
         assert result[0]["id"] == "ep_1"
 

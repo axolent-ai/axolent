@@ -1,4 +1,4 @@
-"""Jarvis-LITE Bridge: Entry-Point.
+"""Axolent Bridge: Entry-Point.
 
 Startet den Telegram-Bot mit hexagonaler Architektur.
 Modus B (lokaler CLI-Wrapper, User hat eigene Pro/Max-Subscription).
@@ -228,7 +228,7 @@ def _build_provider_router(process_pool: ClaudeProcessPool) -> ProviderRouter:
 
 
 def main() -> None:
-    """Startet den Jarvis-LITE Bridge Bot via long-polling."""
+    """Startet den Axolent Bridge Bot via long-polling."""
     # Whitelist-Validierung
     if not WHITELIST and not ALLOW_ALL_USERS:
         log.critical(
@@ -453,7 +453,7 @@ def main() -> None:
     )
     app.add_handler(CallbackQueryHandler(handle_wizard_callback, pattern=r"^wizard_"))
 
-    log.info("Jarvis-LITE Bridge startet, Modus B (R04: Persistent Pipe + Streaming)")
+    log.info("Axolent Bridge startet, Modus B (R04: Persistent Pipe + Streaming)")
     log.info("Default-Provider: '%s'", router.default)
     log.info(
         "Whitelist aktiv: %s",

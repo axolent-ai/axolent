@@ -17,11 +17,11 @@ class TestPersonalityConfig:
     def test_personality_combined_prompt_format(self) -> None:
         """System-Prompt und Constitution werden mit Trennlinie kombiniert."""
         config = PersonalityConfig(
-            system_prompt="Du bist Jarvis.",
+            system_prompt="Du bist Axolent.",
             user_constitution="Antworte immer freundlich.",
         )
         result = config.build_combined_prompt()
-        assert "Du bist Jarvis." in result
+        assert "Du bist Axolent." in result
         assert "Antworte immer freundlich." in result
         assert "---" in result
 

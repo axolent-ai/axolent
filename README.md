@@ -1,8 +1,8 @@
-# Jarvis-LITE
+# AXOLENT AI
 
 **Open-Source AI Personal Assistant**
 
-> Local. Private. Multi-Provider.
+> AIs that argue. Files that never leave. Privacy that holds. Memory that lasts.
 
 ![Phase](https://img.shields.io/badge/phase-1%20(active)-blue)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-green)
@@ -11,7 +11,7 @@
 
 ## TL;DR
 
-Jarvis-LITE is a local AI personal assistant that runs on YOUR machine, using YOUR own Claude Pro/Max subscription. No cloud middleman, no token hijacking, no SaaS lock-in. Talk to it via Telegram today, Desktop and Mini App coming soon.
+AXOLENT AI is a local AI personal assistant that runs on YOUR machine, using YOUR own Claude Pro/Max subscription. No cloud middleman, no token hijacking, no SaaS lock-in. Multi-AI debates, local files, true privacy, endless memory. Talk to it via Telegram today, Desktop and Mini App coming soon.
 
 Built for people who want a powerful AI assistant without giving up control over their data or their subscription.
 
@@ -20,16 +20,17 @@ Built for people who want a powerful AI assistant without giving up control over
 1. Open-source AI personal assistant via Telegram + Desktop
 2. Runs locally as a subprocess wrapper around Claude Code CLI (Mode B)
 3. Multi-provider support planned (Claude, GPT, Gemini, local models)
-4. Persistent memory, bookmarks, conversation history, personality system
-5. Your keys, your data, your machine
+4. Multi-AI debate: let multiple AIs answer the same question and compare
+5. Persistent memory, bookmarks, conversation history, personality system
+6. Your keys, your data, your machine
 
 ## Mode B: What It Is (and What It Isn't)
 
-**What it is:** A local CLI wrapper that spawns `claude` as a subprocess on your machine. Your existing Claude Pro/Max subscription handles the inference. Jarvis-LITE is just the interface layer.
+**What it is:** A local CLI wrapper that spawns `claude` as a subprocess on your machine. Your existing Claude Pro/Max subscription handles the inference. Axolent is just the interface layer.
 
 **What it is NOT:** Token hijacking, OAuth abuse, or cloud-hosted proxy. There is no server between you and Anthropic. Anthropic explicitly permits local CLI tool usage with your own subscription.
 
-**Architecture:** Telegram message -> Jarvis-LITE bridge (local) -> Claude Code CLI (local) -> Anthropic API (your subscription)
+**Architecture:** Telegram message -> Axolent bridge (local) -> Claude Code CLI (local) -> Anthropic API (your subscription)
 
 ## Prerequisites
 
@@ -76,19 +77,19 @@ The bot starts long-polling. Send it a message on Telegram and Claude responds.
 ## Repository Structure
 
 ```
-jarvis-lite/
-  bridge/          Backend service (Hexagonal Architecture, Python)
-    domain/        Pure business logic (no I/O imports)
-    application/   Use-case orchestration
-    infrastructure/ I/O adapters (CLI, storage, audit)
-    presentation/  Telegram-specific handlers & rendering
-    config/        System prompt, user constitution
-    tests/         113 pytest tests
-    main.py        Entry point
-  mini-app/        Telegram Mini App (planned, Phase 1+)
-  desktop/         Desktop App via Tauri (planned, Phase 1+)
-  shared/          Shared UI components (planned, Phase 1+)
-  docs/            Technical documentation
+jarvis-lite/          (repo name, will be renamed to axolent-ai)
+  bridge/             Backend service (Hexagonal Architecture, Python)
+    domain/           Pure business logic (no I/O imports)
+    application/      Use-case orchestration
+    infrastructure/   I/O adapters (CLI, storage, audit)
+    presentation/     Telegram-specific handlers & rendering
+    config/           System prompt, user constitution
+    tests/            113 pytest tests
+    main.py           Entry point
+  mini-app/           Telegram Mini App (planned, Phase 1+)
+  desktop/            Desktop App via Tauri (planned, Phase 1+)
+  shared/             Shared UI components (planned, Phase 1+)
+  docs/               Technical documentation
 ```
 
 ## Roadmap

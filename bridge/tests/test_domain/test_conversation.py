@@ -57,7 +57,7 @@ class TestBuildContextBlock:
         result = build_context_block(history, "Wie gehts?")
         assert "[VERLAUF DER UNTERHALTUNG]" in result
         assert "User: Hi" in result
-        assert "Jarvis: Hallo!" in result
+        assert "Axolent: Hallo!" in result
         assert "[AKTUELLE NACHRICHT]" in result
         assert "Wie gehts?" in result
 

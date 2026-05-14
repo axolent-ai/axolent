@@ -36,7 +36,7 @@ def build_context_block(history: list[ConversationTurn], current_message: str) -
     Format:
         [VERLAUF DER UNTERHALTUNG]
         User: ...
-        Jarvis: ...
+        Axolent: ...
 
         [AKTUELLE NACHRICHT]
         <current message>
@@ -55,7 +55,7 @@ def build_context_block(history: list[ConversationTurn], current_message: str) -
 
     lines: list[str] = ["[VERLAUF DER UNTERHALTUNG]"]
     for turn in history:
-        label = "User" if turn.role == "user" else "Jarvis"
+        label = "User" if turn.role == "user" else "Axolent"
         lines.append(f"{label}: {turn.content}")
 
     lines.append("")

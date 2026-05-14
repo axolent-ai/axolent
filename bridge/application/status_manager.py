@@ -1,6 +1,6 @@
 """Status-Manager: koordiniert Status-Updates während Processing.
 
-Zeigt dem User was Jarvis gerade macht, statt nur "..." als Placeholder.
+Zeigt dem User was Axolent gerade macht, statt nur "..." als Placeholder.
 Sprach-aware (DE + EN basierend auf Sticky-Language).
 Rate-limited: max alle 0.5s ein Status-Update.
 

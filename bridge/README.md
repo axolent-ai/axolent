@@ -1,6 +1,6 @@
 # Bridge-Service
 
-Backend von Jarvis-LITE. Telegram-Bot der Claude Code CLI als lokalen Subprozess spawnt (Modus B). Hexagonale Architektur, 526+ Tests, UTF-8 durchgängig.
+Backend von AXOLENT AI (Axolent). Telegram-Bot der Claude Code CLI als lokalen Subprozess spawnt (Modus B). Hexagonale Architektur, 526+ Tests, UTF-8 durchgängig.
 
 ## Architektur (Hexagonal)
 
@@ -94,7 +94,7 @@ python main.py
 Erwartete Log-Ausgabe:
 
 ```
-2026-05-06 10:00:00 [INFO] jarvis-bridge: Jarvis-LITE Bridge startet, Modus B (Claude Code CLI Subprozess)
+2026-05-06 10:00:00 [INFO] jarvis-bridge: Axolent Bridge startet, Modus B (Claude Code CLI Subprozess)
 2026-05-06 10:00:00 [INFO] jarvis-bridge: Whitelist aktiv: ja
 2026-05-06 10:00:00 [INFO] jarvis-bridge: Bookmarks-Feature aktiv (Reply-basiert via /save)
 2026-05-06 10:00:00 [INFO] jarvis-bridge: Conversation-History aktiv (max 20 Turns, /reset zum Löschen)

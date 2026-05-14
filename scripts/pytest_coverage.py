@@ -1,4 +1,4 @@
-"""Coverage-Report-Generator für Jarvis-LITE Bridge.
+"""Coverage-Report-Generator für Axolent Bridge.
 
 Führt pytest mit Coverage-Messung aus und generiert:
   - Terminal-Report: % Coverage pro Modul

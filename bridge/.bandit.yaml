@@ -1,4 +1,4 @@
-# Bandit configuration for jarvis-lite bridge
+# Bandit configuration for axolent bridge
 skips:
   # B101: assert used - acceptable in test code, tests are excluded anyway
   - B101

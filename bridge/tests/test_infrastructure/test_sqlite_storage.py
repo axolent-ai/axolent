@@ -450,7 +450,7 @@ class TestSqliteMemoryStorageSearch:
             {
                 "id": "ep_1",
                 "user_id": 1,
-                "content": "Jarvis-LITE Architektur",
+                "content": "Axolent Architektur",
                 "timestamp": "2026-01-01T00:00:00",
             },
             "episodic",
@@ -465,7 +465,7 @@ class TestSqliteMemoryStorageSearch:
             "episodic",
         )
 
-        result = mem_storage.search(user_id=1, query="Jarvis", layer="episodic")
+        result = mem_storage.search(user_id=1, query="Axolent", layer="episodic")
         assert len(result) == 1
         assert result[0]["id"] == "ep_1"
 
@@ -1240,7 +1240,7 @@ class TestV6SubstringFallback:
     ) -> None:
         """LIKE-Fallback findet Token-Inneres das FTS5 nicht matcht.
 
-        FTS5 tokenisiert: "JarvisLiteSuperword" ist EIN Token.
+        FTS5 tokenisiert: "AxolentSuperword" ist EIN Token.
         Suche nach "Super" liefert mit FTS5 0 Treffer,
         muss aber per LIKE-Fallback trotzdem gefunden werden.
         """
@@ -1248,7 +1248,7 @@ class TestV6SubstringFallback:
             {
                 "id": "ep_compound",
                 "user_id": 1,
-                "content": "JarvisLiteSuperword ist ein Test",
+                "content": "AxolentSuperword ist ein Test",
                 "timestamp": "2026-01-01T00:00:00",
             },
             "episodic",

@@ -285,13 +285,13 @@ _WIZARD_SKIP_STEP2_TEXTS: dict[str, str] = {
 # /start welcome texts for onboarded users
 _START_WELCOME_TEXTS: dict[str, str] = {
     "de": (
-        "Jarvis-LITE Bridge ist bereit.\n\n"
+        "Axolent ist bereit.\n\n"
         "Schick mir eine Frage und ich leite sie an Claude weiter.\n\n"
         "Tipp: Du kannst Bot-Nachrichten als Bookmark speichern. "
         "Antworte einfach mit /save."
     ),
     "en": (
-        "Jarvis-LITE Bridge is ready.\n\n"
+        "Axolent is ready.\n\n"
         "Send me a question and I'll forward it to Claude.\n\n"
         "Tip: You can bookmark bot messages. "
         "Just reply with /save."

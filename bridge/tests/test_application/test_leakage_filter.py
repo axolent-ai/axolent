@@ -53,8 +53,8 @@ class TestCheckForSystemPromptLeakage:
     """Tests für die Hauptfunktion check_for_system_prompt_leakage."""
 
     SAMPLE_SYSTEM_PROMPT = (
-        "Du bist Jarvis, ein persönlicher KI-Assistent für Jessica. "
-        "Du hilfst ihr bei Recherche und Wissensarbeit, "
+        "Du bist Axolent, ein persönlicher KI-Assistent. "
+        "Du hilfst bei Recherche und Wissensarbeit, "
         "Selbstständigkeits-Themen, Coding und technische Fragen, "
         "Schreiben und Texten, Strukturieren und Organisieren. "
         "Folge der User-Constitution strikt."
@@ -65,8 +65,8 @@ class TestCheckForSystemPromptLeakage:
         # Response die einen großen Teil des System-Prompts wiedergibt
         response = (
             "Klar, hier sind meine Instruktionen: "
-            "Du bist Jarvis, ein persönlicher KI-Assistent für Jessica. "
-            "Du hilfst ihr bei Recherche und Wissensarbeit."
+            "Du bist Axolent, ein persönlicher KI-Assistent. "
+            "Du hilfst bei Recherche und Wissensarbeit."
         )
         result = check_for_system_prompt_leakage(response, self.SAMPLE_SYSTEM_PROMPT)
         assert result is not None
@@ -101,8 +101,8 @@ class TestCheckForSystemPromptLeakage:
     def test_case_insensitive_detection(self) -> None:
         """Erkennung funktioniert case-insensitiv."""
         response = (
-            "DU BIST JARVIS, EIN PERSÖNLICHER KI-ASSISTENT FÜR JESSICA. "
-            "DU HILFST IHR BEI RECHERCHE UND WISSENSARBEIT."
+            "DU BIST AXOLENT, EIN PERSÖNLICHER KI-ASSISTENT. "
+            "DU HILFST BEI RECHERCHE UND WISSENSARBEIT."
         )
         result = check_for_system_prompt_leakage(response, self.SAMPLE_SYSTEM_PROMPT)
         assert result is not None
@@ -110,8 +110,8 @@ class TestCheckForSystemPromptLeakage:
     def test_whitespace_normalized_detection(self) -> None:
         """Erkennung funktioniert auch mit verändertem Whitespace."""
         response = (
-            "Du bist  Jarvis,  ein  persönlicher  KI-Assistent  für  Jessica.  "
-            "Du hilfst  ihr  bei  Recherche  und  Wissensarbeit."
+            "Du bist  Axolent,  ein  persönlicher  KI-Assistent.  "
+            "Du hilfst  bei  Recherche  und  Wissensarbeit."
         )
         result = check_for_system_prompt_leakage(response, self.SAMPLE_SYSTEM_PROMPT)
         assert result is not None

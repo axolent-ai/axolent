@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "jarvis-bridge"
 version = "0.1.0"
-description = "Jarvis-LITE Bridge: Telegram-Bot mit Claude Code CLI"
+description = "Axolent Bridge: Telegram-Bot mit Claude Code CLI (AXOLENT AI)"
 requires-python = ">=3.11"
 dependencies = [
     "python-telegram-bot==21.7",

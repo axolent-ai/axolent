@@ -1,7 +1,7 @@
 """Semantic Memory: Generalisierte Fakten.
 
 Abstrahiertes Wissen, das aus episodischen Erfahrungen extrahiert wurde.
-Beispiel: "User bevorzugt kurze Antworten", "User arbeitet an Jarvis-LITE"
+Beispiel: "User bevorzugt kurze Antworten", "User arbeitet an Axolent"
 """
 
 from __future__ import annotations

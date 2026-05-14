@@ -1,4 +1,4 @@
-"""Globale pytest-Fixtures für die Jarvis-LITE Bridge Test-Suite.
+"""Globale pytest-Fixtures für die Axolent Bridge Test-Suite.
 
 Stellt bereit:
     - tmp_data_dir: temporäres Verzeichnis für Bookmark-JSONL und andere Testdaten

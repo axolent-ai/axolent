@@ -77,13 +77,13 @@ class TestRecall:
     def test_recall_finds_match(self, memory_service: MemoryService) -> None:
         """recall findet Entries die den Suchbegriff enthalten."""
         memory_service.remember_episodic(
-            user_id=1, content="Jarvis-LITE Bridge Architektur"
+            user_id=1, content="Axolent Bridge Architektur"
         )
         memory_service.remember_episodic(user_id=1, content="Etwas völlig anderes")
 
-        results = memory_service.recall(user_id=1, query="Jarvis")
+        results = memory_service.recall(user_id=1, query="Axolent")
         assert len(results) == 1
-        assert "Jarvis" in results[0]["content"]
+        assert "Axolent" in results[0]["content"]
 
     def test_recall_no_match(self, memory_service: MemoryService) -> None:
         """recall gibt leere Liste bei keinem Treffer."""
