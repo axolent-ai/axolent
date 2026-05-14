@@ -247,7 +247,7 @@ class TestOllamaProviderQuery:
             result = await provider.query("Test")
 
         assert result.error is not None
-        assert "nicht erreichbar" in result.error
+        assert "unreachable" in result.error
         assert result.text == ""
 
     @pytest.mark.asyncio
@@ -284,4 +284,4 @@ class TestOllamaProviderQuery:
             result = await provider.query("Test")
 
         assert result.error is not None
-        assert "response-Feld fehlt" in result.error
+        assert "response field missing" in result.error

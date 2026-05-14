@@ -1,1 +1,1 @@
-"""Infrastructure-Layer: I/O-Adapter (Dateisystem, CLI-Subprozesse, Logging)."""
+"""Infrastructure layer: I/O adapters (filesystem, CLI subprocesses, logging)."""

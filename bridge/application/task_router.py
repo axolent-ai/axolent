@@ -1,12 +1,12 @@
-"""TaskRouter: Klassifiziert User-Nachrichten in 6 Task-Slots.
+"""Task router: classifies user messages into 6 task slots.
 
-Dreistufige Heuristik:
-  1. Explizite Slot-Marker (/code, /reason, etc.)
-  2. Pattern + Keyword Matching mit Score
-  3. Fallback auf CHAT
+Three-stage heuristic:
+  1. Explicit slot markers (/code, /reason, etc.)
+  2. Pattern + keyword matching with score
+  3. Fallback to CHAT
 
-Pro Slot wird das passende Modell resolved:
-  User-Override > Slot-Default > System-Default.
+Per slot the appropriate model is resolved:
+  User override > slot default > system default.
 """
 
 from __future__ import annotations
@@ -43,22 +43,22 @@ log = logging.getLogger(__name__)
 # Default YAML path
 _DEFAULT_YAML = Path(__file__).parent.parent / "config" / "task_slots.yaml"
 
-# Code-Block ist ein extrem starkes Signal
+# Code block is an extremely strong signal
 _CODE_BLOCK_SCORE = 100
 
-# Pattern-Match Score (pro Pattern)
+# Pattern match score (per pattern)
 _PATTERN_SCORE = 3
 
-# Keyword-Match Score (pro Keyword)
+# Keyword match score (per keyword)
 _KEYWORD_SCORE = 1
 
 
 # ──────────────────────────────────────────────────────────────
-# German ASCII-to-Umlaut Normalisierung
+# German ASCII-to-umlaut normalization
 # ──────────────────────────────────────────────────────────────
 
-# Reihenfolge: Großbuchstaben vor Kleinbuchstaben, damit z.B. "Ae" nicht
-# versehentlich als "a" + "e" gematcht wird.
+# Order: uppercase before lowercase, so e.g. "Ae" is not
+# accidentally matched as "a" + "e".
 _UMLAUT_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("Ae", "Ä"),
     ("Oe", "Ö"),
@@ -68,9 +68,10 @@ _UMLAUT_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("ue", "ü"),
 )
 
-# ss -> ß: Whitelist-Ansatz statt Regex, weil ein generisches Vokal-ss-Vokal
-# Pattern zu viele False Positives erzeugt (z.B. "processing" -> "proceßing",
-# "Klassifizier" -> "Klaßifizier"). Nur eindeutig deutsche Wortstämme.
+# ss -> ß: whitelist approach instead of regex, because a generic
+# vowel-ss-vowel pattern produces too many false positives
+# (e.g. "processing" -> "proceßing", "Klassifizier" -> "Klaßifizier").
+# Only unambiguously German stems.
 _SS_TO_ESZETT_WORDS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\b([Ss])trass", re.UNICODE), r"\1traß"),
     (re.compile(r"\b([Ss])chliess", re.UNICODE), r"\1chließ"),
@@ -84,23 +85,23 @@ _SS_TO_ESZETT_WORDS: tuple[tuple[re.Pattern[str], str], ...] = (
 
 
 def _normalize_german_input(text: str) -> str:
-    """Normalisiert ASCII-Umlaut-Umschreibungen zu echten deutschen Umlauten.
+    """Normalize ASCII umlaut representations to real German umlauts.
 
-    Zweck: User-Eingaben mit ASCII-Umlaut-Umschreibungen sollen dieselben
-    Keyword-Matches auslösen wie Eingaben mit echten Umlauten (ä, ö, ü, ß).
+    Purpose: user inputs with ASCII umlaut substitutions should trigger
+    the same keyword matches as inputs with real umlauts (ä, ö, ü, ß).
 
-    Risiko der Übergeneralisierung ist gering, weil:
-    1. TaskRouter matcht nur gegen deutsche Keywords/Patterns
-    2. Englische Begriffe mit ae/oe/ue (queue, phoenix, aesthetic) matchen
-       ohnehin nicht gegen deutsche Slot-Keywords
-    3. Die Normalisierung ändert nur den internen Klassifikations-Input,
-       nicht die angezeigte User-Nachricht
+    The risk of over-generalization is low because:
+    1. TaskRouter only matches against German keywords/patterns
+    2. English terms with ae/oe/ue (queue, phoenix, aesthetic) do not
+       match German slot keywords anyway
+    3. Normalization only changes the internal classification input,
+       not the displayed user message
 
-    ss -> ß: Bewusst per Whitelist statt generischem Regex, weil ein
-    Vokal-ss-Vokal-Pattern zu viele englische Wörter trifft (processing,
-    message, klassifizier etc.). Nur eindeutige deutsche Wortstämme.
+    ss -> ß: deliberately uses a whitelist instead of a generic regex,
+    because a vowel-ss-vowel pattern hits too many English words
+    (processing, message, etc.). Only unambiguous German stems.
 
-    Performance: Reine String-Operationen + wenige Regex-Subs. Bei 1000 Zeichen < 0.1ms.
+    Performance: pure string operations + a few regex subs. For 1000 chars < 0.1ms.
     """
     for ascii_form, umlaut in _UMLAUT_REPLACEMENTS:
         text = text.replace(ascii_form, umlaut)
@@ -113,9 +114,9 @@ def _normalize_german_input(text: str) -> str:
 
 @dataclass(frozen=True)
 class SlotConfig:
-    """Konfiguration für einen einzelnen Task-Slot.
+    """Configuration for a single task slot.
 
-    Immutable nach Konstruktion. Geladene Werte aus YAML.
+    Immutable after construction. Values loaded from YAML.
     """
 
     slot: TaskSlot
@@ -130,9 +131,9 @@ class SlotConfig:
 
 @dataclass(frozen=True)
 class ClassificationResult:
-    """Ergebnis einer Task-Klassifikation.
+    """Result of a task classification.
 
-    Enthält den erkannten Slot, den Score und die gematchten Indikatoren.
+    Contains the detected slot, the score, and the matched indicators.
     """
 
     slot: TaskSlot
@@ -142,14 +143,14 @@ class ClassificationResult:
 
 
 class TaskRouter:
-    """Klassifiziert User-Nachrichten in Task-Slots und resolved Modelle.
+    """Classifies user messages into task slots and resolves models.
 
-    Nutzt YAML-konfigurierte Heuristiken für deterministische Klassifikation.
-    Kein ML, kein LLM-Call für die Klassifikation.
+    Uses YAML-configured heuristics for deterministic classification.
+    No ML, no LLM call for classification.
 
     Args:
-        slot_configs: Liste von SlotConfig-Objekten.
-        model_service: ModelService für User-Override-Resolution.
+        slot_configs: List of SlotConfig objects.
+        model_service: ModelService for user override resolution.
     """
 
     def __init__(
@@ -163,35 +164,35 @@ class TaskRouter:
         self._model_service = model_service
         self._fallback_slot = TaskSlot.CHAT
 
-        # Finde expliziten Fallback
+        # Find explicit fallback
         for cfg in slot_configs:
             if cfg.fallback:
                 self._fallback_slot = cfg.slot
                 break
 
     def classify(self, text: str) -> ClassificationResult:
-        """Klassifiziert eine User-Nachricht in einen Task-Slot.
+        """Classify a user message into a task slot.
 
-        Dreistufige Heuristik:
-          1. Explizite Slot-Marker (Präfix /code, /reason, etc.)
-          2. Pattern + Keyword Matching mit Score
-          3. Fallback auf CHAT
+        Three-stage heuristic:
+          1. Explicit slot markers (prefix /code, /reason, etc.)
+          2. Pattern + keyword matching with score
+          3. Fallback to CHAT
 
-        Bei Gleichstand gilt Priorität: CODE > REASON > RESEARCH > CREATIVE > QUICK > CHAT
+        On tie, priority applies: CODE > REASON > RESEARCH > CREATIVE > QUICK > CHAT
 
         Args:
-            text: User-Nachricht.
+            text: User message.
 
         Returns:
-            ClassificationResult mit Slot, Score und Match-Details.
+            ClassificationResult with slot, score, and match details.
         """
         if not text or not text.strip():
             return ClassificationResult(slot=self._fallback_slot, score=0)
 
-        # Stufe 0: ASCII-Umlaut-Normalisierung für deutsches Keyword-Matching
+        # Stage 0: ASCII umlaut normalization for German keyword matching
         text = _normalize_german_input(text)
 
-        # Stufe 1: Explizite Marker
+        # Stage 1: explicit markers
         stripped = text.strip()
         lower_stripped = stripped.lower()
         for slot in TaskSlot:
@@ -202,7 +203,7 @@ class TaskRouter:
             ):
                 return ClassificationResult(slot=slot, score=1000)
 
-        # Stufe 2: Pattern + Keyword Matching
+        # Stage 2: pattern + keyword matching
         text_lower = text.lower()
         word_count = len(text.split())
 
@@ -214,7 +215,7 @@ class TaskRouter:
             if cfg is None or cfg.fallback:
                 continue
 
-            # Word-Count-Filter
+            # Word count filter
             if cfg.min_word_count is not None and word_count < cfg.min_word_count:
                 continue
             if cfg.max_word_count is not None and word_count > cfg.max_word_count:
@@ -224,23 +225,23 @@ class TaskRouter:
             matched_patterns: list[str] = []
             matched_keywords: list[str] = []
 
-            # Pattern-Matching
+            # Pattern matching
             for pattern in cfg.patterns:
                 if pattern in text:
-                    # Code-Block (```) ist ein besonders starkes Signal
+                    # Code block (```) is a particularly strong signal
                     if pattern == "```":
                         score += _CODE_BLOCK_SCORE
                     else:
                         score += _PATTERN_SCORE
                     matched_patterns.append(pattern)
 
-            # Keyword-Matching (case-insensitive)
+            # Keyword matching (case-insensitive)
             for keyword in cfg.keywords:
                 if keyword.lower() in text_lower:
                     score += _KEYWORD_SCORE
                     matched_keywords.append(keyword)
 
-            # Minimum-Keyword-Threshold prüfen
+            # Minimum keyword threshold check
             if len(matched_keywords) < cfg.min_keyword_matches and not matched_patterns:
                 continue
 
@@ -256,61 +257,61 @@ class TaskRouter:
         if best_result is not None:
             return best_result
 
-        # Stufe 3: Fallback
+        # Stage 3: fallback
         return ClassificationResult(slot=self._fallback_slot, score=0)
 
     def resolve_model(self, user_id: int, slot: TaskSlot) -> str | None:
-        """Resolved das Modell für einen User und Slot.
+        """Resolve the model for a user and slot.
 
-        Priorität:
-          1. User-Override pro Slot (via ModelService/SQLite)
-          2. User-Override global
-          3. Slot-Default (aus YAML, kanonisch aufgelöst)
-          4. None (caller nutzt System-Default)
+        Priority:
+          1. User override per slot (via ModelService/SQLite)
+          2. User override global
+          3. Slot default (from YAML, canonically resolved)
+          4. None (caller uses system default)
 
-        Alle Rückgaben sind kanonische Model-IDs (z.B. 'claude-opus-4-7'),
-        nie Aliase. Das verhindert Pool-Key-Duplikate.
+        All return values are canonical model IDs (e.g. 'claude-opus-4-7'),
+        never aliases. This prevents pool key duplicates.
 
         Args:
-            user_id: Telegram-User-ID.
-            slot: Erkannter Task-Slot.
+            user_id: Telegram user ID.
+            slot: Detected task slot.
 
         Returns:
-            Kanonische Modell-ID oder None.
+            Canonical model ID or None.
         """
         if self._model_service is not None:
-            # 1. Slot-spezifischer Override (bereits kanonisch aus ModelService)
+            # 1. Slot-specific override (already canonical from ModelService)
             slot_override = self._model_service.get_user_model(user_id, slot=slot.value)
             if slot_override is not None:
                 return slot_override
 
-            # 2. Globaler Override (bereits kanonisch aus ModelService)
+            # 2. Global override (already canonical from ModelService)
             global_override = self._model_service.get_user_model(user_id, slot="global")
             if global_override is not None:
                 return global_override
 
-        # 3. Slot-Default aus Config (Alias -> kanonische ID)
+        # 3. Slot default from config (alias -> canonical ID)
         cfg = self._slots.get(slot)
         if cfg is not None and cfg.default_model:
             resolve = _get_resolve_alias()
             canonical = resolve(cfg.default_model)
             if canonical is not None:
                 return canonical
-            # Fallback: default_model ist bereits eine volle ID oder unbekannt
+            # Fallback: default_model is already a full ID or unknown
             return cfg.default_model
 
         return None
 
     def get_default_for_slot(self, slot: TaskSlot) -> str:
-        """Liefert die kanonische Model-ID für den Slot-Default (Single Source of Truth).
+        """Return the canonical model ID for the slot default (single source of truth).
 
-        Fällt auf DEFAULT_MODEL zurück wenn der Slot keinen eigenen Default hat.
+        Falls back to DEFAULT_MODEL if the slot has no own default.
 
         Args:
-            slot: Task-Slot.
+            slot: Task slot.
 
         Returns:
-            Kanonische Model-ID (garantiert nicht-leer).
+            Canonical model ID (guaranteed non-empty).
         """
         from application.model_service import DEFAULT_MODEL
 
@@ -323,10 +324,10 @@ class TaskRouter:
         return DEFAULT_MODEL
 
     def get_slot_defaults(self) -> dict[TaskSlot, str]:
-        """Gibt die Default-Modelle pro Slot zurück.
+        """Return the default models per slot.
 
         Returns:
-            Dict von TaskSlot -> default_model alias.
+            Dict of TaskSlot -> default_model alias.
         """
         return {
             slot: cfg.default_model
@@ -336,15 +337,15 @@ class TaskRouter:
 
 
 def load_slot_configs(yaml_path: Path | str | None = None) -> list[SlotConfig]:
-    """Lädt SlotConfigs aus YAML.
+    """Load SlotConfigs from YAML.
 
-    Bei Fehler: Fallback auf Hardcoded-Defaults (CHAT-only).
+    On error: fallback to hardcoded defaults (CHAT-only).
 
     Args:
-        yaml_path: Pfad zur task_slots.yaml (None = Default).
+        yaml_path: Path to task_slots.yaml (None = default).
 
     Returns:
-        Liste von SlotConfig-Objekten.
+        List of SlotConfig objects.
     """
     if yaml_path is None:
         yaml_path = _DEFAULT_YAML
@@ -355,8 +356,7 @@ def load_slot_configs(yaml_path: Path | str | None = None) -> list[SlotConfig]:
         data = yaml.safe_load(raw)
     except (FileNotFoundError, yaml.YAMLError, OSError) as exc:
         log.warning(
-            "task_slots.yaml konnte nicht geladen werden (%s). "
-            "Fallback auf CHAT-only Default.",
+            "Could not load task_slots.yaml (%s). Falling back to CHAT-only default.",
             exc,
         )
         return [
@@ -369,7 +369,7 @@ def load_slot_configs(yaml_path: Path | str | None = None) -> list[SlotConfig]:
 
     if not isinstance(data, dict) or "slots" not in data:
         log.warning(
-            "task_slots.yaml hat kein 'slots'-Key. Fallback auf CHAT-only Default."
+            "task_slots.yaml has no 'slots' key. Falling back to CHAT-only default."
         )
         return [
             SlotConfig(
@@ -383,11 +383,11 @@ def load_slot_configs(yaml_path: Path | str | None = None) -> list[SlotConfig]:
     for slot_name, slot_data in data["slots"].items():
         task_slot = TaskSlot.from_string(slot_name)
         if task_slot is None:
-            log.warning("Unbekannter Slot '%s' in YAML, wird übersprungen.", slot_name)
+            log.warning("Unknown slot '%s' in YAML, skipping.", slot_name)
             continue
 
         if not isinstance(slot_data, dict):
-            log.warning("Slot '%s' hat keine gültige Konfiguration.", slot_name)
+            log.warning("Slot '%s' has no valid configuration.", slot_name)
             continue
 
         configs.append(
@@ -412,7 +412,7 @@ def load_slot_configs(yaml_path: Path | str | None = None) -> list[SlotConfig]:
         )
 
     if not configs:
-        log.warning("Keine Slots in YAML geladen. Fallback auf CHAT-only Default.")
+        log.warning("No slots loaded from YAML. Falling back to CHAT-only default.")
         return [
             SlotConfig(
                 slot=TaskSlot.CHAT,
@@ -422,7 +422,7 @@ def load_slot_configs(yaml_path: Path | str | None = None) -> list[SlotConfig]:
         ]
 
     log.info(
-        "TaskRouter: %d Slots geladen aus %s: %s",
+        "TaskRouter: %d slots loaded from %s: %s",
         len(configs),
         path.name,
         ", ".join(c.slot.value for c in configs),

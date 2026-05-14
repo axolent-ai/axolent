@@ -1,11 +1,11 @@
-"""Status-Manager: koordiniert Status-Updates während Processing.
+"""Status manager: coordinates status updates during processing.
 
-Zeigt dem User was Axolent gerade macht, statt nur "..." als Placeholder.
-Sprach-aware (DE + EN basierend auf Sticky-Language).
-Rate-limited: max alle 0.5s ein Status-Update.
+Shows the user what Axolent is doing, instead of just "..." as placeholder.
+Language-aware (DE + EN based on sticky language).
+Rate-limited: max one status update every 0.5s.
 
-Phase 1: Interne Schritte (Memory, Prompt, Streaming)
-Phase 2 (später): Tool-Activity (Web-Suche, Datei-Lesen etc.)
+Phase 1: Internal steps (memory, prompt, streaming)
+Phase 2 (later): Tool activity (web search, file reading, etc.)
 """
 
 from __future__ import annotations
@@ -18,14 +18,14 @@ from typing import Any, Protocol
 
 log = logging.getLogger(__name__)
 
-# Konfiguration
+# Configuration
 SHOW_STATUS_UPDATES: bool = True
 STATUS_RATE_LIMIT_SECONDS: float = 0.5
-MIN_STATUS_DISPLAY_MS: int = 1100  # Minimale Anzeigedauer pro Status-Update (ms)
+MIN_STATUS_DISPLAY_MS: int = 1100  # Minimum display duration per status update (ms)
 
 
 # ---------------------------------------------------------------------------
-# Status-Texte (sprach-aware)
+# Status texts (language-aware)
 # ---------------------------------------------------------------------------
 
 _STATUS_TEXTS: dict[str, dict[str, str]] = {
@@ -49,18 +49,18 @@ _STATUS_TEXTS: dict[str, dict[str, str]] = {
 
 
 def get_status_text(key: str, lang: str = "de", **kwargs: Any) -> str:
-    """Gibt den lokalisierten Status-Text zurück.
+    """Return the localized status text.
 
     Args:
-        key: Status-Schlüssel (z.B. "memory_loading", "thinking").
-        lang: Sprachcode ("de", "en", etc.). Fallback auf "de".
-        **kwargs: Format-Parameter (z.B. n=3 für Memory-Count).
+        key: Status key (e.g. "memory_loading", "thinking").
+        lang: Language code ("de", "en", etc.). Falls back to "de".
+        **kwargs: Format parameters (e.g. n=3 for memory count).
 
     Returns:
-        Formatierter Status-Text.
+        Formatted status text.
     """
     texts = _STATUS_TEXTS.get(key, {})
-    # Nur DE und EN unterstützt, Rest fällt auf DE zurück
+    # Only DE and EN supported, others fall back to DE
     template = texts.get(lang, texts.get("de", key))
     try:
         return template.format(**kwargs)
@@ -69,40 +69,39 @@ def get_status_text(key: str, lang: str = "de", **kwargs: Any) -> str:
 
 
 # ---------------------------------------------------------------------------
-# StatusUpdate Protocol (für Presentation-Layer-Integration)
+# StatusUpdate Protocol (for presentation layer integration)
 # ---------------------------------------------------------------------------
 
 
 class StatusCallback(Protocol):
-    """Protocol für Status-Update-Callbacks.
+    """Protocol for status update callbacks.
 
-    Der Presentation-Layer implementiert dieses Protocol
-    um Status-Updates als Telegram-Edits zu senden.
+    The presentation layer implements this protocol
+    to send status updates as Telegram edits.
     """
 
     async def __call__(self, text: str) -> None:
-        """Sendet ein Status-Update an den User.
+        """Send a status update to the user.
 
         Args:
-            text: Der Status-Text (mit Emoji).
+            text: The status text (with emoji).
         """
         ...
 
 
 @dataclass
 class StatusSession:
-    """State einer laufenden Status-Session.
+    """State of a running status session.
 
-    Tracked wann das letzte Update gesendet wurde
-    und ob Status-Updates aktiv sind.
+    Tracks when the last update was sent and whether status updates are active.
 
     Attributes:
-        callback: Async-Callable das den Status-Text an den User sendet.
-        language: Aktive Sprache für diese Session.
-        enabled: Ob Status-Updates aktiv sind.
-        last_update_time: Zeitpunkt des letzten Status-Updates (monotonic).
-        stream_started: True wenn der Token-Stream begonnen hat.
-        _last_key: Letzter gesendeter Status-Key (für Phase-Change-Detection).
+        callback: Async callable that sends the status text to the user.
+        language: Active language for this session.
+        enabled: Whether status updates are active.
+        last_update_time: Timestamp of last status update (monotonic).
+        stream_started: True when the token stream has begun.
+        _last_key: Last sent status key (for phase-change detection).
     """
 
     callback: StatusCallback
@@ -113,19 +112,19 @@ class StatusSession:
     _last_key: str = field(default="", repr=False)
 
     async def update(self, key: str, **kwargs: Any) -> None:
-        """Sendet ein Status-Update (rate-limited, Phase-Change-Bypass).
+        """Send a status update (rate-limited, phase-change bypass).
 
-        Erzwingt eine Mindest-Anzeigedauer (MIN_STATUS_DISPLAY_MS) zwischen
-        aufeinanderfolgenden Status-Updates, damit der User jeden Status
-        lesen kann bevor er ersetzt wird.
+        Enforces a minimum display duration (MIN_STATUS_DISPLAY_MS) between
+        consecutive status updates so the user can read each status
+        before it is replaced.
 
-        Rate-Limit wird übersprungen wenn:
-        - Es der allererste Aufruf ist (last_update_time == 0)
-        - Der Status-Key sich ändert (neue Phase, z.B. memory_loading -> thinking)
+        Rate limit is skipped when:
+        * It is the very first call (last_update_time == 0)
+        * The status key changes (new phase, e.g. memory_loading -> thinking)
 
         Args:
-            key: Status-Schlüssel (z.B. "memory_loading").
-            **kwargs: Format-Parameter.
+            key: Status key (e.g. "memory_loading").
+            **kwargs: Format parameters.
         """
         if not self.enabled or self.stream_started:
             return
@@ -133,14 +132,14 @@ class StatusSession:
         now = time.monotonic()
         is_phase_change = key != self._last_key
 
-        # Rate-Limit nur anwenden wenn es KEIN Phase-Wechsel ist
+        # Apply rate limit only when it is NOT a phase change
         if (
             not is_phase_change
             and now - self.last_update_time < STATUS_RATE_LIMIT_SECONDS
         ):
             return
 
-        # Mindest-Anzeigedauer: warten bis vorheriger Status lang genug sichtbar war
+        # Minimum display duration: wait until previous status was visible long enough
         if self.last_update_time > 0:
             elapsed_ms = (now - self.last_update_time) * 1000
             remaining_ms = MIN_STATUS_DISPLAY_MS - elapsed_ms
@@ -153,24 +152,24 @@ class StatusSession:
             self.last_update_time = time.monotonic()
             self._last_key = key
         except Exception as e:
-            log.debug("Status-Update fehlgeschlagen: %s", e)
+            log.debug("Status update failed: %s", e)
 
     def set_language(self, lang: str) -> None:
-        """Aktualisiert die Sprache der Session.
+        """Update the session language.
 
-        Wird aufgerufen sobald die tatsächliche Sprache bestimmt ist
-        (z.B. nach Sticky-Language-Lookup oder Sprach-Detection).
-        Alle folgenden Status-Updates nutzen die neue Sprache.
+        Called once the actual language is determined
+        (e.g. after sticky-language lookup or language detection).
+        All subsequent status updates use the new language.
 
         Args:
-            lang: Sprachcode ("de", "en", etc.).
+            lang: Language code ("de", "en", etc.).
         """
         self.language = lang
 
     def mark_stream_started(self) -> None:
-        """Markiert dass der Token-Stream begonnen hat.
+        """Mark that the token stream has begun.
 
-        Ab hier werden keine Status-Updates mehr gesendet,
-        der normale Streaming-Edit-Flow übernimmt.
+        From here on, no more status updates are sent;
+        the normal streaming edit flow takes over.
         """
         self.stream_started = True

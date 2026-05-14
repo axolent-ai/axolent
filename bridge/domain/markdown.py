@@ -1,10 +1,10 @@
-"""Konvertiert Markdown zu Telegram-kompatiblem HTML.
+"""Converts markdown to Telegram-compatible HTML.
 
-Telegram unterstützt nur einen Subset von HTML-Tags:
+Telegram supports only a subset of HTML tags:
 <b>, <strong>, <i>, <em>, <u>, <s>, <code>, <pre>, <a>.
 
-Dieser Konverter wandelt gängige Markdown-Elemente in diesen Subset um.
-Zusätzlich: strip_markdown() entfernt Markdown-Syntax für sauberen Plain-Text-Fallback.
+This converter transforms common markdown elements into this subset.
+Additionally: strip_markdown() removes markdown syntax for a clean plain-text fallback.
 """
 
 import html
@@ -15,14 +15,14 @@ from urllib.parse import urlparse
 
 log = logging.getLogger(__name__)
 
-# Nur sichere URL-Schemes erlauben (kein javascript:, data: etc.)
+# Only allow safe URL schemes (no javascript:, data:, etc.)
 ALLOWED_URL_SCHEMES: set[str] = {"http", "https", "tg", "mailto"}
 
 
 def markdown_to_telegram_html(text: str) -> str:
-    """Konvertiert Standard-Markdown zu Telegram-HTML.
+    """Convert standard markdown to Telegram HTML.
 
-    Unterstützt:
+    Supports:
         * ## Headlines -> <b>Headlines</b>
         * **bold** -> <b>bold</b>
         * *italic* -> <i>italic</i>
@@ -31,18 +31,18 @@ def markdown_to_telegram_html(text: str) -> str:
         * ```code block``` -> <pre>code block</pre>
         * [text](url) -> <a href="url">text</a>
 
-    Escaped HTML-Sonderzeichen (<, >, &) im normalen Text.
-    Code-Blöcke und Inline-Code werden separat escaped.
+    Escapes HTML special characters (<, >, &) in normal text.
+    Code blocks and inline code are escaped separately.
 
     Args:
-        text: Markdown-formatierter Text.
+        text: Markdown-formatted text.
 
     Returns:
-        Telegram-HTML-String.
+        Telegram HTML string.
     """
     sentinel = uuid.uuid4().hex[:8]
 
-    # 1. Links zuerst extrahieren (vor HTML-Escape, verhindert Double-Escape)
+    # 1. Extract links first (before HTML escape, prevents double-escape)
     links: list[tuple[str, str]] = []
 
     def _extract_link(m: re.Match) -> str:
@@ -51,7 +51,7 @@ def markdown_to_telegram_html(text: str) -> str:
         try:
             parsed = urlparse(url)
             if parsed.scheme.lower() not in ALLOWED_URL_SCHEMES:
-                return text_part  # Unsicheres Scheme: nur Text, kein Link
+                return text_part
         except Exception:
             return text_part
         links.append((text_part, url))
@@ -59,7 +59,7 @@ def markdown_to_telegram_html(text: str) -> str:
 
     text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", _extract_link, text)
 
-    # 2. Fenced Code-Blöcke extrahieren (vor allem anderen)
+    # 2. Extract fenced code blocks (before everything else)
     code_blocks: list[str] = []
 
     def _extract_code_block(m: re.Match) -> str:
@@ -73,7 +73,7 @@ def markdown_to_telegram_html(text: str) -> str:
         flags=re.DOTALL,
     )
 
-    # 3. Inline-Code extrahieren (damit er nicht HTML-escaped wird)
+    # 3. Extract inline code (so it does not get HTML-escaped)
     inline_codes: list[str] = []
 
     def _extract_inline_code(m: re.Match) -> str:
@@ -82,14 +82,13 @@ def markdown_to_telegram_html(text: str) -> str:
 
     text = re.sub(r"`([^`\n]+)`", _extract_inline_code, text)
 
-    # 4. HTML-Sonderzeichen im normalen Text escapen
+    # 4. Escape HTML special characters in normal text
     text = html.escape(text, quote=False)
 
-    # 5. Headlines (# bis ######) -> <b>...</b> + Newline
-    #    Alle ** innerhalb der Headline entfernen, sonst verschachtelte <b>-Tags in Telegram
+    # 5. Headlines (# through ######) -> <b>...</b> + newline
+    #    Remove all ** inside the headline, otherwise nested <b> tags in Telegram
     def _headline_replace(m: re.Match) -> str:
         content = m.group(1).strip()
-        # Alle ** (Bold-Marker) entfernen um verschachtelte <b> zu verhindern
         content = content.replace("**", "")
         return f"<b>{content}</b>"
 
@@ -98,26 +97,26 @@ def markdown_to_telegram_html(text: str) -> str:
     # 6. Bold: **text** -> <b>text</b>
     text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
 
-    # 7. Verwaiste ** aufräumen (ungematchte Bold-Marker aus Claude-Output)
+    # 7. Clean up orphaned ** (unmatched bold markers from Claude output)
     text = re.sub(r"\*\*", "", text)
 
-    # 8. Italic: *text* -> <i>text</i> (nur alleinstehende *, kein ** drumherum)
+    # 8. Italic: *text* -> <i>text</i> (only standalone *, no ** around it)
     text = re.sub(r"(?<!\*)\*([^*\n]+?)\*(?!\*)", r"<i>\1</i>", text)
 
-    # 9. Italic: _text_ -> <i>text</i> (nur alleinstehende _, kein __ drumherum)
+    # 9. Italic: _text_ -> <i>text</i> (only standalone _, no __ around it)
     text = re.sub(r"(?<!_)_([^_\n]+?)_(?!_)", r"<i>\1</i>", text)
 
-    # 10. Code-Blöcke wieder einsetzen (HTML-escaped)
+    # 10. Reinsert code blocks (HTML-escaped)
     for i, block in enumerate(code_blocks):
         escaped_block = html.escape(block, quote=False)
         text = text.replace(f"\x00CODEBLOCK{i}\x00", f"<pre>{escaped_block}</pre>")
 
-    # 11. Inline-Codes wieder einsetzen (HTML-escaped)
+    # 11. Reinsert inline codes (HTML-escaped)
     for i, code in enumerate(inline_codes):
         escaped_code = html.escape(code, quote=False)
         text = text.replace(f"\x01INLINE{i}\x01", f"<code>{escaped_code}</code>")
 
-    # 12. Links wieder einsetzen mit eigenständigem Escape
+    # 12. Reinsert links with independent escaping
     for i, (text_part, url) in enumerate(links):
         escaped_text = html.escape(text_part, quote=True)
         escaped_url = html.escape(url, quote=True)
@@ -130,40 +129,40 @@ def markdown_to_telegram_html(text: str) -> str:
 
 
 def strip_markdown(text: str) -> str:
-    """Entfernt Markdown-Syntax für sauberen Plain-Text-Fallback.
+    """Remove markdown syntax for a clean plain-text fallback.
 
-    Wird verwendet wenn Telegram die HTML-Version ablehnt.
-    Statt rohe ## und ** anzuzeigen, wird die Syntax entfernt
-    und nur der Inhalt behalten.
+    Used when Telegram rejects the HTML version.
+    Instead of displaying raw ## and **, the syntax is removed
+    and only the content is kept.
 
     Args:
-        text: Markdown-formatierter Text.
+        text: Markdown-formatted text.
 
     Returns:
-        Bereinigter Plain-Text ohne Markdown-Artefakte.
+        Cleaned plain text without markdown artifacts.
     """
-    # Fenced Code-Blöcke: Inhalt behalten, Fences entfernen
+    # Fenced code blocks: keep content, remove fences
     text = re.sub(r"```[a-zA-Z]*\n?(.*?)```", r"\1", text, flags=re.DOTALL)
 
-    # Headlines: #-Prefix entfernen, Text behalten
+    # Headlines: remove # prefix, keep text
     text = re.sub(r"^#{1,6}\s+(.+)$", r"\1", text, flags=re.MULTILINE)
 
-    # Bold: **text** -> text (Marker entfernen)
+    # Bold: **text** -> text (remove markers)
     text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
 
-    # Verwaiste ** aufräumen
+    # Clean up orphaned **
     text = re.sub(r"\*\*", "", text)
 
-    # Italic: *text* -> text (Marker entfernen)
+    # Italic: *text* -> text (remove markers)
     text = re.sub(r"(?<!\*)\*([^*\n]+?)\*(?!\*)", r"\1", text)
 
-    # Italic: _text_ -> text (vorsichtig, snake_case nicht zerstören)
+    # Italic: _text_ -> text (carefully, do not break snake_case)
     text = re.sub(r"(?<![a-zA-Z0-9])_([^_\n]+?)_(?![a-zA-Z0-9])", r"\1", text)
 
-    # Inline-Code: `code` -> code
+    # Inline code: `code` -> code
     text = re.sub(r"`([^`\n]+)`", r"\1", text)
 
-    # Links: [text](url) -> text (url) als Plain-Text
+    # Links: [text](url) -> text (url) as plain text
     text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1 (\2)", text)
 
     return text

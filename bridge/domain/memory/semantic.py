@@ -1,7 +1,7 @@
-"""Semantic Memory: Generalisierte Fakten.
+"""Semantic memory: generalized facts.
 
-Abstrahiertes Wissen, das aus episodischen Erfahrungen extrahiert wurde.
-Beispiel: "User bevorzugt kurze Antworten", "User arbeitet an Axolent"
+Abstracted knowledge extracted from episodic experiences.
+Example: "User prefers short answers", "User works on Axolent"
 """
 
 from __future__ import annotations
@@ -13,16 +13,16 @@ from uuid import uuid4
 
 @dataclass(frozen=True, slots=True)
 class SemanticEntry:
-    """Ein Fakt in der Semantic Memory.
+    """A fact in semantic memory.
 
     Attributes:
-        id: Eindeutige ID mit Prefix sem_ für Layer-Erkennung.
-        user_id: Telegram-User-ID.
-        content: Der generalisierte Fakt.
-        category: Klassifizierung (z.B. "fakt", "person", "präferenz", "projekt").
-        context: Optionaler Kontext (Quelle, Confidence).
+        id: Unique ID with prefix sem_ for layer detection.
+        user_id: Telegram user ID.
+        content: The generalized fact.
+        category: Classification (e.g. "fakt", "person", "praeferenz", "projekt").
+        context: Optional context (source, confidence).
         timestamp: ISO 8601 UTC.
-        importance: 1-10, Auto-Score oder User-vergeben.
+        importance: 1-10, auto-scored or user-assigned.
     """
 
     id: str = field(default_factory=lambda: f"sem_{uuid4().hex[:12]}")
@@ -36,7 +36,7 @@ class SemanticEntry:
     importance: int = 5
 
     def to_dict(self) -> dict:
-        """Serialisiert den Entry als Dict für JSONL-Persistierung."""
+        """Serialize the entry as dict for JSONL persistence."""
         return {
             "id": self.id,
             "user_id": self.user_id,
@@ -49,7 +49,7 @@ class SemanticEntry:
 
     @classmethod
     def from_dict(cls, data: dict) -> SemanticEntry:
-        """Deserialisiert einen Entry aus einem Dict."""
+        """Deserialize an entry from a dict."""
         return cls(
             id=data.get("id", f"sem_{uuid4().hex[:12]}"),
             user_id=data.get("user_id", 0),

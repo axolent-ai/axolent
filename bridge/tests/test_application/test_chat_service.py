@@ -150,7 +150,7 @@ class TestChatService:
         )
 
         assert result.success is False
-        assert "Fehler-ID" in result.error_message
+        assert "Error ID" in result.error_message
 
     async def test_process_user_message_empty_response(self) -> None:
         """Leere Provider-Antwort erzeugt einen Fehler."""
@@ -171,7 +171,7 @@ class TestChatService:
         )
 
         assert result.success is False
-        assert "leerer Output" in result.error_message
+        assert "empty output" in result.error_message
 
     async def test_process_user_message_detects_language(self) -> None:
         """Die erkannte Sprache wird im Result zurückgegeben."""
@@ -218,7 +218,7 @@ class TestChatService:
     async def test_process_user_message_provider_not_found(self) -> None:
         """ValueError vom Router wird sauber abgefangen mit generischer Meldung."""
         svc, _ = _make_chat_service(
-            route_side_effect=ValueError("Provider 'xyz' nicht registriert")
+            route_side_effect=ValueError("Provider 'xyz' not registered")
         )
 
         result = await svc.process_user_message(
@@ -232,17 +232,17 @@ class TestChatService:
 
         assert result.success is False
         # Generische Meldung, keine Implementierungs-Details
-        assert "Anfrage konnte nicht verarbeitet werden" in result.error_message
+        assert "could not be processed" in result.error_message.lower()
         assert "ref:" in result.error_message
         assert result.error_id != ""
         # Original-Exception darf NICHT im User-Text stehen
         assert "xyz" not in result.error_message
-        assert "nicht registriert" not in result.error_message
+        assert "not registered" not in result.error_message
 
     async def test_process_user_message_provider_unavailable(self) -> None:
         """RuntimeError vom Router wird mit generischer Meldung abgefangen."""
         svc, _ = _make_chat_service(
-            route_side_effect=RuntimeError("Provider 'gemini' ist nicht verfügbar")
+            route_side_effect=RuntimeError("Provider 'gemini' is not available")
         )
 
         result = await svc.process_user_message(
@@ -256,12 +256,12 @@ class TestChatService:
 
         assert result.success is False
         # Generische Meldung, keine Implementierungs-Details
-        assert "Interner Fehler" in result.error_message
+        assert "internal error" in result.error_message.lower()
         assert "ref:" in result.error_message
         assert result.error_id != ""
         # Original-Exception darf NICHT im User-Text stehen
         assert "gemini" not in result.error_message
-        assert "nicht verfügbar" not in result.error_message
+        assert "unavailable" not in result.error_message.lower()
 
     async def test_process_user_message_provider_error_generic(self) -> None:
         """ProviderError liefert generische Meldung ohne Implementierungs-Details."""
@@ -278,12 +278,12 @@ class TestChatService:
         )
 
         assert result.success is False
-        assert "Sprachmodell-Anbieter" in result.error_message
+        assert "language model provider" in result.error_message.lower()
         assert "ref:" in result.error_message
         assert result.error_id != ""
-        # Retryable-Hint muss enthalten sein
-        assert "Versuch es gleich noch mal" in result.error_message
-        # Original-Exception darf NICHT im User-Text stehen
+        # Retryable hint must be included
+        assert "Try again" in result.error_message
+        # Original exception must NOT be in user text
         assert "Timeout" not in result.error_message
         assert "120" not in result.error_message
 
@@ -304,8 +304,8 @@ class TestChatService:
         )
 
         assert result.success is False
-        assert "Sprachmodell-Anbieter" in result.error_message
-        assert "Versuch es gleich noch mal" not in result.error_message
+        assert "language model provider" in result.error_message.lower()
+        assert "Try again" not in result.error_message
         assert "API key" not in result.error_message
 
     async def test_reset_clears_conversation(self) -> None:
@@ -423,7 +423,7 @@ class TestAutoMemoryLoading:
         # Prüfen: system_prompt an Router muss Memory-Context enthalten
         call_args = mock_router.route.call_args
         system_sent = call_args.kwargs.get("system_prompt", "")
-        assert "GESPEICHERTE NOTIZEN" in system_sent
+        assert "STORED NOTES" in system_sent
         assert "Lieblingsessen ist Pizza" in system_sent
 
     async def test_chat_service_skips_memory_when_no_keywords(self) -> None:
@@ -508,7 +508,7 @@ class TestAutoMemoryLoading:
         # System-Prompt darf keinen Memory-Block haben
         call_args = mock_router.route.call_args
         system_sent = call_args.kwargs.get("system_prompt", "")
-        assert "GESPEICHERTE NOTIZEN" not in system_sent
+        assert "STORED NOTES" not in system_sent
 
 
 class TestChatServiceModelOverride:

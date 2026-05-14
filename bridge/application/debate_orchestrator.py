@@ -1,19 +1,19 @@
-"""Debate-Orchestrator: Multi-AI-Debate Feature (R10).
+"""Debate orchestrator: multi-AI debate feature (R10).
 
-Fragt mehrere Provider parallel mit derselben Frage und sammelt Antworten.
-Crash-resilient: ein crashender Provider stoppt nicht die anderen.
-Konsens/Dissens-Analyse via Heuristik + LLM-as-Judge Final Review.
+Queries multiple providers in parallel with the same question and collects responses.
+Crash-resilient: a crashing provider does not stop the others.
+Consensus/dissent analysis via heuristic + LLM-as-Judge final review.
 
-Provider-Deduplizierung (seit R10-Fix):
-Wenn mehrere Provider dasselbe Backend-Modell nutzen (z.B. claude_persistent
-und claude nutzen beide die Claude CLI), wird nur einer pro Gruppe im Debate
-verwendet. Das verhindert verzerrte Konsens-Analysen und Token-Verschwendung.
+Provider deduplication (since R10 fix):
+When multiple providers use the same backend model (e.g. claude_persistent
+and claude both use the Claude CLI), only one per group is used in the debate.
+This prevents skewed consensus analyses and token waste.
 
-Final-Review-Layer (seit R10-Erweiterung):
-Nach den parallelen Antworten wird ein LLM-as-Judge Call gemacht der alle
-Antworten evaluiert und eine Kernaussage mit Pro/Contra abgibt.
-Judge-Provider: claude_persistent (Fallback: ollama_local mit Qualitätswarnung).
-Bias-Mitigation: Provider-Namen werden im Judge-Prompt anonymisiert.
+Final review layer (since R10 extension):
+After the parallel responses, an LLM-as-Judge call evaluates all
+responses and delivers a core takeaway with pros/cons.
+Judge provider: claude_persistent (fallback: ollama_local with quality warning).
+Bias mitigation: provider names are anonymized in the judge prompt.
 """
 
 from __future__ import annotations
@@ -31,22 +31,22 @@ from application.provider_router import ProviderRouter
 
 log = logging.getLogger(__name__)
 
-# Konfiguration via Environment
+# Configuration via environment
 DEBATE_TIMEOUT_SECONDS: int = 60
 _DEBATE_PROVIDERS_RAW: str = os.getenv("DEBATE_PROVIDERS", "")
 
-# Sentinel Chat-ID für Judge-Calls: separater Konversationskontext
-# damit der Judge nicht die Debate-Antwort im Kontext hat.
+# Sentinel chat ID for judge calls: separate conversation context
+# so the judge does not have the debate response in its context.
 _JUDGE_CHAT_ID_OFFSET: int = 900_000_000
 
-# Provider-Gruppen: Provider die dasselbe Backend-Modell nutzen.
-# Pro Gruppe wird nur der erste verfügbare Provider im Debate verwendet.
-# Reihenfolge = Priorität (erster Eintrag wird bevorzugt).
+# Provider groups: providers that use the same backend model.
+# Per group only the first available provider is used in the debate.
+# Order = priority (first entry preferred).
 PROVIDER_GROUPS: dict[str, list[str]] = {
-    "claude": ["claude_persistent", "claude"],  # beide nutzen Claude CLI
+    "claude": ["claude_persistent", "claude"],  # both use Claude CLI
 }
 
-# Reverse-Lookup: provider_name -> group_name (oder None wenn standalone)
+# Reverse lookup: provider_name -> group_name (or None if standalone)
 _PROVIDER_TO_GROUP: dict[str, str] = {}
 for _group_name, _members in PROVIDER_GROUPS.items():
     for _member in _members:
@@ -54,23 +54,23 @@ for _group_name, _members in PROVIDER_GROUPS.items():
 
 
 def _get_configured_providers() -> list[str] | None:
-    """Parst DEBATE_PROVIDERS env-var. None = alle verfügbaren nutzen."""
+    """Parse DEBATE_PROVIDERS env var. None = use all available."""
     if not _DEBATE_PROVIDERS_RAW.strip():
         return None
     return [p.strip() for p in _DEBATE_PROVIDERS_RAW.split(",") if p.strip()]
 
 
 def deduplicate_providers(available: list[str]) -> list[str]:
-    """Dedupliziert Provider die dasselbe Backend-Modell nutzen.
+    """Deduplicate providers that use the same backend model.
 
-    Pro PROVIDER_GROUPS-Gruppe wird nur der erste verfügbare Provider behalten.
-    Standalone-Provider (nicht in einer Gruppe) werden immer behalten.
+    Per PROVIDER_GROUPS group, only the first available provider is kept.
+    Standalone providers (not in a group) are always kept.
 
     Args:
-        available: Liste verfügbarer Provider-Namen.
+        available: List of available provider names.
 
     Returns:
-        Deduplizierte Liste (Reihenfolge bleibt erhalten).
+        Deduplicated list (order preserved).
     """
     selected: list[str] = []
     used_groups: set[str] = set()
@@ -81,20 +81,20 @@ def deduplicate_providers(available: list[str]) -> list[str]:
             if group not in used_groups:
                 selected.append(provider)
                 used_groups.add(group)
-                log.debug("Provider-Dedup: %s vertritt Gruppe '%s'", provider, group)
+                log.debug("Provider dedup: %s represents group '%s'", provider, group)
             else:
                 log.debug(
-                    "Provider-Dedup: %s übersprungen (Gruppe '%s' bereits vertreten)",
+                    "Provider dedup: %s skipped (group '%s' already represented)",
                     provider,
                     group,
                 )
         else:
-            # Standalone-Provider: immer behalten
+            # Standalone provider: always keep
             selected.append(provider)
 
     if len(selected) < len(available):
         log.info(
-            "Provider-Dedup: %d -> %d Provider (%s)",
+            "Provider dedup: %d -> %d providers (%s)",
             len(available),
             len(selected),
             selected,
@@ -105,12 +105,12 @@ def deduplicate_providers(available: list[str]) -> list[str]:
 
 @dataclass(frozen=True)
 class ProviderEvaluation:
-    """Bewertung einer einzelnen Provider-Antwort durch den Judge.
+    """Evaluation of a single provider response by the judge.
 
     Attributes:
-        provider: Provider-Name (realer Name, nach De-Anonymisierung).
-        pros: Liste positiver Aspekte der Antwort.
-        cons: Liste negativer Aspekte der Antwort.
+        provider: Provider name (real name, after de-anonymization).
+        pros: List of positive aspects of the response.
+        cons: List of negative aspects of the response.
     """
 
     provider: str
@@ -120,16 +120,16 @@ class ProviderEvaluation:
 
 @dataclass(frozen=True)
 class FinalVerdict:
-    """Ergebnis des LLM-as-Judge Final Reviews.
+    """Result of the LLM-as-Judge final review.
 
     Attributes:
-        winner: Provider-Name des Gewinners (oder "tie" bei Gleichstand).
-        recommendation: Kernaussage die alle Aspekte der Frage abdeckt.
-        synthesis: Inhaltliche Synthese die das Beste aller Antworten vereint.
-        evaluations: Pro/Contra-Bewertung je Provider-Antwort.
-        reasoning: 1-2 Sätze warum dieser Winner gewählt wurde.
-        judge_provider: Welcher Provider den Judge-Call gemacht hat.
-        judge_quality_warning: Warnung wenn ein schwächerer Judge genutzt wurde.
+        winner: Provider name of the winner (or "tie" on a draw).
+        recommendation: Core takeaway covering all aspects of the question.
+        synthesis: Content synthesis combining the best of all responses.
+        evaluations: Per-provider pros/cons evaluation.
+        reasoning: 1-2 sentences on why this winner was chosen.
+        judge_provider: Which provider made the judge call.
+        judge_quality_warning: Warning if a weaker judge was used.
     """
 
     winner: str
@@ -143,16 +143,16 @@ class FinalVerdict:
 
 @dataclass(frozen=True)
 class DebateResult:
-    """Ergebnis einer Multi-AI-Debate.
+    """Result of a multi-AI debate.
 
     Attributes:
-        question: Die gestellte Frage.
-        responses: Provider-Name -> Antworttext (erfolgreiche Provider).
-        errors: Provider-Name -> Fehlermeldung (gecrashte Provider).
-        consensus_analysis: Konsens/Dissens-Analyse (optional).
-        final_verdict: LLM-as-Judge Bewertung (optional, None wenn Judge fehlschlägt).
-        duration_seconds: Gesamtdauer der Debate.
-        providers_queried: Liste aller angefragten Provider.
+        question: The question asked.
+        responses: Provider name -> response text (successful providers).
+        errors: Provider name -> error message (crashed providers).
+        consensus_analysis: Consensus/dissent analysis (optional).
+        final_verdict: LLM-as-Judge evaluation (optional, None if judge fails).
+        duration_seconds: Total duration of the debate.
+        providers_queried: List of all queried providers.
     """
 
     question: str
@@ -165,14 +165,14 @@ class DebateResult:
 
 
 class DebateOrchestrator:
-    """Orchestriert Multi-AI-Debates über mehrere Provider.
+    """Orchestrates multi-AI debates across multiple providers.
 
-    Fragt alle verfügbaren (oder konfigurierte) Provider parallel,
-    sammelt Antworten mit Timeout-Schutz und erstellt eine Konsens-Analyse.
+    Queries all available (or configured) providers in parallel,
+    collects responses with timeout protection, and creates a consensus analysis.
 
     Args:
-        provider_router: Der ProviderRouter mit registrierten Providern.
-        timeout_seconds: Max Wartezeit pro Provider (Default: 60s).
+        provider_router: The ProviderRouter with registered providers.
+        timeout_seconds: Max wait time per provider (default: 60s).
     """
 
     def __init__(
@@ -184,27 +184,25 @@ class DebateOrchestrator:
         self.timeout_seconds = timeout_seconds
 
     def _select_providers(self) -> list[str]:
-        """Bestimmt welche Provider für die Debate genutzt werden.
+        """Determine which providers to use for the debate.
 
-        Priorität:
-        1. DEBATE_PROVIDERS env-var (wenn gesetzt)
-        2. Alle verfügbaren Provider
+        Priority:
+        1. DEBATE_PROVIDERS env var (if set)
+        2. All available providers
 
-        In beiden Fällen wird anschließend dedupliziert: Provider die dasselbe
-        Backend-Modell nutzen werden auf einen pro Gruppe reduziert.
+        In both cases, deduplication follows: providers using the same
+        backend model are reduced to one per group.
 
         Returns:
-            Deduplizierte Liste der Provider-Namen.
+            Deduplicated list of provider names.
         """
         configured = _get_configured_providers()
         if configured is not None:
-            # Nur konfigurierte Provider die auch verfügbar sind
             available = set(self.provider_router.list_available())
             selected = [p for p in configured if p in available]
             if not selected:
                 log.warning(
-                    "Keine konfigurierten DEBATE_PROVIDERS verfügbar: %s. "
-                    "Verfügbar: %s",
+                    "No configured DEBATE_PROVIDERS available: %s. Available: %s",
                     configured,
                     list(available),
                 )
@@ -220,7 +218,7 @@ class DebateOrchestrator:
         user_id: int,
         chat_id: int,
     ) -> tuple[str, str | None, str | None]:
-        """Fragt einen einzelnen Provider mit Timeout.
+        """Query a single provider with timeout.
 
         Returns:
             Tuple: (provider_name, response_text_or_None, error_or_None)
@@ -230,50 +228,49 @@ class DebateOrchestrator:
                 self.provider_router.route(
                     prompt=question,
                     system_prompt=(
-                        "Antworte prägnant und informativ. "
-                        "Halte dich an 2-4 Sätze wenn möglich."
+                        "Answer concisely and informatively. "
+                        "Keep it to 2-4 sentences if possible."
                     ),
                     provider_name=provider_name,
                     timeout_seconds=self.timeout_seconds,
                     user_id=user_id,
                     chat_id=chat_id,
                 ),
-                timeout=self.timeout_seconds + 5,  # Asyncio-Timeout als Fallback
+                timeout=self.timeout_seconds + 5,
             )
             if response.success:
                 return (provider_name, response.text, None)
             else:
-                return (provider_name, None, response.error or "Unbekannter Fehler")
+                return (provider_name, None, response.error or "Unknown error")
         except asyncio.TimeoutError:
-            return (provider_name, None, f"Timeout nach {self.timeout_seconds}s")
+            return (provider_name, None, f"Timeout after {self.timeout_seconds}s")
         except Exception as exc:
             return (provider_name, None, str(exc))
 
     def _analyze_consensus(self, responses: dict[str, str]) -> str:
-        """Einfache Konsens-Heuristik (Phase 1, kein LLM-Judge).
+        """Simple consensus heuristic (Phase 1, no LLM judge).
 
-        Vergleicht Antwortlängen und einfache Wort-Overlap-Analyse.
+        Compares response lengths and simple word overlap analysis.
 
         Args:
-            responses: Provider-Name -> Antworttext.
+            responses: Provider name -> response text.
 
         Returns:
-            Kurze Konsens/Dissens-Einschätzung.
+            Brief consensus/dissent assessment.
         """
         if len(responses) < 2:
-            return "Nur ein Provider hat geantwortet. Kein Vergleich möglich."
+            return "Only one provider responded. No comparison possible."
 
         texts = list(responses.values())
 
-        # Wortmengen für Overlap-Analyse
+        # Word sets for overlap analysis
         word_sets: list[set[str]] = []
         for text in texts:
             words = set(text.lower().split())
-            # Nur signifikante Wörter (>3 Zeichen)
             significant = {w for w in words if len(w) > 3}
             word_sets.append(significant)
 
-        # Paarweisen Overlap berechnen (Jaccard-Similarity)
+        # Pairwise overlap (Jaccard similarity)
         overlaps: list[float] = []
         for i in range(len(word_sets)):
             for j in range(i + 1, len(word_sets)):
@@ -286,24 +283,23 @@ class DebateOrchestrator:
 
         avg_overlap = sum(overlaps) / len(overlaps) if overlaps else 0.0
 
-        # Entscheidungslogik
         if avg_overlap > 0.35:
             return (
-                f"Die Provider stimmen inhaltlich weitgehend überein "
-                f"(Wort-Overlap: {avg_overlap:.0%}). "
-                f"Hohe Übereinstimmung in den Kernaussagen."
+                f"The providers largely agree on content "
+                f"(word overlap: {avg_overlap:.0%}). "
+                f"High agreement on core statements."
             )
         elif avg_overlap > 0.20:
             return (
-                f"Die Provider zeigen teilweise Übereinstimmung "
-                f"(Wort-Overlap: {avg_overlap:.0%}). "
-                f"Kernaussagen ähnlich, aber unterschiedliche Schwerpunkte."
+                f"The providers show partial agreement "
+                f"(word overlap: {avg_overlap:.0%}). "
+                f"Core statements similar, but different emphasis."
             )
         else:
             return (
-                f"Die Provider geben deutlich unterschiedliche Antworten "
-                f"(Wort-Overlap: {avg_overlap:.0%}). "
-                f"Vergleiche die Antworten oben für verschiedene Perspektiven."
+                f"The providers give significantly different responses "
+                f"(word overlap: {avg_overlap:.0%}). "
+                f"Compare the responses above for different perspectives."
             )
 
     def _build_judge_prompt(
@@ -311,18 +307,18 @@ class DebateOrchestrator:
         question: str,
         responses: dict[str, str],
     ) -> tuple[str, dict[str, str]]:
-        """Baut den Judge-Prompt mit anonymisierten Provider-Namen.
+        """Build the judge prompt with anonymized provider names.
 
-        Bias-Mitigation: Provider-Namen werden durch neutrale Labels ersetzt.
-        Der Judge sieht nur "Antwort A", "Antwort B" etc.
+        Bias mitigation: provider names are replaced with neutral labels.
+        The judge only sees "Answer A", "Answer B", etc.
 
         Args:
-            question: Die Original-Frage.
-            responses: Provider-Name -> Antworttext.
+            question: The original question.
+            responses: Provider name -> response text.
 
         Returns:
             Tuple: (prompt_text, label_to_provider_mapping)
-                label_to_provider_mapping: z.B. {"A": "claude_persistent", "B": "ollama_local"}
+                label_to_provider_mapping: e.g. {"A": "claude_persistent", "B": "ollama_local"}
         """
         labels = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
         label_to_provider: dict[str, str] = {}
@@ -331,58 +327,58 @@ class DebateOrchestrator:
         for i, (provider_name, text) in enumerate(responses.items()):
             label = labels[i] if i < len(labels) else f"Z{i}"
             label_to_provider[label] = provider_name
-            answer_blocks.append(f"--- Antwort {label} ---\n{text.strip()}\n")
+            answer_blocks.append(f"--- Answer {label} ---\n{text.strip()}\n")
 
         answers_text = "\n".join(answer_blocks)
 
         prompt = (
-            f"Frage des Users:\n{question}\n\n"
-            f"Die folgenden Antworten wurden von verschiedenen KI-Modellen generiert.\n"
-            f"Bewerte sie neutral und objektiv.\n\n"
+            f"User question:\n{question}\n\n"
+            f"The following answers were generated by different AI models.\n"
+            f"Evaluate them neutrally and objectively.\n\n"
             f"{answers_text}\n"
-            f"Deine Aufgabe:\n"
-            f"1. Identifiziere die Stärken und Schwächen jeder Antwort\n"
-            f"2. Erstelle eine SYNTHESE die das Beste aller Antworten vereint\n"
-            f"3. Die Synthese soll eine eigenständige, vollständige Antwort sein "
-            f"(nicht nur 'A ist besser')\n"
-            f"4. Die Kernaussage (key_takeaway) muss ALLE Aspekte der Frage abdecken. "
-            f"Bei Multi-Fragen (z.B. 'Was ist X und sollte ich Y tun?') strukturiere "
-            f"die Kernaussage so dass jeder Teilaspekt adressiert wird.\n\n"
-            f"WICHTIG: Deine GESAMTE Antwort muss EIN EINZIGES JSON-Objekt sein.\n"
-            f"Kein Text davor, kein Text danach, kein Markdown, keine Erklärung.\n"
-            f"Starte direkt mit {{ und ende mit }}.\n\n"
-            f"JSON-Schema (exakt einhalten):\n"
-            f'{{"winner": "<Buchstabe der besten Antwort oder tie>", '
-            f'"synthesis": "<Vollständige synthetisierte Antwort die das Beste vereint, '
-            f'2-5 Sätze, NIEMALS leer lassen>", '
-            f'"recommendation": "<Vollständige Kernaussage die alle Frage-Aspekte abdeckt, '
-            f'2-4 Sätze>", '
+            f"Your task:\n"
+            f"1. Identify the strengths and weaknesses of each answer\n"
+            f"2. Create a SYNTHESIS combining the best of all answers\n"
+            f"3. The synthesis must be a standalone, complete answer "
+            f"(not just 'A is better')\n"
+            f"4. The key takeaway (key_takeaway) must cover ALL aspects of the question. "
+            f"For multi-part questions (e.g. 'What is X and should I do Y?'), structure "
+            f"the key takeaway so each sub-aspect is addressed.\n\n"
+            f"IMPORTANT: Your ENTIRE response must be ONE SINGLE JSON object.\n"
+            f"No text before, no text after, no markdown, no explanation.\n"
+            f"Start directly with {{ and end with }}.\n\n"
+            f"JSON schema (follow exactly):\n"
+            f'{{"winner": "<letter of best answer or tie>", '
+            f'"synthesis": "<Complete synthesized answer combining the best, '
+            f'2-5 sentences, NEVER leave empty>", '
+            f'"recommendation": "<Complete key takeaway covering all question aspects, '
+            f'2-4 sentences>", '
             f'"evaluations": ['
-            f'{{"label": "<Buchstabe>", "pros": ["..."], "cons": ["..."]}}, ...'
+            f'{{"label": "<letter>", "pros": ["..."], "cons": ["..."]}}, ...'
             f"], "
-            f'"reasoning": "<1-2 Sätze warum dieser Winner>"}}'
+            f'"reasoning": "<1-2 sentences why this winner>"}}'
         )
 
         return prompt, label_to_provider
 
     @staticmethod
     def _extract_json_object(raw_text: str) -> str | None:
-        """Extrahiert ein JSON-Objekt aus beliebigem Text.
+        """Extract a JSON object from arbitrary text.
 
-        Strategien (in Reihenfolge):
-        1. Gesamter Text ist valides JSON
-        2. Markdown-Codeblock entfernen (```json ... ``` oder ``` ... ```)
-        3. Erstes { bis letztes } extrahieren (Brace-Matching)
+        Strategies (in order):
+        1. Entire text is valid JSON
+        2. Remove markdown code block (```json ... ``` or ``` ... ```)
+        3. Extract first { to last } (brace matching)
 
         Args:
-            raw_text: Beliebiger Text der ein JSON-Objekt enthalten kann.
+            raw_text: Arbitrary text that may contain a JSON object.
 
         Returns:
-            Extrahierter JSON-String oder None wenn kein JSON gefunden.
+            Extracted JSON string or None if no JSON found.
         """
         text = raw_text.strip()
 
-        # Strategie 1: Gesamter Text ist bereits valides JSON
+        # Strategy 1: entire text is already valid JSON
         if text.startswith("{"):
             try:
                 json.loads(text)
@@ -390,8 +386,7 @@ class DebateOrchestrator:
             except json.JSONDecodeError:
                 pass
 
-        # Strategie 2: Markdown-Codeblock (```json\n...\n``` oder ```\n...\n```)
-        # Auch wenn Text VOR dem Codeblock steht
+        # Strategy 2: markdown code block (```json\n...\n``` or ```\n...\n```)
         codeblock_match = re.search(r"```(?:json)?\s*\n(.*?)\n\s*```", text, re.DOTALL)
         if codeblock_match:
             candidate = codeblock_match.group(1).strip()
@@ -401,7 +396,7 @@ class DebateOrchestrator:
             except json.JSONDecodeError:
                 pass
 
-        # Strategie 3: Erstes { bis zum matchenden } (Brace-Counting)
+        # Strategy 3: first { to matching } (brace counting)
         first_brace = text.find("{")
         if first_brace == -1:
             return None
@@ -442,25 +437,25 @@ class DebateOrchestrator:
         raw_text: str,
         label_to_provider: dict[str, str],
     ) -> FinalVerdict | None:
-        """Parst die JSON-Antwort des Judges und mapped Labels zu Provider-Namen.
+        """Parse the JSON response from the judge and map labels to provider names.
 
-        Graceful: gibt None zurück bei Parse-Fehlern.
-        Robust: extrahiert JSON auch wenn der Judge Prosa drumherum schreibt
-        oder einen Markdown-Codeblock verwendet.
+        Graceful: returns None on parse errors.
+        Robust: extracts JSON even when the judge writes prose around it
+        or uses a markdown code block.
 
         Args:
-            raw_text: Roh-Antwort des Judge-LLMs.
-            label_to_provider: Mapping Label -> Provider-Name.
+            raw_text: Raw response from the judge LLM.
+            label_to_provider: Mapping label -> provider name.
 
         Returns:
-            FinalVerdict oder None wenn Parsing fehlschlägt.
+            FinalVerdict or None if parsing fails.
         """
         log.debug("Judge raw response (%d chars): %s", len(raw_text), raw_text[:500])
 
         json_text = self._extract_json_object(raw_text)
         if json_text is None:
             log.warning(
-                "Judge-Response: kein JSON-Objekt extrahierbar. Erste 300 Zeichen: %s",
+                "Judge response: no JSON object extractable. First 300 chars: %s",
                 raw_text[:300],
             )
             return None
@@ -468,12 +463,11 @@ class DebateOrchestrator:
         try:
             data = json.loads(json_text)
         except json.JSONDecodeError:
-            log.warning("Judge-Response ist kein valides JSON: %s", json_text[:200])
+            log.warning("Judge response is not valid JSON: %s", json_text[:200])
             return None
 
-        # Pflichtfelder prüfen
         if not isinstance(data, dict):
-            log.warning("Judge-Response ist kein Dict: %s", type(data))
+            log.warning("Judge response is not a dict: %s", type(data))
             return None
 
         winner_label = data.get("winner", "")
@@ -482,13 +476,13 @@ class DebateOrchestrator:
         reasoning = data.get("reasoning", "")
         evaluations_raw = data.get("evaluations", [])
 
-        # Winner-Label -> Provider-Name
+        # Winner label -> provider name
         if winner_label.lower() == "tie":
             winner = "tie"
         else:
             winner = label_to_provider.get(winner_label, winner_label)
 
-        # Evaluations parsen
+        # Parse evaluations
         evaluations: list[ProviderEvaluation] = []
         for eval_item in evaluations_raw:
             if not isinstance(eval_item, dict):
@@ -524,45 +518,44 @@ class DebateOrchestrator:
         user_id: int,
         chat_id: int,
     ) -> FinalVerdict | None:
-        """Führt den LLM-as-Judge Final Review durch.
+        """Run the LLM-as-Judge final review.
 
-        Strategie:
-        1. Versuche claude_persistent als Judge (höchste Qualität)
-        2. Fallback auf ollama_local mit Qualitätswarnung
-        3. Bei komplettem Fehler: None (Caller fällt auf Heuristik zurück)
+        Strategy:
+        1. Try claude_persistent as judge (highest quality)
+        2. Fallback to ollama_local with quality warning
+        3. On complete failure: None (caller falls back to heuristic)
 
-        Bias-Mitigation: Provider-Namen werden anonymisiert im Judge-Prompt.
+        Bias mitigation: provider names are anonymized in the judge prompt.
 
         Args:
-            question: Die Original-Frage.
-            responses: Provider-Name -> Antworttext (mind. 2 Einträge).
-            user_id: Telegram User-ID.
-            chat_id: Telegram Chat-ID.
+            question: The original question.
+            responses: Provider name -> response text (at least 2 entries).
+            user_id: Telegram user ID.
+            chat_id: Telegram chat ID.
 
         Returns:
-            FinalVerdict oder None wenn Judge komplett fehlschlägt.
+            FinalVerdict or None if judge fails completely.
         """
         if len(responses) < 2:
-            log.debug("Final Review übersprungen: weniger als 2 Antworten")
+            log.debug("Final review skipped: fewer than 2 responses")
             return None
 
         prompt, label_to_provider = self._build_judge_prompt(question, responses)
 
         judge_system_prompt = (
-            "Du bist ein neutraler Schiedsrichter der KI-Antworten bewertet. "
-            "Du kennst die Provider-Namen nicht und bewertest rein nach Qualität: "
-            "Korrektheit, Vollständigkeit, Klarheit und Relevanz. "
-            "Antworte IMMER mit validem JSON, niemals mit Fliesstext."
+            "You are a neutral arbiter evaluating AI answers. "
+            "You do not know the provider names and evaluate purely on quality: "
+            "correctness, completeness, clarity, and relevance. "
+            "ALWAYS respond with valid JSON, never with prose."
         )
 
-        # Judge-Provider-Auswahl: claude_persistent > ollama_local
+        # Judge provider selection: claude_persistent > claude > ollama_local
         judge_candidates = ["claude_persistent", "claude", "ollama_local"]
         available = set(self.provider_router.list_available())
 
-        # Provider die an der Debate teilgenommen haben ausschliessen
-        # um Selbst-Bewertungs-Bias zu minimieren?
-        # Nein: Bei nur 2 Providern würde keiner übrig bleiben.
-        # Stattdessen: Anonymisierung reicht als Bias-Mitigation.
+        # Exclude providers that participated in the debate to minimize
+        # self-evaluation bias? No: with only 2 providers none would remain.
+        # Instead: anonymization is sufficient as bias mitigation.
 
         judge_provider: str | None = None
         quality_warning: str | None = None
@@ -573,18 +566,18 @@ class DebateOrchestrator:
                 break
 
         if judge_provider is None:
-            log.warning("Kein Judge-Provider verfügbar, Final Review entfällt")
+            log.warning("No judge provider available, final review skipped")
             return None
 
         if judge_provider == "ollama_local":
-            quality_warning = "Lokaler Judge (Ollama), Bewertungsqualität reduziert"
+            quality_warning = "Local judge (Ollama), evaluation quality reduced"
 
-        log.info("Final Review: Judge-Provider = %s", judge_provider)
+        log.info("Final review: judge provider = %s", judge_provider)
 
-        # Isolierter Konversationskontext für den Judge:
-        # Offset auf die chat_id damit der Judge-Call NICHT in die
-        # User-Konversation geht (würde Bias durch vorherige Debate-Antwort erzeugen
-        # und kann JSON-Output stören weil Claude im Chat-Modus antwortet).
+        # Isolated conversation context for the judge:
+        # offset on chat_id so the judge call does NOT go into the
+        # user conversation (would create bias through previous debate response
+        # and can disrupt JSON output because Claude responds in chat mode).
         judge_chat_id = chat_id + _JUDGE_CHAT_ID_OFFSET
 
         try:
@@ -602,14 +595,14 @@ class DebateOrchestrator:
 
             if not response.success:
                 log.warning(
-                    "Judge-Call fehlgeschlagen: %s (text=%r)",
-                    response.error or "kein Text",
+                    "Judge call failed: %s (text=%r)",
+                    response.error or "no text",
                     (response.text or "")[:200],
                 )
                 return None
 
             log.debug(
-                "Judge-Response erhalten (%d chars, %.1fs): %s",
+                "Judge response received (%d chars, %.1fs): %s",
                 len(response.text),
                 response.duration_seconds,
                 response.text[:300],
@@ -618,14 +611,13 @@ class DebateOrchestrator:
             verdict = self._parse_judge_response(response.text, label_to_provider)
             if verdict is None:
                 log.warning(
-                    "Judge-Response konnte nicht geparst werden. "
-                    "Vollständige Response (%d chars): %s",
+                    "Judge response could not be parsed. Full response (%d chars): %s",
                     len(response.text),
                     response.text[:500],
                 )
                 return None
 
-            # Judge-Metadaten hinzufügen (frozen dataclass, neues Objekt)
+            # Add judge metadata (frozen dataclass, new object)
             return FinalVerdict(
                 winner=verdict.winner,
                 recommendation=verdict.recommendation,
@@ -637,10 +629,10 @@ class DebateOrchestrator:
             )
 
         except asyncio.TimeoutError:
-            log.warning("Judge-Call Timeout nach %ds", self.timeout_seconds)
+            log.warning("Judge call timeout after %ds", self.timeout_seconds)
             return None
         except Exception as exc:
-            log.warning("Judge-Call Exception: %s", exc)
+            log.warning("Judge call exception: %s", exc)
             return None
 
     async def debate(
@@ -649,20 +641,20 @@ class DebateOrchestrator:
         user_id: int,
         chat_id: int,
     ) -> DebateResult:
-        """Führt eine Multi-AI-Debate durch.
+        """Run a multi-AI debate.
 
-        1. Identifiziert verfügbare Provider (mit Deduplizierung)
-        2. Fragt alle parallel (asyncio.gather)
-        3. Sammelt Antworten + Fehler
-        4. Erstellt Konsens-Analyse
+        1. Identify available providers (with deduplication)
+        2. Query all in parallel (asyncio.gather)
+        3. Collect responses + errors
+        4. Create consensus analysis
 
         Args:
-            question: Die User-Frage.
-            user_id: Telegram User-ID.
-            chat_id: Telegram Chat-ID.
+            question: The user question.
+            user_id: Telegram user ID.
+            chat_id: Telegram chat ID.
 
         Returns:
-            DebateResult mit allen Antworten, Fehlern und Analyse.
+            DebateResult with all responses, errors, and analysis.
         """
         t_start = time.monotonic()
 
@@ -671,20 +663,20 @@ class DebateOrchestrator:
             return DebateResult(
                 question=question,
                 responses={},
-                errors={"system": "Keine Provider verfügbar"},
+                errors={"system": "No providers available"},
                 consensus_analysis=None,
                 duration_seconds=time.monotonic() - t_start,
                 providers_queried=[],
             )
 
         log.info(
-            "Debate gestartet: %d Provider (%s), Frage: %s",
+            "Debate started: %d providers (%s), question: %s",
             len(providers),
             providers,
             question[:80],
         )
 
-        # Phase 1: Alle Provider parallel abfragen
+        # Phase 1: query all providers in parallel
         t_providers_start = time.monotonic()
         tasks = [
             self._query_provider(name, question, user_id, chat_id) for name in providers
@@ -697,7 +689,6 @@ class DebateOrchestrator:
 
         for result in results:
             if isinstance(result, Exception):
-                # Sollte nicht passieren (Exceptions werden in _query_provider gefangen)
                 errors["unknown"] = str(result)
                 continue
             provider_name, text, error = result
@@ -707,18 +698,18 @@ class DebateOrchestrator:
                 errors[provider_name] = error
 
         log.info(
-            "Debate Phase 1 (Provider-Calls): %.1fs, %d OK, %d Fehler",
+            "Debate phase 1 (provider calls): %.1fs, %d OK, %d errors",
             t_providers_elapsed,
             len(responses),
             len(errors),
         )
 
-        # Konsens-Analyse
+        # Consensus analysis
         consensus: str | None = None
         if responses:
             consensus = self._analyze_consensus(responses)
 
-        # Phase 2: Final Review (LLM-as-Judge)
+        # Phase 2: final review (LLM-as-Judge)
         verdict: FinalVerdict | None = None
         t_judge_elapsed: float = 0.0
         if len(responses) >= 2:
@@ -731,7 +722,7 @@ class DebateOrchestrator:
             )
             t_judge_elapsed = time.monotonic() - t_judge_start
             log.info(
-                "Debate Phase 2 (Judge-Call): %.1fs, verdict=%s",
+                "Debate phase 2 (judge call): %.1fs, verdict=%s",
                 t_judge_elapsed,
                 verdict.winner if verdict else "failed",
             )
@@ -739,8 +730,8 @@ class DebateOrchestrator:
         duration = time.monotonic() - t_start
 
         log.info(
-            "Debate abgeschlossen: %.1fs total (providers=%.1fs, judge=%.1fs), "
-            "%d Antworten, %d Fehler",
+            "Debate completed: %.1fs total (providers=%.1fs, judge=%.1fs), "
+            "%d responses, %d errors",
             duration,
             t_providers_elapsed,
             t_judge_elapsed,

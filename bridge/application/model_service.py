@@ -1,13 +1,13 @@
-"""Model-Service: Verwaltet User-Modell-Overrides.
+"""Model service: manages user model overrides.
 
-Alias-Resolution: 'opus' -> 'claude-opus-4-7', etc.
-Phase 1: nur globaler Slot (gilt für alle Anfragen).
-Phase 2+: per-Slot (chat, code, etc.).
+Alias resolution: 'opus' -> 'claude-opus-4-7', etc.
+Phase 1: global slot only (applies to all requests).
+Phase 2+: per-slot (chat, code, etc.).
 
-Backward-kompatibel: kein Override -> CLAUDE_POOL_MODEL Env-Variable.
+Backward-compatible: no override -> CLAUDE_POOL_MODEL env variable.
 
-Phase 2b: MODEL_ALIASES und VALID_MODEL_IDS werden dynamisch aus der
-ModelRegistry geladen. Die öffentliche Schnittstelle bleibt identisch.
+Phase 2b: MODEL_ALIASES and VALID_MODEL_IDS are loaded dynamically from the
+ModelRegistry. The public interface remains identical.
 """
 
 from __future__ import annotations
@@ -23,38 +23,38 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# ModelRegistry als zentrale Datenquelle (Phase 2b)
+# ModelRegistry as central data source (Phase 2b)
 _registry = ModelRegistry()
 
 # Backward-compatible module-level exports (populated from Registry)
 MODEL_ALIASES: dict[str, str] = _registry.all_aliases()
 
-# Default-Modell aus Environment (Fallback wenn kein Override)
+# Default model from environment (fallback when no override)
 DEFAULT_MODEL: str = os.getenv("CLAUDE_POOL_MODEL", "claude-sonnet-4-6")
 
-# Alle akzeptierten Modell-IDs (für Validierung, dynamisch aus Registry)
+# All accepted model IDs (for validation, dynamic from Registry)
 VALID_MODEL_IDS: set[str] = _registry.all_ids()
 
 
 def resolve_alias(alias_or_id: str) -> Optional[str]:
-    """Löst einen Alias oder eine volle Modell-ID auf.
+    """Resolve an alias or full model ID.
 
-    Delegiert an ModelRegistry für zentrales Lookup.
+    Delegates to ModelRegistry for central lookup.
 
     Args:
-        alias_or_id: Alias ('opus', 'sonnet', 'haiku') oder volle Modell-ID.
+        alias_or_id: Alias ('opus', 'sonnet', 'haiku') or full model ID.
 
     Returns:
-        Volle Modell-ID oder None wenn nicht erkannt.
+        Full model ID or None if not recognized.
     """
     return _registry.resolve_id(alias_or_id)
 
 
 class ModelService:
-    """Verwaltet User-Modell-Overrides.
+    """Manages user model overrides.
 
-    Speichert und liest Modell-Präferenzen via SqliteModelStorage.
-    Bietet Alias-Resolution und Validierung.
+    Stores and reads model preferences via SqliteModelStorage.
+    Provides alias resolution and validation.
     """
 
     def __init__(
@@ -63,46 +63,46 @@ class ModelService:
         slot_defaults: dict[str, str] | None = None,
     ) -> None:
         self._storage = storage
-        # Slot-Defaults: slot_name -> resolved model_id (z.B. "code" -> "claude-opus-4-7")
-        # Wird von main.py aus SlotConfigs extrahiert und übergeben.
+        # Slot defaults: slot_name -> resolved model_id (e.g. "code" -> "claude-opus-4-7")
+        # Extracted from SlotConfigs in main.py and passed here.
         self._slot_defaults: dict[str, str] = slot_defaults or {}
 
     def get_user_model(self, user_id: int, slot: str = "global") -> Optional[str]:
-        """Liest das aktive Modell für einen User.
+        """Read the active model for a user.
 
-        Revalidiert gespeicherte Modell-IDs in zwei Stufen:
-        1. Ist die ID überhaupt in VALID_MODEL_IDS? (z.B. nach Alias-Update)
-        2. Gehört die ID zum ACTIVE_PROVIDER? (verhindert stale Werte von
-           Nicht-Anthropic-Modellen die vor dem Provider-Filter gesetzt wurden)
+        Revalidates stored model IDs in two stages:
+        1. Is the ID in VALID_MODEL_IDS at all? (e.g. after alias update)
+        2. Does the ID belong to ACTIVE_PROVIDER? (prevents stale values from
+           non-Anthropic models set before the provider filter)
 
-        Bei ungültigen Werten wird der Storage-Eintrag aufgeräumt (Option B).
+        Invalid values are cleaned up from storage (Option B).
 
         Args:
-            user_id: Telegram-User-ID.
-            slot: Slot-Name (default: 'global').
+            user_id: Telegram user ID.
+            slot: Slot name (default: 'global').
 
         Returns:
-            Volle Modell-ID oder None wenn kein Override (= Default nutzen).
+            Full model ID or None if no override (= use default).
         """
         stored = self._storage.get_model(user_id, slot)
         if stored is None:
             return None
         if stored not in VALID_MODEL_IDS:
             log.warning(
-                "Gespeichertes Modell '%s' für user_id=%d slot='%s' ist nicht mehr "
-                "gültig (nicht in VALID_MODEL_IDS). Räume auf und Fallback auf Default.",
+                "Stored model '%s' for user_id=%d slot='%s' is no longer "
+                "valid (not in VALID_MODEL_IDS). Cleaning up, falling back to default.",
                 stored,
                 user_id,
                 slot,
             )
             self._storage.delete_model(user_id, slot)
             return None
-        # Provider-Revalidierung: stale Werte von Nicht-Anthropic-Modellen bereinigen
+        # Provider revalidation: clean up stale values from non-Anthropic models
         metadata = _registry.get(stored)
         if metadata is not None and metadata.provider != self.ACTIVE_PROVIDER:
             log.warning(
-                "Gespeichertes Modell '%s' (provider=%s) für user_id=%d slot='%s' "
-                "gehört nicht zum aktiven Provider '%s'. Räume auf und Fallback auf Default.",
+                "Stored model '%s' (provider=%s) for user_id=%d slot='%s' "
+                "does not belong to active provider '%s'. Cleaning up, falling back to default.",
                 stored,
                 metadata.provider,
                 user_id,
@@ -114,56 +114,56 @@ class ModelService:
         return stored
 
     def get_effective_model(self, user_id: int) -> str:
-        """Bestimmt das effektive Modell: User-Override oder Default.
+        """Determine the effective model: user override or default.
 
         Args:
-            user_id: Telegram-User-ID.
+            user_id: Telegram user ID.
 
         Returns:
-            Volle Modell-ID (garantiert nicht None).
+            Full model ID (guaranteed not None).
         """
         override = self.get_user_model(user_id, "global")
         return override if override else DEFAULT_MODEL
 
     def get_all_slot_overrides(self, user_id: int) -> dict[str, str]:
-        """Liest alle Slot-Overrides für einen User.
+        """Read all slot overrides for a user.
 
         Args:
-            user_id: Telegram-User-ID.
+            user_id: Telegram user ID.
 
         Returns:
-            Dict von slot_name -> model_id für alle gesetzten Overrides.
+            Dict of slot_name -> model_id for all active overrides.
         """
         return self._storage.get_all_models(user_id)
 
     def reset_all_slots(self, user_id: int) -> int:
-        """Entfernt alle Modell-Overrides für einen User.
+        """Remove all model overrides for a user.
 
         Args:
-            user_id: Telegram-User-ID.
+            user_id: Telegram user ID.
 
         Returns:
-            Anzahl gelöschter Overrides.
+            Number of deleted overrides.
         """
         return self._storage.delete_all_models(user_id)
 
-    # Provider der aktuell als Default-Backend aktiv ist (Phase 1: nur Claude).
-    # Phase 2 (TaskRouter) erweitert das auf dynamisches Provider-Routing.
+    # Provider currently active as default backend (Phase 1: Claude only).
+    # Phase 2 (TaskRouter) extends this to dynamic provider routing.
     ACTIVE_PROVIDER: str = "anthropic"
 
     def set_user_model(
         self, user_id: int, alias_or_id: str, slot: str = "global"
     ) -> tuple[bool, str]:
-        """Setzt das Modell für einen User (Phase 1: nur globaler Slot).
+        """Set the model for a user (Phase 1: global slot only).
 
-        Validiert zusätzlich, dass das Modell zum aktiven Provider passt.
-        Solange der Hauptpfad nur Claude unterstützt, werden Nicht-Anthropic-
-        Modelle abgelehnt (Phase 2: TaskRouter erweitert das).
+        Additionally validates that the model belongs to the active provider.
+        As long as the main path only supports Claude, non-Anthropic
+        models are rejected (Phase 2: TaskRouter extends this).
 
         Args:
-            user_id: Telegram-User-ID.
-            alias_or_id: Alias oder volle Modell-ID.
-            slot: Slot-Name (default: 'global'). Phase 2: 'chat', 'code', etc.
+            user_id: Telegram user ID.
+            alias_or_id: Alias or full model ID.
+            slot: Slot name (default: 'global'). Phase 2: 'chat', 'code', etc.
 
         Returns:
             Tuple (success: bool, resolved_model_id_or_error: str).
@@ -173,48 +173,48 @@ class ModelService:
             available = ", ".join(sorted(self.list_available_aliases().keys()))
             return (
                 False,
-                f"Unbekanntes Modell: '{alias_or_id}'. Verfügbar: {available}",
+                f"Unknown model: '{alias_or_id}'. Available: {available}",
             )
 
-        # Provider-Check: nur Modelle des aktiven Providers akzeptieren
+        # Provider check: only accept models from the active provider
         metadata = _registry.get(alias_or_id)
         if metadata is not None and metadata.provider != self.ACTIVE_PROVIDER:
             available = ", ".join(sorted(self.list_available_aliases().keys()))
             return (
                 False,
-                f"Modell '{metadata.display_name}' nutzt Provider "
-                f"'{metadata.provider}'. Aktuell wird nur Anthropic Claude "
-                f"unterstützt. Verfügbar: {available}",
+                f"Model '{metadata.display_name}' uses provider "
+                f"'{metadata.provider}'. Currently only Anthropic Claude "
+                f"is supported. Available: {available}",
             )
 
-        # Impliziter Reset: Wenn das gewaehlte Modell dem Slot-Default entspricht
-        # UND kein globaler Override aktiv ist, wird kein Override gespeichert
-        # (bzw. ein bestehender entfernt). Damit zeigt die UI korrekt "(Default)" an.
+        # Implicit reset: if the chosen model matches the slot default
+        # AND no global override is active, no override is stored
+        # (or an existing one is removed). This way the UI correctly shows "(Default)".
         #
-        # Wenn ein globaler Override aktiv ist, ist die Slot-Default-Wahl ein
-        # expliziter Override (User will den Slot vom Global entkoppeln) und
-        # MUSS als Slot-Override gespeichert werden.
+        # If a global override is active, choosing the slot default is an
+        # explicit override (user wants to decouple the slot from global) and
+        # MUST be stored as a slot override.
         self._last_was_implicit_reset = False
         if slot != "global" and slot in self._slot_defaults:
             slot_default_id = self._slot_defaults[slot]
             if resolved == slot_default_id:
-                # Globalen Override prüfen: nur implicit-reset wenn KEIN global aktiv
+                # Check global override: only implicit-reset when NO global is active
                 global_override = self._storage.get_model(user_id, "global")
                 if global_override is None:
                     self._storage.delete_model(user_id, slot)
                     self._last_was_implicit_reset = True
                     log.info(
-                        "User %d hat Modell '%s' gewählt das dem Slot-Default "
-                        "für '%s' entspricht. Override entfernt (impliziter Reset).",
+                        "User %d chose model '%s' which matches the slot default "
+                        "for '%s'. Override removed (implicit reset).",
                         user_id,
                         resolved,
                         slot,
                     )
                     return True, resolved
-                # Global aktiv: expliziter Override, weiter zum normalen Speichern
+                # Global active: explicit override, proceed to normal save
                 log.info(
-                    "User %d hat Modell '%s' gewählt (= Slot-Default für '%s'), "
-                    "aber globaler Override '%s' ist aktiv. Speichere als Slot-Override.",
+                    "User %d chose model '%s' (= slot default for '%s'), "
+                    "but global override '%s' is active. Saving as slot override.",
                     user_id,
                     resolved,
                     slot,
@@ -223,7 +223,7 @@ class ModelService:
 
         self._storage.set_model(user_id, resolved, slot=slot)
         log.info(
-            "User %d hat Modell auf '%s' gesetzt (Input: '%s', slot: '%s')",
+            "User %d set model to '%s' (input: '%s', slot: '%s')",
             user_id,
             resolved,
             alias_or_id,
@@ -233,27 +233,27 @@ class ModelService:
 
     @property
     def last_was_implicit_reset(self) -> bool:
-        """True wenn der letzte set_user_model() einen impliziten Reset ausgelöst hat.
+        """True if the last set_user_model() triggered an implicit reset.
 
-        Ermöglicht dem Presentation-Layer, im Audit-Log zwischen "set" und
-        "implicit_reset" zu unterscheiden.
+        Allows the presentation layer to distinguish between "set" and
+        "implicit_reset" in the audit log.
         """
         return getattr(self, "_last_was_implicit_reset", False)
 
     def reset_user_model(self, user_id: int, slot: str = "global") -> bool:
-        """Entfernt das Modell-Override (zurück auf Default).
+        """Remove the model override (back to default).
 
         Args:
-            user_id: Telegram-User-ID.
-            slot: Slot-Name (default: 'global').
+            user_id: Telegram user ID.
+            slot: Slot name (default: 'global').
 
         Returns:
-            True wenn ein Override entfernt wurde.
+            True if an override was removed.
         """
         deleted = self._storage.delete_model(user_id, slot)
         if deleted:
             log.info(
-                "User %d hat Modell auf Default zurückgesetzt (slot: '%s')",
+                "User %d reset model to default (slot: '%s')",
                 user_id,
                 slot,
             )
@@ -261,23 +261,23 @@ class ModelService:
 
     @staticmethod
     def get_model_display_name(model_id: str) -> str:
-        """Gibt einen menschenlesbaren Namen für eine Modell-ID zurück.
+        """Return a human-readable name for a model ID.
 
-        Delegiert an ModelRegistry für zentrales Display-Name-Lookup.
+        Delegates to ModelRegistry for central display-name lookup.
 
         Args:
-            model_id: Volle Modell-ID.
+            model_id: Full model ID.
 
         Returns:
-            Display-Name (z.B. 'Opus 4.7' für 'claude-opus-4-7').
+            Display name (e.g. 'Opus 4.7' for 'claude-opus-4-7').
         """
         return _registry.get_display_name(model_id)
 
     @staticmethod
     def list_available_aliases() -> dict[str, str]:
-        """Gibt verfügbare Aliase für den aktiven Provider zurück.
+        """Return available aliases for the active provider.
 
-        Phase 1: nur Anthropic-Modelle. Phase 2 (TaskRouter) erweitert das.
+        Phase 1: Anthropic models only. Phase 2 (TaskRouter) extends this.
         """
         active_models = _registry.for_provider(ModelService.ACTIVE_PROVIDER)
         active_ids = {m.id for m in active_models}

@@ -1,8 +1,8 @@
-"""Procedural Memory: Skills und Patterns.
+"""Procedural memory: skills and patterns.
 
-Wiederholbare Handlungsmuster, die der Bot gelernt hat.
-Beispiel: "Wenn User nach Code fragt, immer mit Codeblock antworten"
-Phase 1+: Voyager-Pattern Skill-Compression füllt diesen Layer automatisch.
+Repeatable action patterns the bot has learned.
+Example: "When user asks for code, always respond with a code block"
+Phase 1+: Voyager-pattern skill compression will fill this layer automatically.
 """
 
 from __future__ import annotations
@@ -14,15 +14,15 @@ from uuid import uuid4
 
 @dataclass(frozen=True, slots=True)
 class ProceduralEntry:
-    """Ein Skill/Pattern in der Procedural Memory.
+    """A skill/pattern in procedural memory.
 
     Attributes:
-        id: Eindeutige ID mit Prefix pro_ für Layer-Erkennung.
-        user_id: Telegram-User-ID.
-        content: Beschreibung des Skills/Patterns.
-        skill_name: Kurzname des Skills (z.B. "code_format", "kurze_antworten").
-        usage_count: Wie oft der Skill angewendet wurde.
-        context: Optionaler Kontext.
+        id: Unique ID with prefix pro_ for layer detection.
+        user_id: Telegram user ID.
+        content: Description of the skill/pattern.
+        skill_name: Short name of the skill (e.g. "code_format", "short_answers").
+        usage_count: How often the skill has been applied.
+        context: Optional context.
         timestamp: ISO 8601 UTC.
         importance: 1-10.
     """
@@ -39,7 +39,7 @@ class ProceduralEntry:
     importance: int = 5
 
     def to_dict(self) -> dict:
-        """Serialisiert den Entry als Dict für JSONL-Persistierung."""
+        """Serialize the entry as dict for JSONL persistence."""
         return {
             "id": self.id,
             "user_id": self.user_id,
@@ -53,7 +53,7 @@ class ProceduralEntry:
 
     @classmethod
     def from_dict(cls, data: dict) -> ProceduralEntry:
-        """Deserialisiert einen Entry aus einem Dict."""
+        """Deserialize an entry from a dict."""
         return cls(
             id=data.get("id", f"pro_{uuid4().hex[:12]}"),
             user_id=data.get("user_id", 0),

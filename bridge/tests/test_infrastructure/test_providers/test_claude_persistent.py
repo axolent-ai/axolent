@@ -159,7 +159,7 @@ class TestClaudePersistentProviderQuery:
         pool = _make_pool_mock()
         provider = ClaudePersistentProvider(process_pool=pool)
 
-        with pytest.raises(ValueError, match="user_id ist Pflicht"):
+        with pytest.raises(ValueError, match="user_id is required"):
             await provider.query(prompt="Test", chat_id=100)
 
     @pytest.mark.asyncio
@@ -168,7 +168,7 @@ class TestClaudePersistentProviderQuery:
         pool = _make_pool_mock()
         provider = ClaudePersistentProvider(process_pool=pool)
 
-        with pytest.raises(ValueError, match="chat_id ist Pflicht"):
+        with pytest.raises(ValueError, match="chat_id is required"):
             await provider.query(prompt="Test", user_id=1)
 
 
@@ -210,7 +210,7 @@ class TestClaudePersistentProviderStreaming:
         pool = _make_pool_mock()
         provider = ClaudePersistentProvider(process_pool=pool)
 
-        with pytest.raises(ValueError, match="user_id ist Pflicht"):
+        with pytest.raises(ValueError, match="user_id is required"):
             async for _ in provider.query_streaming(prompt="Test", chat_id=100):
                 pass
 
@@ -220,6 +220,6 @@ class TestClaudePersistentProviderStreaming:
         pool = _make_pool_mock()
         provider = ClaudePersistentProvider(process_pool=pool)
 
-        with pytest.raises(ValueError, match="chat_id ist Pflicht"):
+        with pytest.raises(ValueError, match="chat_id is required"):
             async for _ in provider.query_streaming(prompt="Test", user_id=1):
                 pass

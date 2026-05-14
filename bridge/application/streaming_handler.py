@@ -1,22 +1,22 @@
-"""Streaming-Handler: koordiniert Token-Streaming zu Telegram-Edits.
+"""Streaming handler: coordinates token streaming to Telegram edits.
 
-Wandelt StreamEvents aus dem ClaudePersistentProvider in
-Telegram-Message-Edits um. Rate-Limited mit adaptivem Throttle.
+Converts StreamEvents from ClaudePersistentProvider into
+Telegram message edits. Rate-limited with adaptive throttle.
 
 Features:
-    - Aggregiert Tokens bis zum nächsten Edit-Zeitpunkt
-    - Erste Edit nach ~1.5s mit akkumuliertem Text
-    - Danach alle ~1.5s den vollständigen bisherigen Text als Edit
-    - Bei finalem Result: letzte Edit mit vollständigem Text + HTML-Formatierung
-    - Zwischen-Edits: Markdown wird live gerendert, unvollständige Tokens
-      am Ende werden sicher abgeschnitten (Option A: smart-trim)
-    - Finale Edit konvertiert Markdown zu Telegram-HTML via domain.markdown
-    - Bei Antworten >4096 Zeichen: Multi-Message-Split an sinnvollen Grenzen
-    - Telegram-API-Fehler werden leise geschluckt (UX > Crash)
-    - Adaptive Flood-Control: Bei Telegram 429 (RetryAfter) pausiert die
-      Session, Zwischen-Edits werden übersprungen, Throttle wird
-      exponentiell erhöht und erholt sich nach erfolgreichen Edits.
-    - Final-Edits haben höchste Priorität und werden bei 429 retried.
+    * Aggregates tokens until the next edit time
+    * First edit after ~1.5s with accumulated text
+    * Subsequent edits every ~1.5s with the full text so far
+    * On final result: last edit with complete text + HTML formatting
+    * Intermediate edits: markdown is rendered live, incomplete tokens
+      at the end are safely trimmed (Option A: smart-trim)
+    * Final edit converts markdown to Telegram HTML via domain.markdown
+    * For responses >4096 chars: multi-message split at sensible boundaries
+    * Telegram API errors are silently swallowed (UX > crash)
+    * Adaptive flood control: on Telegram 429 (RetryAfter), the session
+      pauses, intermediate edits are skipped, throttle is increased
+      exponentially and recovers after successful edits.
+    * Final edits have highest priority and are retried on 429.
 """
 
 from __future__ import annotations
@@ -36,64 +36,64 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Adaptive Throttle / Flood-Control Konstanten
+# Adaptive throttle / flood control constants
 # ---------------------------------------------------------------------------
-# R04 Round 4: Adaptive Flood-Control. Live-Stress-Test mit 308 Streaming-Chunks
-# triggerte kaskadierende Telegram 429er. Backoff-Faktor 2.0, Recovery 0.7
-# nach 5 erfolgreichen Edits. Final-Edits haben Priority und werden bei
-# 429 retried. Empirisch validiert mit 0 Errors bei 15.678 Zeichen Antwort.
+# R04 Round 4: Adaptive flood control. Live stress test with 308 streaming chunks
+# triggered cascading Telegram 429s. Backoff factor 2.0, recovery 0.7
+# after 5 successful edits. Final edits have priority and are retried on
+# 429. Empirically validated with 0 errors on a 15,678-char response.
 
-# Default-Throttle für Zwischen-Edits (Sekunden)
+# Default throttle for intermediate edits (seconds)
 DEFAULT_THROTTLE: float = 1.5
 
-# Maximaler Throttle nach wiederholten 429ern (Sekunden)
+# Maximum throttle after repeated 429s (seconds)
 MAX_THROTTLE: float = 10.0
 
-# Faktor für Throttle-Erhöhung bei 429
+# Factor for throttle increase on 429
 THROTTLE_BACKOFF_FACTOR: float = 2.0
 
-# Nach N erfolgreichen Edits wird der Throttle schrittweise reduziert
+# After N successful edits, throttle is gradually reduced
 THROTTLE_RECOVERY_AFTER: int = 5
 
-# Faktor für Throttle-Reduktion bei Recovery
+# Factor for throttle reduction on recovery
 THROTTLE_RECOVERY_FACTOR: float = 0.7
 
-# Maximale Retries für Final-Edits bei 429
+# Maximum retries for final edits on 429
 FINAL_EDIT_MAX_RETRIES: int = 2
 
 # ---------------------------------------------------------------------------
-# Bisherige Konstanten
+# Existing constants
 # ---------------------------------------------------------------------------
 
-# Rate-Limiting: Telegram erlaubt max ~30 edits/min pro Chat
-# Default-Throttle wird jetzt adaptiv gesteuert (s.o.)
+# Rate limiting: Telegram allows max ~30 edits/min per chat
+# Default throttle is now adaptively controlled (see above)
 EDIT_INTERVAL_SECONDS: float = DEFAULT_THROTTLE
 
-# Erste Edit nach dieser Zeit (damit genug Text da ist)
+# First edit after this time (so enough text is available)
 FIRST_EDIT_DELAY_SECONDS: float = 1.5
 
-# Maximale Nachrichtenlänge für Telegram (4096 Zeichen)
+# Maximum message length for Telegram (4096 chars)
 TELEGRAM_MAX_LENGTH: int = 4096
 
-# Puffer für Part-Marker ("(2/3)") und Sicherheitsmarge
+# Buffer for part markers ("(2/3)") and safety margin
 _SPLIT_SAFETY_MARGIN: int = 30
 
 
 @dataclass
 class StreamingSession:
-    """State einer laufenden Streaming-Session.
+    """State of a running streaming session.
 
     Attributes:
-        message: Die Telegram-Nachricht die editiert wird.
-        accumulated_text: Bisher gesammelter Text.
-        last_edit_time: Zeitpunkt der letzten Edit.
-        edit_count: Anzahl bisheriger Edits.
-        started_at: Session-Startzeit.
-        is_first_edit: Ob noch keine Edit gesendet wurde.
-        _last_edit_html: Zuletzt gesendeter Edit-Text (für Duplikat-Erkennung).
-        _paused_until: Monotonic-Timestamp bis zu dem Edits pausiert sind (Flood-Control).
-        _current_throttle: Aktueller adaptiver Edit-Intervall in Sekunden.
-        _consecutive_success: Zähler erfolgreicher Edits seit letztem 429.
+        message: The Telegram message being edited.
+        accumulated_text: Text collected so far.
+        last_edit_time: Timestamp of the last edit.
+        edit_count: Number of edits so far.
+        started_at: Session start time.
+        is_first_edit: Whether no edit has been sent yet.
+        _last_edit_html: Last sent edit text (for duplicate detection).
+        _paused_until: Monotonic timestamp until which edits are paused (flood control).
+        _current_throttle: Current adaptive edit interval in seconds.
+        _consecutive_success: Counter of successful edits since last 429.
     """
 
     message: "Message"
@@ -109,15 +109,14 @@ class StreamingSession:
 
 
 async def create_streaming_message(chat: Any) -> "Message":
-    """Erstellt die initiale Placeholder-Nachricht für Streaming.
+    """Create the initial placeholder message for streaming.
 
     Args:
-        chat: Telegram Chat-Objekt.
+        chat: Telegram chat object.
 
     Returns:
-        Die gesendete Message (wird später editiert).
+        The sent message (will be edited later).
     """
-    # Platzhalter der signalisiert dass gearbeitet wird
     return await chat.send_message("...")
 
 
@@ -125,64 +124,63 @@ async def process_streaming_edit(
     session: StreamingSession,
     new_text: str,
 ) -> None:
-    """Fügt neuen Text hinzu und editiert die Nachricht falls nötig.
+    """Add new text and edit the message if needed.
 
-    Rate-Limited: adaptiver Throttle (Default 1.5s, steigt bei 429).
-    Erste Edit erst nach FIRST_EDIT_DELAY_SECONDS.
-    Während Flood-Control-Pause werden Zwischen-Edits übersprungen.
+    Rate-limited: adaptive throttle (default 1.5s, increases on 429).
+    First edit only after FIRST_EDIT_DELAY_SECONDS.
+    During flood control pause, intermediate edits are skipped.
 
     Args:
-        session: Die aktuelle StreamingSession.
-        new_text: Neuer inkrementeller Text.
+        session: The current StreamingSession.
+        new_text: New incremental text.
     """
     session.accumulated_text += new_text
     now = time.monotonic()
 
-    # Erste Edit: warte bis genug Zeit vergangen ist
+    # First edit: wait until enough time has passed
     if session.is_first_edit:
         elapsed = now - session.started_at
         if elapsed < FIRST_EDIT_DELAY_SECONDS:
-            return  # Noch nicht genug Text gesammelt
+            return
         session.is_first_edit = False
 
-    # Flood-Control-Pause: Zwischen-Edits werden übersprungen
+    # Flood control pause: intermediate edits are skipped
     if session._paused_until and now < session._paused_until:
         return
 
-    # Rate-Limiting: mindestens _current_throttle seit letzter Edit
+    # Rate limiting: at least _current_throttle since last edit
     time_since_edit = now - session.last_edit_time
     if time_since_edit < session._current_throttle:
-        return  # Zu früh für nächste Edit
+        return
 
     await _do_edit(session)
 
 
 async def finalize_streaming(session: StreamingSession, final_text: str) -> str:
-    """Finalisiert die Streaming-Session mit dem vollständigen Text.
+    """Finalize the streaming session with the complete text.
 
-    Bei kurzen Antworten (<= 4096 Zeichen): eine Edit mit HTML.
-    Bei langen Antworten (> 4096 Zeichen): Multi-Message-Split.
-    Die erste Message wird per Edit aktualisiert, Folge-Teile als
-    neue Nachrichten im selben Chat gesendet.
+    For short responses (<= 4096 chars): one edit with HTML.
+    For long responses (> 4096 chars): multi-message split.
+    The first message is updated via edit, follow-up parts as
+    new messages in the same chat.
 
     Args:
-        session: Die aktuelle StreamingSession.
-        final_text: Der vollständige Antworttext.
+        session: The current StreamingSession.
+        final_text: The complete response text.
 
     Returns:
-        Der finale Text (ungekürzt, für History-Speicherung).
+        The final text (untruncated, for history storage).
     """
     session.accumulated_text = final_text
 
-    # HTML-konvertierter Text bestimmt ob Split nötig ist
+    # HTML-converted text determines whether split is needed
     html_text = markdown_to_telegram_html(final_text)
 
     if len(html_text) <= TELEGRAM_MAX_LENGTH:
-        # Kurze Antwort: einfache Edit (bisheriges Verhalten)
         await _do_edit_html(session)
         return final_text
 
-    # Lange Antwort: Multi-Message-Split
+    # Long response: multi-message split
     await _finalize_multi_message(session, final_text)
     return final_text
 
@@ -191,27 +189,26 @@ async def _finalize_multi_message(
     session: StreamingSession,
     full_text: str,
 ) -> None:
-    """Splittet eine lange Antwort in mehrere Telegram-Nachrichten.
+    """Split a long response into multiple Telegram messages.
 
-    Strategie:
-        1. Plain-Text (Markdown) an sinnvollen Grenzen splitten
-        2. Jeden Teil separat zu HTML konvertieren (damit Tags korrekt geschlossen)
-        3. Teil 1 als Edit der bestehenden Streaming-Message
-        4. Teile 2+ als neue Nachrichten im Chat
+    Strategy:
+        1. Split plain text (markdown) at sensible boundaries
+        2. Convert each part to HTML separately (so tags close correctly)
+        3. Part 1 as edit of the existing streaming message
+        4. Parts 2+ as new messages in the chat
 
-    Multi-Message-Teile gehören zur Final-Phase und bekommen
-    dasselbe RetryAfter-Handling wie Final-Edits.
+    Multi-message parts belong to the final phase and receive
+    the same RetryAfter handling as final edits.
 
     Args:
-        session: Die aktuelle StreamingSession.
-        full_text: Der vollständige Markdown-Text.
+        session: The current StreamingSession.
+        full_text: The complete markdown text.
     """
     parts = split_text_for_telegram(full_text)
     total = len(parts)
 
     for i, part in enumerate(parts):
         part_num = i + 1
-        # Part-Marker anfügen (ausser bei Einzelteil)
         if total > 1:
             marker = f"\n\n({part_num}/{total})"
         else:
@@ -220,14 +217,10 @@ async def _finalize_multi_message(
         html_part = markdown_to_telegram_html(part + marker)
 
         if i == 0:
-            # Erste Nachricht: Edit der bestehenden Streaming-Placeholder-Message
-            # Mit RetryAfter-Handling (Final-Priorität)
             await _send_final_edit_with_retry(
                 session, html_part, part + marker, part_num, total
             )
         else:
-            # Folge-Nachrichten: neue Message im selben Chat
-            # Mit RetryAfter-Handling (Final-Priorität)
             await _send_final_message_with_retry(
                 session, html_part, part + marker, part_num, total
             )
@@ -240,17 +233,17 @@ async def _send_final_edit_with_retry(
     part_num: int,
     total: int,
 ) -> None:
-    """Editiert die erste Nachricht im Multi-Message-Split mit Retry bei 429.
+    """Edit the first message in a multi-message split with retry on 429.
 
-    Nach erschöpften Retries: Fallback auf send_message (wie _do_edit_html),
-    damit der erste Teil nicht im Placeholder hängen bleibt.
+    After exhausted retries: fallback to send_message (like _do_edit_html),
+    so part 1 does not stay stuck in the placeholder.
 
     Args:
-        session: Die aktuelle StreamingSession.
-        html_text: Fertig konvertierter HTML-Text.
-        plain_source: Original-Markdown für strip_markdown Fallback.
-        part_num: Teil-Nummer (für Logging).
-        total: Gesamt-Anzahl Teile (für Logging).
+        session: The current StreamingSession.
+        html_text: Fully converted HTML text.
+        plain_source: Original markdown for strip_markdown fallback.
+        part_num: Part number (for logging).
+        total: Total number of parts (for logging).
     """
     for attempt in range(1 + FINAL_EDIT_MAX_RETRIES):
         try:
@@ -264,7 +257,7 @@ async def _send_final_edit_with_retry(
             if retry_after is not None and attempt < FINAL_EDIT_MAX_RETRIES:
                 _apply_flood_backoff(session, retry_after)
                 log.info(
-                    "Multi-Message Edit Teil %d/%d: 429, warte %ds",
+                    "Multi-message edit part %d/%d: 429, waiting %ds",
                     part_num,
                     total,
                     retry_after,
@@ -273,26 +266,24 @@ async def _send_final_edit_with_retry(
                 continue
             if retry_after is not None:
                 log.error(
-                    "Multi-Message Edit Teil %d/%d: 429 nach %d Retries, "
-                    "Fallback auf send_message",
+                    "Multi-message edit part %d/%d: 429 after %d retries, "
+                    "falling back to send_message",
                     part_num,
                     total,
                     FINAL_EDIT_MAX_RETRIES,
                 )
-                # Fallback: als neue Nachricht senden statt Edit
                 plain_text = strip_markdown(plain_source)
                 try:
                     await session.message.chat.send_message(plain_text)
                 except Exception as fb_e:
                     log.error(
-                        "Multi-Message Edit Fallback send_message "
-                        "Teil %d/%d fehlgeschlagen: %s",
+                        "Multi-message edit fallback send_message "
+                        "part %d/%d failed: %s",
                         part_num,
                         total,
                         fb_e,
                     )
                 return
-            # Nicht-429-Fehler: loggen und weiter
             _handle_edit_error(e)
             return
 
@@ -304,14 +295,14 @@ async def _send_final_message_with_retry(
     part_num: int,
     total: int,
 ) -> None:
-    """Sendet eine Folge-Nachricht im Multi-Message-Split mit Retry bei 429.
+    """Send a follow-up message in a multi-message split with retry on 429.
 
     Args:
-        session: Die aktuelle StreamingSession.
-        html_text: Fertig konvertierter HTML-Text.
-        plain_source: Original-Markdown für strip_markdown Fallback.
-        part_num: Teil-Nummer (für Logging).
-        total: Gesamt-Anzahl Teile (für Logging).
+        session: The current StreamingSession.
+        html_text: Fully converted HTML text.
+        plain_source: Original markdown for strip_markdown fallback.
+        part_num: Part number (for logging).
+        total: Total number of parts (for logging).
     """
     for attempt in range(1 + FINAL_EDIT_MAX_RETRIES):
         try:
@@ -319,12 +310,11 @@ async def _send_final_message_with_retry(
             _record_edit_success(session)
             return
         except Exception as e:
-            # Flood-Control: warten und retrien
             retry_after = _is_retry_after(e)
             if retry_after is not None and attempt < FINAL_EDIT_MAX_RETRIES:
                 _apply_flood_backoff(session, retry_after)
                 log.info(
-                    "Multi-Message Send Teil %d/%d: 429, warte %ds",
+                    "Multi-message send part %d/%d: 429, waiting %ds",
                     part_num,
                     total,
                     retry_after,
@@ -335,7 +325,7 @@ async def _send_final_message_with_retry(
             error_str = str(e).lower()
             if "can't parse entities" in error_str or "bad request" in error_str:
                 log.warning(
-                    "HTML-Send Teil %d/%d fehlgeschlagen, Fallback Plain: %s",
+                    "HTML send part %d/%d failed, falling back to plain: %s",
                     part_num,
                     total,
                     e,
@@ -345,13 +335,13 @@ async def _send_final_message_with_retry(
                     await session.message.chat.send_message(plain)
                 except Exception as fb_e:
                     log.warning(
-                        "Plain-Send Teil %d/%d fehlgeschlagen: %s",
+                        "Plain send part %d/%d failed: %s",
                         part_num,
                         total,
                         fb_e,
                     )
                 return
-            log.warning("Send Teil %d/%d Fehler: %s", part_num, total, e)
+            log.warning("Send part %d/%d error: %s", part_num, total, e)
             return
 
 
@@ -360,24 +350,24 @@ async def _send_html_with_fallback(
     html_text: str,
     plain_source: str,
 ) -> None:
-    """Editiert eine Nachricht mit HTML, Fallback auf Plain-Text.
+    """Edit a message with HTML, fallback to plain text.
 
-    RetryAfter-Exceptions werden NICHT gefangen sondern durchgereicht,
-    damit der aufrufende Code (z.B. _send_final_edit_with_retry) den
-    Retry-Loop steuern kann.
+    RetryAfter exceptions are NOT caught but re-raised,
+    so the calling code (e.g. _send_final_edit_with_retry) can
+    control the retry loop.
 
     Args:
-        message: Die Telegram-Message die editiert wird.
-        html_text: Fertig konvertierter HTML-Text.
-        plain_source: Original-Markdown für strip_markdown Fallback.
+        message: The Telegram message being edited.
+        html_text: Fully converted HTML text.
+        plain_source: Original markdown for strip_markdown fallback.
 
     Raises:
-        Exception: Bei RetryAfter/Flood-Control wird die Exception durchgereicht.
+        Exception: RetryAfter/flood control exceptions are re-raised.
     """
     try:
         await message.edit_text(html_text, parse_mode="HTML")
     except Exception as e:
-        # Flood-Control: durchreichen für Retry-Logik im Aufrufer
+        # Flood control: re-raise for retry logic in caller
         if _is_retry_after(e) is not None:
             raise
 
@@ -385,7 +375,7 @@ async def _send_html_with_fallback(
         if "message is not modified" in error_str:
             pass
         elif "can't parse entities" in error_str or "bad request" in error_str:
-            log.warning("HTML-Edit fehlgeschlagen, Fallback auf Plain-Text: %s", e)
+            log.warning("HTML edit failed, falling back to plain text: %s", e)
             plain_text = strip_markdown(plain_source)
             try:
                 await message.edit_text(plain_text)
@@ -399,24 +389,24 @@ def split_text_for_telegram(
     text: str,
     max_length: int = TELEGRAM_MAX_LENGTH,
 ) -> list[str]:
-    """Splittet Text intelligent für Telegram-Nachrichten.
+    """Split text intelligently for Telegram messages.
 
-    Splitting-Priorität:
-        1. Doppelter Zeilenumbruch (Absatz-Ende)
-        2. Einfacher Zeilenumbruch (Zeilen-Ende)
-        3. Satzende (. ! ?)
-        4. Wort-Grenze (Leerzeichen)
-        5. Harter Schnitt (Fallback)
+    Splitting priority:
+        1. Double newline (paragraph end)
+        2. Single newline (line end)
+        3. Sentence end (. ! ?)
+        4. Word boundary (space)
+        5. Hard cut (fallback)
 
-    Markdown-aware: Schneidet nicht mitten in **bold**, *italic*,
-    `code`, ```code blocks```, oder [links](url).
+    Markdown-aware: does not cut in the middle of **bold**, *italic*,
+    `code`, ```code blocks```, or [links](url).
 
     Args:
-        text: Der zu splittende Text.
-        max_length: Maximale Länge pro Teil (inkl. Part-Marker-Puffer).
+        text: The text to split.
+        max_length: Maximum length per part (including part-marker buffer).
 
     Returns:
-        Liste von Text-Teilen, jeder <= max_length Zeichen.
+        List of text parts, each <= max_length chars.
     """
     if len(text) <= max_length - _SPLIT_SAFETY_MARGIN:
         return [text]
@@ -430,7 +420,6 @@ def split_text_for_telegram(
             parts.append(remaining)
             break
 
-        # Finde die beste Split-Position
         split_pos = _find_split_position(remaining, effective_max)
         part = remaining[:split_pos].rstrip()
         remaining = remaining[split_pos:].lstrip("\n")
@@ -442,35 +431,35 @@ def split_text_for_telegram(
 
 
 def _find_split_position(text: str, max_pos: int) -> int:
-    """Findet die beste Position zum Splitten.
+    """Find the best position to split.
 
-    Sucht rückwärts von max_pos nach der besten Trennstelle.
-    Respektiert Markdown-Token-Grenzen.
+    Searches backward from max_pos for the best break point.
+    Respects markdown token boundaries.
 
     Args:
-        text: Der Text in dem gesucht wird.
-        max_pos: Maximale Position (exklusiv).
+        text: The text to search in.
+        max_pos: Maximum position (exclusive).
 
     Returns:
-        Die beste Split-Position.
+        The best split position.
     """
     search_text = text[:max_pos]
 
-    # Priorität 1: Doppelter Zeilenumbruch (Absatz)
+    # Priority 1: double newline (paragraph)
     pos = search_text.rfind("\n\n")
-    if pos > max_pos // 3:  # Nicht zu weit vorne splitten
-        candidate = pos + 2  # Nach dem Doppel-Newline
+    if pos > max_pos // 3:
+        candidate = pos + 2
         if _is_safe_markdown_position(text, candidate):
             return candidate
 
-    # Priorität 2: Einfacher Zeilenumbruch
+    # Priority 2: single newline
     pos = search_text.rfind("\n")
     if pos > max_pos // 3:
         candidate = pos + 1
         if _is_safe_markdown_position(text, candidate):
             return candidate
 
-    # Priorität 3: Satzende (. ! ? gefolgt von Leerzeichen oder Zeilenende)
+    # Priority 3: sentence end (. ! ? followed by space or line end)
     sentence_end = None
     for m in re.finditer(r"[.!?]\s", search_text):
         if m.end() > max_pos // 3:
@@ -478,58 +467,57 @@ def _find_split_position(text: str, max_pos: int) -> int:
     if sentence_end and _is_safe_markdown_position(text, sentence_end):
         return sentence_end
 
-    # Priorität 4: Wort-Grenze (Leerzeichen)
+    # Priority 4: word boundary (space)
     pos = search_text.rfind(" ")
     if pos > max_pos // 3:
         candidate = pos + 1
         if _is_safe_markdown_position(text, candidate):
             return candidate
 
-    # Fallback: harter Schnitt
+    # Fallback: hard cut
     return max_pos
 
 
 def _is_safe_markdown_position(text: str, pos: int) -> bool:
-    """Prüft ob eine Position sicher für einen Split ist.
+    """Check whether a position is safe for splitting.
 
-    Unsicher wenn wir uns mitten in einem Markdown-Token befinden:
-    - Ungerade Anzahl ** vor der Position (offener Bold-Marker)
-    - Offener Backtick-Block (```)
-    - Offene Inline-Backticks (`)
-    - Offener Link [text]( ohne schließendes )
+    Unsafe if we are in the middle of a markdown token:
+    * Odd number of ** before position (open bold marker)
+    * Open backtick block (```)
+    * Open inline backticks (`)
+    * Open link [text]( without closing )
 
     Args:
-        text: Der vollständige Text.
-        pos: Die zu prüfende Position.
+        text: The full text.
+        pos: The position to check.
 
     Returns:
-        True wenn der Split an dieser Position sicher ist.
+        True if splitting at this position is safe.
     """
     before = text[:pos]
 
-    # Check: offener Fenced Code-Block (ungerade Anzahl ```)
+    # Check: open fenced code block (odd count of ```)
     fence_count = before.count("```")
     if fence_count % 2 != 0:
         return False
 
-    # Check: offener Bold-Marker (ungerade Anzahl **)
+    # Check: open bold marker (odd count of **)
     bold_count = before.count("**")
     if bold_count % 2 != 0:
         return False
 
-    # Check: offener Inline-Code (ungerade Anzahl einzelner `)
-    # Zuerst ``` entfernen, dann einzelne ` zählen
+    # Check: open inline code (odd count of single `)
+    # First remove ```, then count single `
     cleaned = before.replace("```", "")
     backtick_count = cleaned.count("`")
     if backtick_count % 2 != 0:
         return False
 
-    # Check: offener Link [text](  (kein schließendes ))
+    # Check: open link [text]( (no closing ))
     last_open_bracket = before.rfind("[")
     if last_open_bracket >= 0:
         after_bracket = before[last_open_bracket:]
         if "(" in after_bracket and ")" not in after_bracket.split("(", 1)[1:]:
-            # Wir sind in einem offenen Link
             close_paren = text.find(")", pos)
             if close_paren >= 0:
                 return False
@@ -537,34 +525,34 @@ def _is_safe_markdown_position(text: str, pos: int) -> bool:
     return True
 
 
-# R04 Round 2: Markdown-Smart-Trim verhindert dass User während Streaming
-# rohe ** oder ` Tokens sieht. Schneidet unvollständige Markdown-Tokens
-# am Ende ab, damit der sichtbare Teil sauber als HTML rendert.
+# R04 Round 2: Markdown smart-trim prevents the user from seeing
+# raw ** or ` tokens during streaming. Trims incomplete markdown tokens
+# at the end so the visible part renders cleanly as HTML.
 def find_safe_markdown_end(text: str) -> int:
-    """Findet die letzte sichere Position für Markdown-Rendering.
+    """Find the last safe position for markdown rendering.
 
-    Wird für Zwischen-Edits verwendet (Option A: smart-trim).
-    Schneidet unvollständige Markdown-Tokens am Ende ab,
-    damit der sichtbare Teil sauber als HTML gerendert werden kann.
+    Used for intermediate edits (Option A: smart-trim).
+    Trims incomplete markdown tokens at the end so the visible
+    part can be rendered cleanly as HTML.
 
-    Sucht von hinten nach der letzten Position wo alle Markdown-Tokens
-    geschlossen sind.
+    Searches backward for the last position where all markdown
+    tokens are closed.
 
     Args:
-        text: Der bisherige akkumulierte Text.
+        text: The accumulated text so far.
 
     Returns:
-        Position bis zu der sicher gerendert werden kann.
+        Position up to which rendering is safe.
     """
     if not text:
         return 0
 
-    # Schnell-Check: wenn alles geschlossen ist, ganzen Text nehmen
+    # Quick check: if everything is closed, use the full text
     if _is_safe_markdown_position(text, len(text)):
         return len(text)
 
-    # Rückwärts suchen: letzte Position wo alles sicher ist
-    # Starte 50 Zeichen vor Ende (typische Token-Länge)
+    # Search backward: last position where everything is safe
+    # Start 50 chars before end (typical token length)
     search_start = max(0, len(text) - 50)
     best = search_start
 
@@ -577,65 +565,65 @@ def find_safe_markdown_end(text: str) -> int:
 
 
 async def abort_streaming(session: StreamingSession, error_text: str) -> None:
-    """Bricht Streaming ab und zeigt Fehlermeldung.
+    """Abort streaming and display an error message.
 
     Args:
-        session: Die aktuelle StreamingSession.
-        error_text: Fehlermeldung für den User.
+        session: The current StreamingSession.
+        error_text: Error message for the user.
     """
     session.accumulated_text = error_text
     await _do_edit(session)
 
 
-# R04 Round 3: HTML-Truncation-Bug Fix. Statt HTML blind abzuschneiden
-# (was <b>-Tags zerstört und Telegram 400 Bad Request "Can't parse entities"
-# triggert), wird der Markdown-Text per Binary-Search so gekürzt, dass
+# R04 Round 3: HTML truncation bug fix. Instead of blindly truncating HTML
+# (which breaks <b> tags and triggers Telegram 400 Bad Request "Can't parse entities"),
+# the markdown text is shortened via binary search so that
 # markdown_to_telegram_html(result) <= max_html_length.
 def _truncate_markdown_for_html_limit(
     text: str,
     max_html_length: int = TELEGRAM_MAX_LENGTH,
 ) -> str:
-    """Kürzt Markdown-Text so, dass die HTML-Konvertierung unter dem Limit bleibt.
+    """Truncate markdown text so the HTML conversion stays under the limit.
 
-    Statt HTML blind abzuschneiden (was Tags zerstört), wird der Markdown-Text
-    per Binary-Search so gekürzt, dass markdown_to_telegram_html(result) <= max_html_length.
+    Instead of blindly truncating HTML (which breaks tags), the markdown text
+    is shortened via binary search so that
+    markdown_to_telegram_html(result) <= max_html_length.
 
     Args:
-        text: Markdown-Text.
-        max_html_length: Maximale HTML-Länge (Default: 4096).
+        text: Markdown text.
+        max_html_length: Maximum HTML length (default: 4096).
 
     Returns:
-        Gekürzter Markdown-Text dessen HTML-Version unter dem Limit liegt.
+        Truncated markdown text whose HTML version is under the limit.
     """
     html = markdown_to_telegram_html(text)
     if len(html) <= max_html_length:
         return text
 
-    # Schätzung: Markdown ist kürzer als HTML (Tags brauchen Platz).
-    # Starte mit proportionalem Schätzwert.
+    # Estimate: markdown is shorter than HTML (tags take space).
+    # Start with proportional estimate.
     ratio = max_html_length / max(len(html), 1)
-    estimate = int(len(text) * ratio * 0.9)  # 10% Sicherheitsmarge
+    estimate = int(len(text) * ratio * 0.9)  # 10% safety margin
 
-    # Binary-Search für exakte Grenze
+    # Binary search for exact boundary
     lo = max(0, estimate - 200)
     hi = min(len(text), estimate + 200)
 
-    # Sicherstellen dass lo tatsaechlich unter dem Limit liegt
+    # Ensure lo is actually under the limit
     while lo > 0 and len(markdown_to_telegram_html(text[:lo])) > max_html_length - 3:
         lo = lo // 2
 
     best = lo
     while lo <= hi:
         mid = (lo + hi) // 2
-        # Finde sichere Markdown-Position nahe mid
         safe_pos = find_safe_markdown_end(text[:mid])
         if safe_pos == 0:
-            safe_pos = mid  # Fallback wenn kein sicherer Punkt gefunden
+            safe_pos = mid
 
         candidate = text[:safe_pos]
         candidate_html = markdown_to_telegram_html(candidate)
 
-        if len(candidate_html) <= max_html_length - 3:  # Platz für "..."
+        if len(candidate_html) <= max_html_length - 3:  # room for "..."
             best = safe_pos
             lo = mid + 1
         else:
@@ -645,37 +633,36 @@ def _truncate_markdown_for_html_limit(
 
 
 def _is_retry_after(exc: Exception) -> int | None:
-    """Prüft ob eine Exception ein Telegram RetryAfter (429) ist.
+    """Check whether an exception is a Telegram RetryAfter (429).
 
-    Erkennt sowohl die python-telegram-bot RetryAfter-Exception als auch
-    generische Exceptions deren Message 'flood control' enthält.
+    Recognizes both the python-telegram-bot RetryAfter exception and
+    generic exceptions whose message contains 'flood control'.
 
     Returns:
-        retry_after in Sekunden, oder None wenn kein 429.
+        retry_after in seconds, or None if not a 429.
     """
     # python-telegram-bot >= 20: telegram.error.RetryAfter
     retry_after = getattr(exc, "retry_after", None)
     if retry_after is not None:
         return int(retry_after)
 
-    # Fallback: String-Match für generische Exceptions
+    # Fallback: string match for generic exceptions
     msg = str(exc).lower()
     if "flood control" in msg or "429" in msg:
-        # Versuche retry_after aus dem Message zu parsen
         import re as _re
 
         m = _re.search(r"retry in (\d+)", msg)
         if m:
             return int(m.group(1))
-        return 30  # Konservativer Default wenn nicht parsbar
+        return 30  # Conservative default if not parsable
 
     return None
 
 
 def _apply_flood_backoff(session: StreamingSession, retry_after: int) -> None:
-    """Wendet Flood-Control-Backoff auf die Session an.
+    """Apply flood control backoff to the session.
 
-    Setzt Pause-Timestamp, verdoppelt Throttle, resetet Success-Counter.
+    Sets pause timestamp, doubles throttle, resets success counter.
     """
     now = time.monotonic()
     session._paused_until = now + retry_after
@@ -685,14 +672,14 @@ def _apply_flood_backoff(session: StreamingSession, retry_after: int) -> None:
     )
     session._consecutive_success = 0
     log.info(
-        "Flood-Control: Pause für %ds, Throttle adaptiv auf %.1fs erhöht",
+        "Flood control: pausing for %ds, throttle adaptively raised to %.1fs",
         retry_after,
         session._current_throttle,
     )
 
 
 def _record_edit_success(session: StreamingSession) -> None:
-    """Registriert eine erfolgreiche Edit und reduziert Throttle bei Recovery."""
+    """Record a successful edit and reduce throttle on recovery."""
     session._consecutive_success += 1
     if session._consecutive_success >= THROTTLE_RECOVERY_AFTER:
         old_throttle = session._current_throttle
@@ -703,47 +690,46 @@ def _record_edit_success(session: StreamingSession) -> None:
         session._consecutive_success = 0
         if old_throttle > session._current_throttle:
             log.debug(
-                "Throttle reduziert auf %.1fs (war %.1fs)",
+                "Throttle reduced to %.1fs (was %.1fs)",
                 session._current_throttle,
                 old_throttle,
             )
 
 
 async def _do_edit(session: StreamingSession) -> None:
-    """Führt eine Telegram-Message-Edit durch (Zwischen-Edits).
+    """Perform a Telegram message edit (intermediate edits).
 
-    Verwendet Option A (smart-trim): Markdown wird live zu HTML konvertiert.
-    Unvollständige Markdown-Tokens am Ende werden abgeschnitten,
-    damit der sichtbare Teil sauber formatiert ist.
+    Uses Option A (smart-trim): markdown is converted to HTML live.
+    Incomplete markdown tokens at the end are trimmed so the visible
+    part is cleanly formatted.
 
-    Handelt Telegram-API-Fehler leise (loggt aber).
-    Bei RetryAfter (429): Session wird pausiert, Zwischen-Edit übersprungen.
-    Bei Überschreitung der Telegram-Länge wird der Markdown-Text
-    intelligent gekürzt (nicht der HTML-Text, da das Tags zerstören würde).
+    Handles Telegram API errors silently (but logs them).
+    On RetryAfter (429): session is paused, intermediate edit skipped.
+    On Telegram length overflow, the markdown text is intelligently
+    truncated (not the HTML, as that would break tags).
     """
     raw = session.accumulated_text
     if not raw.strip():
         raw = "..."
 
-    # Smart-Trim: finde sichere Markdown-End-Position
+    # Smart-trim: find safe markdown end position
     safe_end = find_safe_markdown_end(raw)
 
     if safe_end > 0 and safe_end >= len(raw) // 2:
-        # Genug Text ist sicher renderbar: als HTML senden
         safe_text = raw[:safe_end]
 
-        # Markdown-Text kürzen falls HTML zu lang (statt HTML blind abzuschneiden)
+        # Truncate markdown if HTML is too long (instead of blindly truncating HTML)
         html_text = markdown_to_telegram_html(safe_text)
         if len(html_text) > TELEGRAM_MAX_LENGTH:
             safe_text = _truncate_markdown_for_html_limit(safe_text)
             html_text = markdown_to_telegram_html(safe_text)
             if len(html_text) > TELEGRAM_MAX_LENGTH:
-                # Absoluter Fallback: Plain-Text
+                # Absolute fallback: plain text
                 html_text = strip_markdown(safe_text)
                 if len(html_text) > TELEGRAM_MAX_LENGTH:
                     html_text = html_text[: TELEGRAM_MAX_LENGTH - 3] + "..."
 
-        # Duplikat-Check: kein API-Call wenn Text identisch zur letzten Edit
+        # Duplicate check: no API call if text is identical to last edit
         if html_text == session._last_edit_html:
             return
 
@@ -755,7 +741,7 @@ async def _do_edit(session: StreamingSession) -> None:
             _record_edit_success(session)
             return
         except Exception as e:
-            # Flood-Control: Pause + Skip (Zwischen-Edit, nicht retrien)
+            # Flood control: pause + skip (intermediate edit, no retry)
             retry_after = _is_retry_after(e)
             if retry_after is not None:
                 _apply_flood_backoff(session, retry_after)
@@ -767,18 +753,18 @@ async def _do_edit(session: StreamingSession) -> None:
                 session.last_edit_time = time.monotonic()
                 return
             if "can't parse entities" in error_str or "bad request" in error_str:
-                log.debug("HTML-Zwischen-Edit fehlgeschlagen, Fallback Plain: %s", e)
-                # Fallthrough zu Plain-Text
+                log.debug("HTML intermediate edit failed, falling back to plain: %s", e)
+                # Fall through to plain text
             else:
                 _handle_edit_error(e)
                 return
 
-    # Fallback: Plain-Text (wenn safe_end zu kurz oder HTML fehlgeschlagen)
+    # Fallback: plain text (if safe_end is too short or HTML failed)
     text = raw
     if len(text) > TELEGRAM_MAX_LENGTH:
         text = text[: TELEGRAM_MAX_LENGTH - 3] + "..."
 
-    # Duplikat-Check für Plain-Text
+    # Duplicate check for plain text
     if text == session._last_edit_html:
         return
 
@@ -789,7 +775,7 @@ async def _do_edit(session: StreamingSession) -> None:
         session.edit_count += 1
         _record_edit_success(session)
     except Exception as e:
-        # Flood-Control: Pause + Skip
+        # Flood control: pause + skip
         retry_after = _is_retry_after(e)
         if retry_after is not None:
             _apply_flood_backoff(session, retry_after)
@@ -798,18 +784,18 @@ async def _do_edit(session: StreamingSession) -> None:
 
 
 async def _do_edit_html(session: StreamingSession) -> None:
-    """Führt die finale Telegram-Message-Edit mit HTML-Formatierung durch.
+    """Perform the final Telegram message edit with HTML formatting.
 
-    Konvertiert den vollständigen Markdown-Text zu Telegram-HTML
-    via markdown_to_telegram_html(). Fallback auf strip_markdown()
-    wenn die HTML-Version von Telegram abgelehnt wird.
+    Converts the complete markdown text to Telegram HTML
+    via markdown_to_telegram_html(). Falls back to strip_markdown()
+    if the HTML version is rejected by Telegram.
 
-    FINAL-EDIT: Hat höchste Priorität. Bei RetryAfter wird gewartet
-    und erneut versucht (max FINAL_EDIT_MAX_RETRIES Versuche).
-    Der User MUSS die fertige Antwort sehen.
+    FINAL EDIT: has highest priority. On RetryAfter, waits and
+    retries (max FINAL_EDIT_MAX_RETRIES attempts).
+    The user MUST see the finished response.
 
-    Note: Bei langen Texten wird diese Funktion nicht mehr direkt
-    aufgerufen; stattdessen geht der Pfad über _finalize_multi_message().
+    Note: for long texts this function is no longer called directly;
+    instead the path goes through _finalize_multi_message().
     """
     raw_text = session.accumulated_text
     if not raw_text.strip():
@@ -825,40 +811,37 @@ async def _do_edit_html(session: StreamingSession) -> None:
             _record_edit_success(session)
             return
         except Exception as e:
-            # Flood-Control bei Final-Edit: warten und retrien
+            # Flood control on final edit: wait and retry
             retry_after = _is_retry_after(e)
             if retry_after is not None:
                 _apply_flood_backoff(session, retry_after)
                 if attempt < FINAL_EDIT_MAX_RETRIES:
                     log.info(
-                        "Final-Edit 429, warte %ds (Versuch %d/%d)",
+                        "Final edit 429, waiting %ds (attempt %d/%d)",
                         retry_after,
                         attempt + 1,
                         FINAL_EDIT_MAX_RETRIES,
                     )
                     await asyncio.sleep(retry_after)
                     continue
-                # Alle Retries aufgebraucht: Fallback auf neue Nachricht
+                # All retries exhausted: fall back to new message
                 log.error(
-                    "Final-Edit nach %d Retries immer noch 429, "
-                    "Fallback auf send_message",
+                    "Final edit still 429 after %d retries, "
+                    "falling back to send_message",
                     FINAL_EDIT_MAX_RETRIES,
                 )
                 plain_text = strip_markdown(raw_text)
                 try:
                     await session.message.chat.send_message(plain_text)
                 except Exception as fb_e:
-                    log.error(
-                        "Final-Edit Fallback send_message fehlgeschlagen: %s", fb_e
-                    )
+                    log.error("Final edit fallback send_message failed: %s", fb_e)
                 return
 
             error_str = str(e).lower()
             if "message is not modified" in error_str:
-                return  # Harmlos
+                return
             if "can't parse entities" in error_str or "bad request" in error_str:
-                # HTML-Parse-Fehler: Fallback auf Plain-Text (strip_markdown)
-                log.warning("HTML-Edit fehlgeschlagen, Fallback auf Plain-Text: %s", e)
+                log.warning("HTML edit failed, falling back to plain text: %s", e)
                 plain_text = strip_markdown(raw_text)
                 try:
                     await session.message.edit_text(plain_text)
@@ -873,11 +856,11 @@ async def _do_edit_html(session: StreamingSession) -> None:
 
 
 def _handle_edit_error(e: Exception) -> None:
-    """Handelt Telegram-API-Fehler leise (loggt aber)."""
+    """Handle Telegram API errors silently (but log them)."""
     error_str = str(e).lower()
     if "message is not modified" in error_str:
-        pass  # Harmlos: Text hat sich nicht geändert
+        pass
     elif "message to edit not found" in error_str:
-        log.warning("Streaming-Edit fehlgeschlagen: Nachricht gelöscht")
+        log.warning("Streaming edit failed: message deleted")
     else:
-        log.warning("Streaming-Edit Fehler: %s", e)
+        log.warning("Streaming edit error: %s", e)

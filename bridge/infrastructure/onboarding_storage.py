@@ -1,7 +1,7 @@
-"""SQLite-Storage für Onboarding-State.
+"""SQLite storage for onboarding state.
 
-Neue Tabelle `user_onboarding` in der bestehenden axolent.db.
-Abwärtskompatible Migration: bestehende User gelten als onboarded=True.
+New table `user_onboarding` in the existing axolent.db.
+Backward-compatible migration: existing users are treated as onboarded=True.
 """
 
 from __future__ import annotations
@@ -27,11 +27,11 @@ CREATE TABLE IF NOT EXISTS user_onboarding (
 
 
 class OnboardingStorage:
-    """SQLite-Adapter für Onboarding-State.
+    """SQLite adapter for onboarding state.
 
-    Speichert pro user_id den Onboarding-Status. Neue User starten
-    mit onboarded=False. Bestehende User (die schon in anderen Tabellen
-    existieren) werden beim ersten Zugriff als onboarded=True markiert.
+    Stores the onboarding status per user_id. New users start
+    with onboarded=False. Existing users (who already exist in other tables)
+    are marked as onboarded=True on first access.
     """
 
     def __init__(self, conn: SqliteConnection) -> None:
@@ -41,13 +41,13 @@ class OnboardingStorage:
     def _ensure_schema(self) -> None:
         """Creates the onboarding table if it doesn't exist."""
         self._conn.execute(_ONBOARDING_SCHEMA, ())
-        log.debug("Onboarding-Schema initialisiert")
+        log.debug("Onboarding schema initialized")
 
     def get_state(self, user_id: int) -> Optional[OnboardingState]:
         """Reads the onboarding state for a user.
 
         Args:
-            user_id: Telegram User-ID.
+            user_id: Telegram user ID.
 
         Returns:
             OnboardingState or None if no record exists.
@@ -85,7 +85,7 @@ class OnboardingStorage:
         """Marks a user as onboarded.
 
         Args:
-            user_id: Telegram User-ID.
+            user_id: Telegram user ID.
             lang: Language chosen during wizard (optional).
         """
         self._conn.execute(
@@ -95,7 +95,7 @@ class OnboardingStorage:
                DO UPDATE SET onboarded = 1, wizard_lang = COALESCE(?, wizard_lang)""",
             (user_id, lang, lang),
         )
-        log.info("User %d als onboarded markiert (lang=%s)", user_id, lang)
+        log.info("User %d marked as onboarded (lang=%s)", user_id, lang)
 
     def set_wizard_lang(self, user_id: int, lang: str) -> None:
         """Sets the wizard language for step 1 completion.
@@ -103,7 +103,7 @@ class OnboardingStorage:
         Creates the record if it doesn't exist (onboarded stays False).
 
         Args:
-            user_id: Telegram User-ID.
+            user_id: Telegram user ID.
             lang: Chosen language code.
         """
         self._conn.execute(
@@ -113,7 +113,7 @@ class OnboardingStorage:
                DO UPDATE SET wizard_lang = ?""",
             (user_id, lang, lang),
         )
-        log.debug("Wizard-Lang gesetzt: user_id=%d lang=%s", user_id, lang)
+        log.debug("Wizard lang set: user_id=%d lang=%s", user_id, lang)
 
     def increment_skip_count(self, user_id: int) -> int:
         """Increments the skip counter and returns the new value.
@@ -121,7 +121,7 @@ class OnboardingStorage:
         Creates the record if it doesn't exist.
 
         Args:
-            user_id: Telegram User-ID.
+            user_id: Telegram user ID.
 
         Returns:
             New skip count value.
@@ -138,14 +138,14 @@ class OnboardingStorage:
             (user_id,),
         )
         count = row["skip_count"] if row else 1
-        log.debug("Skip-Count inkrementiert: user_id=%d count=%d", user_id, count)
+        log.debug("Skip count incremented: user_id=%d count=%d", user_id, count)
         return count
 
     def set_hint_shown(self, user_id: int) -> None:
         """Marks the onboarding hint as shown.
 
         Args:
-            user_id: Telegram User-ID.
+            user_id: Telegram user ID.
         """
         self._conn.execute(
             """INSERT INTO user_onboarding (user_id, onboarded, hint_shown)
@@ -154,13 +154,13 @@ class OnboardingStorage:
                DO UPDATE SET hint_shown = 1""",
             (user_id,),
         )
-        log.debug("Hint-Shown markiert: user_id=%d", user_id)
+        log.debug("Hint shown marked: user_id=%d", user_id)
 
     def is_hint_shown(self, user_id: int) -> bool:
         """Checks if the onboarding hint has been shown.
 
         Args:
-            user_id: Telegram User-ID.
+            user_id: Telegram user ID.
 
         Returns:
             True if hint was already shown.
@@ -185,7 +185,6 @@ class OnboardingStorage:
         Returns:
             Number of users migrated.
         """
-        # Collect all known user_ids from existing tables
         migrated = 0
         tables_and_cols = [
             ("bookmarks", "user_id"),
@@ -206,7 +205,6 @@ class OnboardingStorage:
                 continue
 
         for uid in existing_user_ids:
-            # Only insert if not already present
             existing = conn.fetchone(
                 "SELECT 1 FROM user_onboarding WHERE user_id = ?", (uid,)
             )
@@ -219,7 +217,7 @@ class OnboardingStorage:
 
         if migrated > 0:
             log.info(
-                "Onboarding-Migration: %d bestehende User als onboarded markiert",
+                "Onboarding migration: %d existing users marked as onboarded",
                 migrated,
             )
         return migrated

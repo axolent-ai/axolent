@@ -1,7 +1,7 @@
-"""Personality-Domain-Modell.
+"""Personality domain model.
 
-Definiert die Struktur für System-Prompt und User-Constitution.
-Reine Datenstruktur und Kombinations-Logik, keine I/O.
+Defines the structure for system prompt and user constitution.
+Pure data structure and combination logic, no I/O.
 """
 
 import logging
@@ -12,24 +12,24 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class PersonalityConfig:
-    """Konfiguration der Bot-Persönlichkeit.
+    """Configuration for the bot personality.
 
     Attributes:
-        system_prompt: Hauptanweisung für Claudes Verhalten.
-        user_constitution: Zusätzliche Regeln der Benutzerin.
+        system_prompt: Main instruction for Claude's behavior.
+        user_constitution: Additional rules from the user.
     """
 
     system_prompt: str = ""
     user_constitution: str = ""
 
     def build_combined_prompt(self) -> str:
-        """Kombiniert System-Prompt und User-Constitution zu einem String.
+        """Combine system prompt and user constitution into one string.
 
-        Format: System-Prompt + Trennlinie + Constitution.
-        Wenn nur einer vorhanden ist, wird nur dieser zurückgegeben.
+        Format: system prompt + separator + constitution.
+        If only one is present, only that one is returned.
 
         Returns:
-            Kombinierter Prompt-String für --append-system-prompt.
+            Combined prompt string for --append-system-prompt.
         """
         parts: list[str] = [
             p for p in (self.system_prompt, self.user_constitution) if p
@@ -37,24 +37,24 @@ class PersonalityConfig:
 
         if not parts:
             log.warning(
-                "Weder System-Prompt noch User-Constitution geladen. "
-                "Bot startet ohne Persönlichkeit."
+                "Neither system prompt nor user constitution loaded. "
+                "Bot starts without personality."
             )
             return ""
 
         combined = "\n\n---\n\n".join(parts)
-        log.info("Combined Prompt gebaut: %d Zeichen total", len(combined))
+        log.info("Combined prompt built: %d chars total", len(combined))
         return combined
 
 
 @dataclass(frozen=True, slots=True)
 class SlotInfo:
-    """Belegung eines einzelnen Task-Slots.
+    """Occupancy of a single task slot.
 
     Attributes:
-        slot_name: Name des Slots (z.B. "chat", "code").
-        model_display_name: Menschenlesbarer Modell-Name.
-        source: Herkunft der Belegung ("default", "user-override", "global").
+        slot_name: Name of the slot (e.g. "chat", "code").
+        model_display_name: Human-readable model name.
+        source: Origin of the occupancy ("default", "user-override", "global").
     """
 
     slot_name: str
@@ -70,22 +70,22 @@ def build_self_awareness_block(
     all_slots: list[SlotInfo] | None = None,
     lang: str = "de",
 ) -> str:
-    """Baut den Self-Awareness-Block für den System-Prompt.
+    """Build the self-awareness block for the system prompt.
 
-    Gibt dem Modell faktische Informationen über sich selbst,
-    damit es nicht halluziniert wenn der User fragt welches Modell läuft.
-    Unterstützt DE und EN (alle anderen Sprachen fallen auf EN zurück).
+    Gives the model factual information about itself so it does not
+    hallucinate when the user asks which model is running.
+    Supports DE and EN (all other languages fall back to EN).
 
     Args:
-        model_display_name: Menschenlesbarer Modell-Name (z.B. "Opus 4.7").
-        model_id: Technische Modell-ID (z.B. "claude-opus-4-7").
-        task_slot: Aktiver Task-Slot (z.B. "chat", "code").
-        provider: Provider-Name (z.B. "anthropic").
-        all_slots: Optionale Liste aller 6 Slot-Belegungen im User-Kontext.
-        lang: Sprach-Code (default: "de"). Nicht-DE fällt auf EN zurück.
+        model_display_name: Human-readable model name (e.g. "Opus 4.7").
+        model_id: Technical model ID (e.g. "claude-opus-4-7").
+        task_slot: Active task slot (e.g. "chat", "code").
+        provider: Provider name (e.g. "anthropic").
+        all_slots: Optional list of all 6 slot occupancies in the user context.
+        lang: Language code (default: "de"). Non-DE falls back to EN.
 
     Returns:
-        Self-Awareness-Block als String.
+        Self-awareness block as string.
     """
     use_de = lang == "de"
 
@@ -140,7 +140,7 @@ def build_self_awareness_block(
 
     lines.append(text_self_id)
 
-    # Anti-Halluzination: Edge-Case ohne Slot-Liste
+    # Anti-hallucination: edge case without slot list
     if not all_slots:
         lines.append(text_no_slots)
 
@@ -148,14 +148,14 @@ def build_self_awareness_block(
 
 
 def build_effective_prompt(base_prompt: str, language_hint: str = "") -> str:
-    """Baut den effektiven System-Prompt inkl. Sprach-Override.
+    """Build the effective system prompt including language override.
 
     Args:
-        base_prompt: Der kombinierte Base-Prompt.
-        language_hint: Erkannte Sprache (z.B. "en", "de").
+        base_prompt: The combined base prompt.
+        language_hint: Detected language (e.g. "en", "de").
 
     Returns:
-        Effektiver Prompt mit optionalem Language-Override.
+        Effective prompt with optional language override.
     """
     effective = base_prompt
     if language_hint and language_hint != "de":

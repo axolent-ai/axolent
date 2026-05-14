@@ -1,14 +1,14 @@
-"""Self-Awareness-Service: baut den Self-Awareness-Block für den System-Prompt.
+"""Self-awareness service: builds the self-awareness block for the system prompt.
 
-Extrahiert aus ChatService (Phase 3 Polish). Verantwortlich für:
-  - Modell-Metadaten aus der ModelRegistry resolven
-  - Slot-Belegungsliste für alle 6 Task-Slots zusammenstellen
-  - Self-Awareness-Block als String bauen (i18n-fähig: DE/EN)
+Extracted from ChatService (Phase 3 Polish). Responsible for:
+  * Resolving model metadata from the ModelRegistry
+  * Assembling the slot occupancy list for all 6 task slots
+  * Building the self-awareness block as a string (i18n-capable: DE/EN)
 
-Dependencies (Constructor-Injection):
-  - ModelService: User-Override-Lookup
-  - TaskRouter: Slot-Default-Resolution
-  - ModelRegistry: Modell-Metadaten-Lookup
+Dependencies (constructor injection):
+  * ModelService: user override lookup
+  * TaskRouter: slot default resolution
+  * ModelRegistry: model metadata lookup
 """
 
 from __future__ import annotations
@@ -27,10 +27,10 @@ log = logging.getLogger(__name__)
 
 
 class SelfAwarenessService:
-    """Baut den Self-Awareness-Block für den System-Prompt.
+    """Builds the self-awareness block for the system prompt.
 
-    Gibt dem Modell faktische Informationen über sich selbst,
-    damit es nicht halluziniert wenn der User fragt welches Modell läuft.
+    Gives the model factual information about itself so it does not
+    hallucinate when the user asks which model is running.
     """
 
     def __init__(
@@ -50,20 +50,20 @@ class SelfAwarenessService:
         task_slot_name: str | None = None,
         lang: str = "de",
     ) -> str:
-        """Baut den Self-Awareness-Block für den System-Prompt.
+        """Build the self-awareness block for the system prompt.
 
-        Resolved Modell-Metadaten aus der ModelRegistry und baut den Block.
-        Wenn kein Modell resolved wurde, wird der System-Default verwendet.
-        Wenn user_id gegeben, werden alle 6 Slot-Belegungen inkludiert.
+        Resolves model metadata from the ModelRegistry and builds the block.
+        If no model was resolved, the system default is used.
+        If user_id is given, all 6 slot occupancies are included.
 
         Args:
-            user_id: Telegram-User-ID für Slot-Belegungsliste (optional).
-            user_model: Resolved Modell-ID oder None.
-            task_slot_name: Name des Task-Slots oder None.
-            lang: Sprach-Code für i18n des Blocks (default: "de").
+            user_id: Telegram user ID for slot occupancy list (optional).
+            user_model: Resolved model ID or None.
+            task_slot_name: Name of the task slot or None.
+            lang: Language code for i18n of the block (default: "de").
 
         Returns:
-            Self-Awareness-Block als String, oder leerer String bei Fehler.
+            Self-awareness block as string, or empty string on error.
         """
         from application.model_service import DEFAULT_MODEL
 
@@ -73,14 +73,14 @@ class SelfAwarenessService:
         try:
             metadata = self._registry.get(model_id)
 
-            # Alle 6 Slot-Belegungen sammeln (wenn user_id vorhanden)
+            # Collect all 6 slot occupancies (if user_id is available)
             all_slots: list[SlotInfo] | None = None
             if user_id is not None:
                 try:
                     all_slots = self._build_all_slot_infos(user_id)
                 except Exception:
                     log.debug(
-                        "Slot-Belegungsliste konnte nicht gebaut werden",
+                        "Could not build slot occupancy list",
                         exc_info=True,
                     )
 
@@ -93,7 +93,7 @@ class SelfAwarenessService:
                     all_slots=all_slots,
                     lang=lang,
                 )
-            # Fallback: ID direkt verwenden wenn nicht in Registry
+            # Fallback: use ID directly if not in registry
             return build_self_awareness_block(
                 model_display_name=model_id,
                 model_id=model_id,
@@ -103,22 +103,22 @@ class SelfAwarenessService:
                 lang=lang,
             )
         except Exception:
-            log.debug("Self-Awareness-Block konnte nicht gebaut werden", exc_info=True)
+            log.debug("Could not build self-awareness block", exc_info=True)
             return ""
 
     def _build_all_slot_infos(self, user_id: int) -> list[SlotInfo]:
-        """Baut die Slot-Belegungsliste für alle 6 Task-Slots.
+        """Build the slot occupancy list for all 6 task slots.
 
-        Priorität pro Slot:
-          1. Slot-spezifischer Override
-          2. Globaler Override
-          3. Slot-Default (via TaskRouter.get_default_for_slot, Single Source of Truth)
+        Priority per slot:
+          1. Slot-specific override
+          2. Global override
+          3. Slot default (via TaskRouter.get_default_for_slot, single source of truth)
 
         Args:
-            user_id: Telegram-User-ID.
+            user_id: Telegram user ID.
 
         Returns:
-            Liste von SlotInfo für alle 6 Slots.
+            List of SlotInfo for all 6 slots.
         """
         from application.model_service import DEFAULT_MODEL
         from domain.task_slot import TaskSlot
@@ -140,7 +140,7 @@ class SelfAwarenessService:
                 model_id = global_override
                 source = "global"
             else:
-                # Single Source of Truth: TaskRouter.get_default_for_slot
+                # Single source of truth: TaskRouter.get_default_for_slot
                 if self._task_router is not None:
                     model_id = self._task_router.get_default_for_slot(slot)
                 else:

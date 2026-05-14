@@ -1,9 +1,9 @@
-"""Task-Slot Domain: Enum und SlotConfig für Task-Klassifikation.
+"""Task slot domain: enum and SlotConfig for task classification.
 
-6 Slots für automatisches Modell-Routing:
+6 slots for automatic model routing:
   CHAT, CODE, REASON, CREATIVE, QUICK, RESEARCH.
 
-Reine Domain-Logik, keine I/O-Abhaengigkeiten.
+Pure domain logic, no I/O dependencies.
 """
 
 from __future__ import annotations
@@ -12,10 +12,10 @@ from enum import Enum
 
 
 class TaskSlot(str, Enum):
-    """Task-Kategorien für automatisches Modell-Routing.
+    """Task categories for automatic model routing.
 
-    Jeder Slot hat ein Default-Modell und eine Heuristik-Konfiguration.
-    Die str-Vererbung ermoeglicht direkten Vergleich mit Strings.
+    Each slot has a default model and a heuristic configuration.
+    The str inheritance enables direct comparison with strings.
     """
 
     CHAT = "chat"
@@ -27,13 +27,13 @@ class TaskSlot(str, Enum):
 
     @classmethod
     def from_string(cls, value: str) -> TaskSlot | None:
-        """Parst einen String in einen TaskSlot (case-insensitive).
+        """Parse a string into a TaskSlot (case-insensitive).
 
         Args:
-            value: Slot-Name als String.
+            value: Slot name as string.
 
         Returns:
-            TaskSlot oder None wenn nicht erkannt.
+            TaskSlot or None if not recognized.
         """
         try:
             return cls(value.lower().strip())
@@ -42,11 +42,11 @@ class TaskSlot(str, Enum):
 
     @classmethod
     def all_names(cls) -> list[str]:
-        """Gibt alle Slot-Namen als Strings zurück."""
+        """Return all slot names as strings."""
         return [slot.value for slot in cls]
 
 
-# Prioritätsreihenfolge bei Score-Gleichstand:
+# Priority order on score tie:
 # CODE > REASON > RESEARCH > CREATIVE > QUICK > CHAT
 SLOT_PRIORITY: list[TaskSlot] = [
     TaskSlot.CODE,

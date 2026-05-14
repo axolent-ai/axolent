@@ -1,11 +1,11 @@
-"""Bookmark-Service: Use-Case-Koordination für Bookmark-Operationen.
+"""Bookmark service: use-case coordination for bookmark operations.
 
-Orchestriert BookmarkStorage (Persistenz) und stellt
-eine saubere API für die Presentation-Layer bereit.
+Orchestrates BookmarkStorage (persistence) and provides
+a clean API for the presentation layer.
 
-Seit V6: Konstruktor-Injection statt Modul-Global.
-BookmarkService bekommt das Storage-Backend via __init__,
-identisch zum ChatService-Pattern.
+Since V6: constructor injection instead of module globals.
+BookmarkService receives the storage backend via __init__,
+identical to the ChatService pattern.
 """
 
 from __future__ import annotations
@@ -18,9 +18,9 @@ log = logging.getLogger(__name__)
 
 
 class BookmarkStorage(Protocol):
-    """Protocol für austauschbare Bookmark-Storage-Backends.
+    """Protocol for swappable bookmark storage backends.
 
-    Implementiert von SqliteBookmarkStorage und den JSONL-Funktionen.
+    Implemented by SqliteBookmarkStorage and the JSONL functions.
     """
 
     def save_bookmark(
@@ -50,10 +50,10 @@ class BookmarkStorage(Protocol):
 
 
 class BookmarkService:
-    """Application-Layer Service für Bookmark-Operationen.
+    """Application-layer service for bookmark operations.
 
-    Bekommt das Storage-Backend via Konstruktor-Injection.
-    Enthält Toggle-Logik und Business-Orchestration.
+    Receives the storage backend via constructor injection.
+    Contains toggle logic and business orchestration.
     """
 
     def __init__(self, storage: BookmarkStorage) -> None:
@@ -67,27 +67,27 @@ class BookmarkService:
         message_id: int,
         content: str,
     ) -> tuple[bool, str]:
-        """Speichert oder entfernt einen Bookmark (Toggle-Logik).
+        """Save or remove a bookmark (toggle logic).
 
-        Wenn der Bookmark bereits existiert, wird er entfernt.
-        Wenn er nicht existiert, wird er gespeichert.
+        If the bookmark already exists, it is removed.
+        If it does not exist, it is saved.
 
         Args:
-            user_id: Telegram User-ID.
-            username: Telegram Username.
-            chat_id: Telegram Chat-ID.
-            message_id: Telegram Message-ID.
-            content: Volltext der Nachricht.
+            user_id: Telegram user ID.
+            username: Telegram username.
+            chat_id: Telegram chat ID.
+            message_id: Telegram message ID.
+            content: Full text of the message.
 
         Returns:
             Tuple (was_saved, user_message):
-                was_saved=True wenn gespeichert, False wenn entfernt.
-                user_message: Bestätigungstext für den User.
+                was_saved=True if saved, False if removed.
+                user_message: Confirmation text for the user.
         """
         if self._storage.bookmark_exists(user_id, chat_id, message_id):
             self._storage.delete_bookmark(user_id, chat_id, message_id)
             log.info(
-                "Bookmark entfernt via toggle: user_id=%d chat_id=%d message_id=%d",
+                "Bookmark removed via toggle: user_id=%d chat_id=%d message_id=%d",
                 user_id,
                 chat_id,
                 message_id,
@@ -104,54 +104,54 @@ class BookmarkService:
         return True, "Bookmark gespeichert"
 
     def list_bookmarks(self, user_id: int, limit: int = 10) -> list[dict[str, Any]]:
-        """Gibt die neuesten Bookmarks eines Users zurück.
+        """Return the most recent bookmarks for a user.
 
         Args:
-            user_id: Telegram User-ID.
-            limit: Maximale Anzahl.
+            user_id: Telegram user ID.
+            limit: Maximum number of results.
 
         Returns:
-            Liste von Bookmark-Dicts, neueste zuerst.
+            List of bookmark dicts, newest first.
         """
         return self._storage.list_recent_bookmarks(user_id, limit=limit)
 
     def search(self, user_id: int, query: str, limit: int = 20) -> list[dict[str, Any]]:
-        """Sucht Bookmarks per Inhalts-Substring.
+        """Search bookmarks by content substring.
 
         Args:
-            user_id: Telegram User-ID.
-            query: Suchbegriff.
-            limit: Max Ergebnisse.
+            user_id: Telegram user ID.
+            query: Search term.
+            limit: Max results.
 
         Returns:
-            Liste passender Bookmark-Dicts.
+            List of matching bookmark dicts.
         """
         return self._storage.search_bookmarks(user_id, query, limit=limit)
 
     def get_bookmark(
         self, user_id: int, chat_id: int, message_id: int
     ) -> Optional[dict[str, Any]]:
-        """Findet einen einzelnen Bookmark.
+        """Find a single bookmark.
 
         Args:
-            user_id: Telegram User-ID.
-            chat_id: Telegram Chat-ID.
-            message_id: Telegram Message-ID.
+            user_id: Telegram user ID.
+            chat_id: Telegram chat ID.
+            message_id: Telegram message ID.
 
         Returns:
-            Bookmark-Dict oder None.
+            Bookmark dict or None.
         """
         return self._storage.get_bookmark_by_message_id(user_id, chat_id, message_id)
 
     def remove_bookmark(self, user_id: int, chat_id: int, message_id: int) -> bool:
-        """Löscht einen Bookmark.
+        """Delete a bookmark.
 
         Args:
-            user_id: Telegram User-ID.
-            chat_id: Telegram Chat-ID.
-            message_id: Telegram Message-ID.
+            user_id: Telegram user ID.
+            chat_id: Telegram chat ID.
+            message_id: Telegram message ID.
 
         Returns:
-            True wenn gelöscht, False wenn nicht gefunden.
+            True if deleted, False if not found.
         """
         return self._storage.delete_bookmark(user_id, chat_id, message_id)

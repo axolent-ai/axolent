@@ -1,17 +1,17 @@
-"""Tests für application.debate_orchestrator (R10: Multi-AI-Debate).
+"""Tests for application.debate_orchestrator (R10: Multi-AI-Debate).
 
-Testet:
-- 2 Provider parallel, beide antworten erfolgreich
-- 1 Provider crasht, anderer antwortet (errors-Dict enthält ihn)
-- Alle Provider crashen (DebateResult mit leeren responses)
-- Timeout wird respektiert
-- Konsens-Heuristik gibt sinnvollen Output
-- Kein Provider verfügbar
-- Provider-Deduplizierung (claude_persistent + claude = eine Gruppe)
-- Final Review: JSON-Parse-Erfolg
-- Final Review: JSON-Parse-Fehler -> graceful Fallback
-- Final Review: Provider-Namen anonymisiert im Judge-Prompt (Bias-Mitigation)
-- Final Review: Integration in Debate-Flow
+Tests:
+* 2 providers in parallel, both succeed
+* 1 provider crashes, other responds (errors dict contains it)
+* All providers crash (DebateResult with empty responses)
+* Timeout is respected
+* Consensus heuristic gives meaningful output
+* No provider available
+* Provider deduplication (claude_persistent + claude = one group)
+* Final Review: JSON parse success
+* Final Review: JSON parse error -> graceful fallback
+* Final Review: Provider names anonymized in judge prompt (bias mitigation)
+* Final Review: Integration in debate flow
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from infrastructure.providers.base import (
 
 
 class _MockProvider(LLMProvider):
-    """Mock-Provider für Tests."""
+    """Mock provider for tests."""
 
     def __init__(
         self,
@@ -77,17 +77,16 @@ class _MockProvider(LLMProvider):
 
 
 def _make_router(providers: dict[str, _MockProvider]) -> ProviderRouter:
-    """Erstellt einen ProviderRouter mit Mock-Providern."""
-    # Sichergestellt dass ein Default existiert
+    """Create a ProviderRouter with mock providers."""
     default = next(iter(providers.keys()))
     return ProviderRouter(providers=providers, default=default)
 
 
 class TestDebateOrchestratorBasic:
-    """Grundlegende Debate-Tests."""
+    """Basic debate tests."""
 
     async def test_two_providers_both_succeed(self) -> None:
-        """Zwei Provider antworten erfolgreich."""
+        """Two providers respond successfully."""
         providers = {
             "alpha": _MockProvider("alpha", response_text="Antwort A"),
             "beta": _MockProvider("beta", response_text="Antwort B"),
@@ -111,7 +110,7 @@ class TestDebateOrchestratorBasic:
         assert set(result.providers_queried) == {"alpha", "beta"}
 
     async def test_one_provider_crashes_other_succeeds(self) -> None:
-        """Ein Provider crasht, der andere antwortet normal."""
+        """One provider crashes, the other responds normally."""
         providers = {
             "good": _MockProvider("good", response_text="Gute Antwort"),
             "bad": _MockProvider("bad", should_raise=RuntimeError("Provider kaputt")),
@@ -127,7 +126,7 @@ class TestDebateOrchestratorBasic:
         assert "Provider kaputt" in result.errors["bad"]
 
     async def test_all_providers_crash(self) -> None:
-        """Alle Provider crashen: leere responses, gefuellte errors."""
+        """All providers crash: empty responses, populated errors."""
         providers = {
             "crash1": _MockProvider("crash1", should_raise=RuntimeError("Crash 1")),
             "crash2": _MockProvider("crash2", should_raise=RuntimeError("Crash 2")),
@@ -142,13 +141,13 @@ class TestDebateOrchestratorBasic:
         assert "crash2" in result.errors
 
     async def test_timeout_respected(self) -> None:
-        """Provider mit langem Delay wird per Timeout abgebrochen."""
+        """Provider with long delay is cancelled by timeout."""
         providers = {
             "fast": _MockProvider("fast", response_text="Schnell"),
             "slow": _MockProvider("slow", response_text="Nie", delay=100.0),
         }
         router = _make_router(providers)
-        # Sehr kurzer Timeout
+        # Very short timeout
         orchestrator = DebateOrchestrator(provider_router=router, timeout_seconds=1)
 
         result = await orchestrator.debate(question="Test?", user_id=1, chat_id=10)
@@ -161,7 +160,7 @@ class TestDebateOrchestratorBasic:
         )
 
     async def test_no_providers_available(self) -> None:
-        """Keine Provider verfügbar: system-Fehler."""
+        """No providers available: system error."""
         providers = {
             "offline": _MockProvider("offline", available=False),
         }
@@ -175,7 +174,7 @@ class TestDebateOrchestratorBasic:
         assert result.providers_queried == []
 
     async def test_single_provider_consensus_note(self) -> None:
-        """Nur ein Provider verfügbar: Konsens-Analyse vermerkt das."""
+        """Only one provider available: consensus analysis notes this."""
         providers = {
             "solo": _MockProvider("solo", response_text="Einzelantwort"),
             "off": _MockProvider("off", available=False),
@@ -187,14 +186,14 @@ class TestDebateOrchestratorBasic:
 
         assert "solo" in result.responses
         assert result.consensus_analysis is not None
-        assert "Nur ein Provider" in result.consensus_analysis
+        assert "Only one provider" in result.consensus_analysis
 
 
 class TestConsensusHeuristic:
-    """Tests für die Konsens-Heuristik."""
+    """Tests for the consensus heuristic."""
 
     async def test_high_overlap_detected(self) -> None:
-        """Ähnliche Antworten -> hohe Übereinstimmung."""
+        """Similar responses -> high agreement."""
         providers = {
             "a": _MockProvider(
                 "a",
@@ -219,14 +218,14 @@ class TestConsensusHeuristic:
         )
 
         assert result.consensus_analysis is not None
-        # Bei hohem Overlap sollte "überein" oder "Übereinstimmung" stehen
+        # High overlap should mention "agree" or "agreement"
         assert (
-            "überein" in result.consensus_analysis.lower()
-            or "übereinstimmung" in result.consensus_analysis.lower()
+            "agree" in result.consensus_analysis.lower()
+            or "agreement" in result.consensus_analysis.lower()
         )
 
     async def test_low_overlap_detected(self) -> None:
-        """Sehr unterschiedliche Antworten -> Dissens erkannt."""
+        """Very different responses -> dissent detected."""
         providers = {
             "a": _MockProvider(
                 "a",
@@ -246,14 +245,14 @@ class TestConsensusHeuristic:
         result = await orchestrator.debate(question="Irgendwas", user_id=1, chat_id=10)
 
         assert result.consensus_analysis is not None
-        assert "unterschiedlich" in result.consensus_analysis.lower()
+        assert "different" in result.consensus_analysis.lower()
 
 
 class TestDebateProviderConfig:
-    """Tests für DEBATE_PROVIDERS-Konfiguration."""
+    """Tests for DEBATE_PROVIDERS configuration."""
 
     async def test_configured_providers_filter(self) -> None:
-        """DEBATE_PROVIDERS env-var filtert Provider."""
+        """DEBATE_PROVIDERS env var filters providers."""
         providers = {
             "alpha": _MockProvider("alpha", response_text="A"),
             "beta": _MockProvider("beta", response_text="B"),
@@ -273,7 +272,7 @@ class TestDebateProviderConfig:
         assert "beta" not in result.responses
 
     async def test_configured_unavailable_provider_skipped(self) -> None:
-        """Konfigurierter aber nicht-verfügbarer Provider wird übersprungen."""
+        """Configured but unavailable provider is skipped."""
         providers = {
             "online": _MockProvider("online", response_text="OK"),
             "offline": _MockProvider("offline", available=False),
@@ -293,46 +292,46 @@ class TestDebateProviderConfig:
 
 
 class TestProviderDeduplication:
-    """Tests für Provider-Deduplizierung (R10-Fix).
+    """Tests for provider deduplication (R10 fix).
 
-    claude_persistent und claude nutzen beide die Claude CLI.
-    Im Debate soll nur einer der beiden genutzt werden, um verzerrte
-    Konsens-Analysen und Token-Verschwendung zu vermeiden.
+    claude_persistent and claude both use the Claude CLI.
+    In debates, only one of the two should be used to avoid
+    skewed consensus analyses and token waste.
     """
 
     def test_dedup_both_claude_available(self) -> None:
-        """Beide Claude-Provider verfügbar: nur claude_persistent bleibt."""
+        """Both Claude providers available: only claude_persistent remains."""
         result = deduplicate_providers(["claude_persistent", "claude", "ollama_local"])
         assert result == ["claude_persistent", "ollama_local"]
 
     def test_dedup_only_legacy_claude(self) -> None:
-        """Nur Legacy-Claude verfügbar: wird behalten."""
+        """Only legacy Claude available: is kept."""
         result = deduplicate_providers(["claude", "ollama_local"])
         assert result == ["claude", "ollama_local"]
 
     def test_dedup_only_persistent(self) -> None:
-        """Nur claude_persistent verfügbar: wird behalten."""
+        """Only claude_persistent available: is kept."""
         result = deduplicate_providers(["claude_persistent"])
         assert result == ["claude_persistent"]
 
     def test_dedup_standalone_providers_untouched(self) -> None:
-        """Standalone-Provider (nicht in einer Gruppe) werden nie entfernt."""
+        """Standalone providers (not in a group) are never removed."""
         result = deduplicate_providers(["ollama_local", "openai", "gemini"])
         assert result == ["ollama_local", "openai", "gemini"]
 
     def test_dedup_empty_list(self) -> None:
-        """Leere Liste bleibt leer."""
+        """Empty list stays empty."""
         result = deduplicate_providers([])
         assert result == []
 
     def test_dedup_order_matters(self) -> None:
-        """Erster Provider der Gruppe gewinnt (basierend auf Input-Reihenfolge)."""
-        # Wenn claude VOR claude_persistent steht, gewinnt claude
+        """First provider in the group wins (based on input order)."""
+        # If claude comes BEFORE claude_persistent, claude wins
         result = deduplicate_providers(["claude", "claude_persistent", "ollama_local"])
         assert result == ["claude", "ollama_local"]
 
     async def test_debate_deduplicates_claude_providers(self) -> None:
-        """Im Debate-Flow: nur claude_persistent (nicht auch Legacy-Claude)."""
+        """In debate flow: only claude_persistent (not also legacy Claude)."""
         providers = {
             "claude_persistent": _MockProvider(
                 "claude_persistent", response_text="Persistent sagt: BTC ist P2P-Geld"
@@ -351,20 +350,20 @@ class TestProviderDeduplication:
             question="Was ist Bitcoin?", user_id=42, chat_id=100
         )
 
-        # claude_persistent vertritt die Gruppe, claude wird übersprungen
+        # claude_persistent represents the group, claude is skipped
         assert "claude_persistent" in result.responses
         assert "claude" not in result.responses
         assert "ollama_local" in result.responses
         assert len(result.errors) == 0
         assert result.consensus_analysis is not None
-        # Nur 2 Provider wurden tatsächlich gefragt
+        # Only 2 providers were actually queried
         assert set(result.providers_queried) == {
             "claude_persistent",
             "ollama_local",
         }
 
     async def test_debate_falls_back_to_legacy_claude(self) -> None:
-        """Wenn claude_persistent nicht verfügbar: Legacy-Claude wird genutzt."""
+        """When claude_persistent is unavailable: legacy Claude is used."""
         providers = {
             "claude_persistent": _MockProvider("claude_persistent", available=False),
             "claude": _MockProvider("claude", response_text="Legacy antwortet"),
@@ -377,17 +376,17 @@ class TestProviderDeduplication:
 
         result = await orchestrator.debate(question="Test?", user_id=42, chat_id=100)
 
-        # claude_persistent ist offline, claude vertritt die Gruppe
+        # claude_persistent is offline, claude represents the group
         assert "claude" in result.responses
         assert "claude_persistent" not in result.responses
         assert "ollama_local" in result.responses
 
 
 class TestFinalReviewParsing:
-    """Tests für die JSON-Parsing-Logik des Final Review."""
+    """Tests for the JSON parsing logic of the final review."""
 
     def test_parse_valid_json(self) -> None:
-        """Valides JSON wird korrekt zu FinalVerdict geparst."""
+        """Valid JSON is correctly parsed to FinalVerdict."""
         providers = {
             "alpha": _MockProvider("alpha", response_text="A"),
             "beta": _MockProvider("beta", response_text="B"),
@@ -426,7 +425,7 @@ class TestFinalReviewParsing:
         assert result.evaluations[1].provider == "beta"
 
     def test_parse_tie_winner(self) -> None:
-        """Winner 'tie' wird korrekt erkannt."""
+        """Winner 'tie' is correctly recognized."""
         providers = {
             "alpha": _MockProvider("alpha", response_text="A"),
         }
@@ -449,7 +448,7 @@ class TestFinalReviewParsing:
         assert "gleichwertig" in result.synthesis
 
     def test_parse_json_in_markdown_codeblock(self) -> None:
-        """JSON in Markdown-Codeblock wird korrekt extrahiert."""
+        """JSON in markdown code block is correctly extracted."""
         providers = {
             "alpha": _MockProvider("alpha", response_text="A"),
         }
@@ -471,7 +470,7 @@ class TestFinalReviewParsing:
         assert result.synthesis == "A ist die beste Wahl."
 
     def test_parse_invalid_json_returns_none(self) -> None:
-        """Ungültiges JSON gibt None zurück (graceful fallback)."""
+        """Invalid JSON returns None (graceful fallback)."""
         providers = {
             "alpha": _MockProvider("alpha", response_text="A"),
         }
@@ -484,7 +483,7 @@ class TestFinalReviewParsing:
         assert result is None
 
     def test_parse_non_dict_json_returns_none(self) -> None:
-        """JSON das kein Dict ist gibt None zurück."""
+        """JSON that is not a dict returns None."""
         providers = {
             "alpha": _MockProvider("alpha", response_text="A"),
         }
@@ -498,10 +497,10 @@ class TestFinalReviewParsing:
 
 
 class TestFinalReviewBiasMitigation:
-    """Tests für Bias-Mitigation: Provider-Namen sind im Judge-Prompt anonymisiert."""
+    """Tests for bias mitigation: provider names are anonymized in judge prompt."""
 
     def test_prompt_contains_no_provider_names(self) -> None:
-        """Der Judge-Prompt enthält keine echten Provider-Namen."""
+        """The judge prompt contains no real provider names."""
         providers = {
             "claude_persistent": _MockProvider(
                 "claude_persistent", response_text="Claude sagt X"
@@ -520,18 +519,18 @@ class TestFinalReviewBiasMitigation:
             "Was ist Bitcoin?", responses
         )
 
-        # Provider-Namen dürfen nicht im Prompt vorkommen
+        # Provider names must not appear in the prompt
         assert "claude_persistent" not in prompt
         assert "ollama_local" not in prompt
-        # Aber die anonymen Labels schon
-        assert "Antwort A" in prompt
-        assert "Antwort B" in prompt
-        # Mapping muss korrekt sein
+        # But the anonymous labels must be present
+        assert "Answer A" in prompt
+        assert "Answer B" in prompt
+        # Mapping must be correct
         assert label_to_provider["A"] == "claude_persistent"
         assert label_to_provider["B"] == "ollama_local"
 
     def test_prompt_contains_answer_content(self) -> None:
-        """Der Judge-Prompt enthält den Antworttext."""
+        """The judge prompt contains the answer text."""
         providers = {
             "alpha": _MockProvider("alpha", response_text="A"),
         }
@@ -551,10 +550,10 @@ class TestFinalReviewBiasMitigation:
 
 
 class TestFinalReviewIntegration:
-    """Integration-Tests: Final Review im Debate-Flow."""
+    """Integration tests: final review in debate flow."""
 
     async def test_debate_includes_final_verdict(self) -> None:
-        """Debate mit 2 Providern liefert ein FinalVerdict mit Synthese."""
+        """Debate with 2 providers delivers a FinalVerdict with synthesis."""
         judge_json = json.dumps(
             {
                 "winner": "A",
@@ -568,7 +567,7 @@ class TestFinalReviewIntegration:
             }
         )
 
-        # Spezieller Mock-Provider der als Judge fungiert
+        # Special mock provider acting as judge
         providers = {
             "claude_persistent": _MockProvider(
                 "claude_persistent", response_text="Claude Antwort"
@@ -580,15 +579,15 @@ class TestFinalReviewIntegration:
         router = _make_router(providers)
         orchestrator = DebateOrchestrator(provider_router=router)
 
-        # Mock: Judge-Call liefert vorbereitetes JSON
+        # Mock: judge call delivers prepared JSON
         async def _mock_final_review(question, responses, user_id, chat_id):
-            """Simuliert einen erfolgreichen Final Review."""
+            """Simulate a successful final review."""
             prompt, label_to_provider = orchestrator._build_judge_prompt(
                 question, responses
             )
             return orchestrator._parse_judge_response(judge_json, label_to_provider)
 
-        # Patch final_review um den echten Provider-Call zu umgehen
+        # Patch final_review to bypass the real provider call
         with patch.object(orchestrator, "final_review", side_effect=_mock_final_review):
             result = await orchestrator.debate(
                 question="Was ist Bitcoin?", user_id=1, chat_id=10
@@ -603,7 +602,7 @@ class TestFinalReviewIntegration:
         assert len(result.final_verdict.evaluations) == 2
 
     async def test_debate_graceful_when_judge_fails(self) -> None:
-        """Wenn der Judge fehlschlägt, hat result trotzdem consensus_analysis."""
+        """When the judge fails, result still has consensus_analysis."""
         providers = {
             "alpha": _MockProvider("alpha", response_text="Antwort Alpha"),
             "beta": _MockProvider("beta", response_text="Antwort Beta"),
@@ -611,21 +610,21 @@ class TestFinalReviewIntegration:
         router = _make_router(providers)
         orchestrator = DebateOrchestrator(provider_router=router)
 
-        # Mock: Judge-Call liefert None (Fehler)
+        # Mock: judge call delivers None (failure)
         with patch.object(orchestrator, "final_review", return_value=None):
             result = await orchestrator.debate(
                 question="Was ist Bitcoin?", user_id=1, chat_id=10
             )
 
-        # Kein Verdict, aber Konsens-Analyse existiert
+        # No verdict, but consensus analysis exists
         assert result.final_verdict is None
         assert result.consensus_analysis is not None
-        # Antworten sind trotzdem da
+        # Responses are still present
         assert "alpha" in result.responses
         assert "beta" in result.responses
 
     async def test_final_review_uses_claude_persistent_as_judge(self) -> None:
-        """Final Review bevorzugt claude_persistent als Judge."""
+        """Final review prefers claude_persistent as judge."""
         judge_json = json.dumps(
             {
                 "winner": "A",
@@ -667,7 +666,7 @@ class TestFinalReviewIntegration:
         assert verdict.judge_quality_warning is None
 
     async def test_final_review_fallback_to_ollama_with_warning(self) -> None:
-        """Wenn nur ollama_local verfügbar: wird als Judge mit Warnung genutzt."""
+        """When only ollama_local is available: used as judge with warning."""
         judge_json = json.dumps(
             {
                 "winner": "A",
@@ -697,10 +696,10 @@ class TestFinalReviewIntegration:
         assert verdict is not None
         assert verdict.judge_provider == "ollama_local"
         assert verdict.judge_quality_warning is not None
-        assert "Lokaler Judge" in verdict.judge_quality_warning
+        assert "Local judge" in verdict.judge_quality_warning
 
     async def test_final_review_skipped_with_single_response(self) -> None:
-        """Final Review wird übersprungen wenn weniger als 2 Antworten."""
+        """Final review is skipped when fewer than 2 responses."""
         providers = {
             "alpha": _MockProvider("alpha", response_text="A"),
         }
@@ -717,7 +716,7 @@ class TestFinalReviewIntegration:
         assert verdict is None
 
     async def test_final_review_returns_none_on_invalid_judge_json(self) -> None:
-        """Wenn der Judge ungültiges JSON liefert: None statt Crash."""
+        """When the judge delivers invalid JSON: None instead of crash."""
         providers = {
             "claude_persistent": _MockProvider(
                 "claude_persistent",
@@ -741,10 +740,10 @@ class TestFinalReviewIntegration:
 
 
 class TestSynthesisFeature:
-    """Tests für Phase-1 Synthesis: Judge generiert eine inhaltliche Synthese."""
+    """Tests for Phase 1 synthesis: judge generates a content synthesis."""
 
     def test_parse_synthesis_field_extracted(self) -> None:
-        """Synthesis-Feld wird korrekt aus JSON extrahiert."""
+        """Synthesis field is correctly extracted from JSON."""
         providers = {
             "alpha": _MockProvider("alpha", response_text="A"),
         }
@@ -775,14 +774,14 @@ class TestSynthesisFeature:
         assert "Peer-to-Peer" in result.synthesis
 
     def test_parse_missing_synthesis_defaults_empty(self) -> None:
-        """Wenn Judge kein synthesis-Feld liefert: Default ist leerer String."""
+        """When judge delivers no synthesis field: default is empty string."""
         providers = {
             "alpha": _MockProvider("alpha", response_text="A"),
         }
         router = _make_router(providers)
         orchestrator = DebateOrchestrator(provider_router=router)
 
-        # JSON ohne synthesis-Feld (Backward-Compat)
+        # JSON without synthesis field (backward compat)
         raw_json = json.dumps(
             {
                 "winner": "A",
@@ -799,7 +798,7 @@ class TestSynthesisFeature:
         assert result.synthesis == ""
 
     def test_judge_prompt_requests_synthesis(self) -> None:
-        """Der Judge-Prompt fordert explizit eine Synthese an."""
+        """The judge prompt explicitly requests a synthesis."""
         providers = {
             "alpha": _MockProvider("alpha", response_text="A"),
             "beta": _MockProvider("beta", response_text="B"),
@@ -810,17 +809,17 @@ class TestSynthesisFeature:
         responses = {"alpha": "Antwort A", "beta": "Antwort B"}
         prompt, _ = orchestrator._build_judge_prompt("Was ist Bitcoin?", responses)
 
-        # Prompt muss Synthesis-Anweisung enthalten
-        assert "SYNTHESE" in prompt
+        # Prompt must contain synthesis instruction
+        assert "SYNTHESIS" in prompt
         assert "synthesis" in prompt
-        # Prompt muss das neue Schema-Feld beinhalten
-        assert "Vollständige synthetisierte Antwort" in prompt
+        # Prompt must contain the schema field description
+        assert "Complete synthesized answer" in prompt
 
     def test_synthesis_preserved_through_final_review_reconstruction(self) -> None:
-        """Synthesis bleibt erhalten wenn FinalVerdict in final_review() rekonstruiert wird."""
+        """Synthesis is preserved when FinalVerdict is reconstructed in final_review()."""
         from application.debate_orchestrator import FinalVerdict, ProviderEvaluation
 
-        # Simuliere was _parse_judge_response zurückgibt
+        # Simulate what _parse_judge_response returns
         parsed = FinalVerdict(
             winner="alpha",
             recommendation="Alpha ist besser.",
@@ -829,7 +828,7 @@ class TestSynthesisFeature:
             reasoning="Alpha ist praeziser.",
         )
 
-        # Simuliere was final_review() daraus macht (neues frozen Objekt mit Metadaten)
+        # Simulate what final_review() creates (new frozen object with metadata)
         reconstructed = FinalVerdict(
             winner=parsed.winner,
             recommendation=parsed.recommendation,
@@ -845,11 +844,11 @@ class TestSynthesisFeature:
 
 
 class TestRobustJsonExtraction:
-    """Tests für robuste JSON-Extraktion aus Judge-Responses.
+    """Tests for robust JSON extraction from judge responses.
 
-    Bug-Kontext: Im Live-Test lieferte der Judge-Call Text mit umgebendem Prosa
-    oder Markdown-Wrapping, was den alten Parser zum Scheitern brachte und
-    den Konsens-Fallback triggerte statt der Synthese.
+    Bug context: in live tests, the judge call delivered text with surrounding
+    prose or markdown wrapping, causing the old parser to fail and triggering
+    the consensus fallback instead of the synthesis.
     """
 
     def _make_orchestrator(self) -> DebateOrchestrator:
@@ -858,7 +857,7 @@ class TestRobustJsonExtraction:
         return DebateOrchestrator(provider_router=router)
 
     def test_extract_json_with_prose_before(self) -> None:
-        """JSON mit erklaertendem Text davor wird korrekt extrahiert."""
+        """JSON with explanatory text before is correctly extracted."""
         orchestrator = self._make_orchestrator()
 
         raw_text = (
@@ -875,7 +874,7 @@ class TestRobustJsonExtraction:
         assert result.synthesis == "A bietet die klarere Antwort."
 
     def test_extract_json_with_prose_before_and_after(self) -> None:
-        """JSON mit Text davor UND danach wird korrekt extrahiert."""
+        """JSON with text before AND after is correctly extracted."""
         orchestrator = self._make_orchestrator()
 
         raw_text = (
@@ -894,7 +893,7 @@ class TestRobustJsonExtraction:
         assert "vollständigere" in result.synthesis
 
     def test_extract_json_in_codeblock_with_prose_prefix(self) -> None:
-        """JSON in Markdown-Codeblock, NACH erklaertendem Text."""
+        """JSON in markdown code block, AFTER explanatory text."""
         orchestrator = self._make_orchestrator()
 
         raw_text = (
@@ -912,7 +911,7 @@ class TestRobustJsonExtraction:
         assert result.synthesis == "Synthese-Text hier."
 
     def test_extract_json_with_nested_braces_in_strings(self) -> None:
-        """JSON das geschweifte Klammern in String-Werten enthaelt."""
+        """JSON that contains curly braces in string values."""
         orchestrator = self._make_orchestrator()
 
         raw_text = json.dumps(
@@ -930,7 +929,7 @@ class TestRobustJsonExtraction:
         assert "{Platzhalter}" in result.synthesis
 
     def test_extract_json_multiline_pretty_printed(self) -> None:
-        """Pretty-printed JSON (mehrzeilig mit Einrueckung)."""
+        """Pretty-printed JSON (multiline with indentation)."""
         orchestrator = self._make_orchestrator()
 
         raw_text = json.dumps(
@@ -955,7 +954,7 @@ class TestRobustJsonExtraction:
         assert "Pro1" in result.evaluations[0].pros
 
     def test_extract_no_json_at_all(self) -> None:
-        """Kein JSON im Text: gibt None zurück."""
+        """No JSON in text: returns None."""
         orchestrator = self._make_orchestrator()
         result = orchestrator._parse_judge_response(
             "Ich kann das leider nicht bewerten. Bitte versuche es erneut.",
@@ -964,17 +963,17 @@ class TestRobustJsonExtraction:
         assert result is None
 
     def test_extract_json_array_not_object(self) -> None:
-        """JSON-Array mit nur einem Element: Brace-Matcher extrahiert inneres Dict."""
+        """JSON array with one element: brace matcher extracts inner dict."""
         orchestrator = self._make_orchestrator()
-        # Der Parser findet das erste { innerhalb des Arrays und extrahiert das Dict.
-        # Das ist akzeptables Verhalten: besser ein Teilresultat als gar keins.
+        # The parser finds the first { inside the array and extracts the dict.
+        # This is acceptable behavior: better a partial result than nothing.
         result = orchestrator._parse_judge_response('[{"winner": "A"}]', {"A": "alpha"})
-        # Extrahiert das innere Dict, winner wird gemapped
+        # Extracts the inner dict, winner is mapped
         assert result is not None
         assert result.winner == "alpha"
 
     def test_pure_array_no_dict_gives_none(self) -> None:
-        """Reines JSON-Array ohne brauchbares Dict: gibt None zurück."""
+        """Pure JSON array without usable dict: returns None."""
         orchestrator = self._make_orchestrator()
         result = orchestrator._parse_judge_response(
             '["not", "a", "dict"]', {"A": "alpha"}
@@ -982,29 +981,29 @@ class TestRobustJsonExtraction:
         assert result is None
 
     def test_static_extract_json_object_method(self) -> None:
-        """Direkter Test der statischen _extract_json_object Methode."""
-        # Reines JSON
+        """Direct test of the static _extract_json_object method."""
+        # Pure JSON
         assert DebateOrchestrator._extract_json_object('{"a": 1}') == '{"a": 1}'
 
-        # Mit Prefix
+        # With prefix
         result = DebateOrchestrator._extract_json_object('Hello\n{"a": 1}')
         assert result is not None
         assert json.loads(result) == {"a": 1}
 
-        # Kein JSON
+        # No JSON
         assert DebateOrchestrator._extract_json_object("no json here") is None
 
-        # Leerer String
+        # Empty string
         assert DebateOrchestrator._extract_json_object("") is None
 
 
 class TestMultiQuestionCoverage:
-    """Regressions-Tests: Multi-Fragen müssen alle Aspekte in der Kernaussage abdecken.
+    """Regression tests: multi-part questions must cover all aspects in the key takeaway.
 
-    Bug-Kontext: Bei Fragen wie 'Was ist Bitcoin UND sollte ich einsteigen?'
-    deckte die Kernaussage bisher nur den Handlungs-Aspekt ab. Der Definitions-Teil
-    fiel hinten runter. Der geschaerfte Judge-Prompt verlangt jetzt explizit dass
-    alle Teilaspekte adressiert werden.
+    Bug context: for questions like 'What is Bitcoin AND should I invest?',
+    the key takeaway previously only covered the action aspect. The definition
+    part was dropped. The sharpened judge prompt now explicitly requires that
+    all sub-aspects are addressed.
     """
 
     def _make_orchestrator(self) -> DebateOrchestrator:
@@ -1016,7 +1015,7 @@ class TestMultiQuestionCoverage:
         return DebateOrchestrator(provider_router=router)
 
     def test_judge_prompt_contains_multi_question_instruction(self) -> None:
-        """Der Judge-Prompt enthaelt die Multi-Fragen-Anweisung."""
+        """The judge prompt contains the multi-question instruction."""
         orchestrator = self._make_orchestrator()
 
         responses = {
@@ -1027,24 +1026,24 @@ class TestMultiQuestionCoverage:
             "Was ist Bitcoin und sollte ich einsteigen?", responses
         )
 
-        assert "ALLE Aspekte der Frage abdecken" in prompt
-        assert "Multi-Fragen" in prompt
-        assert "Teilaspekt" in prompt
+        assert "ALL aspects of the question" in prompt
+        assert "multi-part questions" in prompt.lower()
+        assert "sub-aspect" in prompt.lower()
 
     def test_judge_prompt_requests_2_4_sentences(self) -> None:
-        """Das JSON-Schema verlangt 2-4 Sätze für die Kernaussage."""
+        """The JSON schema requires 2-4 sentences for the key takeaway."""
         orchestrator = self._make_orchestrator()
 
         responses = {"alpha": "A", "beta": "B"}
         prompt, _ = orchestrator._build_judge_prompt("Test?", responses)
 
-        assert "2-4 Sätze" in prompt
+        assert "2-4 sentences" in prompt
 
     def test_multi_question_verdict_covers_both_aspects(self) -> None:
-        """Mock-Judge-Response zu Multi-Frage deckt beide Aspekte ab."""
+        """Mock judge response for multi-question covers both aspects."""
         orchestrator = self._make_orchestrator()
 
-        # Simuliere eine gute Judge-Response die beide Aspekte abdeckt
+        # Simulate a good judge response covering both aspects
         raw_json = json.dumps(
             {
                 "winner": "A",
@@ -1078,19 +1077,19 @@ class TestMultiQuestionCoverage:
         verdict = orchestrator._parse_judge_response(raw_json, label_to_provider)
 
         assert verdict is not None
-        # Kernaussage deckt Definition ab (Bitcoin/Kryptowährung/Blockchain)
+        # Key takeaway covers definition (Bitcoin/cryptocurrency/Blockchain)
         assert "Bitcoin" in verdict.recommendation
         assert (
             "Blockchain" in verdict.recommendation or "Krypto" in verdict.recommendation
         )
-        # Kernaussage deckt Investment-Aspekt ab
+        # Key takeaway covers investment aspect
         assert (
             "Investment" in verdict.recommendation
             or "verlieren" in verdict.recommendation
         )
 
     async def test_multi_question_debate_integration(self) -> None:
-        """Integration: Multi-Frage Debate mit Mock-Judge liefert vollständige Kernaussage."""
+        """Integration: multi-question debate with mock judge delivers complete key takeaway."""
         judge_json = json.dumps(
             {
                 "winner": "A",
@@ -1144,7 +1143,7 @@ class TestMultiQuestionCoverage:
 
         assert result.final_verdict is not None
         key_takeaway = result.final_verdict.recommendation
-        # Beide Aspekte müssen in der Kernaussage auftauchen
+        # Both aspects must appear in the key takeaway
         assert "Bitcoin" in key_takeaway
         assert "Blockchain" in key_takeaway or "Krypto" in key_takeaway
         assert "Einstieg" in key_takeaway or "Risikokapital" in key_takeaway

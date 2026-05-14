@@ -1,7 +1,7 @@
-"""Bookmark-Entity als Dataclass.
+"""Bookmark entity as dataclass.
 
-Repräsentiert einen gespeicherten Telegram-Bot-Antwort-Bookmark.
-Reine Datenstruktur ohne I/O, ohne Persistenz-Logik.
+Represents a saved Telegram bot response bookmark.
+Pure data structure without I/O, without persistence logic.
 """
 
 from __future__ import annotations
@@ -16,15 +16,15 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class Bookmark:
-    """Einzelner Bookmark-Eintrag.
+    """Single bookmark entry.
 
     Attributes:
-        user_id: Telegram User-ID des Besitzers.
-        chat_id: Telegram Chat-ID in dem die Nachricht gesendet wurde.
-        message_id: Telegram Message-ID der gebookmarkten Bot-Antwort.
-        content: Volltext der Bot-Antwort.
-        timestamp: ISO-8601 Zeitstempel der Erstellung.
-        username: Telegram Username (optional).
+        user_id: Telegram user ID of the owner.
+        chat_id: Telegram chat ID where the message was sent.
+        message_id: Telegram message ID of the bookmarked bot response.
+        content: Full text of the bot response.
+        timestamp: ISO-8601 timestamp of creation.
+        username: Telegram username (optional).
     """
 
     user_id: int
@@ -37,7 +37,7 @@ class Bookmark:
     username: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialisiert den Bookmark zu einem Dictionary für JSONL-Storage."""
+        """Serialize the bookmark to a dictionary for JSONL storage."""
         return {
             "timestamp": self.timestamp,
             "user_id": self.user_id,
@@ -49,7 +49,7 @@ class Bookmark:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Bookmark:
-        """Deserialisiert einen Bookmark aus einem Dictionary."""
+        """Deserialize a bookmark from a dictionary."""
         return cls(
             user_id=data.get("user_id", 0),
             chat_id=data.get("chat_id", 0),
@@ -64,14 +64,14 @@ BOOKMARK_PREVIEW_LEN: int = 200
 
 
 def format_bookmark_preview(bm: dict[str, Any], index: int) -> str:
-    """Formatiert einen Bookmark als Kurzvorschau-Zeile.
+    """Format a bookmark as a short preview line.
 
     Args:
-        bm: Bookmark-Dict (aus JSONL gelesen).
-        index: Anzeige-Index (1-basiert).
+        bm: Bookmark dict (read from JSONL).
+        index: Display index (1-based).
 
     Returns:
-        Formatierte Preview-Zeile mit Datum und Content-Ausschnitt.
+        Formatted preview line with date and content excerpt.
     """
     ts = bm.get("timestamp", "?")
     try:

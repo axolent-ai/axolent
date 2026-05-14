@@ -1,7 +1,7 @@
-"""Mistral Vibe CLI Provider (Stub).
+"""Mistral Vibe CLI provider (stub).
 
-Geplant für Phase 1+. Nutzt das `mistral` CLI-Binary als Subprozess.
-Aktuell: nur Skelett, query() raised ProviderNotImplemented.
+Planned for Phase 1+. Uses the `mistral` CLI binary as subprocess.
+Currently: skeleton only, query() raises ProviderNotImplemented.
 """
 
 from __future__ import annotations
@@ -25,21 +25,21 @@ _CAPABILITIES = ProviderCapabilities(
 
 
 class MistralVibeProvider(LLMProvider):
-    """Mistral via Vibe CLI als LLM-Provider (Stub).
+    """Mistral via Vibe CLI as LLM provider (stub).
 
-    Wird aktiviert sobald:
-    1. User mistral/vibe CLI installiert hat
-    2. User mit eigenem Mistral-Account eingeloggt ist
+    Activated once:
+    1. User has mistral/vibe CLI installed
+    2. User is logged in with their own Mistral account
     """
 
     name = "mistral"
 
     def get_capabilities(self) -> ProviderCapabilities:
-        """Mistral-Capabilities: Cloud, Free, 128k Context."""
+        """Mistral capabilities: cloud, free, 128k context."""
         return _CAPABILITIES
 
     def is_available(self) -> bool:
-        """Stub: immer False bis zur echten Implementierung. Prüfe Verfügbarkeit."""
+        """Stub: always False until real implementation."""
         return False
 
     async def query(
@@ -49,5 +49,5 @@ class MistralVibeProvider(LLMProvider):
         timeout_seconds: int = 120,
         model: str | None = None,
     ) -> ProviderResponse:
-        """Noch nicht implementiert. Stub für Phase 1+."""
+        """Not yet implemented. Stub for Phase 1+."""
         raise ProviderNotImplemented(self.name)

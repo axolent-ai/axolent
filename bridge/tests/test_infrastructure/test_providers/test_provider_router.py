@@ -1,12 +1,12 @@
-"""Tests für den ProviderRouter.
+"""Tests for the ProviderRouter.
 
-Verifiziert:
-    - Default-Routing funktioniert
-    - Explizites Provider-Routing funktioniert
-    - Unbekannter Provider raised ValueError
-    - Nicht verfügbarer Provider raised ProviderUnavailable
-    - list_available() und list_registered() korrekt
-    - get_capabilities() liefert ProviderCapabilities
+Verifies:
+    * Default routing works
+    * Explicit provider routing works
+    * Unknown provider raises ValueError
+    * Unavailable provider raises ProviderUnavailable
+    * list_available() and list_registered() correct
+    * get_capabilities() delivers ProviderCapabilities
 """
 
 from __future__ import annotations
@@ -27,15 +27,15 @@ from infrastructure.providers.base import (
 def _make_mock_provider(
     name: str, available: bool = True, *, with_async_query: bool = False
 ) -> LLMProvider:
-    """Erstellt einen gemockten Provider mit Capabilities.
+    """Create a mocked provider with capabilities.
 
     Args:
-        name: Provider-Name.
-        available: Ob is_available() True liefert.
-        with_async_query: Wenn True, wird query als AsyncMock gesetzt
-            (nötig für Tests die route() awaiten). Sonst bleibt query
-            ein normaler MagicMock (vermeidet RuntimeWarning bei
-            nie-awaiteten Coroutines).
+        name: Provider name.
+        available: Whether is_available() returns True.
+        with_async_query: If True, query is set as AsyncMock
+            (needed for tests that await route()). Otherwise query
+            stays a normal MagicMock (avoids RuntimeWarning for
+            never-awaited coroutines).
     """
     provider = MagicMock(spec=LLMProvider)
     provider.name = name
@@ -60,7 +60,7 @@ def _make_mock_provider(
 
 
 class TestProviderRouterInit:
-    """Tests für Router-Initialisierung."""
+    """Tests for router initialization."""
 
     def test_init_with_valid_default(self) -> None:
         providers = {"claude": _make_mock_provider("claude")}
@@ -69,12 +69,12 @@ class TestProviderRouterInit:
 
     def test_init_with_invalid_default_raises(self) -> None:
         providers = {"claude": _make_mock_provider("claude")}
-        with pytest.raises(ValueError, match="Default-Provider"):
+        with pytest.raises(ValueError, match="Default provider"):
             ProviderRouter(providers=providers, default="nonexistent")
 
 
 class TestProviderRouterRouting:
-    """Tests für route()."""
+    """Tests for route()."""
 
     @pytest.mark.asyncio
     async def test_default_routing(self) -> None:
@@ -106,7 +106,7 @@ class TestProviderRouterRouting:
         providers = {"claude": _make_mock_provider("claude")}
         router = ProviderRouter(providers=providers, default="claude")
 
-        with pytest.raises(ValueError, match="nicht registriert"):
+        with pytest.raises(ValueError, match="not registered"):
             await router.route("Hallo", provider_name="unknown")
 
     @pytest.mark.asyncio
@@ -117,12 +117,12 @@ class TestProviderRouterRouting:
 
         with pytest.raises(ProviderUnavailable) as exc_info:
             await router.route("Hallo")
-        assert "verf" in str(exc_info.value).lower()
+        assert "unavailable" in str(exc_info.value).lower()
         assert exc_info.value.retryable is False
 
 
 class TestProviderRouterListing:
-    """Tests für list_available() und list_registered()."""
+    """Tests for list_available() and list_registered()."""
 
     def test_list_registered(self) -> None:
         providers = {
@@ -146,7 +146,7 @@ class TestProviderRouterListing:
 
 
 class TestProviderRouterCapabilities:
-    """Tests für get_capabilities()."""
+    """Tests for get_capabilities()."""
 
     def test_get_capabilities_returns_correct_data(self) -> None:
         mock_claude = _make_mock_provider("claude")
@@ -163,16 +163,16 @@ class TestProviderRouterCapabilities:
         providers = {"claude": _make_mock_provider("claude")}
         router = ProviderRouter(providers=providers, default="claude")
 
-        with pytest.raises(ValueError, match="nicht registriert"):
+        with pytest.raises(ValueError, match="not registered"):
             router.get_capabilities("unknown")
 
 
 class TestProviderRouterUserChatId:
-    """Tests für user_id/chat_id Durchreichung (Task 4: Non-streaming + claude_persistent)."""
+    """Tests for user_id/chat_id pass-through (Task 4: non-streaming + claude_persistent)."""
 
     @pytest.mark.asyncio
     async def test_route_passes_user_id_chat_id_to_provider(self) -> None:
-        """user_id und chat_id werden an provider.query() durchgereicht."""
+        """user_id and chat_id are passed through to provider.query()."""
         mock_claude = _make_mock_provider("claude", with_async_query=True)
         providers = {"claude": mock_claude}
         router = ProviderRouter(providers=providers, default="claude")
@@ -185,7 +185,7 @@ class TestProviderRouterUserChatId:
 
     @pytest.mark.asyncio
     async def test_route_without_user_id_omits_from_kwargs(self) -> None:
-        """Ohne user_id/chat_id werden sie nicht an den Provider übergeben."""
+        """Without user_id/chat_id they are not passed to the provider."""
         mock_claude = _make_mock_provider("claude", with_async_query=True)
         providers = {"claude": mock_claude}
         router = ProviderRouter(providers=providers, default="claude")
@@ -198,7 +198,7 @@ class TestProviderRouterUserChatId:
 
     @pytest.mark.asyncio
     async def test_route_with_only_user_id_passes_only_user_id(self) -> None:
-        """Nur user_id ohne chat_id: nur user_id wird übergeben."""
+        """Only user_id without chat_id: only user_id is passed."""
         mock_claude = _make_mock_provider("claude", with_async_query=True)
         providers = {"claude": mock_claude}
         router = ProviderRouter(providers=providers, default="claude")
@@ -211,7 +211,7 @@ class TestProviderRouterUserChatId:
 
     @pytest.mark.asyncio
     async def test_route_passes_model_to_provider(self) -> None:
-        """model-Parameter wird an provider.query() durchgereicht."""
+        """model parameter is passed through to provider.query()."""
         mock_claude = _make_mock_provider("claude", with_async_query=True)
         providers = {"claude": mock_claude}
         router = ProviderRouter(providers=providers, default="claude")

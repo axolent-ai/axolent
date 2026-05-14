@@ -1,7 +1,7 @@
-"""Audit-Log-Writer mit Rotation.
+"""Audit log writer with rotation.
 
-Schreibt strukturierte Audit-Einträge als JSONL mit RotatingFileHandler.
-Max 10 MB pro Datei, 5 Backups.
+Writes structured audit entries as JSONL with RotatingFileHandler.
+Max 10 MB per file, 5 backups.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 AUDIT_LOG_PATH: Path = Path(__file__).resolve().parent.parent / "logs" / "audit.jsonl"
 AUDIT_LOG_PATH.parent.mkdir(exist_ok=True)
 
-# Dedizierter Logger für Audit-Einträge (nicht über root-logger)
+# Dedicated logger for audit entries (not via root logger)
 _audit_logger = logging.getLogger("axolent.audit")
 _audit_logger.setLevel(logging.INFO)
 _audit_handler = logging.handlers.RotatingFileHandler(
@@ -28,16 +28,16 @@ _audit_handler = logging.handlers.RotatingFileHandler(
 )
 _audit_handler.setFormatter(logging.Formatter("%(message)s"))
 _audit_logger.addHandler(_audit_handler)
-_audit_logger.propagate = False  # nicht über root-logger schicken
+_audit_logger.propagate = False  # do not propagate to root logger
 
 
 def write_audit_log(entry: dict[str, Any]) -> None:
-    """Schreibt einen Audit-Log-Eintrag via RotatingFileHandler.
+    """Write an audit log entry via RotatingFileHandler.
 
     Args:
-        entry: Dictionary mit Audit-Daten (timestamp, user_id, etc.)
+        entry: Dictionary with audit data (timestamp, user_id, etc.)
     """
     try:
         _audit_logger.info(json.dumps(entry, ensure_ascii=False))
     except Exception as e:
-        log.warning("Audit-Log Fehler: %s", e)
+        log.warning("Audit log error: %s", e)

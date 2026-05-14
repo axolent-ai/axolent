@@ -1,10 +1,10 @@
-"""LLM Provider-Infrastruktur: Multi-Provider-Abstraktion.
+"""LLM provider infrastructure: multi-provider abstraction.
 
-Exportiert das Provider-Interface und alle konkreten Provider-Implementierungen.
-Aktuell aktiv:
-    - ClaudePersistentProvider (R04, persistent stdin-Pipe, Streaming)
-    - ClaudeProvider (Legacy-Fallback, einzelne Subprozesse)
-    - OllamaProvider (lokale Inference via Ollama HTTP-API)
+Exports the provider interface and all concrete provider implementations.
+Currently active:
+    * ClaudePersistentProvider (R04, persistent stdin pipe, streaming)
+    * ClaudeProvider (legacy fallback, individual subprocesses)
+    * OllamaProvider (local inference via Ollama HTTP API)
 Stubs: OpenAI Codex, Gemini, Mistral Vibe.
 """
 

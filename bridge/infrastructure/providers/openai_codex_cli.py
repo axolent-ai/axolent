@@ -1,7 +1,7 @@
-"""OpenAI Codex CLI Provider (Stub).
+"""OpenAI Codex CLI provider (stub).
 
-Geplant für Phase 1+. Nutzt das `codex` CLI-Binary als Subprozess.
-Aktuell: nur Skelett, query() raised ProviderNotImplemented.
+Planned for Phase 1+. Uses the `codex` CLI binary as subprocess.
+Currently: skeleton only, query() raises ProviderNotImplemented.
 """
 
 from __future__ import annotations
@@ -25,21 +25,21 @@ _CAPABILITIES = ProviderCapabilities(
 
 
 class OpenAICodexProvider(LLMProvider):
-    """OpenAI via Codex CLI als LLM-Provider (Stub).
+    """OpenAI via Codex CLI as LLM provider (stub).
 
-    Wird aktiviert sobald:
-    1. User codex CLI installiert hat
-    2. User mit eigenem OpenAI-Account eingeloggt ist
+    Activated once:
+    1. User has codex CLI installed
+    2. User is logged in with their own OpenAI account
     """
 
     name = "openai"
 
     def get_capabilities(self) -> ProviderCapabilities:
-        """OpenAI-Capabilities: Cloud, Subscription, 128k Context."""
+        """OpenAI capabilities: cloud, subscription, 128k context."""
         return _CAPABILITIES
 
     def is_available(self) -> bool:
-        """Stub: immer False bis zur echten Implementierung. Prüfe Verfügbarkeit."""
+        """Stub: always False until real implementation."""
         return False
 
     async def query(
@@ -49,5 +49,5 @@ class OpenAICodexProvider(LLMProvider):
         timeout_seconds: int = 120,
         model: str | None = None,
     ) -> ProviderResponse:
-        """Noch nicht implementiert. Stub für Phase 1+."""
+        """Not yet implemented. Stub for Phase 1+."""
         raise ProviderNotImplemented(self.name)

@@ -1,7 +1,7 @@
-"""Episodic Memory: Was passiert ist.
+"""Episodic memory: what happened.
 
-Konkrete Events, Gesprächsverläufe, Beobachtungen mit Zeitstempel und Kontext.
-Beispiel: "User hat am 2026-05-07 nach Acquirern gefragt"
+Concrete events, conversation flows, observations with timestamps and context.
+Example: "User asked about acquirers on 2026-05-07"
 """
 
 from __future__ import annotations
@@ -13,15 +13,15 @@ from uuid import uuid4
 
 @dataclass(frozen=True, slots=True)
 class EpisodicEntry:
-    """Ein einzelnes Event in der Episodic Memory.
+    """A single event in episodic memory.
 
     Attributes:
-        id: Eindeutige ID mit Prefix ep_ für Layer-Erkennung.
-        user_id: Telegram-User-ID.
-        content: Beschreibung des Events.
-        context: Optionaler Kontext (Workspace, Tags, Quelle).
+        id: Unique ID with prefix ep_ for layer detection.
+        user_id: Telegram user ID.
+        content: Description of the event.
+        context: Optional context (workspace, tags, source).
         timestamp: ISO 8601 UTC.
-        importance: 1-10, von User vergeben oder Auto-Score.
+        importance: 1-10, assigned by user or auto-scored.
     """
 
     id: str = field(default_factory=lambda: f"ep_{uuid4().hex[:12]}")
@@ -34,7 +34,7 @@ class EpisodicEntry:
     importance: int = 5
 
     def to_dict(self) -> dict:
-        """Serialisiert den Entry als Dict für JSONL-Persistierung."""
+        """Serialize the entry as dict for JSONL persistence."""
         return {
             "id": self.id,
             "user_id": self.user_id,
@@ -46,7 +46,7 @@ class EpisodicEntry:
 
     @classmethod
     def from_dict(cls, data: dict) -> EpisodicEntry:
-        """Deserialisiert einen Entry aus einem Dict."""
+        """Deserialize an entry from a dict."""
         return cls(
             id=data.get("id", f"ep_{uuid4().hex[:12]}"),
             user_id=data.get("user_id", 0),

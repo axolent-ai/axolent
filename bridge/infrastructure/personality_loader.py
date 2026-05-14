@@ -1,7 +1,7 @@
-"""Personality-Loader: Liest config/*.md und baut PersonalityConfig.
+"""Personality loader: reads config/*.md and builds PersonalityConfig.
 
-I/O-Adapter der Markdown-Dateien vom Dateisystem liest
-und ein PersonalityConfig-Objekt aus dem Domain-Layer erzeugt.
+I/O adapter that reads markdown files from the filesystem
+and produces a PersonalityConfig object from the domain layer.
 """
 
 from __future__ import annotations
@@ -22,92 +22,92 @@ _CONSTITUTION_EXAMPLE_PATH: Path = _CONFIG_DIR / "user_constitution.example.md"
 
 
 def _load_config_file(path: Path, label: str, fallback_path: Path | None = None) -> str:
-    """Lädt eine Config-Datei als UTF-8-String mit optionalem Fallback.
+    """Load a config file as UTF-8 string with optional fallback.
 
-    Versucht zuerst ``path`` zu lesen (User-Override). Existiert diese
-    Datei nicht und ``fallback_path`` ist angegeben, wird die Fallback-Datei
-    geladen (generisches Example-Template aus dem Repo).
+    Tries to read ``path`` first (user override). If that file does not
+    exist and ``fallback_path`` is given, the fallback file is loaded
+    (generic example template from the repo).
 
     Args:
-        path: Primärer Pfad zur Config-Datei (User-Override, ggf. gitignored).
-        label: Beschreibung der Datei für Logs (z.B. "System-Prompt").
-        fallback_path: Optionaler Fallback-Pfad (z.B. .example.md im Repo).
+        path: Primary path to the config file (user override, possibly gitignored).
+        label: Description of the file for logs (e.g. "system prompt").
+        fallback_path: Optional fallback path (e.g. .example.md in the repo).
 
     Returns:
-        Inhalt der Datei als String, oder leerer String wenn weder Primär-
-        noch Fallback-Datei gefunden wurde.
+        File content as string, or empty string if neither primary
+        nor fallback file was found.
 
     Raises:
-        SystemExit: Bei kritischen Fehlern (Encoding, Permissions, OS-Fehler).
+        SystemExit: On critical errors (encoding, permissions, OS errors).
     """
     try:
         with open_utf8(path, "r") as f:
             content = f.read().strip()
-        log.info("%s geladen: %d Zeichen aus %s", label, len(content), path)
+        log.info("%s loaded: %d chars from %s", label, len(content), path)
         return content
     except FileNotFoundError:
         if fallback_path is not None:
             log.info(
-                "%s nicht gefunden: %s, versuche Fallback: %s",
+                "%s not found: %s, trying fallback: %s",
                 label,
                 path,
                 fallback_path,
             )
             return _load_config_file(fallback_path, f"{label} (example)")
-        log.warning("%s nicht gefunden: %s (Fallback: leer)", label, path)
+        log.warning("%s not found: %s (fallback: empty)", label, path)
         return ""
     except (PermissionError, UnicodeDecodeError, OSError) as e:
-        log.error("%s konnte nicht gelesen werden: %s: %s", label, path, e)
+        log.error("%s could not be read: %s: %s", label, path, e)
         raise SystemExit(
-            f"{label}-Datei {path} fehlerhaft. Bot-Start abgebrochen. "
-            f"Prüfe Datei-Encoding (UTF-8) und -Rechte. Original-Fehler: {e}"
+            f"{label} file {path} is corrupted. Bot start aborted. "
+            f"Check file encoding (UTF-8) and permissions. Original error: {e}"
         ) from e
 
 
 def load_system_prompt() -> str:
-    """Lädt den System-Prompt aus config/system_prompt.md.
+    """Load the system prompt from config/system_prompt.md.
 
-    Fallback: config/system_prompt.example.md (generisches Template).
-    Der User kann system_prompt.md als persönlichen Override anlegen
-    (diese Datei ist in .gitignore und wird nicht ins Repo committed).
+    Fallback: config/system_prompt.example.md (generic template).
+    The user can create system_prompt.md as a personal override
+    (this file is in .gitignore and is not committed to the repo).
 
     Returns:
-        Inhalt der Datei als String, oder leerer String wenn nicht vorhanden.
+        File content as string, or empty string if not found.
 
     Raises:
-        SystemExit: Bei kritischen Datei-Fehlern (Encoding, Permissions).
+        SystemExit: On critical file errors (encoding, permissions).
     """
     return _load_config_file(
-        _SYSTEM_PROMPT_PATH, "System-Prompt", _SYSTEM_PROMPT_EXAMPLE_PATH
+        _SYSTEM_PROMPT_PATH, "System prompt", _SYSTEM_PROMPT_EXAMPLE_PATH
     )
 
 
 def load_user_constitution() -> str:
-    """Lädt die User-Constitution aus config/user_constitution.md.
+    """Load the user constitution from config/user_constitution.md.
 
-    Fallback: config/user_constitution.example.md (generisches Template).
-    Der User kann user_constitution.md als persönlichen Override anlegen
-    (diese Datei ist in .gitignore und wird nicht ins Repo committed).
+    Fallback: config/user_constitution.example.md (generic template).
+    The user can create user_constitution.md as a personal override
+    (this file is in .gitignore and is not committed to the repo).
 
     Returns:
-        Inhalt der Datei als String, oder leerer String wenn nicht vorhanden.
+        File content as string, or empty string if not found.
 
     Raises:
-        SystemExit: Bei kritischen Datei-Fehlern (Encoding, Permissions).
+        SystemExit: On critical file errors (encoding, permissions).
     """
     return _load_config_file(
-        _CONSTITUTION_PATH, "User-Constitution", _CONSTITUTION_EXAMPLE_PATH
+        _CONSTITUTION_PATH, "User constitution", _CONSTITUTION_EXAMPLE_PATH
     )
 
 
 def build_combined_prompt() -> str:
-    """Lädt beide Config-Dateien und kombiniert sie.
+    """Load both config files and combine them.
 
-    Convenience-Wrapper: Liest System-Prompt und Constitution,
-    baut PersonalityConfig, gibt kombinierten Prompt zurück.
+    Convenience wrapper: reads system prompt and constitution,
+    builds PersonalityConfig, returns combined prompt.
 
     Returns:
-        Kombinierter Prompt-String für --append-system-prompt.
+        Combined prompt string for --append-system-prompt.
     """
     system = load_system_prompt()
     constitution = load_user_constitution()

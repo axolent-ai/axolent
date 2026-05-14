@@ -1,17 +1,17 @@
-"""Claude Persistent Provider: nutzt den Process-Pool für warme Subprocesses.
+"""Claude Persistent Provider: uses the process pool for warm subprocesses.
 
-Modus-B-konform: Kein OAuth-Token-Lesen, kein eigener HTTP-Client.
-Nutzt persistent stdin-Pipe zu `claude --print --input-format stream-json`.
-User hat eigene Pro/Max-Subscription.
+Mode B compliant: no OAuth token reading, no custom HTTP client.
+Uses persistent stdin pipe to `claude --print --input-format stream-json`.
+User has their own Pro/Max subscription.
 
-Vorteile gegenüber claude_cli.py (Legacy-Provider):
-    - 74% schnellere Antworten (kein Cold-Start bei warmen Pipes)
-    - Streaming-Support (Token für Token)
-    - Process-Reuse spart OS-Overhead
+Advantages over claude_cli.py (legacy provider):
+    * 74% faster responses (no cold start with warm pipes)
+    * Streaming support (token by token)
+    * Process reuse saves OS overhead
 
-Der Legacy-Provider (claude_cli.py) bleibt als Fallback für:
-    - Crash-Recovery wenn persistent Pipe fehlschlägt
-    - Situationen in denen der Process-Pool nicht läuft
+The legacy provider (claude_cli.py) remains as fallback for:
+    * Crash recovery when persistent pipe fails
+    * Situations where the process pool is not running
 """
 
 from __future__ import annotations
@@ -49,11 +49,11 @@ _CAPABILITIES = ProviderCapabilities(
 
 
 class ClaudePersistentProvider(LLMProvider, StreamingProvider):
-    """Claude Code CLI als LLM-Provider mit persistentem Subprocess (Modus B).
+    """Claude Code CLI as LLM provider with persistent subprocess (Mode B).
 
-    Nutzt ClaudeProcessPool für warme Subprocesses pro User.
-    Streaming-fähig: query_streaming() liefert StreamEvents.
-    Fallback: query() sammelt alle Events und gibt ProviderResponse zurück.
+    Uses ClaudeProcessPool for warm subprocesses per user.
+    Streaming capable: query_streaming() delivers StreamEvents.
+    Fallback: query() collects all events and returns ProviderResponse.
     """
 
     name = "claude_persistent"
@@ -62,11 +62,11 @@ class ClaudePersistentProvider(LLMProvider, StreamingProvider):
         self._pool = process_pool
 
     def get_capabilities(self) -> ProviderCapabilities:
-        """Claude-Capabilities: Cloud, Subscription, 200k Context, Streaming."""
+        """Claude capabilities: cloud, subscription, 200k context, streaming."""
         return _CAPABILITIES
 
     def is_available(self) -> bool:
-        """Prüft ob `claude` CLI im PATH ist."""
+        """Check if `claude` CLI is in PATH."""
         return ClaudeProcessPool.is_cli_available()
 
     async def query(
@@ -78,29 +78,29 @@ class ClaudePersistentProvider(LLMProvider, StreamingProvider):
         user_id: int | None = None,
         chat_id: int | None = None,
     ) -> ProviderResponse:
-        """Sendet eine Anfrage via persistent Subprocess und wartet auf vollständige Antwort.
+        """Send a request via persistent subprocess and wait for complete response.
 
-        Non-Streaming-Variante: sammelt alle Events bis zum Result.
-        Für Streaming: query_streaming() verwenden.
+        Non-streaming variant: collects all events until result.
+        For streaming: use query_streaming().
 
         Args:
-            prompt: User-Nachricht.
-            system_prompt: Optionaler System-Prompt.
-            timeout_seconds: Timeout (wird vom Process-Pool intern gehandled).
-            model: Optionaler Modell-Identifier (wird an den Process-Pool durchgereicht).
-            user_id: Telegram-User-ID (Pflicht).
-            chat_id: Telegram-Chat-ID (Pflicht).
+            prompt: User message.
+            system_prompt: Optional system prompt.
+            timeout_seconds: Timeout (handled internally by the process pool).
+            model: Optional model identifier (passed through to the process pool).
+            user_id: Telegram user ID (required).
+            chat_id: Telegram chat ID (required).
 
         Returns:
-            ProviderResponse mit Claude-Antwort oder Fehler.
+            ProviderResponse with Claude response or error.
 
         Raises:
-            ValueError: Wenn user_id oder chat_id nicht angegeben.
+            ValueError: If user_id or chat_id is not provided.
         """
         if user_id is None:
-            raise ValueError("user_id ist Pflicht für ClaudePersistentProvider")
+            raise ValueError("user_id is required for ClaudePersistentProvider")
         if chat_id is None:
-            raise ValueError("chat_id ist Pflicht für ClaudePersistentProvider")
+            raise ValueError("chat_id is required for ClaudePersistentProvider")
 
         start = time.monotonic()
 
@@ -159,25 +159,25 @@ class ClaudePersistentProvider(LLMProvider, StreamingProvider):
         chat_id: int | None = None,
         model: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
-        """Sendet eine Anfrage und streamt die Antwort Token für Token.
+        """Send a request and stream the response token by token.
 
         Args:
-            prompt: User-Nachricht.
-            system_prompt: Optionaler System-Prompt.
-            user_id: Telegram-User-ID (Pflicht).
-            chat_id: Telegram-Chat-ID (Pflicht).
-            model: Optionale Modell-ID (None = Pool-Default).
+            prompt: User message.
+            system_prompt: Optional system prompt.
+            user_id: Telegram user ID (required).
+            chat_id: Telegram chat ID (required).
+            model: Optional model ID (None = pool default).
 
         Yields:
-            StreamEvent-Objekte (content_delta, result, error).
+            StreamEvent objects (content_delta, result, error).
 
         Raises:
-            ValueError: Wenn user_id oder chat_id nicht angegeben.
+            ValueError: If user_id or chat_id is not provided.
         """
         if user_id is None:
-            raise ValueError("user_id ist Pflicht für ClaudePersistentProvider")
+            raise ValueError("user_id is required for ClaudePersistentProvider")
         if chat_id is None:
-            raise ValueError("chat_id ist Pflicht für ClaudePersistentProvider")
+            raise ValueError("chat_id is required for ClaudePersistentProvider")
 
         async for event in self._pool.send_message(
             user_id=user_id,

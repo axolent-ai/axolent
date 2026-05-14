@@ -1,12 +1,11 @@
-"""Bookmark-Storage: JSONL-Backend (Legacy) mit FileLock.
+"""Bookmark storage: JSONL backend (legacy) with FileLock.
 
-Persistiert Bookmarks als append-only JSONL-Datei.
+Persists bookmarks as an append-only JSONL file.
 Thread-safe via filelock.
 
-Seit V6 wird das SQLite-Backend ausschließlich via BookmarkService
-(Konstruktor-Injection) verwendet. Dieses Modul bleibt als
-JSONL-Legacy-Backend und für die JsonlBookmarkStorageAdapter-Klasse
-erhalten.
+Since V6, the SQLite backend is used exclusively via BookmarkService
+(constructor injection). This module remains as JSONL legacy backend
+and for the JsonlBookmarkStorageAdapter class.
 """
 
 from __future__ import annotations
@@ -30,13 +29,13 @@ _BM_LOCK = FileLock(_BM_LOCK_PATH)
 
 
 def migrate_legacy_chat_id() -> int:
-    """Schreibt fehlende chat_id in alte Bookmarks (idempotent, crash-safe).
+    """Write missing chat_id into old bookmarks (idempotent, crash-safe).
 
-    Annahme: bei DMs in Telegram ist chat_id == user_id.
-    Korrupte JSONL-Zeilen werden übersprungen und geloggt statt den Start zu crashen.
+    Assumption: for DMs in Telegram, chat_id == user_id.
+    Corrupt JSONL lines are skipped and logged instead of crashing startup.
 
     Returns:
-        Anzahl migrierter Einträge.
+        Number of migrated entries.
     """
     if not BOOKMARKS_PATH.exists():
         return 0
@@ -58,12 +57,12 @@ def migrate_legacy_chat_id() -> int:
                 except json.JSONDecodeError as e:
                     corrupt_count += 1
                     log.warning(
-                        "Migration: korrupte Zeile %d übersprungen: %s",
+                        "Migration: corrupt line %d skipped: %s",
                         line_num,
                         e,
                     )
         if migrated > 0 or corrupt_count > 0:
-            # Atomarer Rewrite
+            # Atomic rewrite
             tmp_path = BOOKMARKS_PATH.with_suffix(".jsonl.tmp")
             with open_utf8(tmp_path, "w") as f:
                 for entry in valid_lines:
@@ -71,7 +70,7 @@ def migrate_legacy_chat_id() -> int:
             tmp_path.replace(BOOKMARKS_PATH)
         if corrupt_count > 0:
             log.info(
-                "Migration: %d korrupte Zeile(n) entfernt, %d Einträge migriert",
+                "Migration: %d corrupt line(s) removed, %d entries migrated",
                 corrupt_count,
                 migrated,
             )
@@ -85,19 +84,17 @@ def save_bookmark(
     chat_id: int,
     content: str,
 ) -> dict[str, Any]:
-    """Speichert einen Bookmark-Eintrag.
-
-    Delegiert an SQLite-Backend falls aktiviert, sonst JSONL.
+    """Save a bookmark entry.
 
     Args:
-        user_id: Telegram User-ID.
-        username: Telegram Username (kann None sein).
-        message_id: Telegram Message-ID der Bot-Antwort.
-        chat_id: Telegram Chat-ID.
-        content: Volltext der Bot-Antwort.
+        user_id: Telegram user ID.
+        username: Telegram username (can be None).
+        message_id: Telegram message ID of the bot response.
+        chat_id: Telegram chat ID.
+        content: Full text of the bot response.
 
     Returns:
-        Der gespeicherte Bookmark-Eintrag als Dict.
+        The saved bookmark entry as dict.
     """
     from datetime import datetime, timezone
 
@@ -112,7 +109,7 @@ def save_bookmark(
     with _BM_LOCK:
         append_jsonl_utf8(entry, BOOKMARKS_PATH)
     log.info(
-        "Bookmark gespeichert: user=%s chat_id=%d message_id=%d content_len=%d",
+        "Bookmark saved: user=%s chat_id=%d message_id=%d content_len=%d",
         username,
         chat_id,
         message_id,
@@ -122,13 +119,13 @@ def save_bookmark(
 
 
 def _read_all_bookmarks(user_id: int) -> list[dict[str, Any]]:
-    """Liest alle Bookmarks eines bestimmten Users (stream-basiert, JSONL-only).
+    """Read all bookmarks of a specific user (stream-based, JSONL only).
 
     Args:
-        user_id: Telegram User-ID zum Filtern.
+        user_id: Telegram user ID to filter by.
 
     Returns:
-        Liste von Bookmark-Dicts für diesen User, neueste zuerst.
+        List of bookmark dicts for this user, newest first.
     """
     if not BOOKMARKS_PATH.exists():
         return []
@@ -145,38 +142,38 @@ def _read_all_bookmarks(user_id: int) -> list[dict[str, Any]]:
                     if entry.get("user_id") == user_id:
                         bookmarks.append(entry)
                 except json.JSONDecodeError:
-                    log.warning("Korrupte JSONL-Zeile übersprungen: %s", line[:80])
+                    log.warning("Corrupt JSONL line skipped: %s", line[:80])
                     continue
 
-    # Neueste zuerst
+    # Newest first
     bookmarks.reverse()
     return bookmarks
 
 
 def list_recent_bookmarks(user_id: int, limit: int = 10) -> list[dict[str, Any]]:
-    """Gibt die neuesten Bookmarks eines Users zurück.
+    """Return the most recent bookmarks of a user.
 
     Args:
-        user_id: Telegram User-ID.
-        limit: Maximale Anzahl zurückzugebender Bookmarks.
+        user_id: Telegram user ID.
+        limit: Maximum number of bookmarks to return.
 
     Returns:
-        Liste von Bookmark-Dicts, neueste zuerst, max `limit` Einträge.
+        List of bookmark dicts, newest first, max `limit` entries.
     """
     all_bm = _read_all_bookmarks(user_id)
     return all_bm[:limit]
 
 
 def search_bookmarks(user_id: int, query: str, limit: int = 20) -> list[dict[str, Any]]:
-    """Sucht Bookmarks per Inhalts-Substring (case-insensitive).
+    """Search bookmarks by content substring (case-insensitive).
 
     Args:
-        user_id: Telegram User-ID.
-        query: Suchbegriff für den Bookmark-Inhalt.
-        limit: Maximale Anzahl Ergebnisse.
+        user_id: Telegram user ID.
+        query: Search term for the bookmark content.
+        limit: Maximum number of results.
 
     Returns:
-        Liste passender Bookmark-Dicts, neueste zuerst.
+        List of matching bookmark dicts, newest first.
     """
     query_lower = query.lower()
     all_bm = _read_all_bookmarks(user_id)
@@ -192,15 +189,15 @@ def search_bookmarks(user_id: int, query: str, limit: int = 20) -> list[dict[str
 def get_bookmark_by_message_id(
     user_id: int, chat_id: int, message_id: int
 ) -> Optional[dict[str, Any]]:
-    """Findet einen Bookmark per chat_id + message_id.
+    """Find a bookmark by chat_id + message_id.
 
     Args:
-        user_id: Telegram User-ID.
-        chat_id: Telegram Chat-ID.
-        message_id: Telegram Message-ID zum Suchen.
+        user_id: Telegram user ID.
+        chat_id: Telegram chat ID.
+        message_id: Telegram message ID to search for.
 
     Returns:
-        Bookmark-Dict oder None falls nicht gefunden.
+        Bookmark dict or None if not found.
     """
     all_bm = _read_all_bookmarks(user_id)
     for bm in all_bm:
@@ -210,29 +207,29 @@ def get_bookmark_by_message_id(
 
 
 def bookmark_exists(user_id: int, chat_id: int, message_id: int) -> bool:
-    """Prüft ob ein Bookmark mit dieser chat_id + message_id für diesen User existiert.
+    """Check if a bookmark with this chat_id + message_id exists for this user.
 
     Args:
-        user_id: Telegram User-ID.
-        chat_id: Telegram Chat-ID.
-        message_id: Telegram Message-ID zum Prüfen.
+        user_id: Telegram user ID.
+        chat_id: Telegram chat ID.
+        message_id: Telegram message ID to check.
 
     Returns:
-        True wenn der Bookmark existiert, False sonst.
+        True if the bookmark exists, False otherwise.
     """
     return get_bookmark_by_message_id(user_id, chat_id, message_id) is not None
 
 
 def delete_bookmark(user_id: int, chat_id: int, message_id: int) -> bool:
-    """Löscht einen Bookmark per chat_id + message_id.
+    """Delete a bookmark by chat_id + message_id.
 
     Args:
-        user_id: Telegram User-ID.
-        chat_id: Telegram Chat-ID.
-        message_id: Telegram Message-ID zum Entfernen.
+        user_id: Telegram user ID.
+        chat_id: Telegram chat ID.
+        message_id: Telegram message ID to remove.
 
     Returns:
-        True wenn ein Bookmark gelöscht wurde, False falls nicht gefunden.
+        True if a bookmark was deleted, False if not found.
     """
     if not BOOKMARKS_PATH.exists():
         return False
@@ -258,7 +255,7 @@ def delete_bookmark(user_id: int, chat_id: int, message_id: int) -> bool:
                 ):
                     found = True
                     log.info(
-                        "Bookmark gelöscht: user_id=%d chat_id=%d message_id=%d",
+                        "Bookmark deleted: user_id=%d chat_id=%d message_id=%d",
                         user_id,
                         chat_id,
                         message_id,
@@ -277,10 +274,10 @@ def delete_bookmark(user_id: int, chat_id: int, message_id: int) -> bool:
 
 
 class JsonlBookmarkStorageAdapter:
-    """Adapter-Klasse die JSONL-Modul-Funktionen als BookmarkStorage-Protocol bereitstellt.
+    """Adapter class providing JSONL module functions as BookmarkStorage protocol.
 
-    Wird nur im JSONL-Legacy-Modus verwendet (USE_SQLITE_STORAGE=false).
-    Delegiert an die Modul-Level-Funktionen in diesem Modul.
+    Only used in JSONL legacy mode (USE_SQLITE_STORAGE=false).
+    Delegates to module-level functions in this module.
     """
 
     def save_bookmark(
@@ -291,31 +288,31 @@ class JsonlBookmarkStorageAdapter:
         chat_id: int,
         content: str,
     ) -> dict[str, Any]:
-        """Delegiert an Modul-Level save_bookmark."""
+        """Delegate to module-level save_bookmark."""
         return save_bookmark(user_id, username, message_id, chat_id, content)
 
     def list_recent_bookmarks(
         self, user_id: int, limit: int = 10
     ) -> list[dict[str, Any]]:
-        """Delegiert an Modul-Level list_recent_bookmarks."""
+        """Delegate to module-level list_recent_bookmarks."""
         return list_recent_bookmarks(user_id, limit=limit)
 
     def search_bookmarks(
         self, user_id: int, query: str, limit: int = 20
     ) -> list[dict[str, Any]]:
-        """Delegiert an Modul-Level search_bookmarks."""
+        """Delegate to module-level search_bookmarks."""
         return search_bookmarks(user_id, query, limit=limit)
 
     def get_bookmark_by_message_id(
         self, user_id: int, chat_id: int, message_id: int
     ) -> Optional[dict[str, Any]]:
-        """Delegiert an Modul-Level get_bookmark_by_message_id."""
+        """Delegate to module-level get_bookmark_by_message_id."""
         return get_bookmark_by_message_id(user_id, chat_id, message_id)
 
     def bookmark_exists(self, user_id: int, chat_id: int, message_id: int) -> bool:
-        """Delegiert an Modul-Level bookmark_exists."""
+        """Delegate to module-level bookmark_exists."""
         return bookmark_exists(user_id, chat_id, message_id)
 
     def delete_bookmark(self, user_id: int, chat_id: int, message_id: int) -> bool:
-        """Delegiert an Modul-Level delete_bookmark."""
+        """Delegate to module-level delete_bookmark."""
         return delete_bookmark(user_id, chat_id, message_id)

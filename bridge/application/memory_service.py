@@ -1,10 +1,10 @@
-"""Memory-Service: CRUD-Coordinator für Trinity-Memory.
+"""Memory service: CRUD coordinator for Trinity Memory.
 
-Koordiniert zwischen Domain (Entry-Klassen) und Infrastructure (MemoryStorage).
-User-facing API für Telegram-Handler.
+Coordinates between domain (entry classes) and infrastructure (MemoryStorage).
+User-facing API for Telegram handlers.
 
-Phase 1: Manuelles Speichern/Abrufen via Commands.
-Phase 1+: Auto-Memory-Loading in Chat-Service, Konsolidierung.
+Phase 1: Manual save/recall via commands.
+Phase 1+: Auto-memory loading in chat service, consolidation.
 """
 
 from __future__ import annotations
@@ -24,17 +24,17 @@ log = logging.getLogger(__name__)
 
 
 class MemoryService:
-    """Koordinator für alle Memory-Operationen.
+    """Coordinator for all memory operations.
 
-    Bietet eine saubere API die von Telegram-Handlern genutzt wird.
-    Kümmert sich um Entry-Erstellung, Validierung und Storage-Delegation.
+    Provides a clean API used by Telegram handlers.
+    Handles entry creation, validation, and storage delegation.
     """
 
     def __init__(self, storage: Union[MemoryStorage, SqliteMemoryStorage]) -> None:
-        """Initialisiert den Service mit einem Storage-Adapter.
+        """Initialize the service with a storage adapter.
 
         Args:
-            storage: MemoryStorage (JSONL) oder SqliteMemoryStorage (SQLite).
+            storage: MemoryStorage (JSONL) or SqliteMemoryStorage (SQLite).
         """
         self.storage = storage
 
@@ -45,16 +45,16 @@ class MemoryService:
         importance: int = 5,
         context: Optional[dict] = None,
     ) -> str:
-        """Speichert ein episodisches Event.
+        """Store an episodic event.
 
         Args:
-            user_id: Telegram-User-ID.
-            content: Beschreibung des Events.
-            importance: Wichtigkeit 1-10.
-            context: Optionaler Kontext.
+            user_id: Telegram user ID.
+            content: Description of the event.
+            importance: Importance 1-10.
+            context: Optional context.
 
         Returns:
-            ID des neuen Entries (ep_...).
+            ID of the new entry (ep_...).
         """
         entry = EpisodicEntry(
             user_id=user_id,
@@ -63,7 +63,7 @@ class MemoryService:
             context=context or {},
         )
         self.storage.append(entry.to_dict(), "episodic")
-        log.info("Episodic Memory gespeichert: user=%d id=%s", user_id, entry.id)
+        log.info("Episodic memory saved: user=%d id=%s", user_id, entry.id)
         return entry.id
 
     def remember_semantic(
@@ -74,18 +74,18 @@ class MemoryService:
         importance: int = 5,
         context: Optional[dict] = None,
     ) -> str:
-        """Speichert einen semantischen Fakt.
+        """Store a semantic fact.
 
         Args:
-            user_id: Telegram-User-ID.
-            content: Der generalisierte Fakt.
-            category: Klassifizierung (fakt, person, praeferenz, projekt).  # noqa: fake-umlaut
-                      Hinweis: Werte sind ASCII-Keys (DB-Schema, nicht lokalisiert).
-            importance: Wichtigkeit 1-10.
-            context: Optionaler Kontext.
+            user_id: Telegram user ID.
+            content: The generalized fact.
+            category: Classification (fakt, person, praeferenz, projekt).  # noqa: fake-umlaut
+                      Note: values are ASCII keys (DB schema, not localized).
+            importance: Importance 1-10.
+            context: Optional context.
 
         Returns:
-            ID des neuen Entries (sem_...).
+            ID of the new entry (sem_...).
         """
         entry = SemanticEntry(
             user_id=user_id,
@@ -95,7 +95,7 @@ class MemoryService:
             context=context or {},
         )
         self.storage.append(entry.to_dict(), "semantic")
-        log.info("Semantic Memory gespeichert: user=%d id=%s", user_id, entry.id)
+        log.info("Semantic memory saved: user=%d id=%s", user_id, entry.id)
         return entry.id
 
     def remember_procedural(
@@ -106,17 +106,17 @@ class MemoryService:
         importance: int = 5,
         context: Optional[dict] = None,
     ) -> str:
-        """Speichert einen Skill/ein Pattern.
+        """Store a skill/pattern.
 
         Args:
-            user_id: Telegram-User-ID.
-            content: Beschreibung des Skills.
-            skill_name: Kurzname (z.B. "code_format").
-            importance: Wichtigkeit 1-10.
-            context: Optionaler Kontext.
+            user_id: Telegram user ID.
+            content: Description of the skill.
+            skill_name: Short name (e.g. "code_format").
+            importance: Importance 1-10.
+            context: Optional context.
 
         Returns:
-            ID des neuen Entries (pro_...).
+            ID of the new entry (pro_...).
         """
         entry = ProceduralEntry(
             user_id=user_id,
@@ -126,7 +126,7 @@ class MemoryService:
             context=context or {},
         )
         self.storage.append(entry.to_dict(), "procedural")
-        log.info("Procedural Memory gespeichert: user=%d id=%s", user_id, entry.id)
+        log.info("Procedural memory saved: user=%d id=%s", user_id, entry.id)
         return entry.id
 
     def recall(
@@ -136,61 +136,61 @@ class MemoryService:
         layer: str = "episodic",
         limit: int = 20,
     ) -> list[dict]:
-        """Durchsucht Memory nach einem Begriff.
+        """Search memory for a term.
 
         Args:
-            user_id: Telegram-User-ID.
-            query: Suchbegriff (substring match).
-            layer: Zu durchsuchender Layer.
-            limit: Maximale Treffer.
+            user_id: Telegram user ID.
+            query: Search term (substring match).
+            layer: Layer to search.
+            limit: Maximum hits.
 
         Returns:
-            Liste von matching Entry-Dicts.
+            List of matching entry dicts.
         """
         return self.storage.search(user_id, query, layer, limit)
 
     def list_recent(
         self, user_id: int, layer: str = "episodic", limit: int = 50
     ) -> list[dict]:
-        """Listet die neuesten Entries eines Layers.
+        """List the most recent entries of a layer.
 
         Args:
-            user_id: Telegram-User-ID.
-            layer: Abzufragender Layer.
-            limit: Maximale Anzahl.
+            user_id: Telegram user ID.
+            layer: Layer to query.
+            limit: Maximum count.
 
         Returns:
-            Liste von Entry-Dicts, neueste zuerst.
+            List of entry dicts, newest first.
         """
         return self.storage.list_entries(user_id, layer, limit)
 
     def forget(self, user_id: int, entry_id: str) -> bool:
-        """Löscht einen Memory-Entry (mit Ownership-Check).
+        """Delete a memory entry (with ownership check).
 
-        Erkennt den Layer automatisch anhand des ID-Prefix.
+        Detects the layer automatically from the ID prefix.
 
         Args:
-            user_id: Telegram-User-ID.
-            entry_id: ID des Entries (ep_..., sem_..., pro_...).
+            user_id: Telegram user ID.
+            entry_id: ID of the entry (ep_..., sem_..., pro_...).
 
         Returns:
-            True wenn gelöscht, False wenn nicht gefunden.
+            True if deleted, False if not found.
         """
         layer = self._layer_from_id(entry_id)
         if layer is None:
-            log.warning("Unbekanntes ID-Prefix für forget: %s", entry_id)
+            log.warning("Unknown ID prefix for forget: %s", entry_id)
             return False
         return self.storage.delete_by_id(entry_id, layer, user_id)
 
     def get_entry(self, user_id: int, entry_id: str) -> Optional[dict]:
-        """Liest einen einzelnen Entry anhand seiner ID.
+        """Read a single entry by its ID.
 
         Args:
-            user_id: Telegram-User-ID.
-            entry_id: Gesuchte ID.
+            user_id: Telegram user ID.
+            entry_id: Requested ID.
 
         Returns:
-            Entry-Dict oder None.
+            Entry dict or None.
         """
         layer = self._layer_from_id(entry_id)
         if layer is None:
@@ -199,13 +199,13 @@ class MemoryService:
 
     @staticmethod
     def _layer_from_id(entry_id: str) -> Optional[str]:
-        """Erkennt den Layer anhand des ID-Prefix.
+        """Detect the layer from the ID prefix.
 
         Args:
-            entry_id: Entry-ID mit Prefix (ep_, sem_, pro_).
+            entry_id: Entry ID with prefix (ep_, sem_, pro_).
 
         Returns:
-            Layer-Name oder None bei unbekanntem Prefix.
+            Layer name or None for unknown prefix.
         """
         if entry_id.startswith("ep_"):
             return "episodic"

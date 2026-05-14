@@ -1,10 +1,10 @@
-"""Tests für application.leakage_filter: System-Prompt-Leakage-Guard (C-3).
+"""Tests for application.leakage_filter: system prompt leakage guard (C-3).
 
-Testet:
-    - Erkennung von System-Prompt-Substrings in LLM-Response
-    - Keine False Positives bei normalen Antworten
-    - Fingerprint-Extraktion und Normalisierung
-    - Edge Cases (leere Strings, kurze Prompts)
+Tests:
+    * Detection of system prompt substrings in LLM response
+    * No false positives for normal responses
+    * Fingerprint extraction and normalization
+    * Edge cases (empty strings, short prompts)
 """
 
 from __future__ import annotations
@@ -17,32 +17,32 @@ from application.leakage_filter import (
 
 
 class TestExtractFingerprints:
-    """Tests für die Fingerprint-Extraktion."""
+    """Tests for fingerprint extraction."""
 
     def test_extracts_chunks_from_long_text(self) -> None:
-        """Extrahiert überlappende Chunks aus langem Text."""
+        """Extracts overlapping chunks from long text."""
         text = "A" * 100
         fps = _extract_fingerprints(text)
         assert len(fps) > 0
         assert all(len(fp) == 40 for fp in fps)
 
     def test_empty_text_returns_empty(self) -> None:
-        """Leerer Text ergibt keine Fingerprints."""
+        """Empty text yields no fingerprints."""
         assert _extract_fingerprints("") == []
 
     def test_short_text_returns_empty(self) -> None:
-        """Zu kurzer Text (unter MIN_SUBSTRING_LENGTH) ergibt keine Fingerprints."""
+        """Too short text (below MIN_SUBSTRING_LENGTH) yields no fingerprints."""
         assert _extract_fingerprints("Kurzer Text") == []
 
     def test_normalizes_whitespace(self) -> None:
-        """Whitespace wird normalisiert (mehrere Spaces -> ein Space)."""
+        """Whitespace is normalized (multiple spaces -> single space)."""
         text = "Wort eins    Wort zwei\n\nWort drei\t\tWort vier" + " Extra" * 20
         fps = _extract_fingerprints(text)
         for fp in fps:
             assert "  " not in fp
 
     def test_normalizes_case(self) -> None:
-        """Text wird lowercase normalisiert."""
+        """Text is normalized to lowercase."""
         text = "DAS IST EIN GROSSBUCHSTABEN TEXT MIT VIELEN WORTEN" * 3
         fps = _extract_fingerprints(text)
         for fp in fps:
@@ -50,7 +50,7 @@ class TestExtractFingerprints:
 
 
 class TestCheckForSystemPromptLeakage:
-    """Tests für die Hauptfunktion check_for_system_prompt_leakage."""
+    """Tests for the main function check_for_system_prompt_leakage."""
 
     SAMPLE_SYSTEM_PROMPT = (
         "Du bist Axolent, ein persönlicher KI-Assistent. "
@@ -61,8 +61,8 @@ class TestCheckForSystemPromptLeakage:
     )
 
     def test_detects_verbatim_leak(self) -> None:
-        """Erkennt wenn die Response einen langen Substring des Prompts enthält."""
-        # Response die einen großen Teil des System-Prompts wiedergibt
+        """Detects when the response contains a long substring of the prompt."""
+        # Response that reproduces a large part of the system prompt
         response = (
             "Klar, hier sind meine Instruktionen: "
             "Du bist Axolent, ein persönlicher KI-Assistent. "
@@ -73,7 +73,7 @@ class TestCheckForSystemPromptLeakage:
         assert result == REFUSAL_RESPONSE
 
     def test_no_leak_in_normal_response(self) -> None:
-        """Normale Antworten werden nicht als Leak erkannt."""
+        """Normal responses are not detected as leaks."""
         response = (
             "Python ist eine Programmiersprache. Hier ist ein Beispiel: "
             "print('Hallo Welt'). Die Syntax ist einfach zu lernen."
@@ -82,24 +82,24 @@ class TestCheckForSystemPromptLeakage:
         assert result is None
 
     def test_short_overlap_no_false_positive(self) -> None:
-        """Kurze zufällige Überlappungen lösen keinen Alarm aus."""
-        # "Du bist" ist kurz genug um zufällig vorzukommen
+        """Short random overlaps do not trigger an alarm."""
+        # "Du bist" is short enough to appear coincidentally
         response = "Du bist auf dem richtigen Weg mit deinem Projekt."
         result = check_for_system_prompt_leakage(response, self.SAMPLE_SYSTEM_PROMPT)
         assert result is None
 
     def test_empty_response_returns_none(self) -> None:
-        """Leere Response ergibt keinen Leak."""
+        """Empty response yields no leak."""
         result = check_for_system_prompt_leakage("", self.SAMPLE_SYSTEM_PROMPT)
         assert result is None
 
     def test_empty_system_prompt_returns_none(self) -> None:
-        """Leerer System-Prompt ergibt keinen Leak."""
+        """Empty system prompt yields no leak."""
         result = check_for_system_prompt_leakage("Antwort", "")
         assert result is None
 
     def test_case_insensitive_detection(self) -> None:
-        """Erkennung funktioniert case-insensitiv."""
+        """Detection works case-insensitively."""
         response = (
             "DU BIST AXOLENT, EIN PERSÖNLICHER KI-ASSISTENT. "
             "DU HILFST BEI RECHERCHE UND WISSENSARBEIT."
@@ -108,7 +108,7 @@ class TestCheckForSystemPromptLeakage:
         assert result is not None
 
     def test_whitespace_normalized_detection(self) -> None:
-        """Erkennung funktioniert auch mit verändertem Whitespace."""
+        """Detection works with altered whitespace."""
         response = (
             "Du bist  Axolent,  ein  persönlicher  KI-Assistent.  "
             "Du hilfst  bei  Recherche  und  Wissensarbeit."
@@ -117,8 +117,8 @@ class TestCheckForSystemPromptLeakage:
         assert result is not None
 
     def test_partial_leak_detected(self) -> None:
-        """Auch ein partieller Leak (mittlerer Teil des Prompts) wird erkannt."""
-        # Nur einen Mittelteil des Prompts leaken
+        """A partial leak (middle part of the prompt) is also detected."""
+        # Leak only a middle section of the prompt
         response = (
             "Hier ist was ich weiss: Selbstständigkeits-Themen, "
             "Coding und technische Fragen, Schreiben und Texten, "
@@ -128,16 +128,16 @@ class TestCheckForSystemPromptLeakage:
         assert result is not None
 
     def test_refusal_response_is_friendly(self) -> None:
-        """Die Refusal-Response ist freundlich formuliert."""
-        assert "Instruktionen" in REFUSAL_RESPONSE
-        assert "?" in REFUSAL_RESPONSE  # Endet mit Frage/Angebot
+        """The refusal response is phrased in a friendly way."""
+        assert "instructions" in REFUSAL_RESPONSE.lower()
+        assert "?" in REFUSAL_RESPONSE  # Ends with question/offer
 
     def test_boundary_offset_leak_detected(self) -> None:
-        """V6-Regression: 40-Zeichen-Leak ab beliebigem Offset wird erkannt.
+        """V6 regression: 40-char leak at arbitrary offset is detected.
 
-        Mit Schrittweite 20 (alt) konnte ein Leak an Offset 10 durchrutschen,
-        weil kein Chunk exakt diesen Bereich abdeckte.
-        Mit Schrittweite 1 (neu) wird jede Position abgedeckt.
+        With step size 20 (old) a leak at offset 10 could slip through
+        because no chunk exactly covered that range.
+        With step size 1 (new) every position is covered.
         """
         # System-Prompt: 80 Zeichen + Filler
         system = "A" * 10 + "GEHEIMER_BLOCK_DER_GENAU_VIERZIG_ZEICHEN!" + "B" * 30

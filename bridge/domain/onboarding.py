@@ -1,7 +1,7 @@
-"""Onboarding-Domain: Wizard-Konfiguration und Sprach-Mapping.
+"""Onboarding domain: wizard configuration and language mapping.
 
-Definiert die verfügbaren Sprachen für den Setup-Wizard,
-Wizard-Texte in mehreren Sprachen, und die Wizard-Step-Struktur.
+Defines the available languages for the setup wizard,
+wizard texts in multiple languages, and the wizard step structure.
 """
 
 from __future__ import annotations

@@ -1,17 +1,17 @@
-"""Chat-Service: Use-Case für LLM-Aufrufe.
+"""Chat service: use case for LLM calls.
 
-Koordiniert: Conversation-History -> Sprach-Detection -> Prompt-Building -> Provider-Router -> Audit-Log.
-Kein Telegram-Code hier, nur Business-Orchestration.
+Coordinates: conversation history -> language detection -> prompt building -> provider router -> audit log.
+No Telegram code here, only business orchestration.
 
-Seit Phase 1: nutzt ProviderRouter statt direkt claude_cli.
-Default-Provider: Claude (Modus B, CLI-Subprozess).
+Since Phase 1: uses ProviderRouter instead of direct claude_cli.
+Default provider: Claude (Mode B, CLI subprocess).
 
-Seit Phase 1 (Auto-Memory): Lädt automatisch relevante Memory-Einträge
-und fügt sie in den System-Prompt ein bevor der LLM-Call stattfindet.
+Since Phase 1 (auto-memory): automatically loads relevant memory entries
+and injects them into the system prompt before the LLM call.
 
-Seit R04: Streaming-fähig via ClaudePersistentProvider.
-process_user_message_streaming() liefert einen AsyncIterator von StreamEvents
-für Echtzeit-Telegram-Edits.
+Since R04: streaming-capable via ClaudePersistentProvider.
+process_user_message_streaming() yields an AsyncIterator of StreamEvents
+for real-time Telegram edits.
 """
 
 from __future__ import annotations
@@ -49,13 +49,13 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# Memory-Token-Budget: verhindert Prompt-Explosion bei langen /remember Einträgen
+# Memory token budget: prevents prompt explosion with long /remember entries
 MAX_MEMORY_CHARS_PER_ENTRY = 400
-MAX_MEMORY_TOTAL_CHARS = 4000  # Default-Fallback wenn Provider keine Capability meldet
+MAX_MEMORY_TOTAL_CHARS = 4000  # Default fallback if provider reports no capability
 
 
 def _truncate(text: str, n: int) -> str:
-    """Kürzt Text auf maximal n Zeichen mit Ellipsis."""
+    """Truncate text to at most n characters with ellipsis."""
     return text if len(text) <= n else text[: n - 3] + "..."
 
 
@@ -137,38 +137,35 @@ _STOP_WORDS = _STOP_WORDS_DE | _STOP_WORDS_EN
 
 
 def _extract_keywords(text: str) -> list[str]:
-    """Extrahiert Suchbegriffe aus einer User-Nachricht.
+    """Extract search terms from a user message.
 
-    Strategie: Interpunktion strippen, Stop-Words filtern,
-    dann alle Worte mit > 3 Zeichen, lowercase, dedupliziert.
+    Strategy: strip punctuation, filter stop words,
+    then all words with > 3 chars, lowercase, deduplicated.
 
     Args:
-        text: User-Nachricht.
+        text: User message.
 
     Returns:
-        Liste von Keywords (längstes zuerst).
+        List of keywords (longest first).
     """
-    # Interpunktion an Wortgrenzen entfernen (?,.:;!'"…) damit
-    # "Lieblingssprache?" -> "lieblingssprache" wird
     stripped = [w.strip("?,.:;!'\"-—–…()[]{}") for w in text.split()]
     candidates = {w.lower() for w in stripped if len(w) > 3}
     keywords = list(candidates - _STOP_WORDS)
-    # Sortiert nach Länge absteigend (längste = spezifischste zuerst)
     keywords.sort(key=len, reverse=True)
     return keywords
 
 
 class ChatResult:
-    """Ergebnis eines Chat-Aufrufs.
+    """Result of a chat call.
 
     Attributes:
-        success: True wenn der Provider eine gültige Antwort geliefert hat.
-        response: Provider-Antwort (leer bei Fehler).
-        error_message: Benutzerfreundliche Fehlermeldung (leer bei Erfolg).
-        error_id: Fehler-ID für Debugging (leer bei Erfolg).
-        duration: Dauer des Provider-Aufrufs in Sekunden.
-        detected_language: Erkannte Sprache der User-Nachricht.
-        provider_name: Name des verwendeten Providers.
+        success: True if the provider delivered a valid response.
+        response: Provider response (empty on error).
+        error_message: User-friendly error message (empty on success).
+        error_id: Error ID for debugging (empty on success).
+        duration: Duration of the provider call in seconds.
+        detected_language: Detected language of the user message.
+        provider_name: Name of the provider used.
     """
 
     __slots__ = (
@@ -201,11 +198,11 @@ class ChatResult:
 
 
 class ChatService:
-    """Hauptlogik für User-Anfragen.
+    """Main logic for user requests.
 
-    Koordiniert Provider-Aufruf, Memory-Loading, Conversation-History
-    und Sprach-Detection. Ersetzt die alten Modul-Globals + Setter
-    durch saubere Konstruktor-Injection.
+    Coordinates provider call, memory loading, conversation history,
+    and language detection. Replaces the old module globals + setters
+    with clean constructor injection.
     """
 
     def __init__(
@@ -223,16 +220,16 @@ class ChatService:
         self.self_awareness_service = self_awareness_service
 
     def _get_memory_budget(self, provider_name: str | None = None) -> int:
-        """Liest das Memory-Budget aus ProviderCapabilities.
+        """Read the memory budget from ProviderCapabilities.
 
-        Falls der Provider eine eigene max_memory_chars-Capability definiert,
-        wird diese verwendet. Sonst Fallback auf MAX_MEMORY_TOTAL_CHARS.
+        If the provider defines its own max_memory_chars capability,
+        that is used. Otherwise falls back to MAX_MEMORY_TOTAL_CHARS.
 
         Args:
-            provider_name: Name des Providers (None = Default aus Router).
+            provider_name: Name of the provider (None = default from router).
 
         Returns:
-            Max. Zeichen für Memory-Block im System-Prompt.
+            Max chars for memory block in system prompt.
         """
         if self.provider_router is None:
             return MAX_MEMORY_TOTAL_CHARS
@@ -254,19 +251,19 @@ class ChatService:
     def _build_memory_context(
         self, user_id: int, query: str, provider_name: str | None = None
     ) -> tuple[str, int]:
-        """Lädt relevante Memory-Einträge für den User basierend auf Query.
+        """Load relevant memory entries for the user based on query.
 
-        Such-Strategie: Keyword-Extraktion -> Substring-Match über alle Layer.
-        Priorisiert längste Keywords als Hauptsuche.
+        Search strategy: keyword extraction -> substring match across all layers.
+        Prioritizes longest keywords as primary search.
 
         Args:
-            user_id: Telegram-User-ID.
-            query: Aktuelle User-Nachricht.
-            provider_name: Optionaler Provider-Name für Memory-Budget-Lookup.
+            user_id: Telegram user ID.
+            query: Current user message.
+            provider_name: Optional provider name for memory budget lookup.
 
         Returns:
-            Tuple von (Memory-Context-String, Anzahl geladener Entries).
-            Leerer String + 0 wenn keine Treffer oder kein MemoryService.
+            Tuple of (memory context string, number of loaded entries).
+            Empty string + 0 if no hits or no MemoryService.
         """
         if self.memory_service is None:
             return "", 0
@@ -275,7 +272,7 @@ class ChatService:
         if not keywords:
             return "", 0
 
-        # Primärer Suchbegriff: längstes Keyword (spezifischste)
+        # Primary search term: longest keyword (most specific)
         primary_query = keywords[0]
 
         episodic = self.memory_service.recall(
@@ -288,7 +285,7 @@ class ChatService:
             user_id, primary_query, layer="procedural", limit=2
         )
 
-        # Wenn primärer keine Treffer: sekundären probieren (falls vorhanden)
+        # If primary yields no hits: try secondary (if available)
         if not (episodic or semantic or procedural) and len(keywords) > 1:
             secondary_query = keywords[1]
             episodic = self.memory_service.recall(
@@ -306,31 +303,31 @@ class ChatService:
 
         total_entries = len(episodic) + len(semantic) + len(procedural)
 
-        sections: list[str] = ["[GESPEICHERTE NOTIZEN]", ""]
+        sections: list[str] = ["[STORED NOTES]", ""]
         sections.append(
-            "Diese Einträge wurden vom User gespeichert und sind möglicherweise "
-            "relevant für die aktuelle Frage. Nutze sie wenn passend, ignoriere wenn nicht relevant."
+            "These entries were stored by the user and may be "
+            "relevant to the current question. Use them if appropriate, ignore if not relevant."
         )
         sections.append("")
 
         if episodic:
-            sections.append("Episodic (was passiert ist):")
+            sections.append("Episodic (what happened):")
             for entry in episodic:
                 content = _truncate(entry["content"], MAX_MEMORY_CHARS_PER_ENTRY)
                 sections.append(f"  • [{entry['id']}] {content}")
             sections.append("")
 
         if semantic:
-            sections.append("Semantic (Fakten):")
+            sections.append("Semantic (facts):")
             for entry in semantic:
                 category = entry.get("category", "")
-                cat_part = f" (kategorie: {category})" if category else ""
+                cat_part = f" (category: {category})" if category else ""
                 content = _truncate(entry["content"], MAX_MEMORY_CHARS_PER_ENTRY)
                 sections.append(f"  • [{entry['id']}]{cat_part} {content}")
             sections.append("")
 
         if procedural:
-            sections.append("Procedural (Skills):")
+            sections.append("Procedural (skills):")
             for entry in procedural:
                 skill = entry.get("skill_name", "")
                 skill_part = f" [skill: {skill}]" if skill else ""
@@ -341,7 +338,7 @@ class ChatService:
         memory_block = "\n".join(sections)
         budget = self._get_memory_budget(provider_name)
         if len(memory_block) > budget:
-            memory_block = memory_block[: budget - 200] + "\n[Block gekürzt]"
+            memory_block = memory_block[: budget - 200] + "\n[Block truncated]"
         return memory_block, total_entries
 
     async def process_user_message(
@@ -355,20 +352,20 @@ class ChatService:
         provider_name: Optional[str] = None,
         reply_to_text: Optional[str] = None,
     ) -> ChatResult:
-        """Verarbeitet eine User-Nachricht: History laden, Sprache erkennen, Provider aufrufen, Audit loggen.
+        """Process a user message: load history, detect language, call provider, write audit log.
 
         Args:
-            text: User-Nachricht.
-            user_id: Telegram User-ID.
-            chat_id: Telegram Chat-ID.
-            username: Telegram Username.
-            system_prompt: Base System-Prompt (aus PersonalityLoader).
+            text: User message.
+            user_id: Telegram user ID.
+            chat_id: Telegram chat ID.
+            username: Telegram username.
+            system_prompt: Base system prompt (from PersonalityLoader).
             language_override: If set, use this language instead of detecting.
-            provider_name: Optionaler Provider-Name (None = Default aus Router).
-            reply_to_text: Text der Nachricht auf die der User geantwortet hat (Telegram Reply-To).
+            provider_name: Optional provider name (None = default from router).
+            reply_to_text: Text of the message the user replied to (Telegram reply-to).
 
         Returns:
-            ChatResult mit Erfolg/Fehler-Details.
+            ChatResult with success/error details.
         """
         uid = user_id or 0
         cid = chat_id or 0
@@ -385,7 +382,7 @@ class ChatService:
             # Load conversation history
             history = await get_history(uid, cid)
 
-            # Auto-Memory-Loading: relevante Einträge für aktuelle Frage laden
+            # Auto-memory loading: load relevant entries for current question
             memory_context, memory_entries_loaded = self._build_memory_context(
                 uid, text
             )
@@ -403,8 +400,8 @@ class ChatService:
                 enriched_text = text
             context_prompt = build_context_block(history, enriched_text)
 
-            # Language: Smart-Detection bei jeder Nachricht.
-            # Sticky wird überschrieben wenn Detection klar genug ist (Variante 1).
+            # Language: smart detection on every message.
+            # Sticky is overwritten when detection is clear enough (Variant 1).
             if language_override:
                 lang = language_override
             else:
@@ -416,11 +413,11 @@ class ChatService:
                     lang = detected_lang if confidence > 0 else "de"
                     await set_language(uid, cid, lang)
                 elif confidence > 0.7 and detected_lang != sticky_lang:
-                    # User hat implizit die Sprache gewechselt
+                    # User implicitly switched language
                     lang = detected_lang
                     await set_language(uid, cid, lang)
                     log.info(
-                        "Smart-Language-Switch: %s -> %s (confidence=%.2f)",
+                        "Smart language switch: %s -> %s (confidence=%.2f)",
                         sticky_lang,
                         lang,
                         confidence,
@@ -429,16 +426,16 @@ class ChatService:
                     lang = sticky_lang
 
             if lang != "de":
-                log.info("Sprache für Chat: '%s' (sticky)", lang)
+                log.info("Language for chat: '%s' (sticky)", lang)
 
-            # Effektiven Prompt mit Language-Override bauen
+            # Build effective prompt with language override
             effective_prompt = build_effective_prompt(system_prompt, lang)
 
-            # Memory-Context in System-Prompt einfügen (vor dem LLM-Call)
+            # Inject memory context into system prompt (before LLM call)
             if memory_context:
                 effective_prompt = f"{effective_prompt}\n\n{memory_context}"
 
-            # Phase 2a: TaskRouter-Klassifikation + Modell-Resolution
+            # Phase 2a: TaskRouter classification + model resolution
             task_slot_name: str | None = None
             task_score: int = 0
             task_matched_patterns: tuple[str, ...] = ()
@@ -452,13 +449,13 @@ class ChatService:
                 task_matched_patterns = classification.matched_patterns
                 task_matched_keywords = classification.matched_keywords
 
-                # Modell via TaskRouter resolven (Slot-Override > Global > Default)
+                # Resolve model via TaskRouter (slot override > global > default)
                 user_model = self.task_router.resolve_model(uid, classification.slot)
             elif self.model_service is not None:
-                # Fallback: Phase 1 Verhalten (nur globaler Override)
+                # Fallback: Phase 1 behavior (global override only)
                 user_model = self.model_service.get_user_model(uid)
 
-            # Self-Awareness-Block: Modell-Info in System-Prompt injizieren
+            # Self-awareness block: inject model info into system prompt
             if self.self_awareness_service is not None:
                 self_awareness = self.self_awareness_service.build(
                     user_id=uid,
@@ -469,7 +466,7 @@ class ChatService:
                 if self_awareness:
                     effective_prompt = f"{effective_prompt}\n\n{self_awareness}"
 
-            # Provider-Router aufrufen (ersetzt direkten claude_cli Aufruf)
+            # Provider router call (replaces direct claude_cli call)
             result = await self.provider_router.route(
                 prompt=context_prompt,
                 system_prompt=effective_prompt,
@@ -490,7 +487,7 @@ class ChatService:
                 }
             )
 
-            # Task-Classification ins Audit (Phase 2a Konfidenz-Logging)
+            # Task classification into audit (Phase 2a confidence logging)
             if task_slot_name is not None:
                 audit["task_slot"] = task_slot_name
                 audit["task_score"] = task_score
@@ -502,7 +499,7 @@ class ChatService:
             if result.error:
                 error_id = uuid.uuid4().hex[:8]
                 log.error(
-                    "Provider '%s' Fehler (error_id=%s): %s",
+                    "Provider '%s' error (error_id=%s): %s",
                     result.provider_name,
                     error_id,
                     result.error,
@@ -511,7 +508,7 @@ class ChatService:
                 audit["error_id"] = error_id
                 return ChatResult(
                     success=False,
-                    error_message=f"Anfrage konnte nicht verarbeitet werden. Fehler-ID: {error_id}",
+                    error_message=f"Request could not be processed. Error ID: {error_id}",
                     error_id=error_id,
                     duration=result.duration_seconds,
                     detected_language=lang,
@@ -522,19 +519,19 @@ class ChatService:
             if not response:
                 return ChatResult(
                     success=False,
-                    error_message="Provider hat keine Antwort geliefert (leerer Output).",
+                    error_message="Provider returned no response (empty output).",
                     duration=result.duration_seconds,
                     detected_language=lang,
                     provider_name=result.provider_name,
                 )
 
-            # C-3: System-Prompt-Leakage-Guard
+            # C-3: System prompt leakage guard
             leak_replacement = check_for_system_prompt_leakage(
                 response, effective_prompt
             )
             if leak_replacement is not None:
                 log.warning(
-                    "Leakage-Filter hat Response ersetzt (user_id=%s, chat_id=%s)",
+                    "Leakage filter replaced response (user_id=%s, chat_id=%s)",
                     user_id,
                     chat_id,
                 )
@@ -557,81 +554,75 @@ class ChatService:
 
         except FileNotFoundError:
             audit["error"] = "cli_not_found"
-            log.error("CLI nicht gefunden. PATH prüfen.")
+            log.error("CLI not found. Check PATH.")
             return ChatResult(
                 success=False,
                 error_message=(
-                    "Fehler: LLM CLI ist nicht installiert oder nicht im PATH.\n"
-                    "Prüfe ob das entsprechende CLI im Terminal funktioniert."
+                    "Error: LLM CLI is not installed or not in PATH.\n"
+                    "Check whether the CLI works in the terminal."
                 ),
             )
 
         except asyncio.TimeoutError:
             audit["error"] = "timeout"
-            log.warning("Provider Timeout")
+            log.warning("Provider timeout")
             return ChatResult(
                 success=False,
-                error_message=(
-                    "Provider hat zu lange gebraucht. Versuche eine kürzere Frage."
-                ),
+                error_message=("Provider took too long. Try a shorter question."),
             )
 
         except ProviderError as e:
-            # Spezifische Provider-Fehler (Unavailable, NotImplemented, Timeout)
+            # Specific provider errors (Unavailable, NotImplemented, Timeout)
             error_id = uuid.uuid4().hex[:8]
             audit["error"] = f"provider_error: {e}"
             audit["error_id"] = error_id
             log.error(
-                "Provider-Fehler (error_id=%s, provider=%s, retryable=%s): %s",
+                "Provider error (error_id=%s, provider=%s, retryable=%s): %s",
                 error_id,
                 e.provider_name,
                 e.retryable,
                 e,
             )
-            hint = " Versuch es gleich noch mal." if e.retryable else ""
+            hint = " Try again shortly." if e.retryable else ""
             return ChatResult(
                 success=False,
                 error_message=(
-                    f"Der Sprachmodell-Anbieter meldet ein Problem "
+                    f"The language model provider reports a problem "
                     f"(ref: {error_id}).{hint}"
                 ),
                 error_id=error_id,
             )
 
         except ValueError as e:
-            # Provider nicht registriert o.ä.
             error_id = uuid.uuid4().hex[:8]
             audit["error"] = f"value_error: {e}"
             audit["error_id"] = error_id
             log.error("ValueError (error_id=%s): %s", error_id, e)
             return ChatResult(
                 success=False,
-                error_message=f"Anfrage konnte nicht verarbeitet werden (ref: {error_id}).",
+                error_message=f"Request could not be processed (ref: {error_id}).",
                 error_id=error_id,
             )
 
         except RuntimeError as e:
-            # Fallback für unerwartete Runtime-Fehler
             error_id = uuid.uuid4().hex[:8]
             audit["error"] = f"runtime_error: {e}"
             audit["error_id"] = error_id
             log.error("RuntimeError (error_id=%s): %s", error_id, e)
             return ChatResult(
                 success=False,
-                error_message=f"Interner Fehler (ref: {error_id}).",
+                error_message=f"Internal error (ref: {error_id}).",
                 error_id=error_id,
             )
 
         except Exception as e:
             error_id = uuid.uuid4().hex[:8]
-            log.exception(
-                "Unbekannter Fehler bei der Verarbeitung (error_id=%s)", error_id
-            )
+            log.exception("Unknown error during processing (error_id=%s)", error_id)
             audit["error"] = str(e)
             audit["error_id"] = error_id
             return ChatResult(
                 success=False,
-                error_message=f"Ein interner Fehler ist aufgetreten. Fehler-ID: {error_id}",
+                error_message=f"An internal error occurred. Error ID: {error_id}",
                 error_id=error_id,
             )
 
@@ -650,47 +641,47 @@ class ChatService:
         reply_to_text: Optional[str] = None,
         status_session: Optional[Any] = None,
     ) -> tuple[AsyncIterator[StreamEvent], int, dict[str, Any]]:
-        """Streaming-Variante von process_user_message.
+        """Streaming variant of process_user_message.
 
-        Bereitet Prompt identisch vor (Memory, History, Language),
-        nutzt aber den ClaudePersistentProvider für Token-Streaming.
-        History-Speicherung und Audit passieren NACH dem Stream.
+        Prepares the prompt identically (memory, history, language),
+        but uses ClaudePersistentProvider for token streaming.
+        History storage and audit happen AFTER the stream.
 
         Args:
-            text: User-Nachricht.
-            user_id: Telegram User-ID.
-            chat_id: Telegram Chat-ID (auch Process-Routing-Key).
-            username: Telegram Username.
-            system_prompt: Base System-Prompt.
-            persistent_provider: Der Streaming-fähige Provider.
-            language_override: Optionale Sprach-Override.
-            reply_to_text: Reply-To-Kontext.
-            status_session: Optionale StatusSession für Status-Updates.
+            text: User message.
+            user_id: Telegram user ID.
+            chat_id: Telegram chat ID (also process routing key).
+            username: Telegram username.
+            system_prompt: Base system prompt.
+            persistent_provider: The streaming-capable provider.
+            language_override: Optional language override.
+            reply_to_text: Reply-to context.
+            status_session: Optional StatusSession for status updates.
 
         Returns:
-            Tuple von (StreamEvent-AsyncIterator, memory_entries_loaded, task_meta).
-            memory_entries_loaded: Anzahl Memory-Einträge die in den Prompt
-            eingefügt wurden (für Audit-Log).
-            task_meta: Dict mit TaskRouter-Klassifikationsdaten
+            Tuple of (StreamEvent AsyncIterator, memory_entries_loaded, task_meta).
+            memory_entries_loaded: number of memory entries injected into the prompt
+            (for audit log).
+            task_meta: dict with TaskRouter classification data
             (task_slot, task_score, task_matched_patterns, task_matched_keywords,
-            resolved_model). Leer wenn kein TaskRouter aktiv.
+            resolved_model). Empty if no TaskRouter is active.
 
         Note:
-            Der Aufrufer muss nach dem Stream selbst:
-            1. save_streaming_result() aufrufen für History + Audit
+            The caller must after the stream:
+            1. Call save_streaming_result() for history + audit
         """
         uid = user_id or 0
         cid = chat_id or 0
 
-        # Status: Memory-Loading
+        # Status: memory loading
         if status_session is not None:
             await status_session.update("memory_loading")
 
-        # Prompt vorbereiten (identisch zu process_user_message)
+        # Prepare prompt (identical to process_user_message)
         history = await get_history(uid, cid)
         memory_context, memory_entries_loaded = self._build_memory_context(uid, text)
 
-        # Status: Memory geladen (mit Anzahl)
+        # Status: memory loaded (with count)
         if status_session is not None and memory_entries_loaded > 0:
             await status_session.update("memory_loaded", n=memory_entries_loaded)
 
@@ -705,7 +696,7 @@ class ChatService:
             enriched_text = text
         context_prompt = build_context_block(history, enriched_text)
 
-        # Language: Smart-Detection bei jeder Nachricht (Variante 1).
+        # Language: smart detection on every message (Variant 1).
         if language_override:
             lang = language_override
         else:
@@ -716,11 +707,11 @@ class ChatService:
                 lang = detected_lang if confidence > 0 else "de"
                 await set_language(uid, cid, lang)
             elif confidence > 0.7 and detected_lang != sticky_lang:
-                # User hat implizit die Sprache gewechselt
+                # User implicitly switched language
                 lang = detected_lang
                 await set_language(uid, cid, lang)
                 log.info(
-                    "Smart-Language-Switch (streaming): %s -> %s (confidence=%.2f)",
+                    "Smart language switch (streaming): %s -> %s (confidence=%.2f)",
                     sticky_lang,
                     lang,
                     confidence,
@@ -728,8 +719,8 @@ class ChatService:
             else:
                 lang = sticky_lang
 
-        # Sprache der StatusSession aktualisieren (Bug-Fix: Sticky-Language
-        # wird erst hier bestimmt, aber StatusSession wurde vorher erstellt)
+        # Update StatusSession language (bug fix: sticky language
+        # is only determined here, but StatusSession was created earlier)
         if status_session is not None:
             status_session.set_language(lang)
 
@@ -737,7 +728,7 @@ class ChatService:
         if memory_context:
             effective_prompt = f"{effective_prompt}\n\n{memory_context}"
 
-        # Phase 2a: TaskRouter-Klassifikation + Modell-Resolution
+        # Phase 2a: TaskRouter classification + model resolution
         user_model: str | None = None
         task_slot_name: str | None = None
         task_score: int = 0
@@ -752,10 +743,10 @@ class ChatService:
             task_matched_keywords = classification.matched_keywords
             user_model = self.task_router.resolve_model(uid, classification.slot)
         elif self.model_service is not None:
-            # Fallback: Phase 1 Verhalten (nur globaler Override)
+            # Fallback: Phase 1 behavior (global override only)
             user_model = self.model_service.get_user_model(uid)
 
-        # Task-Metadaten für Audit (an Caller durchreichen)
+        # Task metadata for audit (passed through to caller)
         task_meta: dict[str, Any] = {}
         if task_slot_name is not None:
             task_meta["task_slot"] = task_slot_name
@@ -765,7 +756,7 @@ class ChatService:
             if user_model:
                 task_meta["resolved_model"] = user_model
 
-        # Self-Awareness-Block: Modell-Info in System-Prompt injizieren (i18n)
+        # Self-awareness block: inject model info into system prompt (i18n)
         if self.self_awareness_service is not None:
             self_awareness = self.self_awareness_service.build(
                 user_id=uid,
@@ -776,11 +767,11 @@ class ChatService:
             if self_awareness:
                 effective_prompt = f"{effective_prompt}\n\n{self_awareness}"
 
-        # Status: Denke nach (vor Provider-Call)
+        # Status: thinking (before provider call)
         if status_session is not None:
             await status_session.update("thinking")
 
-        # Streaming via persistent Provider
+        # Streaming via persistent provider
         async def _stream() -> AsyncIterator[StreamEvent]:
             first_token = True
             async for event in persistent_provider.query_streaming(
@@ -790,7 +781,7 @@ class ChatService:
                 chat_id=cid,
                 model=user_model,
             ):
-                # Bei erstem Token: Status-Updates stoppen
+                # On first token: stop status updates
                 if first_token and event.event_type == "content_delta":
                     first_token = False
                     if status_session is not None:
@@ -814,42 +805,42 @@ class ChatService:
         system_prompt: str = "",
         task_meta: dict[str, Any] | None = None,
     ) -> str:
-        """Speichert das Ergebnis einer Streaming-Session in History + Audit.
+        """Save the result of a streaming session to history + audit.
 
-        Wird vom Presentation-Layer NACH Abschluss des Streams aufgerufen.
-        Prüft Response auf System-Prompt-Leakage (C-3) und gibt die
-        ggf. bereinigte Response zurück.
+        Called by the presentation layer AFTER the stream completes.
+        Checks the response for system prompt leakage (C-3) and returns
+        the potentially sanitized response.
 
         Args:
-            user_id: Telegram User-ID.
-            chat_id: Telegram Chat-ID.
-            user_text: Original User-Nachricht.
-            response_text: Vollständige Provider-Antwort.
-            duration_seconds: Gesamtdauer der Anfrage.
-            username: Telegram Username.
-            was_cold: True wenn ein neuer Subprocess gestartet wurde.
-            streaming_chunks: Anzahl empfangener Content-Delta-Events.
-            subprocess_pid: PID des genutzten Subprocess.
-            memory_entries_loaded: Anzahl geladener Memory-Einträge.
-            system_prompt: Aktiver System-Prompt für Leakage-Check (C-3).
-            task_meta: TaskRouter-Klassifikationsdaten für Audit
+            user_id: Telegram user ID.
+            chat_id: Telegram chat ID.
+            user_text: Original user message.
+            response_text: Complete provider response.
+            duration_seconds: Total request duration.
+            username: Telegram username.
+            was_cold: True if a new subprocess was started.
+            streaming_chunks: Number of received content delta events.
+            subprocess_pid: PID of the subprocess used.
+            memory_entries_loaded: Number of loaded memory entries.
+            system_prompt: Active system prompt for leakage check (C-3).
+            task_meta: TaskRouter classification data for audit
                 (task_slot, task_score, task_matched_patterns,
                 task_matched_keywords, resolved_model). Optional.
 
         Returns:
-            Die (ggf. bereinigte) Response-Text. Caller muss prüfen ob
-            sich der Text geändert hat für ein finales Telegram-Edit.
+            The (potentially sanitized) response text. Caller must check whether
+            the text changed for a final Telegram edit.
         """
         leakage_detected = False
 
-        # C-3: Leakage-Check auf die finale Response
+        # C-3: leakage check on the final response
         if system_prompt:
             leak_replacement = check_for_system_prompt_leakage(
                 response_text, system_prompt
             )
             if leak_replacement is not None:
                 log.warning(
-                    "Leakage-Filter (Streaming): Response ersetzt "
+                    "Leakage filter (streaming): response replaced "
                     "(user_id=%s, chat_id=%s)",
                     user_id,
                     chat_id,
@@ -857,13 +848,13 @@ class ChatService:
                 response_text = leak_replacement
                 leakage_detected = True
 
-        # History speichern
+        # Save to history
         user_turn = ConversationTurn(role="user", content=user_text)
         assistant_turn = ConversationTurn(role="assistant", content=response_text)
         await save_turn(user_id, chat_id, user_turn)
         await save_turn(user_id, chat_id, assistant_turn)
 
-        # Audit-Log
+        # Audit log
         audit: dict[str, Any] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "event_type": "stream_completed",
@@ -882,7 +873,7 @@ class ChatService:
         }
         if leakage_detected:
             audit["leakage_attempt"] = True
-        # TaskRouter-Metadaten ins Audit (Phase 2a Konfidenz-Logging)
+        # TaskRouter metadata into audit (Phase 2a confidence logging)
         if task_meta:
             audit.update(task_meta)
         write_audit_log(audit)
@@ -890,30 +881,30 @@ class ChatService:
         return response_text
 
     async def reset(self, user_id: int, chat_id: int) -> None:
-        """Use-Case-Wrapper: setzt Conversation und Sticky-Language zurück."""
+        """Use-case wrapper: reset conversation and sticky language."""
         await _infra_reset_conversation(user_id, chat_id)
 
     async def get_chat_language(self, user_id: int, chat_id: int) -> str | None:
-        """Use-Case-Wrapper: liest die Sticky-Language für einen Chat."""
+        """Use-case wrapper: read the sticky language for a chat."""
         return await get_language(user_id, chat_id)
 
     async def set_chat_language(self, user_id: int, chat_id: int, lang: str) -> None:
-        """Use-Case-Wrapper: setzt die Sticky-Language für einen Chat."""
+        """Use-case wrapper: set the sticky language for a chat."""
         await set_language(user_id, chat_id, lang)
 
     async def save_static_response_to_history(
         self, user_id: int, chat_id: int, response_text: str
     ) -> None:
-        """Speichert eine statische Bot-Antwort (z.B. /start, /help) in die History.
+        """Save a static bot response (e.g. /start, /help) to history.
 
-        Damit weiß der Bot beim nächsten Turn was er gerade gesagt hat.
-        Nur assistant-Turn wird gespeichert (der User-Command selbst ist kein
-        natürlicher Konversationsbeitrag).
+        So the bot knows what it just said on the next turn.
+        Only the assistant turn is saved (the user command itself is not
+        a natural conversation contribution).
 
         Args:
-            user_id: Telegram User-ID.
-            chat_id: Telegram Chat-ID.
-            response_text: Der gesendete Bot-Text.
+            user_id: Telegram user ID.
+            chat_id: Telegram chat ID.
+            response_text: The sent bot text.
         """
         turn = ConversationTurn(role="assistant", content=response_text)
         await save_turn(user_id, chat_id, turn)

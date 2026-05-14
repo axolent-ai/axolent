@@ -1,7 +1,7 @@
-"""Google Gemini CLI Provider (Stub).
+"""Google Gemini CLI provider (stub).
 
-Geplant für Phase 1+. Nutzt das `gemini` CLI-Binary als Subprozess.
-Aktuell: nur Skelett, query() raised ProviderNotImplemented.
+Planned for Phase 1+. Uses the `gemini` CLI binary as subprocess.
+Currently: skeleton only, query() raises ProviderNotImplemented.
 """
 
 from __future__ import annotations
@@ -25,21 +25,21 @@ _CAPABILITIES = ProviderCapabilities(
 
 
 class GeminiProvider(LLMProvider):
-    """Google Gemini via CLI als LLM-Provider (Stub).
+    """Google Gemini via CLI as LLM provider (stub).
 
-    Wird aktiviert sobald:
-    1. User gemini CLI installiert hat
-    2. User mit eigenem Google-Account eingeloggt ist
+    Activated once:
+    1. User has gemini CLI installed
+    2. User is logged in with their own Google account
     """
 
     name = "gemini"
 
     def get_capabilities(self) -> ProviderCapabilities:
-        """Gemini-Capabilities: Cloud, Free, 1M Context."""
+        """Gemini capabilities: cloud, free, 1M context."""
         return _CAPABILITIES
 
     def is_available(self) -> bool:
-        """Stub: immer False bis zur echten Implementierung. Prüfe Verfügbarkeit."""
+        """Stub: always False until real implementation."""
         return False
 
     async def query(
@@ -49,5 +49,5 @@ class GeminiProvider(LLMProvider):
         timeout_seconds: int = 120,
         model: str | None = None,
     ) -> ProviderResponse:
-        """Noch nicht implementiert. Stub für Phase 1+."""
+        """Not yet implemented. Stub for Phase 1+."""
         raise ProviderNotImplemented(self.name)

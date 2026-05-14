@@ -1,10 +1,10 @@
-"""Ollama Local Provider.
+"""Ollama local provider.
 
-Nutzt Ollama HTTP-API (localhost:11434) für lokale LLM-Inference.
-Modus-B-konform: Ollama läuft lokal, keine Cloud-API, kein Token-Hijacking.
+Uses Ollama HTTP API (localhost:11434) for local LLM inference.
+Mode B compliant: Ollama runs locally, no cloud API, no token hijacking.
 
-Default-Modell konfigurierbar via OLLAMA_MODEL env-var (Default: llama3.2:3b).
-Host konfigurierbar via OLLAMA_HOST env-var (Default: http://localhost:11434).
+Default model configurable via OLLAMA_MODEL env var (default: llama3.2:3b).
+Host configurable via OLLAMA_HOST env var (default: http://localhost:11434).
 """
 
 from __future__ import annotations
@@ -42,15 +42,15 @@ _CAPABILITIES = ProviderCapabilities(
 
 
 def _get_host() -> str:
-    """Gibt den konfigurierten Ollama-Host zurück.
+    """Return the configured Ollama host.
 
-    Validiert das URL-Scheme: nur http:// und https:// sind erlaubt.
-    Verhindert file:// oder andere potentiell gefährliche Schemes.
+    Validates the URL scheme: only http:// and https:// are allowed.
+    Prevents file:// or other potentially dangerous schemes.
     """
     host = os.getenv("OLLAMA_HOST", DEFAULT_HOST).rstrip("/")
     if not host.startswith(("http://", "https://")):
         log.warning(
-            "OLLAMA_HOST '%s' hat ungültiges Scheme, verwende Default: %s",
+            "OLLAMA_HOST '%s' has invalid scheme, using default: %s",
             host,
             DEFAULT_HOST,
         )
@@ -59,28 +59,28 @@ def _get_host() -> str:
 
 
 def _get_default_model() -> str:
-    """Gibt das konfigurierte Default-Modell zurück."""
+    """Return the configured default model."""
     return os.getenv("OLLAMA_MODEL", DEFAULT_MODEL)
 
 
 class OllamaProvider(LLMProvider):
-    """Ollama als lokaler LLM-Provider.
+    """Ollama as local LLM provider.
 
-    Kommuniziert mit der Ollama HTTP-API auf localhost.
-    Privacy-Class: local (keine Daten verlassen den Rechner).
+    Communicates with the Ollama HTTP API on localhost.
+    Privacy class: local (no data leaves the machine).
     """
 
     name = "ollama_local"
 
     def get_capabilities(self) -> ProviderCapabilities:
-        """Ollama-Capabilities: Local, Free, 8k Context (modellabhängig)."""
+        """Ollama capabilities: local, free, 8k context (model-dependent)."""
         return _CAPABILITIES
 
     def is_available(self) -> bool:
-        """Prüft ob Ollama auf dem konfigurierten Host erreichbar ist.
+        """Check if Ollama is reachable on the configured host.
 
-        Macht einen HTTP-GET auf /api/tags mit kurzem Timeout (2s).
-        True wenn 200 OK, False bei Connection-Error oder Timeout.
+        Makes an HTTP GET to /api/tags with short timeout (2s).
+        True on 200 OK, False on connection error or timeout.
         """
         try:
             host = _get_host()
@@ -102,19 +102,19 @@ class OllamaProvider(LLMProvider):
         chat_id: int | None = None,
         **kwargs,
     ) -> ProviderResponse:
-        """Fragt Ollama via HTTP-API (non-streaming).
+        """Query Ollama via HTTP API (non-streaming).
 
         Args:
-            prompt: User-Nachricht / Prompt.
-            system_prompt: Optionaler System-Prompt.
-            timeout_seconds: Timeout für den Request.
-            model: Modell-Identifier (None = OLLAMA_MODEL env oder llama3.2:3b).
-            user_id: Akzeptiert für Interface-Kompatibilität, ignoriert.
-            chat_id: Akzeptiert für Interface-Kompatibilität, ignoriert.
-            **kwargs: Safety-Net für zukünftige Provider-Interface-Erweiterungen.
+            prompt: User message / prompt.
+            system_prompt: Optional system prompt.
+            timeout_seconds: Timeout for the request.
+            model: Model identifier (None = OLLAMA_MODEL env or llama3.2:3b).
+            user_id: Accepted for interface compatibility, ignored.
+            chat_id: Accepted for interface compatibility, ignored.
+            **kwargs: Safety net for future provider interface extensions.
 
         Returns:
-            ProviderResponse mit Ollama-Antwort oder Fehler.
+            ProviderResponse with Ollama response or error.
         """
         start = time.monotonic()
         actual_model = model or _get_default_model()
@@ -135,7 +135,7 @@ class OllamaProvider(LLMProvider):
             )
         except asyncio.TimeoutError:
             duration = time.monotonic() - start
-            log.warning("Ollama Timeout nach %.1fs", duration)
+            log.warning("Ollama timeout after %.1fs", duration)
             return ProviderResponse(
                 text="",
                 duration_seconds=duration,
@@ -164,15 +164,15 @@ class OllamaProvider(LLMProvider):
 
     @staticmethod
     def _sync_query(host: str, payload: dict, timeout_seconds: int) -> str:
-        """Synchroner HTTP-POST an Ollama /api/generate.
+        """Synchronous HTTP POST to Ollama /api/generate.
 
-        Wird via asyncio.to_thread aufgerufen um den Event-Loop nicht zu blockieren.
+        Called via asyncio.to_thread to avoid blocking the event loop.
 
         Returns:
-            Der generierte Text aus dem response-Feld.
+            The generated text from the response field.
 
         Raises:
-            RuntimeError: Bei HTTP-Fehlern oder unerwartetem Response-Format.
+            RuntimeError: On HTTP errors or unexpected response format.
         """
         url = f"{host}/api/generate"
         data = json.dumps(payload).encode("utf-8")
@@ -195,16 +195,16 @@ class OllamaProvider(LLMProvider):
             error_body = exc.read().decode("utf-8", "replace")[:500]
             raise RuntimeError(f"Ollama HTTP {exc.code}: {error_body}") from exc
         except urllib.error.URLError as exc:
-            raise RuntimeError(f"Ollama nicht erreichbar: {exc.reason}") from exc
+            raise RuntimeError(f"Ollama unreachable: {exc.reason}") from exc
 
         try:
             result = json.loads(body)
         except json.JSONDecodeError as exc:
-            raise RuntimeError(f"Ollama ungültige JSON-Antwort: {body[:200]}") from exc
+            raise RuntimeError(f"Ollama invalid JSON response: {body[:200]}") from exc
 
         if "response" not in result:
             raise RuntimeError(
-                f"Ollama response-Feld fehlt. Keys: {list(result.keys())}"
+                f"Ollama response field missing. Keys: {list(result.keys())}"
             )
 
         return result["response"].strip()

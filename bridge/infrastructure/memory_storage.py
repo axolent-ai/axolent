@@ -1,12 +1,12 @@
-"""Memory-Storage: JSONL-Adapter mit FileLock.
+"""Memory storage: JSONL adapter with FileLock.
 
-Drei Dateien:
+Three files:
   data/memory_episodic.jsonl
   data/memory_semantic.jsonl
   data/memory_procedural.jsonl
 
-Thread-safe via filelock. Liest/schreibt UTF-8.
-Später Phase 1+: Migration auf SQLite mit Vector-Index.
+Thread-safe via filelock. Reads/writes UTF-8.
+Later Phase 1+: migration to SQLite with vector index.
 """
 
 from __future__ import annotations
@@ -22,25 +22,25 @@ from infrastructure.encoding import append_jsonl_utf8, open_utf8
 
 log = logging.getLogger(__name__)
 
-# Valide Layer-Namen
+# Valid layer names
 VALID_LAYERS: set[str] = {"episodic", "semantic", "procedural"}
 
-# Such-Modi: "substring" (heute), "embedding" (Phase 1+)
+# Search modes: "substring" (current), "embedding" (Phase 1+)
 SearchMode = Literal["substring", "embedding"]
 
 
 class MemoryStorage:
-    """JSONL-Adapter für Trinity-Memory-Persistierung.
+    """JSONL adapter for Trinity Memory persistence.
 
-    Jeder Layer bekommt eine eigene JSONL-Datei.
-    Alle Operationen sind atomar via FileLock geschützt.
+    Each layer gets its own JSONL file.
+    All operations are atomically protected via FileLock.
     """
 
     def __init__(self, data_dir: Path) -> None:
-        """Initialisiert den Storage mit dem data-Verzeichnis.
+        """Initialize storage with the data directory.
 
         Args:
-            data_dir: Pfad zum data/-Ordner (wird bei Bedarf erstellt).
+            data_dir: Path to the data/ folder (created if needed).
         """
         self.data_dir = data_dir
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -52,19 +52,19 @@ class MemoryStorage:
         self._lock = FileLock(str(data_dir / "memory.lock"))
 
     def _path_for_layer(self, layer: str) -> Path:
-        """Gibt den Dateipfad für einen Layer zurück.
+        """Return the file path for a layer.
 
         Args:
-            layer: "episodic", "semantic" oder "procedural".
+            layer: "episodic", "semantic", or "procedural".
 
         Returns:
-            Path zum JSONL-File.
+            Path to the JSONL file.
 
         Raises:
-            ValueError: Bei unbekanntem Layer.
+            ValueError: For unknown layer.
         """
         if layer not in VALID_LAYERS:
-            raise ValueError(f"Unbekannter Layer: '{layer}'. Erlaubt: {VALID_LAYERS}")
+            raise ValueError(f"Unknown layer: '{layer}'. Allowed: {VALID_LAYERS}")
         path_map = {
             "episodic": self.episodic_path,
             "semantic": self.semantic_path,
@@ -73,27 +73,27 @@ class MemoryStorage:
         return path_map[layer]
 
     def append(self, entry: dict, layer: str) -> None:
-        """Hängt einen Entry an den entsprechenden Layer an.
+        """Append an entry to the corresponding layer.
 
         Args:
-            entry: Serialisiertes Entry-Dict.
-            layer: Ziel-Layer.
+            entry: Serialized entry dict.
+            layer: Target layer.
         """
         path = self._path_for_layer(layer)
         with self._lock:
             append_jsonl_utf8(entry, path)
-        log.debug("Memory-Entry angehängt: layer=%s id=%s", layer, entry.get("id"))
+        log.debug("Memory entry appended: layer=%s id=%s", layer, entry.get("id"))
 
     def _read_filtered(self, path: Path, user_id: int, limit: int) -> list[dict]:
-        """Liest JSONL, filtert auf user_id, sortiert nach Timestamp absteigend.
+        """Read JSONL, filter by user_id, sort by timestamp descending.
 
         Args:
-            path: Pfad zur JSONL-Datei.
-            user_id: Telegram-User-ID zum Filtern.
-            limit: Maximale Anzahl Ergebnisse.
+            path: Path to the JSONL file.
+            user_id: Telegram user ID to filter by.
+            limit: Maximum number of results.
 
         Returns:
-            Liste von Entry-Dicts, neueste zuerst, limitiert.
+            List of entry dicts, newest first, limited.
         """
         if not path.exists():
             return []
@@ -108,22 +108,22 @@ class MemoryStorage:
                     if entry.get("user_id") == user_id:
                         entries.append(entry)
                 except json.JSONDecodeError:
-                    log.warning("Korrupte JSONL-Zeile in %s übersprungen", path)
+                    log.warning("Corrupt JSONL line in %s skipped", path)
                     continue
-        # Neueste zuerst (nach Timestamp), dann limitieren
+        # Newest first (by timestamp), then limit
         entries.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
         return entries[:limit]
 
     def list_entries(self, user_id: int, layer: str, limit: int = 50) -> list[dict]:
-        """Liest Entries für einen User, neueste zuerst.
+        """Read entries for a user, newest first.
 
         Args:
-            user_id: Telegram-User-ID.
-            layer: Zu lesender Layer.
-            limit: Maximale Anzahl Einträge.
+            user_id: Telegram user ID.
+            layer: Layer to read.
+            limit: Maximum number of entries.
 
         Returns:
-            Liste von Entry-Dicts, neueste zuerst (nach Timestamp sortiert).
+            List of entry dicts, newest first (sorted by timestamp).
         """
         path = self._path_for_layer(layer)
         with self._lock:
@@ -137,25 +137,25 @@ class MemoryStorage:
         limit: int = 20,
         mode: SearchMode = "substring",
     ) -> list[dict]:
-        """Durchsucht Memory-Entries eines Users.
+        """Search memory entries for a user.
 
         Args:
-            user_id: Telegram-User-ID.
-            query: Suchbegriff.
-            layer: Zu durchsuchender Layer.
-            limit: Maximale Treffer.
-            mode: "substring" (default, heutige Logik) oder "embedding"
-                  (Phase 1+, noch nicht implementiert).
+            user_id: Telegram user ID.
+            query: Search term.
+            layer: Layer to search.
+            limit: Maximum hits.
+            mode: "substring" (default, current logic) or "embedding"
+                  (Phase 1+, not yet implemented).
 
         Returns:
-            Liste von matching Entry-Dicts, neueste Treffer zuerst.
+            List of matching entry dicts, newest hits first.
 
         Raises:
-            NotImplementedError: Bei mode="embedding" (Phase 1+).
+            NotImplementedError: For mode="embedding" (Phase 1+).
         """
         if mode == "embedding":
             raise NotImplementedError(
-                "Vector-Embedding-Suche ist Phase 1+. Heute nur 'substring'."
+                "Vector embedding search is Phase 1+. Currently only 'substring'."
             )
 
         path = self._path_for_layer(layer)
@@ -180,22 +180,22 @@ class MemoryStorage:
                     except json.JSONDecodeError:
                         continue
 
-        # Neueste Treffer zuerst, dann limitieren
+        # Newest hits first, then limit
         results.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
         return results[:limit]
 
     def delete_by_id(self, entry_id: str, layer: str, user_id: int) -> bool:
-        """Löscht einen Entry anhand seiner ID (atomar via Read-Filter-Rewrite).
+        """Delete an entry by its ID (atomic via read-filter-rewrite).
 
-        Verifiziert Ownership: Entry muss dem User gehören.
+        Verifies ownership: entry must belong to the user.
 
         Args:
-            entry_id: ID des zu löschenden Entries.
-            layer: Layer in dem gesucht wird.
-            user_id: User-ID für Ownership-Check.
+            entry_id: ID of the entry to delete.
+            layer: Layer to search in.
+            user_id: User ID for ownership check.
 
         Returns:
-            True wenn Entry gefunden und gelöscht, False wenn nicht gefunden.
+            True if entry was found and deleted, False if not found.
         """
         path = self._path_for_layer(layer)
         if not path.exists():
@@ -228,20 +228,20 @@ class MemoryStorage:
                     for line_content in remaining:
                         f.write(line_content + "\n")
                 tmp_path.replace(path)
-                log.info("Memory-Entry gelöscht: id=%s layer=%s", entry_id, layer)
+                log.info("Memory entry deleted: id=%s layer=%s", entry_id, layer)
 
         return found
 
     def get_by_id(self, entry_id: str, layer: str, user_id: int) -> Optional[dict]:
-        """Liest einen einzelnen Entry anhand seiner ID.
+        """Read a single entry by its ID.
 
         Args:
-            entry_id: Gesuchte Entry-ID.
-            layer: Layer in dem gesucht wird.
-            user_id: User-ID für Ownership-Check.
+            entry_id: Requested entry ID.
+            layer: Layer to search in.
+            user_id: User ID for ownership check.
 
         Returns:
-            Entry-Dict oder None wenn nicht gefunden.
+            Entry dict or None if not found.
         """
         path = self._path_for_layer(layer)
         if not path.exists():

@@ -1,17 +1,17 @@
-"""E2E Streaming-Flow-Tests: vollstaendiger Pfad durch alle Layer.
+"""E2E streaming flow tests: full path through all layers.
 
-Testet den Streaming-Pfad von ChatService bis StreamEvent-Verarbeitung
-mit Mock-Pool (kein echter Claude-CLI-Aufruf) und Mock-Telegram-Bot.
+Tests the streaming path from ChatService to StreamEvent processing
+with mock pool (no real Claude CLI call) and mock Telegram bot.
 
-Szenarien:
-  E1: Normale Chat-Frage -> Stream startet -> Events kommen -> Audit korrekt
-  E2: Lange Antwort (>5000 Zeichen) -> Multi-Message-Split greift
-  E3: Mid-Stream-Crash -> stream_error wird geloggt mit task_meta
-  E4: TaskRouter-Klassifikation -> resolved_model im Audit
-  E5: Modell-Wechsel (Sonnet -> Opus) -> Stream funktioniert
-  E6: Sticky-Language (lang=en) -> Self-Awareness auf Englisch
-  E7: Memory wird vor Stream geladen -> Context-Length korrekt
-  E8: Privacy-Guard blockt Stream in Gruppen-Chat
+Scenarios:
+  E1: Normal chat question -> stream starts -> events arrive -> audit correct
+  E2: Long response (>5000 chars) -> multi-message split kicks in
+  E3: Mid-stream crash -> stream_error logged with task_meta
+  E4: TaskRouter classification -> resolved_model in audit
+  E5: Model switch (Sonnet -> Opus) -> stream works
+  E6: Sticky language (lang=en) -> self-awareness in English
+  E7: Memory loaded before stream -> context length correct
+  E8: Privacy guard blocks stream in group chat
 """
 
 from __future__ import annotations
@@ -41,15 +41,15 @@ def _make_mock_events(
     chunk_size: int = 5,
     include_init: bool = True,
 ) -> list[StreamEvent]:
-    """Erzeugt realistische Mock-StreamEvents.
+    """Create realistic mock StreamEvents.
 
     Args:
-        text: Vollstaendiger Antworttext.
-        chunk_size: Zeichen pro content_delta Event.
-        include_init: Ob ein init-Event vorangestellt wird.
+        text: Complete response text.
+        chunk_size: Characters per content_delta event.
+        include_init: Whether to prepend an init event.
 
     Returns:
-        Liste von StreamEvents (init + content_deltas + result).
+        List of StreamEvents (init + content_deltas + result).
     """
     events: list[StreamEvent] = []
 
@@ -82,7 +82,7 @@ def _make_error_events(
     text_before_crash: str = "Partial respon",
     error_text: str = "overloaded_error",
 ) -> list[StreamEvent]:
-    """Erzeugt Events die mid-stream crashen."""
+    """Create events that crash mid-stream."""
     events: list[StreamEvent] = [
         StreamEvent(event_type="init", was_cold=True, subprocess_pid=99999),
         StreamEvent(event_type="content_delta", text="Part"),
@@ -96,7 +96,7 @@ def _make_error_events(
 async def _async_iter_events(
     events: list[StreamEvent],
 ) -> AsyncIterator[StreamEvent]:
-    """Wandelt eine Event-Liste in einen AsyncIterator."""
+    """Convert an event list into an AsyncIterator."""
     for event in events:
         yield event
 
@@ -104,13 +104,13 @@ async def _async_iter_events(
 def _make_mock_persistent_provider(
     events: list[StreamEvent],
 ) -> MagicMock:
-    """Erzeugt einen gemockten ClaudePersistentProvider.
+    """Create a mocked ClaudePersistentProvider.
 
-    Speichert die an query_streaming uebergebenen kwargs in
-    provider.last_query_kwargs, damit Tests die tatsaechlich
-    gesendeten Argumente (z.B. system_prompt, model) pruefen koennen.
-    MagicMock.mock_calls trackt keine manuell zugewiesenen
-    async-generator-Funktionen, daher dieses Seitenkanal-Pattern.
+    Stores the kwargs passed to query_streaming in
+    provider.last_query_kwargs, so tests can check the actually
+    sent arguments (e.g. system_prompt, model).
+    MagicMock.mock_calls does not track manually assigned
+    async generator functions, hence this side-channel pattern.
     """
     provider = MagicMock()
     provider.last_query_kwargs: dict[str, Any] = {}
@@ -131,10 +131,10 @@ def _make_chat_service_with_streaming(
     task_router: MagicMock | None = None,
     self_awareness_service: MagicMock | None = None,
 ) -> tuple[ChatService, MagicMock]:
-    """Erzeugt ChatService + Mock-Provider fuer Streaming-Tests.
+    """Create ChatService + mock provider for streaming tests.
 
     Returns:
-        Tuple von (ChatService, mock_persistent_provider).
+        Tuple of (ChatService, mock_persistent_provider).
     """
     mock_router = MagicMock()
     mock_router.providers = {}
@@ -159,7 +159,7 @@ def _make_chat_service_with_streaming(
 
 @pytest.fixture(autouse=True)
 def _clear_conversation_storage() -> None:
-    """Raeumt Conversation-Storage vor jedem Test auf."""
+    """Clear conversation storage before each test."""
     _reset_all_for_tests()
 
 
@@ -169,10 +169,10 @@ def _clear_conversation_storage() -> None:
 
 
 class TestE1NormalStreamFlow:
-    """E1: Normale Chat-Frage durchlaeuft den vollen Streaming-Pfad."""
+    """E1: Normal chat question traverses the full streaming path."""
 
     async def test_stream_produces_events(self) -> None:
-        """process_user_message_streaming liefert einen AsyncIterator."""
+        """process_user_message_streaming delivers an AsyncIterator."""
         events = _make_mock_events("Hallo Welt!")
         svc, mock_provider = _make_chat_service_with_streaming(events)
 
@@ -189,7 +189,7 @@ class TestE1NormalStreamFlow:
         async for event in stream_iter:
             collected.append(event)
 
-        # Mindestens init + content_delta(s) + result
+        # At least init + content_delta(s) + result
         assert len(collected) >= 3
         assert collected[0].event_type == "init"
         assert any(e.event_type == "content_delta" for e in collected)
@@ -197,7 +197,7 @@ class TestE1NormalStreamFlow:
         assert collected[-1].full_text == "Hallo Welt!"
 
     async def test_save_streaming_result_writes_audit(self) -> None:
-        """save_streaming_result erzeugt Audit mit event_type stream_completed."""
+        """save_streaming_result creates audit with event_type stream_completed."""
         events = _make_mock_events("Test-Antwort")
         svc, _ = _make_chat_service_with_streaming(events)
 
@@ -221,7 +221,7 @@ class TestE1NormalStreamFlow:
             assert entry["subprocess_pid"] == 12345
 
     async def test_history_saved_after_stream(self) -> None:
-        """Nach save_streaming_result sind User- und Assistant-Turn in History."""
+        """After save_streaming_result, user and assistant turns are in history."""
         from infrastructure.conversation_storage import get_history
 
         events = _make_mock_events("Antwort vom Bot")
@@ -249,27 +249,27 @@ class TestE1NormalStreamFlow:
 
 
 class TestE2MultiMessageSplit:
-    """E2: Lange Antwort (>5000 Zeichen) triggert Multi-Message-Split."""
+    """E2: Long response (>5000 chars) triggers multi-message split."""
 
     def test_split_text_for_telegram_splits_long_text(self) -> None:
-        """split_text_for_telegram teilt Text >4096 Zeichen in Teile."""
+        """split_text_for_telegram splits text >4096 chars into parts."""
         long_text = "A" * 5000
         parts = split_text_for_telegram(long_text)
         assert len(parts) >= 2
-        # Zusammen muessen alle Teile den Originaltext ergeben
+        # Together all parts must equal the original text
         reassembled = "".join(parts)
         assert reassembled == long_text
 
     def test_split_respects_paragraph_boundaries(self) -> None:
-        """Split bevorzugt Absatz-Grenzen."""
-        # Zwei Absaetze, erster knapp unter Limit, zweiter drueber
+        """Split prefers paragraph boundaries."""
+        # Two paragraphs, first just below limit, second above
         text = "A" * 3000 + "\n\n" + "B" * 2000
         parts = split_text_for_telegram(text)
         assert len(parts) >= 2
         assert parts[0].strip().endswith("A")
 
     async def test_finalize_streaming_multi_message(self) -> None:
-        """finalize_streaming sendet mehrere Messages bei langem Text."""
+        """finalize_streaming sends multiple messages for long text."""
         mock_message = MagicMock()
         mock_message.edit_text = AsyncMock()
         mock_message.chat = MagicMock()
@@ -279,7 +279,7 @@ class TestE2MultiMessageSplit:
         long_text = "X" * 6000
         await finalize_streaming(session, long_text)
 
-        # Erste Nachricht wird editiert, Folge-Nachrichten gesendet
+        # First message is edited, follow-up messages sent
         assert mock_message.edit_text.call_count >= 1 or (
             mock_message.chat.send_message.call_count >= 1
         )
@@ -291,10 +291,10 @@ class TestE2MultiMessageSplit:
 
 
 class TestE3MidStreamCrash:
-    """E3: Mid-Stream-Error wird korrekt erfasst."""
+    """E3: Mid-stream error is correctly captured."""
 
     async def test_error_event_stops_stream(self) -> None:
-        """Error-Event beendet den Stream."""
+        """Error event terminates the stream."""
         events = _make_error_events()
         svc, mock_provider = _make_chat_service_with_streaming(events)
 
@@ -318,10 +318,10 @@ class TestE3MidStreamCrash:
         assert "overloaded_error" in error_events[0].text
 
     async def test_error_audit_includes_task_meta(self) -> None:
-        """task_meta wird auch bei Fehlern korrekt aus dem Stream geliefert."""
+        """task_meta is correctly delivered from the stream even on errors."""
         events = _make_error_events()
 
-        # TaskRouter der klassifiziert
+        # TaskRouter that classifies
         mock_task_router = MagicMock()
         mock_classification = MagicMock()
         mock_classification.slot.value = "code"
@@ -354,10 +354,10 @@ class TestE3MidStreamCrash:
 
 
 class TestE4TaskRouterClassification:
-    """E4: TaskRouter-Klassifikation wird korrekt ins Audit geschrieben."""
+    """E4: TaskRouter classification is correctly written to audit."""
 
     async def test_task_meta_includes_classification(self) -> None:
-        """task_meta aus process_user_message_streaming enthaelt Klassifikation."""
+        """task_meta from process_user_message_streaming contains classification."""
         events = _make_mock_events("Code-Antwort")
         mock_task_router = MagicMock()
         mock_classification = MagicMock()
@@ -387,7 +387,7 @@ class TestE4TaskRouterClassification:
         assert task_meta["resolved_model"] == "claude-opus-4-7"
 
     async def test_audit_contains_resolved_model(self) -> None:
-        """save_streaming_result schreibt resolved_model ins Audit."""
+        """save_streaming_result writes resolved_model to audit."""
         events = _make_mock_events("Antwort")
         svc, _ = _make_chat_service_with_streaming(events)
 
@@ -420,10 +420,10 @@ class TestE4TaskRouterClassification:
 
 
 class TestE5ModelSwitch:
-    """E5: Modell-Wechsel mid-conversation funktioniert."""
+    """E5: Model switch mid-conversation works."""
 
     async def test_model_override_passed_to_provider(self) -> None:
-        """User-Override wird an den Provider durchgereicht."""
+        """User override is passed through to the provider."""
         events = _make_mock_events("Opus-Antwort")
 
         mock_model_service = MagicMock()
@@ -453,17 +453,17 @@ class TestE5ModelSwitch:
             persistent_provider=mock_provider,
         )
 
-        # Stream durchlaufen lassen
+        # Consume the stream
         async for _ in stream_iter:
             pass
 
-        # Provider muss mit model=claude-opus-4-7 aufgerufen worden sein
+        # Provider must have been called with model=claude-opus-4-7
         assert mock_provider.last_query_kwargs.get("model") == "claude-opus-4-7"
-        # task_meta muss das resolved_model enthalten
+        # task_meta must contain the resolved_model
         assert task_meta.get("resolved_model") == "claude-opus-4-7"
 
     async def test_two_sequential_streams_different_models(self) -> None:
-        """Zwei aufeinanderfolgende Streams mit verschiedenen Modellen."""
+        """Two sequential streams with different models."""
         events_1 = _make_mock_events("Sonnet-Antwort")
         events_2 = _make_mock_events("Opus-Antwort")
 
@@ -507,15 +507,15 @@ class TestE5ModelSwitch:
 
 
 class TestE6StickyLanguage:
-    """E6: Sticky-Language beeinflusst den Self-Awareness-Block."""
+    """E6: Sticky language affects the self-awareness block."""
 
     async def test_english_user_gets_english_self_awareness(self) -> None:
-        """User mit lang=en bekommt englischen Self-Awareness-Block."""
+        """User with lang=en gets English self-awareness block."""
         from application.model_registry import ModelRegistry
         from application.self_awareness_service import SelfAwarenessService
         from infrastructure.conversation_storage import set_language
 
-        # Sticky-Language auf EN setzen
+        # Set sticky language to EN
         await set_language(1, 10, "en")
 
         registry = ModelRegistry()
@@ -530,7 +530,7 @@ class TestE6StickyLanguage:
             events, self_awareness_service=sa_svc
         )
 
-        # Provider aufrufen und pruefen was als system_prompt uebergeben wird
+        # Call provider and check what system_prompt is passed
         stream_iter, _, _ = await svc.process_user_message_streaming(
             text="What model are you using?",
             user_id=1,
@@ -540,16 +540,16 @@ class TestE6StickyLanguage:
             persistent_provider=mock_provider,
         )
 
-        # Stream konsumieren
+        # Consume stream
         async for _ in stream_iter:
             pass
 
-        # system_prompt aus last_query_kwargs pruefen
+        # Check system_prompt from last_query_kwargs
         system_sent = mock_provider.last_query_kwargs.get("system_prompt", "")
         assert "Current model:" in system_sent
 
     async def test_german_user_gets_german_self_awareness(self) -> None:
-        """User mit lang=de bekommt deutschen Self-Awareness-Block."""
+        """User with lang=de gets German self-awareness block."""
         from application.model_registry import ModelRegistry
         from application.self_awareness_service import SelfAwarenessService
         from infrastructure.conversation_storage import set_language
@@ -580,7 +580,7 @@ class TestE6StickyLanguage:
         async for _ in stream_iter:
             pass
 
-        # system_prompt aus last_query_kwargs pruefen
+        # Check system_prompt from last_query_kwargs
         system_sent = mock_provider.last_query_kwargs.get("system_prompt", "")
         assert "Modell:" in system_sent
 
@@ -591,10 +591,10 @@ class TestE6StickyLanguage:
 
 
 class TestE7MemoryLoading:
-    """E7: Memory wird vor Stream geladen und in Context eingefuegt."""
+    """E7: Memory is loaded before stream and inserted into context."""
 
     async def test_memory_loaded_before_stream(self) -> None:
-        """MemoryService.recall wird vor dem Stream aufgerufen."""
+        """MemoryService.recall is called before the stream."""
         events = _make_mock_events("Antwort mit Memory-Kontext")
 
         mock_memory = MagicMock()
@@ -619,20 +619,20 @@ class TestE7MemoryLoading:
             persistent_provider=mock_provider,
         )
 
-        # Memory muss geladen worden sein
+        # Memory must have been loaded
         assert mem_count == 1
 
-        # Stream konsumieren damit query_streaming tatsaechlich aufgerufen wird
+        # Consume stream so query_streaming is actually called
         async for _ in stream_iter:
             pass
 
-        # System-Prompt muss Memory-Context enthalten
+        # System prompt must contain memory context
         system_sent = mock_provider.last_query_kwargs.get("system_prompt", "")
-        assert "GESPEICHERTE NOTIZEN" in system_sent
+        assert "STORED NOTES" in system_sent
         assert "User mag Pizza" in system_sent
 
     async def test_memory_count_zero_when_no_matches(self) -> None:
-        """mem_count ist 0 wenn keine Memory-Treffer."""
+        """mem_count is 0 when there are no memory matches."""
         events = _make_mock_events("Antwort")
 
         mock_memory = MagicMock()
@@ -660,10 +660,10 @@ class TestE7MemoryLoading:
 
 
 class TestE8PrivacyGuard:
-    """E8: require_private_chat blockiert Message-Handler in Gruppen."""
+    """E8: require_private_chat blocks message handler in groups."""
 
     async def test_group_chat_blocked_by_decorator(self) -> None:
-        """handle_message lehnt Gruppen-Chats ab."""
+        """handle_message rejects group chats."""
         from presentation.decorators import require_private_chat
 
         call_count = 0
@@ -673,7 +673,7 @@ class TestE8PrivacyGuard:
             nonlocal call_count
             call_count += 1
 
-        # Simuliere Gruppen-Chat
+        # Simulate group chat
         update = MagicMock()
         update.effective_chat = MagicMock()
         update.effective_chat.type = "group"
@@ -683,13 +683,13 @@ class TestE8PrivacyGuard:
 
         await dummy_handler(update, context)
 
-        # Handler darf nicht aufgerufen worden sein
+        # Handler must not have been called
         assert call_count == 0
-        # Fehlermeldung muss gesendet worden sein
+        # Error message must have been sent
         update.message.reply_text.assert_called_once()
 
     async def test_private_chat_allowed(self) -> None:
-        """handle_message erlaubt Private-Chats."""
+        """handle_message allows private chats."""
         from presentation.decorators import require_private_chat
 
         call_count = 0
@@ -699,7 +699,7 @@ class TestE8PrivacyGuard:
             nonlocal call_count
             call_count += 1
 
-        # Simuliere Private-Chat
+        # Simulate private chat
         update = MagicMock()
         update.effective_chat = MagicMock()
         update.effective_chat.type = "private"
@@ -717,10 +717,10 @@ class TestE8PrivacyGuard:
 
 
 class TestStreamingSessionEdgeCases:
-    """Zusaetzliche Edge-Cases fuer Streaming-Sessions."""
+    """Additional edge cases for streaming sessions."""
 
     async def test_empty_stream_produces_no_content(self) -> None:
-        """Stream ohne content_delta Events hat keinen Ausgabetext."""
+        """Stream without content_delta events has no output text."""
         events = [
             StreamEvent(event_type="init", was_cold=True, subprocess_pid=1),
             StreamEvent(event_type="result", full_text="", is_final=True),
@@ -744,7 +744,7 @@ class TestStreamingSessionEdgeCases:
         assert results == [""]
 
     async def test_cold_start_flag_propagated(self) -> None:
-        """was_cold=True im init-Event wird korrekt propagiert."""
+        """was_cold=True in init event is correctly propagated."""
         events = [
             StreamEvent(event_type="init", was_cold=True, subprocess_pid=42),
             StreamEvent(event_type="content_delta", text="Hi"),

@@ -1,10 +1,10 @@
-"""Einfache Sprach-Detection für User-Nachrichten.
+"""Simple language detection for user messages.
 
-Keine externen Dependencies. Verwendet Heuristiken basierend auf
-häufigen Wörtern und Zeichenmustern. Genügt für die
-Unterscheidung der gängigsten Sprachen (de, en, es, fr, it, pt).
+No external dependencies. Uses heuristics based on
+frequent words and character patterns. Sufficient for
+distinguishing the most common languages (de, en, es, fr).
 
-Fallback: "de" (Default-Sprache aus Onboarding).
+Fallback: "de" (default language from onboarding).
 """
 
 import logging
@@ -12,8 +12,8 @@ import re
 
 log = logging.getLogger(__name__)
 
-# Häufige Funktionswörter pro Sprache (lowercase).
-# Kurze, eindeutige Wörter die in fast jedem Satz vorkommen.
+# Frequent function words per language (lowercase).
+# Short, unambiguous words that appear in almost every sentence.
 _MARKERS: dict[str, set[str]] = {
     "en": {
         "i",
@@ -288,7 +288,7 @@ _MARKERS: dict[str, set[str]] = {
     },
 }
 
-# Sprach-spezifische Zeichen-Pattern
+# Language-specific character patterns
 _CHAR_HINTS: dict[str, re.Pattern] = {
     "de": re.compile(r"[äöüßÄÖÜ]"),
     "fr": re.compile(r"[àâéèêëîïôùûüçÀÂÉÈÊËÎÏÔÙÛÜÇ]"),
@@ -297,16 +297,16 @@ _CHAR_HINTS: dict[str, re.Pattern] = {
 
 
 def _detect_language_core(text: str) -> tuple[str, float]:
-    """Interne Detection-Logik: gibt (Sprache, Confidence) zurück.
+    """Internal detection logic: returns (language, confidence).
 
-    Confidence ist ein Wert zwischen 0.0 und 1.0 der angibt,
-    wie sicher die Erkennung ist. Höherer Score = mehr Marker-Übereinstimmung.
+    Confidence is a value between 0.0 and 1.0 indicating
+    how certain the detection is. Higher score = more marker matches.
 
     Args:
-        text: User-Nachricht.
+        text: User message.
 
     Returns:
-        Tuple von (ISO-639-1-Sprachcode, Confidence-Score).
+        Tuple of (ISO-639-1 language code, confidence score).
         Fallback: ("de", 0.0).
     """
     if not text or not text.strip():
@@ -314,19 +314,19 @@ def _detect_language_core(text: str) -> tuple[str, float]:
 
     text_lower = text.lower().strip()
 
-    # Smart-Quotes normalisieren vor Marker-Match
-    text_lower = text_lower.replace("‘", "’").replace("’", "’")
+    # Normalize smart quotes before marker match
+    text_lower = text_lower.replace("‘", "'").replace("’", "'")
 
-    # Schritt 1: Zeichen-basierte Hints (Umlaute = Deutsch, Akzente = Französisch, etc.)
+    # Step 1: character-based hints (umlauts = German, accents = French, etc.)
     char_scores: dict[str, int] = {}
     for lang, pattern in _CHAR_HINTS.items():
         count = len(pattern.findall(text))
         if count > 0:
             char_scores[lang] = count
 
-    # Schritt 2: Wort-basierte Analyse
-    # Wörter extrahieren (nur alphabetisch + Apostrophe für "don’t" etc.)
-    words = re.findall(r"[a-zA-ZäöüßÄÖÜàâéèêëîïôùûüçáéíóúñ’]+", text_lower)
+    # Step 2: word-based analysis
+    # Extract words (alphabetic only + apostrophes for "don't" etc.)
+    words = re.findall(r"[a-zA-ZäöüßÄÖÜàâéèêëîïôùûüçáéíóúñ']+", text_lower)
 
     if not words:
         return "de", 0.0
@@ -336,40 +336,40 @@ def _detect_language_core(text: str) -> tuple[str, float]:
 
     for lang, markers in _MARKERS.items():
         matches = word_set & markers
-        # Score = Anzahl gematchter Marker-Wörter / Gesamtzahl Wörter
+        # Score = number of matched marker words / total word count
         if matches:
             scores[lang] = len(matches) / len(words)
 
-    # Zeichen-Hints als Bonus addieren
+    # Add character hints as bonus
     for lang, char_count in char_scores.items():
         scores[lang] = scores.get(lang, 0) + (char_count * 0.1)
 
     if not scores:
         return "de", 0.0
 
-    # Sprache mit höchstem Score gewinnt
+    # Language with highest score wins
     best_lang = max(scores, key=scores.get)  # type: ignore[arg-type]
     best_score = scores[best_lang]
 
-    # Mindest-Schwelle: wenn der beste Score sehr niedrig ist, Default Deutsch
+    # Minimum threshold: if best score is very low, default to German
     if best_score < 0.05:
         return "de", 0.0
 
-    # Confidence normalisieren: Score von 0.2+ gilt als sehr sicher (1.0)
-    # Score von 0.05 ist Minimum (knapp über Schwelle) = 0.25
+    # Normalize confidence: score of 0.2+ counts as very certain (1.0)
+    # Score of 0.05 is minimum (just above threshold) = 0.25
     confidence = min(1.0, best_score / 0.2)
 
     return best_lang, confidence
 
 
 def detect_language(text: str) -> str:
-    """Erkennt die Sprache eines kurzen Textes via Heuristik.
+    """Detect the language of a short text via heuristic.
 
     Args:
-        text: User-Nachricht.
+        text: User message.
 
     Returns:
-        ISO-639-1 Sprachcode ("en", "de", "es", "fr").
+        ISO-639-1 language code ("en", "de", "es", "fr").
         Fallback: "de".
     """
     lang, _ = _detect_language_core(text)
@@ -377,16 +377,16 @@ def detect_language(text: str) -> str:
 
 
 def detect_language_with_confidence(text: str) -> tuple[str, float]:
-    """Erkennt Sprache UND gibt Confidence-Score zurück.
+    """Detect language AND return confidence score.
 
-    Wird von der Smart-Language-Detection genutzt um zu entscheiden
-    ob ein Sticky-Language-Override überschrieben werden soll.
+    Used by smart language detection to decide whether
+    a sticky language override should be replaced.
 
     Args:
-        text: User-Nachricht.
+        text: User message.
 
     Returns:
-        Tuple von (ISO-639-1-Sprachcode, Confidence 0.0..1.0).
-        Confidence > 0.7 bedeutet: klare Spracherkennung.
+        Tuple of (ISO-639-1 language code, confidence 0.0..1.0).
+        Confidence > 0.7 means: clear language detection.
     """
     return _detect_language_core(text)

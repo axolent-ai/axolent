@@ -1,18 +1,18 @@
-"""Encoding-Helper für Axolent.
+"""Encoding helpers for Axolent.
 
-Standard-Pattern für alle File-, Subprocess- und JSON-Operationen.
-Erzwingt UTF-8 explizit, damit Multi-User Multi-Language Robustheit
-ab Tag 1 garantiert ist.
+Standard patterns for all file, subprocess, and JSON operations.
+Enforces UTF-8 explicitly to guarantee multi-user multi-language
+robustness from day one.
 
-Niemals direkt open() oder subprocess.run() in Axolent-Code,
-sondern diese Helper benutzen.
+Never use raw open() or subprocess.run() in Axolent code;
+use these helpers instead.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import subprocess  # nosec B404 - bewusster zentraler Wrapper, alle Calls hier kontrolliert
+import subprocess  # nosec B404 - intentional central wrapper, all calls controlled here
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -20,15 +20,15 @@ log = logging.getLogger(__name__)
 
 
 def open_utf8(path: str | Path, mode: str = "r", **kwargs) -> TextIO:
-    """Öffnet eine Datei mit UTF-8-Encoding und replace-Errors.
+    """Open a file with UTF-8 encoding and replace errors.
 
     Args:
-        path: Datei-Pfad (str oder Path).
-        mode: Datei-Modus (r, w, a, etc.).
-        **kwargs: weitere open()-Argumente.
+        path: File path (str or Path).
+        mode: File mode (r, w, a, etc.).
+        **kwargs: Additional open() arguments.
 
     Returns:
-        Datei-Handle mit UTF-8 / errors=replace gesetzt.
+        File handle with UTF-8 / errors=replace set.
     """
     return open(path, mode, encoding="utf-8", errors="replace", **kwargs)
 
@@ -38,17 +38,17 @@ def run_subprocess_utf8(
     timeout: float | None = None,
     **kwargs,
 ) -> subprocess.CompletedProcess:
-    """Ruft ein externes Programm auf mit garantiertem UTF-8-Encoding.
+    """Run an external program with guaranteed UTF-8 encoding.
 
     Args:
-        cmd: Befehl als Liste (z.B. ["claude", "-p", "..."]).
-        timeout: Timeout in Sekunden, None für unendlich.
-        **kwargs: weitere subprocess.run()-Argumente.
+        cmd: Command as list (e.g. ["claude", "-p", "..."]).
+        timeout: Timeout in seconds, None for unlimited.
+        **kwargs: Additional subprocess.run() arguments.
 
     Returns:
-        subprocess.CompletedProcess mit stdout/stderr als str (UTF-8 dekodiert).
+        subprocess.CompletedProcess with stdout/stderr as str (UTF-8 decoded).
     """
-    return subprocess.run(  # nosec B603 - shell=False, kein Injection-Risiko
+    return subprocess.run(  # nosec B603 - shell=False, no injection risk
         cmd,
         capture_output=True,
         text=True,
@@ -60,41 +60,41 @@ def run_subprocess_utf8(
 
 
 def write_json_utf8(data: Any, path: str | Path, indent: int = 2) -> None:
-    """Schreibt ein Python-Objekt als JSON-Datei in UTF-8.
+    """Write a Python object as a JSON file in UTF-8.
 
-    Verwendet ensure_ascii=False damit Unicode-Zeichen direkt im JSON
-    landen, nicht escaped (\\u00e4 etc.).
+    Uses ensure_ascii=False so Unicode characters appear directly
+    in the JSON, not escaped (\\u00e4 etc.).
 
     Args:
-        data: serialisierbares Python-Objekt.
-        path: Ziel-Pfad.
-        indent: JSON-Einrückung (default 2).
+        data: Serializable Python object.
+        path: Target path.
+        indent: JSON indentation (default 2).
     """
     with open_utf8(path, "w") as f:
         json.dump(data, f, ensure_ascii=False, indent=indent)
 
 
 def read_json_utf8(path: str | Path) -> Any:
-    """Liest eine JSON-Datei in UTF-8.
+    """Read a JSON file in UTF-8.
 
     Args:
-        path: Quell-Pfad.
+        path: Source path.
 
     Returns:
-        Deserialisiertes Python-Objekt.
+        Deserialized Python object.
     """
     with open_utf8(path, "r") as f:
         return json.load(f)
 
 
 def append_jsonl_utf8(entry: dict, path: str | Path) -> None:
-    """Hängt einen Eintrag als JSON-Line an eine Datei an.
+    """Append an entry as a JSON line to a file.
 
-    Verwendet UTF-8 ohne BOM, ensure_ascii=False für Unicode-Lesbarkeit.
+    Uses UTF-8 without BOM, ensure_ascii=False for Unicode readability.
 
     Args:
-        entry: zu schreibendes Dict.
-        path: Ziel-Datei.
+        entry: Dict to write.
+        path: Target file.
     """
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open_utf8(path, "a") as f:

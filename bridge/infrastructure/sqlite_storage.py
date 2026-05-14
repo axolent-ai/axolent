@@ -1,12 +1,12 @@
-"""SQLite-Storage-Adapter für Bookmarks und Memory.
+"""SQLite storage adapter for bookmarks and memory.
 
-Ersetzt JSONL-Backends mit SQLite für:
-  - O(log N) Lookups statt O(N) Vollscans
-  - Cross-User-Isolation per WHERE-Clause
-  - FTS5 für semantische Substring-Suche
-  - Vorbereitung für sqlite-vec (Phase 1+)
+Replaces JSONL backends with SQLite for:
+  * O(log N) lookups instead of O(N) full scans
+  * Cross-user isolation via WHERE clause
+  * FTS5 for semantic substring search
+  * Preparation for sqlite-vec (Phase 1+)
 
-Nutzt sqlite3 (Standard-Library), WAL-Mode für Concurrency.
+Uses sqlite3 (standard library), WAL mode for concurrency.
 Thread-safe via check_same_thread=False + threading.Lock.
 """
 
@@ -22,10 +22,10 @@ from typing import Any, Literal, Optional
 
 log = logging.getLogger(__name__)
 
-# Such-Modi (kompatibel mit JSONL-MemoryStorage)
+# Search modes (compatible with JSONL MemoryStorage)
 SearchMode = Literal["substring", "embedding"]
 
-# Default DB-Pfad
+# Default DB path
 DEFAULT_DB_PATH: Path = Path(__file__).resolve().parent.parent / "data" / "axolent.db"
 
 _SCHEMA_SQL = """
@@ -44,7 +44,7 @@ CREATE INDEX IF NOT EXISTS idx_bookmarks_user_chat
 CREATE UNIQUE INDEX IF NOT EXISTS idx_bookmarks_user_chat_msg
     ON bookmarks(user_id, chat_id, message_id);
 
--- Memory entries (alle drei Layer in einer Tabelle, type-Spalte unterscheidet)
+-- Memory entries (all three layers in one table, type column differentiates)
 CREATE TABLE IF NOT EXISTS memory_entries (
     id TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL,
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS memory_entries (
 CREATE INDEX IF NOT EXISTS idx_memory_user_type_time
     ON memory_entries(user_id, type, timestamp DESC);
 
--- User-Profile für Rate-Limiting (persistent über Bot-Restart)
+-- User profiles for rate limiting (persistent across bot restart)
 CREATE TABLE IF NOT EXISTS user_profiles (
     user_id INTEGER NOT NULL,
     chat_id INTEGER NOT NULL,
@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     PRIMARY KEY (user_id)
 );
 
--- User-Modell-Overrides (Phase 1: slot='global', Phase 2+: 'chat', 'code', etc.)
+-- User model overrides (Phase 1: slot='global', Phase 2+: 'chat', 'code', etc.)
 CREATE TABLE IF NOT EXISTS user_slot_models (
     user_id INTEGER NOT NULL,
     slot TEXT NOT NULL,
@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS user_slot_models (
     PRIMARY KEY (user_id, slot)
 );
 
--- FTS5 für Volltext-Suche
+-- FTS5 for full-text search
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
     content,
     content='memory_entries',
@@ -83,8 +83,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
 );
 """
 
-# FTS-Trigger werden separat angelegt (VIRTUAL TABLE Triggers
-# brauchen erst die Tabelle)
+# FTS triggers are created separately (VIRTUAL TABLE triggers
+# need the table first)
 _TRIGGER_SQL = """
 CREATE TRIGGER IF NOT EXISTS memory_ai AFTER INSERT ON memory_entries BEGIN
     INSERT INTO memory_fts(rowid, content) VALUES (new.rowid, new.content);
@@ -102,16 +102,16 @@ CREATE TRIGGER IF NOT EXISTS memory_au AFTER UPDATE ON memory_entries BEGIN
 END;
 """
 
-# Valide Layer-Namen (kompatibel mit JSONL-MemoryStorage)
+# Valid layer names (compatible with JSONL MemoryStorage)
 VALID_LAYERS: set[str] = {"episodic", "semantic", "procedural"}
 
 
 class SqliteConnection:
-    """Thread-safe SQLite-Connection-Manager mit WAL-Mode.
+    """Thread-safe SQLite connection manager with WAL mode.
 
-    Verwendet eine persistente Connection mit explizitem Lock
-    statt Connection-per-Request. Grund: WAL-Mode profitiert
-    von einer langlebigen Connection, und der Bot ist single-process.
+    Uses a persistent connection with explicit lock instead of
+    connection-per-request. Reason: WAL mode benefits from a
+    long-lived connection, and the bot is single-process.
     """
 
     def __init__(self, db_path: Path | str) -> None:
@@ -121,12 +121,12 @@ class SqliteConnection:
         self._conn: Optional[sqlite3.Connection] = None
 
     def _ensure_connection(self) -> sqlite3.Connection:
-        """Erstellt die Connection lazy beim ersten Zugriff."""
+        """Create the connection lazily on first access."""
         if self._conn is None:
             self._conn = sqlite3.connect(
                 str(self._db_path),
                 check_same_thread=False,
-                isolation_level=None,  # Autocommit, wir steuern Transaktionen manuell
+                isolation_level=None,  # Autocommit, we control transactions manually
             )
             self._conn.row_factory = sqlite3.Row
             self._conn.execute("PRAGMA journal_mode=WAL")
@@ -136,13 +136,13 @@ class SqliteConnection:
         return self._conn
 
     def _init_schema(self) -> None:
-        """Initialisiert Schema + FTS-Trigger (idempotent)."""
+        """Initialize schema + FTS triggers (idempotent)."""
         conn = self._conn
         if conn is None:  # pragma: no cover
             raise RuntimeError("_init_schema called before connection established")
         conn.executescript(_SCHEMA_SQL)
         conn.executescript(_TRIGGER_SQL)
-        log.debug("SQLite-Schema initialisiert: %s", self._db_path)
+        log.debug("SQLite schema initialized: %s", self._db_path)
 
     def execute(
         self,
@@ -152,16 +152,16 @@ class SqliteConnection:
         many: bool = False,
         data: list[tuple] | None = None,
     ) -> sqlite3.Cursor:
-        """Thread-safe SQL-Ausführung mit Lock.
+        """Thread-safe SQL execution with lock.
 
         Args:
-            sql: SQL-Statement mit ?-Platzhaltern.
-            params: Parameter-Tupel oder -Dict.
-            many: Wenn True, executemany mit data.
-            data: Datenliste für executemany.
+            sql: SQL statement with ? placeholders.
+            params: Parameter tuple or dict.
+            many: If True, executemany with data.
+            data: Data list for executemany.
 
         Returns:
-            sqlite3.Cursor mit Ergebnis.
+            sqlite3.Cursor with result.
         """
         with self._lock:
             conn = self._ensure_connection()
@@ -170,10 +170,10 @@ class SqliteConnection:
             return conn.execute(sql, params)
 
     def execute_in_transaction(self, operations: list[tuple[str, tuple]]) -> None:
-        """Führt mehrere Statements in einer Transaktion aus.
+        """Execute multiple statements in a transaction.
 
         Args:
-            operations: Liste von (sql, params) Tupeln.
+            operations: List of (sql, params) tuples.
         """
         with self._lock:
             conn = self._ensure_connection()
@@ -187,35 +187,35 @@ class SqliteConnection:
                 raise
 
     def fetchall(self, sql: str, params: tuple | dict = ()) -> list[sqlite3.Row]:
-        """Thread-safe Query mit fetchall.
+        """Thread-safe query with fetchall.
 
         Args:
-            sql: SELECT-Statement.
-            params: Parameter.
+            sql: SELECT statement.
+            params: Parameters.
 
         Returns:
-            Liste von sqlite3.Row-Objekten.
+            List of sqlite3.Row objects.
         """
         with self._lock:
             conn = self._ensure_connection()
             return conn.execute(sql, params).fetchall()
 
     def fetchone(self, sql: str, params: tuple | dict = ()) -> Optional[sqlite3.Row]:
-        """Thread-safe Query mit fetchone.
+        """Thread-safe query with fetchone.
 
         Args:
-            sql: SELECT-Statement.
-            params: Parameter.
+            sql: SELECT statement.
+            params: Parameters.
 
         Returns:
-            sqlite3.Row oder None.
+            sqlite3.Row or None.
         """
         with self._lock:
             conn = self._ensure_connection()
             return conn.execute(sql, params).fetchone()
 
     def close(self) -> None:
-        """Schließt die Connection (für graceful shutdown)."""
+        """Close the connection (for graceful shutdown)."""
         with self._lock:
             if self._conn is not None:
                 self._conn.close()
@@ -228,10 +228,10 @@ class SqliteConnection:
 
 
 class SqliteBookmarkStorage:
-    """SQLite-Adapter für Bookmarks.
+    """SQLite adapter for bookmarks.
 
-    Drop-in-Replacement für die JSONL-basierten Bookmark-Funktionen.
-    API ist identisch zu infrastructure.bookmark_storage.
+    Drop-in replacement for the JSONL-based bookmark functions.
+    API is identical to infrastructure.bookmark_storage.
     """
 
     def __init__(self, conn: SqliteConnection) -> None:
@@ -273,7 +273,7 @@ class SqliteBookmarkStorage:
             "content": content,
         }
         log.info(
-            "Bookmark gespeichert: user=%s chat_id=%d message_id=%d content_len=%d",
+            "Bookmark saved: user=%s chat_id=%d message_id=%d content_len=%d",
             username,
             chat_id,
             message_id,
@@ -389,7 +389,7 @@ class SqliteBookmarkStorage:
         deleted = cursor.rowcount > 0
         if deleted:
             log.info(
-                "Bookmark gelöscht: user_id=%d chat_id=%d message_id=%d",
+                "Bookmark deleted: user_id=%d chat_id=%d message_id=%d",
                 user_id,
                 chat_id,
                 message_id,
@@ -403,12 +403,12 @@ class SqliteBookmarkStorage:
 
 
 class SqliteMemoryStorage:
-    """SQLite-Adapter für Trinity-Memory-Persistierung.
+    """SQLite adapter for Trinity Memory persistence.
 
-    Drop-in-Replacement für MemoryStorage (JSONL).
-    Alle drei Layer (episodic, semantic, procedural) leben in einer
-    Tabelle mit type-Spalte. Layer-spezifische Felder werden in
-    metadata_json gespeichert.
+    Drop-in replacement for MemoryStorage (JSONL).
+    All three layers (episodic, semantic, procedural) live in one
+    table with type column. Layer-specific fields are stored in
+    metadata_json.
     """
 
     def __init__(self, conn: SqliteConnection) -> None:
@@ -422,7 +422,7 @@ class SqliteMemoryStorage:
             ValueError: Bei unbekanntem Layer.
         """
         if layer not in VALID_LAYERS:
-            raise ValueError(f"Unbekannter Layer: '{layer}'. Erlaubt: {VALID_LAYERS}")
+            raise ValueError(f"Unknown layer: '{layer}'. Allowed: {VALID_LAYERS}")
 
     @staticmethod
     def _entry_to_row(entry: dict, layer: str) -> tuple:
@@ -479,7 +479,7 @@ class SqliteMemoryStorage:
                 metadata = json.loads(metadata_raw)
                 entry.update(metadata)
             except json.JSONDecodeError:
-                log.warning("Korruptes metadata_json für entry %s", row["id"])
+                log.warning("Corrupt metadata_json for entry %s", row["id"])
 
         return entry
 
@@ -498,7 +498,7 @@ class SqliteMemoryStorage:
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             row_data,
         )
-        log.debug("Memory-Entry angehängt: layer=%s id=%s", layer, entry.get("id"))
+        log.debug("Memory entry appended: layer=%s id=%s", layer, entry.get("id"))
 
     def list_entries(self, user_id: int, layer: str, limit: int = 50) -> list[dict]:
         """Liest Entries für einen User, neueste zuerst.
@@ -554,14 +554,14 @@ class SqliteMemoryStorage:
         """
         if mode == "embedding":
             raise NotImplementedError(
-                "Vector-Embedding-Suche ist Phase 1+. Heute nur 'substring'."
+                "Vector embedding search is Phase 1+. Currently only 'substring'."
             )
 
         self._validate_layer(layer)
 
-        # Versuche FTS5 zuerst (schneller bei großen Datenmengen)
+        # Try FTS5 first (faster for large datasets)
         try:
-            # Anführungszeichen aus Query entfernen (FTS5-Syntax-Fehler vermeiden)
+            # Remove quotes from query (avoid FTS5 syntax errors)
             fts_query = query.replace('"', "")
             if fts_query.strip():
                 rows = self._conn.fetchall(
@@ -577,12 +577,12 @@ class SqliteMemoryStorage:
                 )
                 if rows:
                     return [self._row_to_entry(r) for r in rows]
-                # FTS5 lieferte 0 Treffer: auf LIKE zurückfallen
-                # (FTS5 tokenisiert, findet keine Token-Inneren wie "Super" in "Superword")
-                log.debug("FTS5: 0 Treffer für '%s', Fallback auf LIKE", query)
+                # FTS5 returned 0 hits: fall back to LIKE
+                # (FTS5 tokenizes, does not find token interiors like "Super" in "Superword")
+                log.debug("FTS5: 0 hits for '%s', falling back to LIKE", query)
         except sqlite3.OperationalError:
-            # FTS-Tabelle kaputt oder nicht vorhanden: LIKE-Fallback
-            log.debug("FTS5-Suche fehlgeschlagen, Fallback auf LIKE")
+            # FTS table broken or missing: LIKE fallback
+            log.debug("FTS5 search failed, falling back to LIKE")
 
         rows = self._conn.fetchall(
             """SELECT id, user_id, type, content, importance,
@@ -617,7 +617,7 @@ class SqliteMemoryStorage:
         )
         deleted = cursor.rowcount > 0
         if deleted:
-            log.info("Memory-Entry gelöscht: id=%s layer=%s", entry_id, layer)
+            log.info("Memory entry deleted: id=%s layer=%s", entry_id, layer)
         return deleted
 
     def get_by_id(self, entry_id: str, layer: str, user_id: int) -> Optional[dict]:
@@ -648,10 +648,10 @@ class SqliteMemoryStorage:
 
 
 class SqliteProfileStorage:
-    """SQLite-Adapter für Rate-Limit-Profile.
+    """SQLite adapter for rate limit profiles.
 
-    Ersetzt JSONL-basierte Profile-Persistierung in rate_limiter.py.
-    Speichert pro user_id das aktive Profil.
+    Replaces JSONL-based profile persistence in rate_limiter.py.
+    Stores the active profile per user_id.
     """
 
     def __init__(self, conn: SqliteConnection) -> None:
@@ -681,7 +681,7 @@ class SqliteProfileStorage:
                VALUES (?, ?, ?, ?)""",
             (user_id, chat_id, profile, ts),
         )
-        log.debug("Profil gespeichert: user_id=%d profile=%s", user_id, profile)
+        log.debug("Profile saved: user_id=%d profile=%s", user_id, profile)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -690,10 +690,10 @@ class SqliteProfileStorage:
 
 
 class SqliteModelStorage:
-    """SQLite-Adapter für User-Modell-Overrides.
+    """SQLite adapter for user model overrides.
 
-    Speichert pro (user_id, slot) das gewählte Modell.
-    Phase 1: nur slot='global'. Phase 2+: 'chat', 'code', etc.
+    Stores the chosen model per (user_id, slot).
+    Phase 1: only slot='global'. Phase 2+: 'chat', 'code', etc.
     """
 
     def __init__(self, conn: SqliteConnection) -> None:
@@ -731,7 +731,7 @@ class SqliteModelStorage:
             (user_id, slot, model_id, ts),
         )
         log.debug(
-            "Modell-Override gespeichert: user_id=%d slot=%s model=%s",
+            "Model override saved: user_id=%d slot=%s model=%s",
             user_id,
             slot,
             model_id,
@@ -753,7 +753,7 @@ class SqliteModelStorage:
         )
         deleted = cursor.rowcount > 0
         if deleted:
-            log.debug("Modell-Override gelöscht: user_id=%d slot=%s", user_id, slot)
+            log.debug("Model override deleted: user_id=%d slot=%s", user_id, slot)
         return deleted
 
     def get_all_models(self, user_id: int) -> dict[str, str]:
@@ -787,7 +787,7 @@ class SqliteModelStorage:
         count = cursor.rowcount
         if count > 0:
             log.debug(
-                "Alle Modell-Overrides gelöscht: user_id=%d count=%d",
+                "All model overrides deleted: user_id=%d count=%d",
                 user_id,
                 count,
             )
@@ -840,13 +840,13 @@ def migrate_jsonl_to_sqlite(
                 bak_path = bm_path.with_suffix(".jsonl.bak")
                 bm_path.rename(bak_path)
                 log.info(
-                    "Bookmark-Migration: %d Einträge migriert, %s -> %s",
+                    "Bookmark migration: %d entries migrated, %s -> %s",
                     count,
                     bm_path.name,
                     bak_path.name,
                 )
         else:
-            log.debug("Bookmark-Migration übersprungen: Tabelle nicht leer")
+            log.debug("Bookmark migration skipped: table not empty")
 
     # Memory-Migration (alle drei Layer)
     layer_files = {
@@ -868,7 +868,7 @@ def migrate_jsonl_to_sqlite(
                     bak_path = jsonl_path.with_suffix(".jsonl.bak")
                     jsonl_path.rename(bak_path)
                     log.info(
-                        "Memory-Migration (%s): %d Einträge migriert, %s -> %s",
+                        "Memory migration (%s): %d entries migrated, %s -> %s",
                         layer,
                         count,
                         jsonl_path.name,
@@ -876,7 +876,7 @@ def migrate_jsonl_to_sqlite(
                     )
             else:
                 log.debug(
-                    "Memory-Migration (%s) übersprungen: Tabelle nicht leer",
+                    "Memory migration (%s) skipped: table not empty",
                     layer,
                 )
 
@@ -916,13 +916,13 @@ def _migrate_bookmarks_jsonl(conn: SqliteConnection, path: Path) -> int:
             except json.JSONDecodeError as e:
                 corrupt += 1
                 log.warning(
-                    "Migration: korrupte Bookmark-Zeile %d übersprungen: %s",
+                    "Migration: corrupt bookmark line %d skipped: %s",
                     line_num,
                     e,
                 )
 
     if corrupt > 0:
-        log.info("Migration: %d korrupte Bookmark-Zeilen übersprungen", corrupt)
+        log.info("Migration: %d corrupt bookmark lines skipped", corrupt)
 
     if entries:
         conn.execute_in_transaction(
@@ -977,7 +977,7 @@ def _migrate_memory_jsonl(conn: SqliteConnection, path: Path, layer: str) -> int
             except json.JSONDecodeError as e:
                 corrupt += 1
                 log.warning(
-                    "Migration: korrupte Memory-Zeile %d in %s übersprungen: %s",
+                    "Migration: corrupt memory line %d in %s skipped: %s",
                     line_num,
                     path.name,
                     e,
@@ -985,7 +985,7 @@ def _migrate_memory_jsonl(conn: SqliteConnection, path: Path, layer: str) -> int
 
     if corrupt > 0:
         log.info(
-            "Migration: %d korrupte Zeilen in %s übersprungen",
+            "Migration: %d corrupt lines in %s skipped",
             corrupt,
             path.name,
         )

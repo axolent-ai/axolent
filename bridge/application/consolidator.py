@@ -1,20 +1,20 @@
-"""Memory-Konsolidierung: Phase 1+ Hook.
+"""Memory consolidation: Phase 1+ hook.
 
-Episodic-Dedup, Semantic-Promotion und weitere Konsolidierungs-Logik
-werden in Phase 1+ hier implementiert. Aktuell ist dies ein No-Op-Stub
-der als Integrationspunkt dient.
+Episodic dedup, semantic promotion, and further consolidation logic
+will be implemented here in Phase 1+. Currently a no-op stub
+serving as an integration point.
 """
 
 from __future__ import annotations
 
 
 class MemoryConsolidator:
-    """Phase 1+ Konsolidierungs-Hook (Episodic-Dedup, Semantic-Promotion, etc.).
+    """Phase 1+ consolidation hook (episodic dedup, semantic promotion, etc.).
 
-    Aktuell No-Op. Wird in Tier-3 / Phase 1+ mit echter Logik befüllt:
-      - Episodic-Dedup: doppelte Einträge erkennen und zusammenführen
-      - Semantic-Promotion: häufig bestätigte episodische Einträge in Semantic-Layer hochstufen
-      - Aging/Decay: alte, nie abgerufene Einträge herabstufen oder archivieren
+    Currently a no-op. Will be filled with real logic in Tier-3 / Phase 1+:
+      * Episodic dedup: detect and merge duplicate entries
+      * Semantic promotion: promote frequently confirmed episodic entries to the semantic layer
+      * Aging/decay: downgrade or archive old, never-retrieved entries
     """
 
     def consolidate(
@@ -23,18 +23,18 @@ class MemoryConsolidator:
         since_iso: str | None = None,
         max_entries: int = 100,
     ) -> int:
-        """Führt eine Konsolidierungsrunde durch.
+        """Run one consolidation round.
 
-        Phase 1+: Hier wird die eigentliche Logik implementiert
-        (Episodic-Dedup, Semantic-Promotion, Aging/Decay).
+        Phase 1+: actual logic will be implemented here
+        (episodic dedup, semantic promotion, aging/decay).
 
         Args:
-            user_id: Wenn gesetzt, nur Memory dieses Users konsolidieren.
-                     None = alle User.
-            since_iso: Wenn gesetzt, nur Einträge ab diesem Zeitstempel berücksichtigen.
-            max_entries: Obergrenze für die Anzahl konsolidierter Einträge pro Lauf.
+            user_id: If set, consolidate only this user's memory.
+                     None = all users.
+            since_iso: If set, only consider entries from this timestamp onward.
+            max_entries: Upper bound for entries consolidated per run.
 
         Returns:
-            Anzahl konsolidierter Einträge (heute 0).
+            Number of consolidated entries (currently 0).
         """
         return 0

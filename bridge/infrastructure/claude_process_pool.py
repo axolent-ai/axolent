@@ -1,18 +1,18 @@
-"""Claude Process Pool: verwaltet persistente Claude-CLI-Subprocesses.
+"""Claude Process Pool: manages persistent Claude CLI subprocesses.
 
-Pro (user_id, chat_id, model)-Tuple wird ein eigener Subprocess gehalten.
-Niemals werden Subprocesses zwischen Users geteilt (Context-Leak-Risiko).
+Per (user_id, chat_id, model) tuple a separate subprocess is maintained.
+Subprocesses are never shared between users (context leak risk).
 
 Features:
-    - Process-per-User Isolation via (user_id, chat_id, model) 3-Tuple-Routing-Key
-    - Alle 6 Modelle gleichzeitig warm halten (kein Cold-Start beim Slot-Wechsel)
-    - LRU-Eviction bei Max-Pool-Size (Default: 20, konfigurierbar via CLAUDE_POOL_MAX_SIZE)
-    - 60-Minuten Inaktivitätstimeout mit automatischer Terminierung
-    - Health-Check vor jedem Send
-    - Crash-Recovery: bei totem Subprocess wird ein neuer gestartet
-    - Graceful Shutdown: alle Subprocesses werden sauber beendet
-    - asyncio.Lock pro Process gegen Race Conditions
-    - Per-Key Creation Lock gegen Race Conditions bei parallelen Erstanfragen
+    * Process-per-user isolation via (user_id, chat_id, model) 3-tuple routing key
+    * Keep all 6 models warm simultaneously (no cold start on slot switch)
+    * LRU eviction at max pool size (default: 20, configurable via CLAUDE_POOL_MAX_SIZE)
+    * 60-minute inactivity timeout with automatic termination
+    * Health check before every send
+    * Crash recovery: dead subprocess is replaced with a new one
+    * Graceful shutdown: all subprocesses are cleanly terminated
+    * asyncio.Lock per process against race conditions
+    * Per-key creation lock against race conditions on parallel first requests
 """
 
 from __future__ import annotations
@@ -28,44 +28,44 @@ from typing import AsyncIterator
 
 log = logging.getLogger(__name__)
 
-# 1 Stunde Idle-Timeout: bei Solo/kleinen Multi-User-Setups praktischer.
-# Tradeoff: ~150-300 MB RAM pro Subprocess solange er warm gehalten wird.
-# Bei <10 aktiven Usern unkritisch. Konfigurierbar via .env.
+# 1 hour idle timeout: more practical for solo/small multi-user setups.
+# Tradeoff: ~150-300 MB RAM per subprocess while kept warm.
+# Uncritical for <10 active users. Configurable via .env.
 INACTIVITY_TIMEOUT_SECONDS: float = float(
     os.getenv("CLAUDE_SUBPROCESS_TTL_SECONDS", str(60 * 60))
 )
 
-# Cleanup-Intervall: alle 60 Sekunden auf abgelaufene Processes prüfen
+# Cleanup interval: check for expired processes every 60 seconds
 CLEANUP_INTERVAL_SECONDS: float = 60.0
 
-# Maximale Init-Wartezeit beim ersten Start
+# Maximum init wait time on first start
 INIT_TIMEOUT_SECONDS: float = 30.0
 
-# Modell für den Process-Pool. Default: Sonnet (schnell, günstig).
-# Ohne explizites --model nutzt die CLI das User-Default (oft Opus = 3-5x langsamer).
+# Model for the process pool. Default: Sonnet (fast, affordable).
+# Without explicit --model the CLI uses user default (often Opus = 3-5x slower).
 CLAUDE_POOL_MODEL: str = os.getenv("CLAUDE_POOL_MODEL", "claude-sonnet-4-6")
 
-# Maximale Anzahl gleichzeitiger Subprocesses im Pool.
-# Default 20: bei 6 Modellen pro User und ~3 Usern komfortabel.
-# RAM-Budget: ~150-300 MB pro Subprocess, d.h. ~3-6 GB bei Vollauslastung.
+# Maximum number of concurrent subprocesses in the pool.
+# Default 20: comfortable for 6 models per user and ~3 users.
+# RAM budget: ~150-300 MB per subprocess, i.e. ~3-6 GB at full utilization.
 POOL_MAX_SIZE: int = int(os.getenv("CLAUDE_POOL_MAX_SIZE", "20"))
 
-# Routing-Key-Typ: (user_id, chat_id, model)
+# Routing key type: (user_id, chat_id, model)
 PoolKey = tuple[int, int, str]
 
 
 @dataclass
 class StreamEvent:
-    """Ein einzelnes Streaming-Event aus dem Claude-Subprocess.
+    """A single streaming event from the Claude subprocess.
 
     Attributes:
-        event_type: Art des Events (content_delta, result, error, init).
-        text: Inkrementeller Text (bei content_delta).
-        full_text: Vollständige Antwort (bei result).
-        raw: Rohes JSON-Event (für Debugging).
-        is_final: True wenn dies das letzte Event der Antwort ist.
-        was_cold: True wenn ein neuer Subprocess gestartet wurde (nur bei init).
-        subprocess_pid: PID des genutzten Subprocess (nur bei init).
+        event_type: Type of event (content_delta, result, error, init).
+        text: Incremental text (for content_delta).
+        full_text: Complete response (for result).
+        raw: Raw JSON event (for debugging).
+        is_final: True if this is the last event of the response.
+        was_cold: True if a new subprocess was started (only for init).
+        subprocess_pid: PID of the used subprocess (only for init).
     """
 
     event_type: str
@@ -79,16 +79,16 @@ class StreamEvent:
 
 @dataclass
 class ManagedProcess:
-    """Ein verwalteter Claude-Subprocess für einen bestimmten User/Modell-Kombination.
+    """A managed Claude subprocess for a specific user/model combination.
 
     Attributes:
-        routing_key: (user_id, chat_id, model) 3-Tuple als Routing-Key.
-        process: Der asyncio-Subprocess.
-        lock: Exclusive-Lock für Zugriff auf stdin/stdout.
-        last_used: Timestamp der letzten Nutzung (monotonic).
-        pid: Process-ID für Audit-Logging.
-        is_ready: True wenn Init-Phase abgeschlossen.
-        model: Modell-ID mit der dieser Subprocess gestartet wurde.
+        routing_key: (user_id, chat_id, model) 3-tuple as routing key.
+        process: The asyncio subprocess.
+        lock: Exclusive lock for stdin/stdout access.
+        last_used: Timestamp of last use (monotonic).
+        pid: Process ID for audit logging.
+        is_ready: True when init phase is complete.
+        model: Model ID this subprocess was started with.
     """
 
     routing_key: PoolKey
@@ -102,18 +102,18 @@ class ManagedProcess:
 
 
 class ClaudeProcessPool:
-    """Verwaltet persistente Claude-CLI-Subprocesses pro User/Modell.
+    """Manages persistent Claude CLI subprocesses per user/model.
 
-    Jede Kombination (user_id, chat_id, model) bekommt einen eigenen
-    Subprocess der wiederverwendet wird. Dadurch kann ein User alle 6
-    Modelle gleichzeitig warm halten (kein Cold-Start beim Slot-Wechsel).
+    Each combination (user_id, chat_id, model) gets its own subprocess
+    that is reused. This allows a user to keep all 6 models warm
+    simultaneously (no cold start on slot switch).
 
-    Bei Erreichen der Max-Pool-Size (Default: 20) wird der am längsten
-    inaktive Subprocess per LRU-Eviction terminiert.
+    When max pool size (default: 20) is reached, the longest-inactive
+    subprocess is terminated via LRU eviction.
 
-    Thread-Safety: Alle Methoden sind async-safe. Jeder ManagedProcess
-    hat seinen eigenen asyncio.Lock. Per-Key Creation Locks verhindern
-    Race Conditions bei parallelen Erstanfragen.
+    Thread safety: all methods are async-safe. Each ManagedProcess
+    has its own asyncio.Lock. Per-key creation locks prevent
+    race conditions on parallel first requests.
     """
 
     def __init__(self) -> None:
@@ -125,11 +125,11 @@ class ClaudeProcessPool:
 
     @staticmethod
     def is_cli_available() -> bool:
-        """Prüft ob `claude` CLI im PATH ist."""
+        """Check if `claude` CLI is in PATH."""
         return shutil.which("claude") is not None
 
     async def start(self) -> None:
-        """Startet den Cleanup-Background-Task."""
+        """Start the cleanup background task."""
         if self._cleanup_task is None:
             self._cleanup_task = asyncio.create_task(self._cleanup_loop())
             log.info(
@@ -169,7 +169,7 @@ class ClaudeProcessPool:
         bekommt seinen eigenen Subprocess. Kein Modell-Mismatch mehr,
         kein Kill bei Slot-Wechsel: alle Modelle bleiben warm.
 
-        Bei Pool-Überlauf (> POOL_MAX_SIZE) wird der am längsten
+        On pool overflow (> POOL_MAX_SIZE) the longest
         inaktive Subprocess per LRU-Eviction terminiert.
 
         Args:
@@ -182,7 +182,7 @@ class ClaudeProcessPool:
             was_cold=True wenn ein neuer Subprocess gestartet wurde.
 
         Raises:
-            RuntimeError: Wenn CLI nicht verfügbar oder Start fehlschlägt.
+            RuntimeError: If CLI is not available or start fails.
         """
         if self._shutdown:
             raise RuntimeError("ProcessPool ist im Shutdown-Modus")
@@ -211,18 +211,18 @@ class ClaudeProcessPool:
                     managed.last_used = time.monotonic()
                     return managed, False
 
-                # Process ist tot: aufräumen
+                # Process is dead: clean up
                 old_managed_to_kill: ManagedProcess | None = None
                 if managed is not None and not self._is_alive(managed):
                     log.warning(
-                        "Subprocess für key=%s ist tot (pid=%d), starte neu",
+                        "Subprocess for key=%s is dead (pid=%d), restarting",
                         key,
                         managed.pid,
                     )
                     old_managed_to_kill = managed
                     del self._processes[key]
 
-            # Kill außerhalb des Pool-Locks
+            # Kill outside the pool lock
             if old_managed_to_kill is not None:
                 await self._kill_process(old_managed_to_kill)
 
@@ -264,7 +264,7 @@ class ClaudeProcessPool:
         key: PoolKey = (user_id, chat_id, effective_model)
         managed, was_cold = await self.get_or_create(user_id, chat_id, model=model)
 
-        # Warte auf Init unabhängig von was_cold (Pre-Warm-Pfad kann
+        # Wait for init regardless of was_cold (pre-warm path can
         # was_cold=False liefern obwohl is_ready noch False ist).
         if not managed.is_ready:
             await self._wait_for_init(managed)
@@ -300,7 +300,7 @@ class ClaudeProcessPool:
 
             # Health-Check: ist der Process noch am Leben?
             if not self._is_alive(managed):
-                raise RuntimeError(f"Subprocess für key={key} ist während Lock tot")
+                raise RuntimeError(f"Subprocess for key={key} died while locked")
 
             # Nachricht senden
             try:
@@ -337,7 +337,7 @@ class ClaudeProcessPool:
             return await self._terminate_process(
                 (user_id, chat_id, effective_model), reason="user_request"
             )
-        # Alle Subprocesses für diesen User/Chat terminieren
+        # Terminate all subprocesses for this user/chat
         async with self._pool_lock:
             keys_to_kill = [
                 k for k in self._processes if k[0] == user_id and k[1] == chat_id
@@ -349,7 +349,7 @@ class ClaudeProcessPool:
         return terminated
 
     def get_stats(self) -> dict:
-        """Gibt Pool-Statistiken zurück (für Monitoring/Audit)."""
+        """Return pool statistics (for monitoring/audit)."""
         now = time.monotonic()
         active = []
         for key, mp in self._processes.items():
@@ -375,16 +375,16 @@ class ClaudeProcessPool:
     # -------------------------------------------------------------------------
 
     async def _evict_if_needed(self) -> None:
-        """LRU-Eviction: terminiert den am längsten inaktiven Subprocess wenn Pool voll.
+        """LRU eviction: terminate the longest-inactive subprocess when pool is full.
 
-        Übersprungen wenn der älteste Subprocess gerade gelockt ist (aktiver Stream).
-        In dem Fall wird kein Eviction durchgeführt (Pool darf kurzzeitig POOL_MAX_SIZE+1 haben).
+        Skipped when the oldest subprocess is currently locked (active stream).
+        In that case no eviction is performed (pool may briefly have POOL_MAX_SIZE+1).
         """
         async with self._pool_lock:
             if len(self._processes) < POOL_MAX_SIZE:
                 return
 
-            # Finde den am längsten inaktiven, nicht-gelockten Process
+            # Find the longest-inactive, unlocked process
             candidate_key: PoolKey | None = None
             oldest_time = float("inf")
 
@@ -398,7 +398,7 @@ class ClaudeProcessPool:
             if candidate_key is None:
                 log.warning(
                     "Pool voll (%d/%d) aber alle Processes sind gelockt. "
-                    "Kein Eviction möglich.",
+                    "No eviction possible.",
                     len(self._processes),
                     POOL_MAX_SIZE,
                 )
@@ -425,7 +425,7 @@ class ClaudeProcessPool:
             model: Optionale Modell-ID. None = CLAUDE_POOL_MODEL.
 
         Raises:
-            RuntimeError: Wenn CLI nicht verfügbar.
+            RuntimeError: If CLI is not available.
         """
         if not self.is_cli_available():
             raise RuntimeError("claude CLI nicht im PATH gefunden")
@@ -443,9 +443,9 @@ class ClaudeProcessPool:
             "--verbose",
             "--no-session-persistence",
             # NOTE: --bare hier bewusst NICHT gesetzt.
-            # R10 hatte --bare eingeführt um ~5000 Token Init-Overhead zu sparen,
+            # R10 introduced --bare to save ~5000 token init overhead,
             # aber --bare verursacht "authentication_failed" bei Subscription-Usern
-            # (getestet mit claude-code 2.1.126). Ohne --bare läuft Auth korrekt.
+            # (tested with claude-code 2.1.126). Without --bare, auth works correctly.
             "--model",
             effective_model,
         ]
@@ -480,7 +480,7 @@ class ClaudeProcessPool:
         """Wartet bis der Subprocess seine Init-Phase abgeschlossen hat.
 
         Init-Events (system, init_session etc.) werden gelesen und verworfen.
-        Timeout nach INIT_TIMEOUT_SECONDS. Bei EOF während Init wird eine
+        Timeout after INIT_TIMEOUT_SECONDS. On EOF during init a
         RuntimeError geworfen.
         """
         deadline = time.monotonic() + INIT_TIMEOUT_SECONDS
@@ -507,7 +507,7 @@ class ClaudeProcessPool:
             if not line:
                 # EOF: Process hat sich beendet
                 raise RuntimeError(
-                    f"Subprocess pid={managed.pid} hat sich während Init beendet"
+                    f"Subprocess pid={managed.pid} terminated during init"
                 )
 
             # Init-Events loggen aber ignorieren
@@ -554,7 +554,7 @@ class ClaudeProcessPool:
 
             if not line:
                 # EOF: Process ist gestorben
-                log.error("EOF von pid=%d während Antwort-Lesen", managed.pid)
+                log.error("EOF from pid=%d during response reading", managed.pid)
                 yield StreamEvent(
                     event_type="error",
                     text="Subprocess unerwartet beendet",
@@ -632,7 +632,7 @@ class ClaudeProcessPool:
 
     @staticmethod
     def _is_alive(managed: ManagedProcess) -> bool:
-        """Prüft ob der Subprocess noch läuft."""
+        """Check if the subprocess is still running."""
         return managed.process.returncode is None
 
     async def _terminate_process(self, key: PoolKey, reason: str = "") -> bool:
@@ -640,7 +640,7 @@ class ClaudeProcessPool:
 
         Args:
             key: (user_id, chat_id, model) 3-Tuple Routing-Key.
-            reason: Grund für die Terminierung (für Logging).
+            reason: Reason for termination (for logging).
 
         Returns:
             True wenn ein Subprocess terminiert wurde.
@@ -678,7 +678,7 @@ class ClaudeProcessPool:
             pass  # Process war schon weg
 
     async def _cleanup_loop(self) -> None:
-        """Background-Task: terminiert inaktive Subprocesses regelmäßig."""
+        """Background task: terminate inactive subprocesses periodically."""
         try:
             while not self._shutdown:
                 await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
@@ -687,11 +687,10 @@ class ClaudeProcessPool:
             pass
 
     async def _cleanup_expired(self) -> None:
-        """Terminiert idle Subprocesses die länger als INACTIVITY_TIMEOUT_SECONDS inaktiv sind.
+        """Terminate idle subprocesses that have been inactive longer than INACTIVITY_TIMEOUT_SECONDS.
 
-        Prüft zusätzlich ob der Process gerade aktiv gelockt ist (laufender
-        Stream). Gelockte Processes werden übersprungen und beim nächsten
-        Cleanup-Zyklus erneut geprüft.
+        Also checks if the process is currently locked (running stream).
+        Locked processes are skipped and rechecked in the next cleanup cycle.
         """
         now = time.monotonic()
         expired_keys: list[PoolKey] = []
@@ -703,7 +702,7 @@ class ClaudeProcessPool:
                     # Nicht terminieren wenn gerade ein Stream aktiv ist
                     if managed.lock.locked():
                         log.debug(
-                            "Cleanup übersprungen für key=%s: Lock aktiv",
+                            "Cleanup skipped for key=%s: lock active",
                             key,
                         )
                         continue

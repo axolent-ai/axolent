@@ -1,7 +1,7 @@
-"""Conversation Storage: In-Memory Conversation-History pro (user_id, chat_id).
+"""Conversation storage: in-memory conversation history per (user_id, chat_id).
 
-Thread-safe via asyncio.Lock. Speichert Conversation-Turns und Sticky-Language.
-Vorbereitet für spätere Migration auf SQLite falls Persistenz nötig.
+Thread-safe via asyncio.Lock. Stores conversation turns and sticky language.
+Prepared for later migration to SQLite if persistence is needed.
 """
 
 from __future__ import annotations
@@ -14,39 +14,39 @@ from domain.conversation import ConversationTurn, MAX_HISTORY_TURNS
 
 log = logging.getLogger(__name__)
 
-# Storage: indiziert nach (user_id, chat_id)
+# Storage: indexed by (user_id, chat_id)
 _histories: dict[tuple[int, int], list[ConversationTurn]] = {}
 _languages: dict[tuple[int, int], str] = {}
 _lock = asyncio.Lock()
 
 
 async def save_turn(user_id: int, chat_id: int, turn: ConversationTurn) -> None:
-    """Hängt einen Turn an die Conversation-History an. Erzwingt MAX_HISTORY_TURNS.
+    """Append a turn to the conversation history. Enforces MAX_HISTORY_TURNS.
 
     Args:
-        user_id: Telegram-User-ID.
-        chat_id: Telegram-Chat-ID.
-        turn: Der zu speichernde ConversationTurn.
+        user_id: Telegram user ID.
+        chat_id: Telegram chat ID.
+        turn: The ConversationTurn to store.
     """
     key = (user_id, chat_id)
     async with _lock:
         if key not in _histories:
             _histories[key] = []
         _histories[key].append(turn)
-        # LRU-Trim: nur die letzten MAX_HISTORY_TURNS behalten
+        # LRU trim: keep only the last MAX_HISTORY_TURNS
         if len(_histories[key]) > MAX_HISTORY_TURNS:
             _histories[key] = _histories[key][-MAX_HISTORY_TURNS:]
 
 
 async def get_history(user_id: int, chat_id: int) -> list[ConversationTurn]:
-    """Gibt die Conversation-History für ein User/Chat-Paar zurück.
+    """Return the conversation history for a user/chat pair.
 
     Args:
-        user_id: Telegram-User-ID.
-        chat_id: Telegram-Chat-ID.
+        user_id: Telegram user ID.
+        chat_id: Telegram chat ID.
 
     Returns:
-        Liste von ConversationTurns (kann leer sein).
+        List of ConversationTurns (may be empty).
     """
     key = (user_id, chat_id)
     async with _lock:
@@ -54,11 +54,11 @@ async def get_history(user_id: int, chat_id: int) -> list[ConversationTurn]:
 
 
 async def reset_conversation(user_id: int, chat_id: int) -> None:
-    """Löscht Conversation-History UND Sticky-Language für ein User/Chat-Paar.
+    """Clear conversation history AND sticky language for a user/chat pair.
 
     Args:
-        user_id: Telegram-User-ID.
-        chat_id: Telegram-Chat-ID.
+        user_id: Telegram user ID.
+        chat_id: Telegram chat ID.
     """
     key = (user_id, chat_id)
     async with _lock:
@@ -68,12 +68,12 @@ async def reset_conversation(user_id: int, chat_id: int) -> None:
 
 
 async def set_language(user_id: int, chat_id: int, lang: str) -> None:
-    """Setzt die Sticky-Language für ein User/Chat-Paar.
+    """Set the sticky language for a user/chat pair.
 
     Args:
-        user_id: Telegram-User-ID.
-        chat_id: Telegram-Chat-ID.
-        lang: ISO-639-1-Sprachcode (z.B. "de", "en").
+        user_id: Telegram user ID.
+        chat_id: Telegram chat ID.
+        lang: ISO-639-1 language code (e.g. "de", "en").
     """
     key = (user_id, chat_id)
     async with _lock:
@@ -82,24 +82,24 @@ async def set_language(user_id: int, chat_id: int, lang: str) -> None:
 
 
 def _reset_all_for_tests() -> None:
-    """Für Tests: setzt das gesamte Conversation-Storage zurück.
+    """For tests: reset the entire conversation storage.
 
-    Löscht alle Histories und Languages. NUR in Tests verwenden,
-    nicht im Produktionscode.
+    Clears all histories and languages. ONLY use in tests,
+    not in production code.
     """
     _histories.clear()
     _languages.clear()
 
 
 async def get_language(user_id: int, chat_id: int) -> Optional[str]:
-    """Gibt die Sticky-Language für ein User/Chat-Paar zurück.
+    """Return the sticky language for a user/chat pair.
 
     Args:
-        user_id: Telegram-User-ID.
-        chat_id: Telegram-Chat-ID.
+        user_id: Telegram user ID.
+        chat_id: Telegram chat ID.
 
     Returns:
-        Sprachcode oder None falls noch nicht gesetzt.
+        Language code or None if not yet set.
     """
     key = (user_id, chat_id)
     async with _lock:

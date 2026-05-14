@@ -1,8 +1,8 @@
-"""Provider-Interface für LLM-Anbindungen.
+"""Provider interface for LLM integrations.
 
-Jeder Provider muss query(), is_available() und get_capabilities() implementieren.
-Modus-B-Pflicht: Claude-Provider nutzt Subprozess.
-Andere Provider können API-Keys nutzen, aber niemals OAuth-Tokens hijacken.
+Every provider must implement query(), is_available(), and get_capabilities().
+Mode B requirement: Claude provider uses subprocess.
+Other providers may use API keys, but never hijack OAuth tokens.
 """
 
 from __future__ import annotations
@@ -14,19 +14,19 @@ from typing import AsyncIterator
 
 @dataclass(frozen=True)
 class ProviderCapabilities:
-    """Beschreibt was ein Provider kann.
+    """Describes what a provider can do.
 
-    Wird vom Router genutzt um Anfragen passend zu routen.
+    Used by the router to route requests appropriately.
 
     Attributes:
-        supports_streaming: Kann der Provider Streaming-Responses?
-        supports_tool_use: Kann der Provider Function-Calling / Tool-Use?
-        supports_vision: Kann der Provider Bilder verarbeiten?
-        max_context_tokens: Maximale Context-Länge in Tokens.
-        max_memory_chars: Max Memory-Zeichen im System-Prompt (Phase 1+, per-Provider).
-        cost_class: Kostenklasse ("free", "subscription", "pay_per_use").
-        privacy_class: Wo werden Daten verarbeitet? ("cloud", "local").
-        available_models: Liste der verfügbaren Modell-IDs.
+        supports_streaming: Can the provider stream responses?
+        supports_tool_use: Can the provider do function calling / tool use?
+        supports_vision: Can the provider process images?
+        max_context_tokens: Maximum context length in tokens.
+        max_memory_chars: Max memory chars in system prompt (Phase 1+, per provider).
+        cost_class: Cost class ("free", "subscription", "pay_per_use").
+        privacy_class: Where is data processed? ("cloud", "local").
+        available_models: List of available model IDs.
     """
 
     supports_streaming: bool = False
@@ -41,14 +41,14 @@ class ProviderCapabilities:
 
 @dataclass
 class ProviderResponse:
-    """Standardisierte Antwort eines LLM-Providers.
+    """Standardized response from an LLM provider.
 
     Attributes:
-        text: Die generierte Antwort (leer bei Fehler).
-        duration_seconds: Dauer des Aufrufs in Sekunden.
-        provider_name: Name des Providers der geantwortet hat.
-        model: Optionaler Modell-Identifier (z.B. "claude-sonnet-4-6").
-        error: Fehlerbeschreibung wenn der Aufruf fehlgeschlagen ist.
+        text: The generated response (empty on error).
+        duration_seconds: Duration of the call in seconds.
+        provider_name: Name of the provider that responded.
+        model: Optional model identifier (e.g. "claude-sonnet-4-6").
+        error: Error description if the call failed.
     """
 
     text: str
@@ -59,21 +59,21 @@ class ProviderResponse:
 
     @property
     def success(self) -> bool:
-        """True wenn kein Fehler aufgetreten ist und Text vorhanden."""
+        """True if no error occurred and text is present."""
         return self.error is None and bool(self.text)
 
 
 # ---------------------------------------------------------------------------
-# Provider-Error-Hierarchie
+# Provider error hierarchy
 # ---------------------------------------------------------------------------
 
 
 class ProviderError(Exception):
-    """Basis-Klasse für alle Provider-Fehler.
+    """Base class for all provider errors.
 
     Attributes:
-        provider_name: Name des Providers der den Fehler ausgelöst hat.
-        retryable: True wenn ein Retry sinnvoll ist (z.B. Timeout).
+        provider_name: Name of the provider that raised the error.
+        retryable: True if a retry makes sense (e.g. timeout).
     """
 
     def __init__(self, provider_name: str, retryable: bool, message: str) -> None:
@@ -83,51 +83,51 @@ class ProviderError(Exception):
 
 
 class ProviderTimeout(ProviderError):
-    """Provider hat zu lange gebraucht. Retry sinnvoll."""
+    """Provider took too long. Retry makes sense."""
 
     def __init__(self, provider_name: str, timeout_seconds: int) -> None:
         super().__init__(
             provider_name,
             retryable=True,
-            message=f"Timeout nach {timeout_seconds}s",
+            message=f"Timeout after {timeout_seconds}s",
         )
         self.timeout_seconds = timeout_seconds
 
 
 class ProviderUnavailable(ProviderError):
-    """Provider ist nicht verfügbar (CLI fehlt, kein API-Key, etc.)."""
+    """Provider is not available (CLI missing, no API key, etc.)."""
 
     def __init__(self, provider_name: str, reason: str) -> None:
         super().__init__(
             provider_name,
             retryable=False,
-            message=f"{provider_name} nicht verfügbar: {reason}",
+            message=f"{provider_name} unavailable: {reason}",
         )
 
 
 class ProviderNotImplemented(ProviderError):
-    """Stub-Provider, query() ist noch nicht implementiert."""
+    """Stub provider, query() is not yet implemented."""
 
     def __init__(self, provider_name: str) -> None:
         super().__init__(
             provider_name,
             retryable=False,
-            message=f"{provider_name} ist noch nicht implementiert (Phase 1+)",
+            message=f"{provider_name} is not yet implemented (Phase 1+)",
         )
 
 
 class LLMProvider(ABC):
-    """Abstrakte Basisklasse für alle LLM-Provider.
+    """Abstract base class for all LLM providers.
 
-    Jeder konkrete Provider registriert sich mit einem eindeutigen `name`
-    und implementiert query(), is_available() und get_capabilities().
+    Each concrete provider registers with a unique `name`
+    and implements query(), is_available(), and get_capabilities().
     """
 
     name: str  # "claude", "openai", "gemini", "mistral", "ollama_local"
 
     @abstractmethod
     def get_capabilities(self) -> ProviderCapabilities:
-        """Gibt die Fähigkeiten dieses Providers zurück."""
+        """Return the capabilities of this provider."""
         ...
 
     @abstractmethod
@@ -138,24 +138,24 @@ class LLMProvider(ABC):
         timeout_seconds: int = 120,
         model: str | None = None,
     ) -> ProviderResponse:
-        """Sendet eine Anfrage an den Provider und liefert eine Antwort.
+        """Send a request to the provider and return a response.
 
         Args:
-            prompt: Die User-Nachricht / der Prompt.
-            system_prompt: Optionaler System-Prompt.
-            timeout_seconds: Maximale Wartezeit bevor Timeout.
-            model: Optionaler Modell-Identifier (None = Provider-Default).
+            prompt: The user message / prompt.
+            system_prompt: Optional system prompt.
+            timeout_seconds: Maximum wait time before timeout.
+            model: Optional model identifier (None = provider default).
 
         Returns:
-            ProviderResponse mit Text oder Fehler.
+            ProviderResponse with text or error.
         """
         ...
 
     @abstractmethod
     def is_available(self) -> bool:
-        """Prüft ob der Provider auf diesem System verfügbar ist.
+        """Check if the provider is available on this system.
 
-        Prüft z.B. ob das CLI-Binary im PATH liegt oder ein API-Key gesetzt ist.
+        Checks e.g. whether the CLI binary is in PATH or an API key is set.
         """
         ...
 
@@ -164,11 +164,11 @@ class LLMProvider(ABC):
 
 
 class StreamingProvider(ABC):
-    """Mixin für Provider mit Streaming-Support.
+    """Mixin for providers with streaming support.
 
-    Provider die Token-Streaming unterstützen sollten dieses Mixin
-    zusätzlich zu LLMProvider implementieren. Ermöglicht Type-Safe
-    isinstance()-Checks statt fragiler hasattr()-Prüfungen.
+    Providers that support token streaming should implement this mixin
+    in addition to LLMProvider. Enables type-safe isinstance() checks
+    instead of fragile hasattr() checks.
     """
 
     @abstractmethod
@@ -179,15 +179,15 @@ class StreamingProvider(ABC):
         chat_id: int | None = None,
         user_id: int | None = None,
     ) -> "AsyncIterator":
-        """Sendet eine Anfrage und streamt die Antwort Token für Token.
+        """Send a request and stream the response token by token.
 
         Args:
-            prompt: User-Nachricht.
-            system_prompt: Optionaler System-Prompt.
-            chat_id: Chat-ID für Process-Routing.
-            user_id: User-ID für Process-Routing.
+            prompt: User message.
+            system_prompt: Optional system prompt.
+            chat_id: Chat ID for process routing.
+            user_id: User ID for process routing.
 
         Yields:
-            StreamEvent-Objekte (content_delta, result, error).
+            StreamEvent objects (content_delta, result, error).
         """
         ...

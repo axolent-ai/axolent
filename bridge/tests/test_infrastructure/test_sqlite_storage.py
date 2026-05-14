@@ -288,8 +288,8 @@ class TestSqliteMemoryStorageAppend:
     def test_append_invalid_layer_raises(
         self, mem_storage: SqliteMemoryStorage
     ) -> None:
-        """Unbekannter Layer wirft ValueError."""
-        with pytest.raises(ValueError, match="Unbekannter Layer"):
+        """Unknown layer raises ValueError."""
+        with pytest.raises(ValueError, match="Unknown layer"):
             mem_storage.append(
                 {"id": "x", "content": "", "timestamp": ""}, "invalid_layer"
             )
@@ -557,7 +557,7 @@ class TestSqliteMemoryStorageSearch:
         self, mem_storage: SqliteMemoryStorage
     ) -> None:
         """mode='embedding' raised NotImplementedError (Phase 1+)."""
-        with pytest.raises(NotImplementedError, match="Vector-Embedding"):
+        with pytest.raises(NotImplementedError, match="Vector embedding"):
             mem_storage.search(
                 user_id=1, query="test", layer="episodic", mode="embedding"
             )

@@ -1,10 +1,10 @@
-"""Claude Provider via Claude Code CLI Subprozess (Modus B).
+"""Claude provider via Claude Code CLI subprocess (Mode B).
 
-WICHTIG: Modus-B-konform. Kein OAuth-Token-Lesen, kein eigener HTTP-Client.
-Nur subprocess-Aufruf von `claude -p`. User hat eigene Pro/Max-Subscription.
+IMPORTANT: Mode B compliant. No OAuth token reading, no custom HTTP client.
+Only subprocess call to `claude -p`. User has their own Pro/Max subscription.
 
-Dieses Modul ersetzt den alten infrastructure/claude_cli.py und implementiert
-das LLMProvider-Interface.
+This module replaces the old infrastructure/claude_cli.py and implements
+the LLMProvider interface.
 """
 
 from __future__ import annotations
@@ -40,20 +40,20 @@ _CAPABILITIES = ProviderCapabilities(
 
 
 class ClaudeProvider(LLMProvider):
-    """Claude Code CLI als LLM-Provider (Modus B).
+    """Claude Code CLI as LLM provider (Mode B).
 
-    Ruft `claude -p` als async Subprozess auf.
-    Keine direkte API-Kommunikation, kein Token-Handling.
+    Calls `claude -p` as async subprocess.
+    No direct API communication, no token handling.
     """
 
     name = "claude"
 
     def get_capabilities(self) -> ProviderCapabilities:
-        """Claude-Capabilities: Cloud, Subscription, 200k Context."""
+        """Claude capabilities: cloud, subscription, 200k context."""
         return _CAPABILITIES
 
     def is_available(self) -> bool:
-        """Prüft ob `claude` CLI im PATH ist."""
+        """Check if `claude` CLI is in PATH."""
         return shutil.which("claude") is not None
 
     async def query(
@@ -66,27 +66,27 @@ class ClaudeProvider(LLMProvider):
         chat_id: int | None = None,
         **kwargs,
     ) -> ProviderResponse:
-        """Ruft Claude Code CLI auf und liefert die Antwort.
+        """Call Claude Code CLI and return the response.
 
         Args:
-            prompt: User-Nachricht.
-            system_prompt: Optionaler System-Prompt (via stdin, nicht argv).
-            timeout_seconds: Timeout für den Subprozess.
-            model: Optionaler Modell-Identifier (wird als --model an CLI übergeben).
-            user_id: Telegram User-ID (akzeptiert für Interface-Kompatibilität, ignoriert).
-            chat_id: Telegram Chat-ID (akzeptiert für Interface-Kompatibilität, ignoriert).
-            **kwargs: Safety-Net für zukünftige Provider-Interface-Erweiterungen.
+            prompt: User message.
+            system_prompt: Optional system prompt (via stdin, not argv).
+            timeout_seconds: Timeout for the subprocess.
+            model: Optional model identifier (passed as --model to CLI).
+            user_id: Telegram user ID (accepted for interface compatibility, ignored).
+            chat_id: Telegram chat ID (accepted for interface compatibility, ignored).
+            **kwargs: Safety net for future provider interface extensions.
 
         Returns:
-            ProviderResponse mit Claude-Antwort oder Fehler.
+            ProviderResponse with Claude response or error.
         """
         start = time.monotonic()
         cmd: list[str] = ["claude", "-p"]
         if model is not None:
             cmd.extend(["--model", model])
 
-        # Privacy: kompletten Prompt via stdin senden, nicht als argv.
-        # --append-system-prompt würde Memory-Inhalte in Prozesslisten zeigen.
+        # Privacy: send complete prompt via stdin, not as argv.
+        # --append-system-prompt would expose memory contents in process lists.
         if system_prompt:
             combined = f"{system_prompt}\n\n---\n\nUser: {prompt}"
         else:
@@ -108,7 +108,7 @@ class ClaudeProvider(LLMProvider):
             proc.kill()
             await proc.wait()
             duration = time.monotonic() - start
-            log.warning("Claude CLI Timeout nach %.1fs", duration)
+            log.warning("Claude CLI timeout after %.1fs", duration)
             return ProviderResponse(
                 text="",
                 duration_seconds=duration,

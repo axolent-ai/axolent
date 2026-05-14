@@ -122,7 +122,7 @@ class TestProviderErrorHierarchy:
         assert isinstance(err, ProviderError)
         assert err.retryable is False
         assert "ollama" in str(err)
-        assert "nicht implementiert" in str(err)
+        assert "not yet implemented" in str(err)
 
     def test_all_errors_catchable_as_provider_error(self) -> None:
         """Alle spezifischen Fehler sind via ProviderError fangbar."""
