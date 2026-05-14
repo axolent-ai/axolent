@@ -1,6 +1,6 @@
 # Bridge-Service
 
-Backend von AXOLENT AI (Axolent). Telegram-Bot der Claude Code CLI als lokalen Subprozess spawnt (Modus B). Hexagonale Architektur, 526+ Tests, UTF-8 durchgängig.
+Backend von AXOLENT AI (Axolent). Telegram-Bot der Claude Code CLI als lokalen Subprozess spawnt (Modus B). Hexagonale Architektur, 1190+ Tests, UTF-8 durchgängig.
 
 ## Architektur (Hexagonal)
 
@@ -36,9 +36,9 @@ Backend von AXOLENT AI (Axolent). Telegram-Bot der Claude Code CLI als lokalen S
 | `infrastructure/` | I/O-Adapter: Claude CLI, Storage, Audit, Encoding |
 | `presentation/` | Telegram-Handler, Decorators (Whitelist), Rendering |
 | `config/` | system_prompt.md, user_constitution.md |
-| `data/` | jarvis.db (SQLite), user_profiles.jsonl (Laufzeit-Daten) |
+| `data/` | axolent.db (SQLite), user_profiles.jsonl (Laufzeit-Daten) |
 | `logs/` | audit.jsonl (mit Rotation) |
-| `tests/` | 526+ pytest-Tests |
+| `tests/` | 1190+ pytest-Tests |
 
 ## Setup
 
@@ -69,7 +69,7 @@ Erstelle eine `.env` Datei im `bridge/` Ordner:
 ```env
 # Pflicht
 TELEGRAM_BOT_TOKEN=dein_bot_token_hier
-WHITELIST_USER_IDS=123456789
+WHITELIST_USER_IDS=YOUR_TELEGRAM_USER_ID
 
 # Optional (nur für Entwicklung!)
 ALLOW_ALL_USERS=false
@@ -94,10 +94,10 @@ python main.py
 Erwartete Log-Ausgabe:
 
 ```
-2026-05-06 10:00:00 [INFO] jarvis-bridge: Axolent Bridge startet, Modus B (Claude Code CLI Subprozess)
-2026-05-06 10:00:00 [INFO] jarvis-bridge: Whitelist aktiv: ja
-2026-05-06 10:00:00 [INFO] jarvis-bridge: Bookmarks-Feature aktiv (Reply-basiert via /save)
-2026-05-06 10:00:00 [INFO] jarvis-bridge: Conversation-History aktiv (max 20 Turns, /reset zum Löschen)
+2026-05-06 10:00:00 [INFO] axolent-bridge: Axolent Bridge startet, Modus B (Claude Code CLI Subprozess)
+2026-05-06 10:00:00 [INFO] axolent-bridge: Whitelist aktiv: ja
+2026-05-06 10:00:00 [INFO] axolent-bridge: Bookmarks-Feature aktiv (Reply-basiert via /save)
+2026-05-06 10:00:00 [INFO] axolent-bridge: Conversation-History aktiv (max 20 Turns, /reset zum Löschen)
 ```
 
 Der Bot pollt jetzt Telegram. Jede Nachricht an den Bot wird an Claude Code CLI weitergeleitet.
@@ -140,7 +140,7 @@ python -m pytest tests/test_bookmark.py
 python -m pytest --snapshot-update
 ```
 
-Aktuell: **540+ Tests**, alle grün, Laufzeit ca. 3 Sekunden.
+Aktuell: **1190+ Tests**, alle grün, Laufzeit ca. 3 Sekunden.
 
 ## Coverage-Report generieren
 

@@ -95,10 +95,17 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-log = logging.getLogger("jarvis-bridge")
+log = logging.getLogger("axolent")
 
 # Flag: ob DEV_MODE aktiv ist (nur für ALLOW_ALL_USERS-Safeguard)
-JARVIS_DEV_MODE: bool = os.getenv("JARVIS_DEV_MODE", "").lower() in (
+_dev_mode_raw = os.getenv("AXOLENT_DEV_MODE", "")
+if not _dev_mode_raw:
+    _dev_mode_raw = os.getenv("JARVIS_DEV_MODE", "")
+    if _dev_mode_raw:
+        logging.getLogger("axolent").warning(
+            "JARVIS_DEV_MODE ist deprecated, bitte AXOLENT_DEV_MODE verwenden."
+        )
+AXOLENT_DEV_MODE: bool = _dev_mode_raw.lower() in (
     "true",
     "1",
     "yes",
@@ -109,19 +116,19 @@ def validate_allow_all_users() -> None:
     """Prüft ob ALLOW_ALL_USERS sicher konfiguriert ist.
 
     Blockiert den Bot-Start wenn ALLOW_ALL_USERS aktiv ist ohne
-    JARVIS_DEV_MODE. Verhindert versehentliches öffnen des Bots
+    AXOLENT_DEV_MODE. Verhindert versehentliches öffnen des Bots
     für alle Telegram-User in Produktion.
 
     Raises:
-        SystemExit: Wenn ALLOW_ALL_USERS=true ohne JARVIS_DEV_MODE=true.
+        SystemExit: Wenn ALLOW_ALL_USERS=true ohne AXOLENT_DEV_MODE=true.
     """
     if not ALLOW_ALL_USERS:
         return
 
-    if not JARVIS_DEV_MODE:
+    if not AXOLENT_DEV_MODE:
         log.critical(
-            "GEFAHR: ALLOW_ALL_USERS ist aktiv, aber JARVIS_DEV_MODE nicht gesetzt. "
-            "Setze JARVIS_DEV_MODE=true wenn das beabsichtigt ist, "
+            "GEFAHR: ALLOW_ALL_USERS ist aktiv, aber AXOLENT_DEV_MODE nicht gesetzt. "
+            "Setze AXOLENT_DEV_MODE=true wenn das beabsichtigt ist, "
             "sonst entferne ALLOW_ALL_USERS."
         )
         sys.exit(2)
@@ -132,7 +139,7 @@ def validate_allow_all_users() -> None:
             "event_type": "dev_mode_start",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "allow_all_users": True,
-            "jarvis_dev_mode": True,
+            "axolent_dev_mode": True,
         }
     )
 
@@ -267,7 +274,15 @@ def main() -> None:
         import time as _time
 
         _t0 = _time.monotonic()
-        sqlite_conn = SqliteConnection(bridge_root / "data" / "jarvis.db")
+
+        # Backwards-Compat: jarvis.db -> axolent.db stille Umbenennung
+        _legacy_db = bridge_root / "data" / "jarvis.db"
+        _new_db = bridge_root / "data" / "axolent.db"
+        if _legacy_db.exists() and not _new_db.exists():
+            _legacy_db.rename(_new_db)
+            log.info("DB-Migration: jarvis.db -> axolent.db umbenannt (einmalig)")
+
+        sqlite_conn = SqliteConnection(bridge_root / "data" / "axolent.db")
 
         # JSONL -> SQLite Migration (idempotent, nur beim ersten Mal)
         migration_stats = migrate_jsonl_to_sqlite(sqlite_conn, bridge_root / "data")

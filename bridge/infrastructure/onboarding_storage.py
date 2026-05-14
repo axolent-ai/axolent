@@ -1,6 +1,6 @@
 """SQLite-Storage für Onboarding-State.
 
-Neue Tabelle `user_onboarding` in der bestehenden jarvis.db.
+Neue Tabelle `user_onboarding` in der bestehenden axolent.db.
 Abwärtskompatible Migration: bestehende User gelten als onboarded=True.
 """
 

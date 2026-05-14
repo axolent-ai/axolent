@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 SearchMode = Literal["substring", "embedding"]
 
 # Default DB-Pfad
-DEFAULT_DB_PATH: Path = Path(__file__).resolve().parent.parent / "data" / "jarvis.db"
+DEFAULT_DB_PATH: Path = Path(__file__).resolve().parent.parent / "data" / "axolent.db"
 
 _SCHEMA_SQL = """
 -- Bookmarks

@@ -17,7 +17,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Projekt-Root: zwei Ebenen hoch (scripts/ -> jarvis-lite/)
+# Projekt-Root: zwei Ebenen hoch (scripts/ -> axolent/)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BRIDGE_DIR = PROJECT_ROOT / "bridge"
 VENV_PYTHON = BRIDGE_DIR / ".venv" / "Scripts" / "python.exe"

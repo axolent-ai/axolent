@@ -7,7 +7,7 @@
 ![Phase](https://img.shields.io/badge/phase-1%20(active)-blue)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-green)
 ![Python](https://img.shields.io/badge/python-3.11%2B-yellow)
-![Tests](https://img.shields.io/badge/tests-113%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-1190%2B%20passing-brightgreen)
 
 ## TL;DR
 
@@ -49,8 +49,8 @@ Optional (Phase 1+):
 
 ```bash
 # 1. Clone
-git clone https://github.com/YOUR_USER/jarvis-lite.git
-cd jarvis-lite/bridge
+git clone https://github.com/axolent-ai/axolent.git
+cd axolent/bridge
 
 # 2. Virtual environment
 python -m venv .venv
@@ -77,14 +77,14 @@ The bot starts long-polling. Send it a message on Telegram and Claude responds.
 ## Repository Structure
 
 ```
-jarvis-lite/          (repo name, will be renamed to axolent-ai)
+axolent/
   bridge/             Backend service (Hexagonal Architecture, Python)
     domain/           Pure business logic (no I/O imports)
     application/      Use-case orchestration
     infrastructure/   I/O adapters (CLI, storage, audit)
     presentation/     Telegram-specific handlers & rendering
     config/           System prompt, user constitution
-    tests/            113 pytest tests
+    tests/            1190+ pytest tests
     main.py           Entry point
   mini-app/           Telegram Mini App (planned, Phase 1+)
   desktop/            Desktop App via Tauri (planned, Phase 1+)
@@ -117,7 +117,7 @@ Issues and pull requests are welcome.
 
 1. Fork the repo
 2. Create a feature branch
-3. Write tests (we have 113 and counting)
+3. Write tests (we have 1190+ and counting)
 4. Submit a PR with a clear description
 
 Code style: Python with type hints everywhere, Black-formatted, hexagonal architecture rules enforced. See `bridge/README.md` for architecture details.

@@ -3,9 +3,10 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "jarvis-bridge"
+name = "axolent-bridge"
 version = "0.1.0"
 description = "Axolent Bridge: Telegram-Bot mit Claude Code CLI (AXOLENT AI)"
+license = { text = "AGPL-3.0-only" }
 requires-python = ">=3.11"
 dependencies = [
     "python-telegram-bot==21.7",
@@ -29,6 +30,11 @@ dev = [
     "bandit>=1.7",
     "pip-audit>=2.7",
 ]
+
+[project.urls]
+Homepage = "https://axolent.ai"
+Repository = "https://github.com/axolent-ai/axolent"
+Documentation = "https://axolent.ai"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

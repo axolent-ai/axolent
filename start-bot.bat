@@ -1,6 +1,6 @@
 @echo off
 title Axolent Bot
-cd /d D:\Code\jarvis-lite\bridge
+cd /d %~dp0bridge
 call .venv\Scripts\activate.bat
 echo.
 echo ===================================

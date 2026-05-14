@@ -28,12 +28,15 @@ repos:
         exclude: ^bridge/tests/
 
   # Security: gitleaks (Secrets scanner)
-  # HINWEIS: gitleaks pre-commit mirror nutzt wasm-basierte go-re2 die auf
-  # Windows mit panic: "wasm error: invalid table access" crasht.
-  # Workaround: gitleaks manuell ausführen bis Upstream-Fix verfügbar.
-  # Tracking: https://github.com/gitleaks/gitleaks/issues
-  # gitleaks Binary nicht lokal installiert.
-  # Manueller Aufruf: `scoop install gitleaks` oder `winget install gitleaks/gitleaks`
+  # STATUS: Deaktiviert (Stand 2026-05-14).
+  # GRUND: gitleaks pre-commit mirror nutzt wasm-basierte go-re2 die auf
+  #   Windows mit panic: "wasm error: invalid table access" crasht.
+  #   Tracking: https://github.com/gitleaks/gitleaks/issues
+  # MANUELLE NUTZUNG (empfohlen vor jedem Release):
+  #   1. Installieren: `scoop install gitleaks` oder `winget install gitleaks`
+  #   2. Scan aktueller Tree: `gitleaks detect --source . --config .gitleaks.toml`
+  #   3. Scan Git-History: `gitleaks detect --source . --config .gitleaks.toml --log-opts="--all"`
+  # REAKTIVIERUNG: Wenn der Upstream-Bug gefixt ist, folgendes einkommentieren:
   # - repo: https://github.com/gitleaks/gitleaks
   #   rev: v8.22.1
   #   hooks:

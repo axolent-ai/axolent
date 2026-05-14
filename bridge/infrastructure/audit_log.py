@@ -18,7 +18,7 @@ AUDIT_LOG_PATH: Path = Path(__file__).resolve().parent.parent / "logs" / "audit.
 AUDIT_LOG_PATH.parent.mkdir(exist_ok=True)
 
 # Dedizierter Logger für Audit-Einträge (nicht über root-logger)
-_audit_logger = logging.getLogger("jarvis-bridge.audit")
+_audit_logger = logging.getLogger("axolent.audit")
 _audit_logger.setLevel(logging.INFO)
 _audit_handler = logging.handlers.RotatingFileHandler(
     AUDIT_LOG_PATH,

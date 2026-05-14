@@ -18,10 +18,10 @@ class TestValidateAllowAllUsers:
     """Tests für validate_allow_all_users Safeguard."""
 
     def test_allow_all_without_dev_mode_exits(self) -> None:
-        """ALLOW_ALL_USERS=true ohne JARVIS_DEV_MODE=true blockiert Start."""
+        """ALLOW_ALL_USERS=true ohne AXOLENT_DEV_MODE=true blockiert Start."""
         with (
             patch("main.ALLOW_ALL_USERS", True),
-            patch("main.JARVIS_DEV_MODE", False),
+            patch("main.AXOLENT_DEV_MODE", False),
         ):
             from main import validate_allow_all_users
 
@@ -32,11 +32,11 @@ class TestValidateAllowAllUsers:
     def test_allow_all_with_dev_mode_warns(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """ALLOW_ALL_USERS=true mit JARVIS_DEV_MODE=true warnt nur."""
+        """ALLOW_ALL_USERS=true mit AXOLENT_DEV_MODE=true warnt nur."""
         with (
             patch("main.ALLOW_ALL_USERS", True),
-            patch("main.JARVIS_DEV_MODE", True),
-            caplog.at_level(logging.WARNING, logger="jarvis-bridge"),
+            patch("main.AXOLENT_DEV_MODE", True),
+            caplog.at_level(logging.WARNING, logger="axolent"),
         ):
             from main import validate_allow_all_users
 
@@ -53,8 +53,8 @@ class TestValidateAllowAllUsers:
         """Ohne ALLOW_ALL_USERS: kein Output, kein SystemExit."""
         with (
             patch("main.ALLOW_ALL_USERS", False),
-            patch("main.JARVIS_DEV_MODE", False),
-            caplog.at_level(logging.DEBUG, logger="jarvis-bridge"),
+            patch("main.AXOLENT_DEV_MODE", False),
+            caplog.at_level(logging.DEBUG, logger="axolent"),
         ):
             from main import validate_allow_all_users
 
@@ -72,13 +72,13 @@ class TestValidateAllowAllUsers:
         """Die Exit-Meldung erklaert klar was zu tun ist."""
         with (
             patch("main.ALLOW_ALL_USERS", True),
-            patch("main.JARVIS_DEV_MODE", False),
+            patch("main.AXOLENT_DEV_MODE", False),
         ):
             import logging as _logging
 
             from main import validate_allow_all_users
 
-            logger = _logging.getLogger("jarvis-bridge")
+            logger = _logging.getLogger("axolent")
             with (
                 pytest.raises(SystemExit),
                 patch.object(logger, "critical") as mock_critical,
@@ -86,5 +86,5 @@ class TestValidateAllowAllUsers:
                 validate_allow_all_users()
 
             call_msg = mock_critical.call_args[0][0]
-            assert "JARVIS_DEV_MODE" in call_msg
+            assert "AXOLENT_DEV_MODE" in call_msg
             assert "ALLOW_ALL_USERS" in call_msg

@@ -4,7 +4,7 @@ Keine externen Dependencies. Verwendet Heuristiken basierend auf
 häufigen Wörtern und Zeichenmustern. Genügt für die
 Unterscheidung der gängigsten Sprachen (de, en, es, fr, it, pt).
 
-Fallback: "de" (Jessicas Hauptsprache).
+Fallback: "de" (Default-Sprache aus Onboarding).
 """
 
 import logging
