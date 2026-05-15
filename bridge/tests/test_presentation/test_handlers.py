@@ -211,7 +211,11 @@ class TestHandleResetCommand:
             yield  # type: ignore[misc]
 
     async def test_reset_command_clears_history(self) -> None:
-        """/reset clears history and language, then saves the reset confirmation."""
+        """/reset clears history but preserves sticky language.
+
+        Since i18n: the reset message is in the user's sticky language.
+        Language is restored after reset (preference survives /reset).
+        """
         from domain.conversation import ConversationTurn
         from infrastructure.conversation_storage import (
             get_history,
@@ -230,25 +234,28 @@ class TestHandleResetCommand:
 
         await handle_reset_command(update, context)
 
-        # Alte History gelöscht, aber Reset-Bestätigung gespeichert
+        # Old history cleared, reset confirmation saved as assistant turn
         history = await get_history(1, 10)
-        lang = await get_language(1, 10)
         assert len(history) == 1
         assert history[0].role == "assistant"
+        # i18n: French reset message (since sticky language was "fr")
         assert (
-            "zurückgesetzt" in history[0].content.lower()
-            or "frisch" in history[0].content.lower()
+            "réinitialisée" in history[0].content.lower()
+            or "zurückgesetzt" in history[0].content.lower()
             or "reset" in history[0].content.lower()
             or "fresh" in history[0].content.lower()
         )
-        assert lang is None
+
+        # Language is PRESERVED after reset (not cleared)
+        lang = await get_language(1, 10)
+        assert lang == "fr"
 
         # Confirmation sent
         update.message.reply_text.assert_called_once()
         reply_text = update.message.reply_text.call_args[0][0]
         assert (
-            "zurückgesetzt" in reply_text.lower()
-            or "frisch" in reply_text.lower()
+            "réinitialisée" in reply_text.lower()
+            or "zurückgesetzt" in reply_text.lower()
             or "reset" in reply_text.lower()
             or "fresh" in reply_text.lower()
         )
@@ -646,7 +653,8 @@ class TestAuditLoggingForget:
         reply_text = update.message.reply_text.call_args[0][0]
         assert "ep_123" in reply_text
         assert "/reset" in reply_text
-        assert "Note" in reply_text
+        # i18n: default language is DE, so "Hinweis" instead of "Note"
+        assert "Hinweis" in reply_text or "Note" in reply_text
 
     @patch("application.audit_service.write_audit_log")
     async def test_forget_not_found_writes_audit(self, mock_audit: MagicMock) -> None:
@@ -1721,6 +1729,70 @@ class TestHandleSetlimitCommand:
         reply_text = update.message.reply_text.call_args[0][0]
         assert "Unlimited" in reply_text
         assert limiter.get_user_profile(5) == "unlimited"
+
+
+class TestResetCancelsActiveStream:
+    """T25: /reset cancels an active streaming session before clearing state."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        """Whitelist bypass."""
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    async def test_reset_cancels_registered_session(self) -> None:
+        """/reset sets cancel_event on the active StreamingSession."""
+        from application.streaming_handler import StreamingSession
+        from presentation.handlers import (
+            _active_sessions_lock,
+            _active_streaming_sessions,
+            handle_reset_command,
+        )
+
+        # Register a fake active session
+        fake_msg = AsyncMock()
+        fake_msg.edit_text = AsyncMock()
+        fake_msg.chat = MagicMock()
+        fake_msg.chat.send_message = AsyncMock()
+        session = StreamingSession(message=fake_msg, started_at=0.0)
+
+        user_id, chat_id = 42, 99
+        with _active_sessions_lock:
+            _active_streaming_sessions[(user_id, chat_id)] = session
+
+        try:
+            update = _make_update(user_id=user_id, chat_id=chat_id)
+            context = _make_context()
+
+            # Patch asyncio.sleep to avoid real delay
+            with patch("presentation.handlers.asyncio.sleep", new_callable=AsyncMock):
+                await handle_reset_command(update, context)
+
+            # Session must be cancelled
+            assert session.is_cancelled is True
+        finally:
+            # Cleanup
+            with _active_sessions_lock:
+                _active_streaming_sessions.pop((user_id, chat_id), None)
+
+    async def test_reset_without_active_session_still_works(self) -> None:
+        """/reset works normally when no streaming session is active."""
+        from presentation.handlers import handle_reset_command
+
+        update = _make_update(user_id=1, chat_id=10)
+        context = _make_context()
+
+        # Should not raise
+        await handle_reset_command(update, context)
+
+        update.message.reply_text.assert_called_once()
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert (
+            "zurückgesetzt" in reply_text.lower()
+            or "frisch" in reply_text.lower()
+            or "reset" in reply_text.lower()
+            or "fresh" in reply_text.lower()
+        )
 
     async def test_setlimit_invalid_profile(self) -> None:
         """/setlimit invalid zeigt Fehlermeldung."""

@@ -16,56 +16,14 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from domain.i18n import get_status_text  # noqa: F401 (re-export)
+
 log = logging.getLogger(__name__)
 
 # Configuration
 SHOW_STATUS_UPDATES: bool = True
 STATUS_RATE_LIMIT_SECONDS: float = 0.5
 MIN_STATUS_DISPLAY_MS: int = 1100  # Minimum display duration per status update (ms)
-
-
-# ---------------------------------------------------------------------------
-# Status texts (language-aware)
-# ---------------------------------------------------------------------------
-
-_STATUS_TEXTS: dict[str, dict[str, str]] = {
-    "memory_loading": {
-        "de": "\U0001f9e0 Lade Notizen…",
-        "en": "\U0001f9e0 Loading memory…",
-    },
-    "memory_loaded": {
-        "de": "\U0001f9e0 Lade Notizen… ({n} gefunden)",
-        "en": "\U0001f9e0 Loading memory… ({n} entries)",
-    },
-    "thinking": {
-        "de": "\U0001f4ad Denke nach…",
-        "en": "\U0001f4ad Thinking…",
-    },
-    "formatting": {
-        "de": "✨ Formatiere…",
-        "en": "✨ Formatting…",
-    },
-}
-
-
-def get_status_text(key: str, lang: str = "de", **kwargs: Any) -> str:
-    """Return the localized status text.
-
-    Args:
-        key: Status key (e.g. "memory_loading", "thinking").
-        lang: Language code ("de", "en", etc.). Falls back to "de".
-        **kwargs: Format parameters (e.g. n=3 for memory count).
-
-    Returns:
-        Formatted status text.
-    """
-    texts = _STATUS_TEXTS.get(key, {})
-    # Only DE and EN supported, others fall back to DE
-    template = texts.get(lang, texts.get("de", key))
-    try:
-        return template.format(**kwargs)
-    except (KeyError, IndexError):
-        return template
 
 
 # ---------------------------------------------------------------------------

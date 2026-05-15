@@ -94,6 +94,8 @@ class StreamingSession:
         _paused_until: Monotonic timestamp until which edits are paused (flood control).
         _current_throttle: Current adaptive edit interval in seconds.
         _consecutive_success: Counter of successful edits since last 429.
+        cancel_event: When set, the streaming loop should stop immediately.
+            Used by /reset to cancel an active stream before clearing state.
     """
 
     message: "Message"
@@ -106,6 +108,16 @@ class StreamingSession:
     _paused_until: float = 0.0
     _current_throttle: float = field(default_factory=lambda: DEFAULT_THROTTLE)
     _consecutive_success: int = 0
+    cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
+
+    @property
+    def is_cancelled(self) -> bool:
+        """Check whether cancellation has been requested."""
+        return self.cancel_event.is_set()
+
+    def cancel(self) -> None:
+        """Request cancellation of this streaming session."""
+        self.cancel_event.set()
 
 
 async def create_streaming_message(chat: Any) -> "Message":

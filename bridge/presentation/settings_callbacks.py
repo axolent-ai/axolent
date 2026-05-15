@@ -116,8 +116,11 @@ _AVAILABLE_ALIASES: list[str] = ["opus", "sonnet", "haiku"]
 
 
 def _get_settings_strings(lang: str = "de") -> dict[str, str]:
-    """Returns settings i18n strings for the given language."""
-    return _SETTINGS_STRINGS.get(lang, _SETTINGS_STRINGS["de"])
+    """Returns settings i18n strings for the given language.
+
+    Falls back to EN for unsupported languages (not DE).
+    """
+    return _SETTINGS_STRINGS.get(lang, _SETTINGS_STRINGS["en"])
 
 
 def _get_model_service(context: ContextTypes.DEFAULT_TYPE) -> Any:

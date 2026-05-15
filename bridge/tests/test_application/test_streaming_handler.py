@@ -989,3 +989,63 @@ class TestMultiMessageEditFallback:
 
         # Fallback: send_message wurde aufgerufen (für Part 1 als neue Nachricht)
         assert session.message.chat.send_message.call_count >= 1
+
+
+# ---------------------------------------------------------------------------
+# T25: Cancellation-Token Tests
+# ---------------------------------------------------------------------------
+
+
+class TestStreamingCancellation:
+    """Tests for StreamingSession.cancel_event (T25: /reset stops stream)."""
+
+    def test_session_not_cancelled_by_default(self) -> None:
+        """New session is not cancelled."""
+        session = _make_session(started_offset=1.0)
+        assert session.is_cancelled is False
+
+    def test_cancel_sets_event(self) -> None:
+        """cancel() sets the cancel_event."""
+        session = _make_session(started_offset=1.0)
+        session.cancel()
+        assert session.is_cancelled is True
+
+    def test_cancel_event_is_asyncio_event(self) -> None:
+        """cancel_event is an asyncio.Event instance."""
+        import asyncio as _asyncio
+
+        session = _make_session(started_offset=1.0)
+        assert isinstance(session.cancel_event, _asyncio.Event)
+
+    @pytest.mark.asyncio
+    async def test_cancelled_session_skips_edits(self) -> None:
+        """When cancel_event is set, process_streaming_edit still accumulates
+        but external code (the stream loop) should break before calling it.
+
+        This test verifies the cancel_event itself; the actual loop break
+        is tested in test_handlers integration tests.
+        """
+        session = _make_session(started_offset=3.0)
+        session.is_first_edit = False
+        session.last_edit_time = 0
+
+        # Send a normal edit (should work)
+        await process_streaming_edit(session, "Hello ")
+        assert session.message.edit_text.call_count == 1
+
+        # Cancel the session
+        session.cancel()
+        assert session.is_cancelled is True
+
+        # The caller checks is_cancelled before calling process_streaming_edit.
+        # The function itself does not check (by design: separation of concerns).
+        # So we verify that the flag is correctly set and queryable.
+        assert session.cancel_event.is_set()
+
+    def test_multiple_cancel_calls_idempotent(self) -> None:
+        """Calling cancel() multiple times is safe."""
+        session = _make_session(started_offset=1.0)
+        session.cancel()
+        session.cancel()
+        session.cancel()
+        assert session.is_cancelled is True

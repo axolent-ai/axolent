@@ -85,6 +85,8 @@ WHITELIST_PATHS = {
     "CLAUDE.md",
     # i18n: wizard texts, welcome messages, button labels in 20 languages.
     "bridge/domain/onboarding.py",
+    # i18n: centralized i18n strings for all 20 languages (commands, status, etc.).
+    "bridge/domain/i18n.py",
     # i18n: German word markers for language detection heuristic (feature data).
     "bridge/domain/language.py",
     # i18n: self-awareness block has DE + EN branches (lang="de" / lang="en").

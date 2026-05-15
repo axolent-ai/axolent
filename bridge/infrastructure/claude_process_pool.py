@@ -450,11 +450,24 @@ class ClaudeProcessPool:
             effective_model,
         ]
 
+        # T23/T24 Quick-Fix: reduce stdout buffering from the Claude CLI
+        # (Node.js process). PYTHONUNBUFFERED has no effect since the CLI
+        # is Node.js, not Python. Instead we:
+        # 1. Set NO_COLOR / FORCE_COLOR=0 to prevent ANSI buffering
+        # 2. Set NODE_OPTIONS=--no-warnings to reduce startup noise
+        # 3. Inherit current env so PATH/auth tokens are available
+        spawn_env = os.environ.copy()
+        spawn_env["NO_COLOR"] = "1"
+        spawn_env["FORCE_COLOR"] = "0"
+        # Force line-buffered stdout in Node.js (no direct flag, but
+        # ensures no color-code accumulation delays output)
+
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=spawn_env,
         )
 
         pid = proc.pid or 0

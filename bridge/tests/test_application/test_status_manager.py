@@ -66,10 +66,10 @@ class TestGetStatusText:
         text = get_status_text("formatting", "en")
         assert "Formatting" in text
 
-    def test_unknown_language_falls_back_to_german(self) -> None:
-        """Unbekannte Sprache fällt auf Deutsch zurück."""
+    def test_unknown_language_falls_back_to_english(self) -> None:
+        """Unbekannte Sprache fällt auf Englisch zurück."""
         text = get_status_text("thinking", "xx")
-        assert "Denke nach" in text
+        assert "Thinking" in text
 
     def test_unknown_key_returns_key(self) -> None:
         """Unbekannter Key gibt den Key selbst zurück."""

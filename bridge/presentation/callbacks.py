@@ -149,7 +149,19 @@ async def handle_bookmark_delete_callback(
                 except (ValueError, TypeError):
                     pass
 
-        await query.message.reply_text(f"✓ Bookmark{date_display} removed")
+        from domain.i18n import BOOKMARK_DELETE_CONFIRM_TEXTS, get_text
+
+        # Get user language for i18n
+        chat_service = context.application.bot_data.get("chat_service")
+        _del_lang = "en"
+        if chat_service and hasattr(chat_service, "get_chat_language"):
+            _del_lang = (
+                await chat_service.get_chat_language(user_id, bm_chat_id) or "en"
+            )
+        _del_text = get_text(
+            BOOKMARK_DELETE_CONFIRM_TEXTS, _del_lang, date_display=date_display
+        )
+        await query.message.reply_text(f"✓ {_del_text}")
         log.info(
             "Bookmark removed via button: user_id=%d message_id=%d", user_id, msg_id
         )

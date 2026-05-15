@@ -270,7 +270,17 @@ class ChatService:
 
         keywords = _extract_keywords(query)
         if not keywords:
-            return "", 0
+            # No keywords extracted (short message). Load recent entries as context.
+            episodic = self.memory_service.list_recent(
+                user_id, layer="episodic", limit=5
+            )
+            semantic = self.memory_service.list_recent(
+                user_id, layer="semantic", limit=3
+            )
+            if not (episodic or semantic):
+                return "", 0
+            # Jump directly to context building
+            return self._format_memory_context(episodic, semantic, [], provider_name)
 
         # Primary search term: longest keyword (most specific)
         primary_query = keywords[0]
@@ -298,15 +308,49 @@ class ChatService:
                 user_id, secondary_query, layer="procedural", limit=2
             )
 
+        # Fallback: if keyword search yields nothing, load recent episodic entries
+        # so the LLM can use them as context (covers cases where user asks about
+        # stored facts without using matching keywords, e.g. "welche Tiere mag ich"
+        # when stored entry is "Ich mag Delfine").
         if not (episodic or semantic or procedural):
-            return "", 0
+            episodic = self.memory_service.list_recent(
+                user_id, layer="episodic", limit=5
+            )
+            semantic = self.memory_service.list_recent(
+                user_id, layer="semantic", limit=3
+            )
+            if not (episodic or semantic):
+                return "", 0
 
+        return self._format_memory_context(
+            episodic, semantic, procedural, provider_name
+        )
+
+    def _format_memory_context(
+        self,
+        episodic: list[dict],
+        semantic: list[dict],
+        procedural: list[dict],
+        provider_name: str | None = None,
+    ) -> tuple[str, int]:
+        """Format memory entries into a context block for the system prompt.
+
+        Args:
+            episodic: Episodic memory entries.
+            semantic: Semantic memory entries.
+            procedural: Procedural memory entries.
+            provider_name: Optional provider name for budget lookup.
+
+        Returns:
+            Tuple of (formatted memory block, total entry count).
+        """
         total_entries = len(episodic) + len(semantic) + len(procedural)
 
         sections: list[str] = ["[STORED NOTES]", ""]
         sections.append(
             "These entries were stored by the user and may be "
-            "relevant to the current question. Use them if appropriate, ignore if not relevant."
+            "relevant to the current question. Use them if appropriate, "
+            "ignore if not relevant."
         )
         sections.append("")
 

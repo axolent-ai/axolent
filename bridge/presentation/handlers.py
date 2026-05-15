@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 import uuid
 from threading import Lock
@@ -32,6 +33,25 @@ from application.streaming_handler import (
     process_streaming_edit,
 )
 from domain.bookmark import format_bookmark_preview
+from domain.i18n import (
+    BOOKMARK_LIST_EMPTY_TEXTS,
+    BOOKMARK_REMOVED_TEXTS,
+    BOOKMARK_SAVE_HINT_TEXTS,
+    BOOKMARK_SAVED_TEXTS,
+    FORGET_NOT_FOUND_TEXTS,
+    FORGET_SUCCESS_TEXTS,
+    FORGET_USAGE_TEXTS,
+    INLINE_COMMAND_WARNING_TEXTS,
+    LANG_CHANGED_TEXTS,
+    MEMORY_EMPTY_TEXTS,
+    MEMORY_HEADER_TEXTS,
+    MEMORY_SEARCH_HEADER_TEXTS,
+    MEMORY_SEARCH_NO_RESULTS_TEXTS,
+    REMEMBER_SAVED_TEXTS,
+    REMEMBER_USAGE_TEXTS,
+    RESET_TEXTS,
+    get_text,
+)
 from presentation.decorators import require_private_chat, require_whitelist
 from presentation.render import (
     get_cached_response,
@@ -53,6 +73,11 @@ GLOBAL_CLAUDE_SEMAPHORE = asyncio.Semaphore(4)
 _user_locks: dict[int, tuple[asyncio.Lock, float]] = {}
 _user_locks_meta_lock = Lock()
 _USER_LOCK_TTL_SECONDS = 3600  # 1h without activity -> removed
+
+# T25: Active streaming sessions per (user_id, chat_id).
+# Used by /reset to cancel a running stream before clearing state.
+_active_streaming_sessions: dict[tuple[int, int], StreamingSession] = {}
+_active_sessions_lock = Lock()
 
 # Supported languages for /lang command (synced with domain.onboarding.WIZARD_LANGUAGES)
 _SUPPORTED_LANGUAGES: set[str] = {
@@ -245,7 +270,7 @@ def build_bookmarks_keyboard(bookmarks: list[dict[str, Any]]) -> InlineKeyboardM
 
 
 HELP_TEXT_DE: str = (
-    "\U0001f916 <b>Axolent Befehlsübersicht</b>\n\n"
+    "\U0001f98e <b>Axolent Befehlsübersicht</b>\n\n"
     "<b>Chat</b>\n"
     "• Schreibe einfach eine Nachricht und der Bot antwortet\n"
     "• /new neuer Chat (löscht Verlauf)\n"
@@ -275,7 +300,7 @@ HELP_TEXT_DE: str = (
 )
 
 HELP_TEXT_EN: str = (
-    "\U0001f916 <b>Axolent Command Overview</b>\n\n"
+    "\U0001f98e <b>Axolent Command Overview</b>\n\n"
     "<b>Chat</b>\n"
     "• Just send a message and the bot will answer\n"
     "• /new new chat (clears history)\n"
@@ -358,6 +383,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     username: str | None = user.username if user else None
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
     text: str = update.message.text or ""
+
+    # Detect inline commands embedded in regular messages (T19 fix)
+    # Users sometimes append /setmodel, /reset etc. at the end of a message.
+    # Telegram only triggers CommandHandler when / is the very first character.
+    _inline_cmd_match = re.search(
+        r"(?:^|\n)\s*/(?:setmodel|reset|resetmodel|lang|new)\b",
+        text,
+        re.IGNORECASE,
+    )
+    if _inline_cmd_match and not text.strip().startswith("/"):
+        _cmd_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+        await update.message.reply_text(
+            get_text(INLINE_COMMAND_WARNING_TEXTS, _cmd_lang)
+        )
+        # Strip the command from the text before sending to LLM
+        text = text[: _inline_cmd_match.start()].rstrip()
+        if not text:
+            return
 
     # Extract reply-to context
     reply_to_text: str | None = None
@@ -628,6 +671,11 @@ async def _handle_message_streaming(
             started_at=time.monotonic(),
         )
 
+        # T25: Register active session so /reset can cancel it
+        session_key = (user_id, chat_id)
+        with _active_sessions_lock:
+            _active_streaming_sessions[session_key] = session
+
         # Determine chat language once (used for text guard + status session)
         chat_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
 
@@ -680,6 +728,16 @@ async def _handle_message_streaming(
                 status_session=status_session,
             )
             async for event in stream_iter:
+                # T25: Check cancellation before processing each event
+                if session.is_cancelled:
+                    log.info(
+                        "Stream cancelled for user=%d chat=%d (after %d chunks)",
+                        user_id,
+                        chat_id,
+                        streaming_chunks,
+                    )
+                    break
+
                 if event.event_type == "init":
                     # Process metadata from the pool's init event
                     was_cold = event.was_cold
@@ -831,6 +889,10 @@ async def _handle_message_streaming(
                 "Could not notify user about error: %s",
                 notify_exc,
             )
+    finally:
+        # T25: Always deregister the active session
+        with _active_sessions_lock:
+            _active_streaming_sessions.pop((user_id, chat_id), None)
 
 
 async def _handle_message_legacy(
@@ -889,27 +951,45 @@ async def _handle_message_legacy(
     )
 
 
-_RESET_TEXTS: dict[str, str] = {
-    "de": "Konversation zurückgesetzt. Wir starten frisch!",
-    "en": "Conversation reset. Let's start fresh!",
-}
+_RESET_TEXTS: dict[str, str] = RESET_TEXTS
 
 
 @require_whitelist
 async def handle_reset_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Handles /reset. Clears conversation history and sticky language for this chat."""
+    """Handles /reset. Clears conversation history and sticky language for this chat.
+
+    T25: If a streaming session is active, cancels it first before
+    clearing state. Uses a short delay (200ms) to let the stream loop
+    notice the cancellation.
+    """
     chat_service = _get_chat_service(context)
 
     user = update.effective_user
     user_id: int = user.id if user else 0
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
+    # T25: Cancel active streaming session before reset
+    session_key = (user_id, chat_id)
+    with _active_sessions_lock:
+        active_session = _active_streaming_sessions.get(session_key)
+    if active_session is not None:
+        active_session.cancel()
+        # Brief delay to let the stream loop break
+        await asyncio.sleep(0.2)
+        log.info("Reset: cancelled active stream for user=%d chat=%d", user_id, chat_id)
+
     # Read language BEFORE reset (reset clears sticky language)
-    lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+    raw_lang = await chat_service.get_chat_language(user_id, chat_id)
+    lang = raw_lang or "de"
 
     await chat_service.reset(user_id, chat_id)
+
+    # Restore sticky language after reset (language preference survives /reset)
+    if raw_lang is not None:
+        await chat_service.set_chat_language(user_id, chat_id, raw_lang)
+
     reset_msg = (
         _RESET_TEXTS.get(lang, _RESET_TEXTS["en"])
         if lang != "de"
@@ -986,11 +1066,7 @@ async def handle_lang_command(
         "vi": "Tiếng Việt",
     }
     name = lang_names.get(lang_code, lang_code)
-    lang_msg = (
-        f"Language changed: {name} ({lang_code})"
-        if lang_code != "de"
-        else f"Sprache gewechselt: {name} ({lang_code})"
-    )
+    lang_msg = get_text(LANG_CHANGED_TEXTS, lang_code, name=name, code=lang_code)
     await update.message.reply_text(lang_msg)
     await chat_service.save_static_response_to_history(user_id, chat_id, lang_msg)
     log.info("User %d set language to '%s' in chat %d", user_id, lang_code, chat_id)
@@ -1023,17 +1099,18 @@ async def handle_save_command(
     user = update.effective_user
     user_id: int = user.id if user else 0
     username: str | None = user.username if user else None
+    chat_id: int = update.effective_chat.id if update.effective_chat else 0
+
+    chat_service = _get_chat_service(context)
+    _save_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
 
     # Must be a reply to another message
     reply_msg = update.message.reply_to_message
     if reply_msg is None:
-        await update.message.reply_text(
-            "Reply to a bot message with /save to bookmark it."
-        )
+        await update.message.reply_text(get_text(BOOKMARK_SAVE_HINT_TEXTS, _save_lang))
         return
 
     msg_id: int = reply_msg.message_id
-    chat_id: int = update.effective_chat.id
 
     # Determine content: cache first, then message text
     content: str | None = get_cached_response(chat_id, msg_id)
@@ -1043,14 +1120,18 @@ async def handle_save_command(
         content = "(content not available)"
 
     bookmark_service = _get_bookmark_service(context)
-    was_saved, user_message = bookmark_service.save_or_toggle_bookmark(
+    was_saved, _user_message = bookmark_service.save_or_toggle_bookmark(
         user_id=user_id,
         username=username,
         chat_id=chat_id,
         message_id=msg_id,
         content=content,
     )
-    await update.message.reply_text(f"✓ {user_message}")
+    _bm_text = get_text(
+        BOOKMARK_SAVED_TEXTS if was_saved else BOOKMARK_REMOVED_TEXTS,
+        _save_lang,
+    )
+    await update.message.reply_text(f"✓ {_bm_text}")
     log.info(
         "Bookmark %s via /save: user=%s message_id=%d",
         "saved" if was_saved else "removed",
@@ -1080,10 +1161,14 @@ async def handle_bookmarks_command(
     """
     user = update.effective_user
     user_id: int = user.id if user else 0
+    _bm_chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
     args: list[str] = context.args or []
 
     username: str | None = user.username if user else None
+
+    chat_service = _get_chat_service(context)
+    _bm_lang = await chat_service.get_chat_language(user_id, _bm_chat_id) or "de"
 
     bookmark_service = _get_bookmark_service(context)
 
@@ -1094,7 +1179,7 @@ async def handle_bookmarks_command(
 
         if not results:
             await update.message.reply_text(
-                f"No bookmarks matching '{query_term}' found."
+                get_text(MEMORY_SEARCH_NO_RESULTS_TEXTS, _bm_lang, query=query_term)
             )
             log_command_audit(
                 action="list_bookmarks",
@@ -1135,10 +1220,7 @@ async def handle_bookmarks_command(
     bm_chat_id = update.effective_chat.id if update.effective_chat else 0
 
     if not bookmarks:
-        await update.message.reply_text(
-            "You have no bookmarks yet. "
-            "Reply to a bot message with /save to bookmark it."
-        )
+        await update.message.reply_text(get_text(BOOKMARK_LIST_EMPTY_TEXTS, _bm_lang))
         log_command_audit(
             action="list_bookmarks",
             user_id=user_id,
@@ -1262,6 +1344,10 @@ async def handle_remember_command(
     content: str = ""
     reply_msg = update.message.reply_to_message
 
+    chat_service = _get_chat_service(context)
+    chat_id: int = update.effective_chat.id if update.effective_chat else 0
+    _remember_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+
     if reply_msg and reply_msg.text:
         # Reply to bot message: save bot response
         content = reply_msg.text
@@ -1273,15 +1359,13 @@ async def handle_remember_command(
         # No reply: save text directly
         content = " ".join(args)
     else:
-        await update.message.reply_text(
-            "Usage:\n"
-            "/remember <text>  save text\n"
-            "/remember <label>  (as reply)  save bot response with label"
-        )
+        await update.message.reply_text(get_text(REMEMBER_USAGE_TEXTS, _remember_lang))
         return
 
     entry_id = memory_service.remember_episodic(user_id=user_id, content=content)
-    await update.message.reply_text(f"Saved. [{entry_id}]")
+    await update.message.reply_text(
+        get_text(REMEMBER_SAVED_TEXTS, _remember_lang, entry_id=entry_id)
+    )
     log.info("User %d remembered: %s (id=%s)", user_id, content[:50], entry_id)
     log_command_audit(
         action="remember",
@@ -1309,7 +1393,11 @@ async def handle_memory_command(
 
     user = update.effective_user
     user_id: int = user.id if user else 0
+    chat_id: int = update.effective_chat.id if update.effective_chat else 0
     args: list[str] = context.args or []
+
+    chat_service = _get_chat_service(context)
+    _mem_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
 
     # /memory search <query>
     if len(args) >= 2 and args[0].lower() == "search":
@@ -1318,12 +1406,17 @@ async def handle_memory_command(
 
         if not results:
             await update.message.reply_text(
-                f"No memories matching '{query_term}' found."
+                get_text(MEMORY_SEARCH_NO_RESULTS_TEXTS, _mem_lang, query=query_term)
             )
             return
 
         lines: list[str] = [
-            f"Search results for '{query_term}' ({len(results)} matches):\n"
+            get_text(
+                MEMORY_SEARCH_HEADER_TEXTS,
+                _mem_lang,
+                query=query_term,
+                count=len(results),
+            )
         ]
         for entry in results[:10]:
             lines.append(f"  [{entry['id']}] {entry['content'][:80]}")
@@ -1334,12 +1427,10 @@ async def handle_memory_command(
     entries = memory_service.list_recent(user_id, layer="episodic", limit=10)
 
     if not entries:
-        await update.message.reply_text(
-            "No memories saved yet. Use /remember <text> to save something."
-        )
+        await update.message.reply_text(get_text(MEMORY_EMPTY_TEXTS, _mem_lang))
         return
 
-    lines: list[str] = [f"Last {len(entries)} memories:\n"]
+    lines: list[str] = [get_text(MEMORY_HEADER_TEXTS, _mem_lang, count=len(entries))]
     for entry in entries:
         lines.append(f"  [{entry['id']}] {entry['content'][:80]}")
     await update.message.reply_text("\n".join(lines))
@@ -1361,28 +1452,26 @@ async def handle_forget_command(
 
     user = update.effective_user
     user_id: int = user.id if user else 0
+    chat_id: int = update.effective_chat.id if update.effective_chat else 0
     args: list[str] = context.args or []
 
+    chat_service = _get_chat_service(context)
+    _forget_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+
     if not args:
-        await update.message.reply_text(
-            "Usage: /forget <entry_id>\n\nFind IDs via /memory"
-        )
+        await update.message.reply_text(get_text(FORGET_USAGE_TEXTS, _forget_lang))
         return
 
-    entry_id = args[0].strip()
+    entry_id = args[0].strip().strip("[]")
     deleted = memory_service.forget(user_id, entry_id)
 
     if deleted:
-        forget_msg = (
-            f"Forgotten: {entry_id}\n\n"
-            "Note: If the content is in the current conversation, "
-            "use /reset for a full restart."
-        )
+        forget_msg = get_text(FORGET_SUCCESS_TEXTS, _forget_lang, entry_id=entry_id)
         await update.message.reply_text(forget_msg)
         log.info("User %d forgot memory: %s", user_id, entry_id)
     else:
         await update.message.reply_text(
-            f"Entry '{entry_id}' not found or does not belong to you."
+            get_text(FORGET_NOT_FOUND_TEXTS, _forget_lang, entry_id=entry_id)
         )
     log_command_audit(
         action="forget",
@@ -1619,8 +1708,11 @@ _MODEL_STRINGS: dict[str, dict[str, str]] = {
 
 
 def _get_model_strings(lang: str = "de") -> dict[str, str]:
-    """Returns model i18n strings for the given language."""
-    return _MODEL_STRINGS.get(lang, _MODEL_STRINGS["de"])
+    """Returns model i18n strings for the given language.
+
+    Falls back to EN for unsupported languages (not DE).
+    """
+    return _MODEL_STRINGS.get(lang, _MODEL_STRINGS["en"])
 
 
 def _get_model_service(context: ContextTypes.DEFAULT_TYPE) -> Any:
