@@ -8,6 +8,9 @@ Covers:
     - Empty entries
     - translate_entries batch
     - Cache eviction at max size
+    - Batch translation (single LLM call for multiple entries)
+    - Parallel batches for large lists
+    - Partial cache hits
 """
 
 from __future__ import annotations
@@ -17,6 +20,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from application.memory_translation_service import (
+    BATCH_SIZE,
+    _BREAK_MARKER,
     _MAX_CACHE_SIZE,
     _translation_cache,
     cache_size,
@@ -174,14 +179,17 @@ class TestTranslateEntries:
     @pytest.mark.asyncio
     async def test_batch_translates_all_entries(self) -> None:
         """All entries in a batch are translated."""
-        router = _make_router(response_text="translated text")
+        # Build response with break markers for batch mode
+        batch_response = _BREAK_MARKER.join(["I like cats", "I like dogs"])
+        router = _make_router(response_text=batch_response)
         entries = [
             {"id": "ep_a", "content": "Ich mag Katzen"},
             {"id": "ep_b", "content": "Ich mag Hunde"},
         ]
         result = await translate_entries(entries, "en", router)
         assert len(result) == 2
-        assert all(e["content"] == "translated text" for e in result)
+        assert result[0]["content"] == "I like cats"
+        assert result[1]["content"] == "I like dogs"
 
     @pytest.mark.asyncio
     async def test_batch_preserves_non_content_fields(self) -> None:
@@ -218,6 +226,188 @@ class TestTranslateEntries:
         result = await translate_entries(entries, "en", router)
         assert result[0]["content"] == ""
         router.route.assert_not_called()
+
+
+class TestBatchTranslation:
+    """Tests for batch translation performance optimization."""
+
+    @pytest.mark.asyncio
+    async def test_batch_translates_multiple_entries_in_one_call(self) -> None:
+        """Multiple entries (<=BATCH_SIZE) result in exactly one LLM call."""
+        batch_response = _BREAK_MARKER.join(
+            [
+                "I like cats",
+                "I like dogs",
+                "I like fish",
+                "I like birds",
+            ]
+        )
+        router = _make_router(response_text=batch_response)
+
+        entries = [
+            {"id": "ep_b1", "content": "Ich mag Katzen"},
+            {"id": "ep_b2", "content": "Ich mag Hunde"},
+            {"id": "ep_b3", "content": "Ich mag Fische"},
+            {"id": "ep_b4", "content": "Ich mag Voegel"},
+        ]
+
+        result = await translate_entries(entries, "en", router)
+
+        # Only 1 LLM call for all 4 entries
+        assert router.route.call_count == 1
+        assert len(result) == 4
+        assert result[0]["content"] == "I like cats"
+        assert result[1]["content"] == "I like dogs"
+        assert result[2]["content"] == "I like fish"
+        assert result[3]["content"] == "I like birds"
+
+    @pytest.mark.asyncio
+    async def test_batch_parses_break_marker_correctly(self) -> None:
+        """Break marker parsing correctly splits and trims translations."""
+        # Include extra whitespace around translations
+        batch_response = f" First translation \n{_BREAK_MARKER}  Second translation  "
+        router = _make_router(response_text=batch_response)
+
+        entries = [
+            {"id": "ep_p1", "content": "Das ist der erste deutsche Satz"},
+            {"id": "ep_p2", "content": "Das ist der zweite deutsche Satz"},
+        ]
+
+        result = await translate_entries(entries, "en", router)
+
+        assert result[0]["content"] == "First translation"
+        assert result[1]["content"] == "Second translation"
+
+    @pytest.mark.asyncio
+    async def test_batch_falls_back_on_parse_error(self) -> None:
+        """When LLM returns wrong number of segments, originals are returned."""
+        # Return only 2 translations for 3 entries
+        batch_response = _BREAK_MARKER.join(["Translation 1", "Translation 2"])
+        router = _make_router(response_text=batch_response)
+
+        entries = [
+            {"id": "ep_f1", "content": "Erster deutscher Satz"},
+            {"id": "ep_f2", "content": "Zweiter deutscher Satz"},
+            {"id": "ep_f3", "content": "Dritter deutscher Satz"},
+        ]
+
+        result = await translate_entries(entries, "en", router)
+
+        # Fallback: return originals
+        assert result[0]["content"] == "Erster deutscher Satz"
+        assert result[1]["content"] == "Zweiter deutscher Satz"
+        assert result[2]["content"] == "Dritter deutscher Satz"
+
+    @pytest.mark.asyncio
+    async def test_parallel_batches_for_large_lists(self) -> None:
+        """Lists larger than BATCH_SIZE are split into parallel batches."""
+        num_entries = 25
+        call_count = 0
+
+        async def _batch_side_effect(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            # Parse how many notes are in this batch from the prompt header.
+            # The prompt starts with "Translate the following N notes to ..."
+            # and the instruction text itself mentions the break marker once
+            # as a literal example in quotes. The actual notes follow after
+            # the instruction block, separated by the break marker.
+            prompt_text = kwargs.get("prompt", "")
+            import re
+
+            m = re.search(r"Translate the following (\d+) notes", prompt_text)
+            num_in_batch = int(m.group(1)) if m else 1
+            # Return correct number of translations
+            translations = [f"Translated note {i}" for i in range(num_in_batch)]
+            return ProviderResponse(
+                text=_BREAK_MARKER.join(translations),
+                duration_seconds=0.5,
+                provider_name="claude",
+            )
+
+        router = MagicMock()
+        router.route = AsyncMock(side_effect=_batch_side_effect)
+
+        entries = [
+            {
+                "id": f"ep_large_{i}",
+                "content": f"Das ist mein deutscher Satz Nummer {i}",
+            }
+            for i in range(num_entries)
+        ]
+
+        result = await translate_entries(entries, "en", router)
+
+        # 25 entries / BATCH_SIZE(10) = 3 batches
+        expected_batches = (num_entries + BATCH_SIZE - 1) // BATCH_SIZE
+        assert call_count == expected_batches
+        assert len(result) == num_entries
+        # All entries should be translated (not original)
+        for entry in result:
+            assert entry["content"].startswith("Translated note")
+
+    @pytest.mark.asyncio
+    async def test_cache_hits_skip_batch_call(self) -> None:
+        """When all entries are cached, no LLM call is made."""
+        router = _make_router()
+
+        entries = [
+            {"id": "ep_ch1", "content": "Ich mag Katzen"},
+            {"id": "ep_ch2", "content": "Ich mag Hunde"},
+            {"id": "ep_ch3", "content": "Ich mag Fische"},
+        ]
+
+        # Pre-populate cache
+        _translation_cache[("ep_ch1", "en")] = "I like cats"
+        _translation_cache[("ep_ch2", "en")] = "I like dogs"
+        _translation_cache[("ep_ch3", "en")] = "I like fish"
+
+        result = await translate_entries(entries, "en", router)
+
+        # No LLM call needed
+        router.route.assert_not_called()
+        assert result[0]["content"] == "I like cats"
+        assert result[1]["content"] == "I like dogs"
+        assert result[2]["content"] == "I like fish"
+
+    @pytest.mark.asyncio
+    async def test_partial_cache_hits_only_translate_remainder(self) -> None:
+        """When some entries are cached, only uncached ones go to LLM."""
+        # 3 entries cached, 2 need translation
+        _translation_cache[("ep_pc1", "en")] = "Cached translation 1"
+        _translation_cache[("ep_pc2", "en")] = "Cached translation 2"
+        _translation_cache[("ep_pc3", "en")] = "Cached translation 3"
+
+        # Batch response for the 2 uncached entries
+        batch_response = _BREAK_MARKER.join(
+            [
+                "Fresh translation 4",
+                "Fresh translation 5",
+            ]
+        )
+        router = _make_router(response_text=batch_response)
+
+        entries = [
+            {"id": "ep_pc1", "content": "Ich habe einen deutschen Text hier"},
+            {"id": "ep_pc2", "content": "Ich habe noch einen deutschen Text hier"},
+            {"id": "ep_pc3", "content": "Das ist der dritte deutsche Satz"},
+            {"id": "ep_pc4", "content": "Das ist mein vierter deutscher Satz"},
+            {"id": "ep_pc5", "content": "Das ist mein fuenfter deutscher Satz"},
+        ]
+
+        result = await translate_entries(entries, "en", router)
+
+        # Only 1 LLM call for the 2 uncached entries
+        assert router.route.call_count == 1
+        assert result[0]["content"] == "Cached translation 1"
+        assert result[1]["content"] == "Cached translation 2"
+        assert result[2]["content"] == "Cached translation 3"
+        assert result[3]["content"] == "Fresh translation 4"
+        assert result[4]["content"] == "Fresh translation 5"
+
+        # Newly translated entries should now be cached
+        assert _translation_cache[("ep_pc4", "en")] == "Fresh translation 4"
+        assert _translation_cache[("ep_pc5", "en")] == "Fresh translation 5"
 
 
 class TestCacheManagement:
