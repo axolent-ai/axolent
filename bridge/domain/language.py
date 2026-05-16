@@ -1,19 +1,43 @@
-"""Simple language detection for user messages.
+"""Language detection for user messages.
 
-No external dependencies. Uses heuristics based on
-frequent words and character patterns. Sufficient for
-distinguishing the most common languages (de, en, es, fr).
+Supports 20 languages via Unicode script detection and
+marker-word heuristics. No external dependencies.
 
-Fallback: "de" (default language from onboarding).
+Detection strategy:
+1. Non-Latin scripts (Arabic, Chinese, Japanese, Korean, Hindi,
+   Thai, Cyrillic) are detected deterministically via Unicode ranges.
+2. Cyrillic text is further classified as Russian vs Ukrainian
+   via distinctive markers.
+3. Latin-script languages are scored by frequency of marker words.
+
+Fallback: "en" (international default).
 """
 
 import logging
 import re
+from typing import Optional
 
 log = logging.getLogger(__name__)
 
-# Frequent function words per language (lowercase).
-# Short, unambiguous words that appear in almost every sentence.
+# --- Unicode script patterns for non-Latin detection ---
+
+_SCRIPT_PATTERNS: dict[str, re.Pattern] = {
+    "ar": re.compile(r"[؀-ۿݐ-ݿࢠ-ࣿ]+"),
+    "zh": re.compile(r"[一-鿿㐀-䶿]+"),
+    "ja": re.compile(r"[぀-ゟ゠-ヿ]+"),
+    "ko": re.compile(r"[가-힯ᄀ-ᇿ]+"),
+    "hi": re.compile(r"[ऀ-ॿ]+"),
+    "th": re.compile(r"[฀-๿]+"),
+    "cyrillic": re.compile(r"[Ѐ-ӿ]+"),
+}
+
+# Ukrainian-specific characters and markers (for Cyrillic disambiguation)
+_UKRAINIAN_CHARS = re.compile(r"[їієґЇІЄҐ]")
+_UKRAINIAN_MARKERS = {"i", "та", "що", "як", "це", "але", "або", "ще", "вiн"}
+_RUSSIAN_MARKERS = {"и", "в", "не", "на", "что", "как", "это", "он", "она", "они"}
+
+# --- Marker words for Latin-script languages ---
+
 _MARKERS: dict[str, set[str]] = {
     "en": {
         "i",
@@ -178,7 +202,6 @@ _MARKERS: dict[str, set[str]] = {
         "mein",
         "dein",
         "sein",
-        "ihr",
         "unser",
         "euer",
         "nicht",
@@ -215,37 +238,36 @@ _MARKERS: dict[str, set[str]] = {
         "kein",
         "keine",
     },
-    "es": {
-        "el",
-        "la",
-        "los",
-        "las",
-        "un",
-        "una",
-        "unos",
-        "unas",
-        "es",
-        "son",
-        "fue",
-        "era",
-        "tiene",
-        "hay",
-        "yo",
-        "tu",
-        "nosotros",
-        "ellos",
-        "ellas",
-        "no",
-        "pero",
-        "como",
-        "por",
-        "para",
-        "con",
-        "que",
-        "muy",
-        "bien",
-        "gracias",
-        "hola",
+    "nl": {
+        "het",
+        "een",
+        "van",
+        "voor",
+        "niet",
+        "dat",
+        "zijn",
+        "naar",
+        "ook",
+        "aan",
+        "maar",
+        "nog",
+        "wel",
+        "deze",
+        "werd",
+        "wordt",
+        "hebben",
+        "heeft",
+        "kunnen",
+        "moeten",
+        "willen",
+        "zullen",
+        "deze",
+        "meer",
+        "veel",
+        "heel",
+        "goed",
+        "waar",
+        "hier",
     },
     "fr": {
         "le",
@@ -286,77 +308,403 @@ _MARKERS: dict[str, set[str]] = {
         "oui",
         "non",
     },
+    "es": {
+        "el",
+        "la",
+        "los",
+        "las",
+        "un",
+        "una",
+        "unos",
+        "unas",
+        "es",
+        "son",
+        "fue",
+        "era",
+        "tiene",
+        "hay",
+        "yo",
+        "tu",
+        "nosotros",
+        "ellos",
+        "ellas",
+        "no",
+        "pero",
+        "como",
+        "por",
+        "para",
+        "con",
+        "que",
+        "muy",
+        "bien",
+        "gracias",
+        "hola",
+    },
+    "it": {
+        "il",
+        "lo",
+        "la",
+        "gli",
+        "le",
+        "un",
+        "una",
+        "uno",
+        "di",
+        "che",
+        "non",
+        "sono",
+        "per",
+        "questo",
+        "quella",
+        "come",
+        "anche",
+        "con",
+        "ma",
+        "piu",
+        "molto",
+        "bene",
+        "grazie",
+        "ciao",
+        "cosa",
+        "dove",
+        "quando",
+        "perche",
+        "ancora",
+        "sempre",
+        "tutto",
+        "ogni",
+    },
+    "pt": {
+        "o",
+        "a",
+        "os",
+        "as",
+        "um",
+        "uma",
+        "de",
+        "que",
+        "do",
+        "da",
+        "em",
+        "para",
+        "com",
+        "nao",
+        "uma",
+        "por",
+        "mais",
+        "como",
+        "mas",
+        "foi",
+        "ao",
+        "ele",
+        "ela",
+        "seu",
+        "sua",
+        "ou",
+        "ser",
+        "quando",
+        "muito",
+        "nos",
+        "ja",
+        "eu",
+        "tambem",
+        "obrigado",
+    },
+    "pl": {
+        "jest",
+        "nie",
+        "to",
+        "na",
+        "tak",
+        "ale",
+        "jak",
+        "bardzo",
+        "dobrze",
+        "gdzie",
+        "kiedy",
+        "dlaczego",
+        "jestem",
+        "masz",
+        "moze",
+        "tutaj",
+        "tam",
+        "teraz",
+        "jeszcze",
+        "tylko",
+        "tego",
+        "jego",
+        "jej",
+        "nasz",
+        "wasz",
+        "wszystko",
+        "kazdy",
+    },
+    "sv": {
+        "och",
+        "att",
+        "det",
+        "som",
+        "med",
+        "av",
+        "den",
+        "har",
+        "inte",
+        "till",
+        "var",
+        "jag",
+        "kan",
+        "ska",
+        "alla",
+        "mycket",
+        "denna",
+        "efter",
+        "bara",
+        "hur",
+        "vad",
+        "finns",
+        "sedan",
+        "utan",
+        "eller",
+        "men",
+        "helt",
+        "mellan",
+        "redan",
+    },
+    "tr": {
+        "bir",
+        "bu",
+        "olan",
+        "gibi",
+        "daha",
+        "ancak",
+        "sonra",
+        "bunu",
+        "onun",
+        "kadar",
+        "olarak",
+        "nasil",
+        "neden",
+        "evet",
+        "hayir",
+        "burada",
+        "orada",
+        "simdi",
+        "sadece",
+        "hepsi",
+        "bazi",
+        "cok",
+        "iyi",
+        "tesekkur",
+    },
+    "id": {
+        "yang",
+        "dan",
+        "untuk",
+        "dengan",
+        "ini",
+        "itu",
+        "adalah",
+        "dari",
+        "pada",
+        "akan",
+        "sudah",
+        "bisa",
+        "ada",
+        "tidak",
+        "juga",
+        "seperti",
+        "mereka",
+        "kami",
+        "saya",
+        "kita",
+        "sangat",
+        "baik",
+        "bagaimana",
+        "kenapa",
+        "dimana",
+        "kapan",
+        "terima",
+        "kasih",
+    },
+    "vi": {
+        "cua",
+        "khong",
+        "trong",
+        "nhung",
+        "nhu",
+        "cac",
+        "mot",
+        "nay",
+        "duoc",
+        "khi",
+        "cung",
+        "rat",
+        "tot",
+        "bao",
+        "tai",
+        "sao",
+        "noi",
+        "day",
+        "hom",
+        "nay",
+    },
 }
 
-# Language-specific character patterns
+# Diacritical character patterns for Latin-script disambiguation
 _CHAR_HINTS: dict[str, re.Pattern] = {
     "de": re.compile(r"[äöüßÄÖÜ]"),
     "fr": re.compile(r"[àâéèêëîïôùûüçÀÂÉÈÊËÎÏÔÙÛÜÇ]"),
     "es": re.compile(r"[áéíóúñ¿¡ÁÉÍÓÚÑ]"),
+    "pt": re.compile(r"[ãõâêôàáéíóúçÃÕÂÊÔÀÁÉÍÓÚÇ]"),
+    "pl": re.compile(r"[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]"),
+    "sv": re.compile(r"[åÅ]"),
+    "tr": re.compile(r"[çğışöüÇĞİŞÖÜ]"),
+    "vi": re.compile(
+        r"[àáạảãăắằặẳẵâấầậẩẫèéẹẻẽêếềệểễìíịỉĩòóọỏõôốồộổỗơớờợởỡùúụủũưứừựửữỳýỵỷỹđ]"
+    ),
 }
+
+# Word extraction pattern (includes accented chars and apostrophes)
+_WORD_PATTERN = re.compile(
+    r"[a-zA-ZäöüßÄÖÜàâéèêëîïôùûüçáéíóúñãõåąćęłńśźżğışđ"
+    r"ắằặẳẵấầậẩẫếềệểễốồộổỗớờợởỡứừựửữỳýỵỷỹ'']+"
+)
+
+
+def _detect_script(text: str) -> Optional[str]:
+    """Detect language from non-Latin Unicode scripts.
+
+    Returns language code if a non-Latin script dominates,
+    None otherwise (meaning Latin-based detection should proceed).
+
+    Args:
+        text: Raw user message.
+
+    Returns:
+        Language code or None.
+    """
+    # Count characters per script
+    script_counts: dict[str, int] = {}
+    for script, pattern in _SCRIPT_PATTERNS.items():
+        matches = pattern.findall(text)
+        if matches:
+            char_count = sum(len(m) for m in matches)
+            script_counts[script] = char_count
+
+    if not script_counts:
+        return None
+
+    # Find dominant script
+    best_script = max(script_counts, key=script_counts.get)  # type: ignore[arg-type]
+    best_count = script_counts[best_script]
+
+    # Require at least 2 characters of the script
+    if best_count < 2:
+        return None
+
+    # Special case: Cyrillic needs ru vs uk disambiguation
+    if best_script == "cyrillic":
+        return _disambiguate_cyrillic(text)
+
+    # Special case: CJK could be Chinese or Japanese
+    # If hiragana/katakana present, it's Japanese
+    if best_script == "zh" and "ja" in script_counts:
+        return "ja"
+
+    return best_script
+
+
+def _disambiguate_cyrillic(text: str) -> str:
+    """Distinguish Russian from Ukrainian in Cyrillic text.
+
+    Args:
+        text: Text containing Cyrillic characters.
+
+    Returns:
+        "uk" for Ukrainian, "ru" for Russian.
+    """
+    # Check for Ukrainian-specific characters first
+    if _UKRAINIAN_CHARS.search(text):
+        return "uk"
+
+    # Check marker words
+    words = set(text.lower().split())
+    uk_hits = len(words & _UKRAINIAN_MARKERS)
+    ru_hits = len(words & _RUSSIAN_MARKERS)
+
+    if uk_hits > ru_hits:
+        return "uk"
+    return "ru"
 
 
 def _detect_language_core(text: str) -> tuple[str, float]:
     """Internal detection logic: returns (language, confidence).
 
+    Strategy:
+    1. Check for non-Latin scripts (deterministic).
+    2. Score Latin-script languages by marker words + char hints.
+    3. Return best match with confidence score.
+
     Confidence is a value between 0.0 and 1.0 indicating
-    how certain the detection is. Higher score = more marker matches.
+    how certain the detection is.
 
     Args:
         text: User message.
 
     Returns:
         Tuple of (ISO-639-1 language code, confidence score).
-        Fallback: ("de", 0.0).
+        Fallback: ("en", 0.0).
     """
     if not text or not text.strip():
-        return "de", 0.0
+        return "en", 0.0
+
+    # Step 1: Non-Latin script detection
+    script_lang = _detect_script(text)
+    if script_lang:
+        return script_lang, 1.0
 
     text_lower = text.lower().strip()
 
     # Normalize smart quotes before marker match
     text_lower = text_lower.replace("‘", "'").replace("’", "'")
 
-    # Step 1: character-based hints (umlauts = German, accents = French, etc.)
+    # Step 2: Character-based hints (diacritics)
     char_scores: dict[str, int] = {}
     for lang, pattern in _CHAR_HINTS.items():
         count = len(pattern.findall(text))
         if count > 0:
             char_scores[lang] = count
 
-    # Step 2: word-based analysis
-    # Extract words (alphabetic only + apostrophes for "don't" etc.)
-    words = re.findall(r"[a-zA-ZäöüßÄÖÜàâéèêëîïôùûüçáéíóúñ']+", text_lower)
+    # Step 3: Word-based analysis
+    words = _WORD_PATTERN.findall(text_lower)
 
     if not words:
-        return "de", 0.0
+        return "en", 0.0
 
     word_set = set(words)
     scores: dict[str, float] = {}
 
     for lang, markers in _MARKERS.items():
         matches = word_set & markers
-        # Score = number of matched marker words / total word count
         if matches:
             scores[lang] = len(matches) / len(words)
 
-    # Add character hints as bonus
+    # Add character hints as bonus (weighted)
     for lang, char_count in char_scores.items():
-        scores[lang] = scores.get(lang, 0) + (char_count * 0.1)
+        scores[lang] = scores.get(lang, 0) + (char_count * 0.15)
 
     if not scores:
-        return "de", 0.0
+        return "en", 0.0
 
     # Language with highest score wins
     best_lang = max(scores, key=scores.get)  # type: ignore[arg-type]
     best_score = scores[best_lang]
 
-    # Minimum threshold: if best score is very low, default to German
+    # Minimum threshold
     if best_score < 0.05:
-        return "de", 0.0
+        return "en", 0.0
 
     # Normalize confidence: score of 0.2+ counts as very certain (1.0)
-    # Score of 0.05 is minimum (just above threshold) = 0.25
     confidence = min(1.0, best_score / 0.2)
 
     return best_lang, confidence
@@ -365,12 +713,15 @@ def _detect_language_core(text: str) -> tuple[str, float]:
 def detect_language(text: str) -> str:
     """Detect the language of a short text via heuristic.
 
+    Supports 20 languages: de, en, nl, fr, es, it, pt, pl, ru, tr,
+    sv, ja, ko, zh, uk, ar, hi, id, th, vi.
+
     Args:
         text: User message.
 
     Returns:
-        ISO-639-1 language code ("en", "de", "es", "fr").
-        Fallback: "de".
+        ISO-639-1 language code.
+        Fallback: "en".
     """
     lang, _ = _detect_language_core(text)
     return lang

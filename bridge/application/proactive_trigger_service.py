@@ -236,12 +236,31 @@ class ProactiveTriggerService:
 
         return (active_hours[0], active_hours[-1])
 
+    @staticmethod
+    def _get_time_of_day(hour: int) -> str:
+        """Return time-of-day category for a given hour.
+
+        Args:
+            hour: Hour of day (0-23).
+
+        Returns:
+            One of "Morning", "Afternoon", "Evening", "Night".
+        """
+        if 5 <= hour <= 11:
+            return "Morning"
+        elif 12 <= hour <= 17:
+            return "Afternoon"
+        elif 18 <= hour <= 21:
+            return "Evening"
+        else:
+            return "Night"
+
     def get_time_context_block(
         self, user_id: int, now: Optional[datetime] = None
     ) -> str:
         """Build a time/pattern awareness block for the system prompt.
 
-        Gives the LLM awareness of current time and user patterns.
+        Gives the LLM awareness of current local time and user patterns.
 
         Args:
             user_id: Telegram user ID.
@@ -250,7 +269,7 @@ class ProactiveTriggerService:
         Returns:
             Prompt block string (may be empty if no patterns detected).
         """
-        current = now or datetime.now(timezone.utc)
+        current = now or datetime.now()
         weekday_names = {
             0: "Monday",
             1: "Tuesday",
@@ -261,9 +280,12 @@ class ProactiveTriggerService:
             6: "Sunday",
         }
 
+        time_of_day = self._get_time_of_day(current.hour)
+
         lines = [
             "[TIME CONTEXT]",
-            f"Current time (UTC): {current.strftime('%Y-%m-%d %H:%M')}",
+            f"Current local time: {current.strftime('%Y-%m-%d %H:%M')}",
+            f"Time of day: {time_of_day}",
             f"Day: {weekday_names[current.weekday()]}",
         ]
 
@@ -271,9 +293,7 @@ class ProactiveTriggerService:
         record = self._activity.get(user_id)
         if record and len(record.message_timestamps) >= 20:
             start_h, end_h = self.get_active_hours(user_id)
-            lines.append(
-                f"User typically active: {start_h:02d}:00 to {end_h:02d}:00 UTC"
-            )
+            lines.append(f"User typically active: {start_h:02d}:00 to {end_h:02d}:00")
 
             # Detect if this is an unusual time for the user
             current_hour = current.hour

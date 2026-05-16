@@ -204,10 +204,10 @@ class TestTranslateEntries:
     async def test_batch_does_not_mutate_originals(self) -> None:
         """Original entry dicts are not modified."""
         router = _make_router(response_text="translated")
-        original = {"id": "ep_d", "content": "Originaltext"}
+        original = {"id": "ep_d", "content": "Das ist ein deutscher Text"}
         entries = [original]
         result = await translate_entries(entries, "en", router)
-        assert original["content"] == "Originaltext"
+        assert original["content"] == "Das ist ein deutscher Text"
         assert result[0]["content"] == "translated"
 
     @pytest.mark.asyncio

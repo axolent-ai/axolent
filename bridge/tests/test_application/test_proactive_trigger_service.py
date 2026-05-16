@@ -220,20 +220,51 @@ class TestReactiveTrigger:
 class TestTimeContextBlock:
     """Time context block for system prompt."""
 
-    def test_contains_current_time(self) -> None:
-        """Block contains current time."""
+    def test_contains_current_local_time(self) -> None:
+        """Block contains current local time (not UTC)."""
         service = ProactiveTriggerService()
-        now = datetime(2026, 5, 17, 14, 30, tzinfo=timezone.utc)
+        now = datetime(2026, 5, 17, 14, 30)
         block = service.get_time_context_block(123, now=now)
         assert "[TIME CONTEXT]" in block
-        assert "2026-05-17 14:30" in block
+        assert "Current local time: 2026-05-17 14:30" in block
         assert "Sunday" in block
+
+    def test_time_of_day_afternoon(self) -> None:
+        """Block shows 'Afternoon' for 14:30."""
+        service = ProactiveTriggerService()
+        now = datetime(2026, 5, 17, 14, 30)
+        block = service.get_time_context_block(123, now=now)
+        assert "Time of day: Afternoon" in block
+
+    def test_time_of_day_morning(self) -> None:
+        """Block shows 'Morning' for hours 5-11."""
+        service = ProactiveTriggerService()
+        for hour in [5, 7, 11]:
+            now = datetime(2026, 5, 17, hour, 0)
+            block = service.get_time_context_block(123, now=now)
+            assert "Time of day: Morning" in block, f"Failed for hour {hour}"
+
+    def test_time_of_day_evening(self) -> None:
+        """Block shows 'Evening' for hours 18-21."""
+        service = ProactiveTriggerService()
+        for hour in [18, 20, 21]:
+            now = datetime(2026, 5, 17, hour, 0)
+            block = service.get_time_context_block(123, now=now)
+            assert "Time of day: Evening" in block, f"Failed for hour {hour}"
+
+    def test_time_of_day_night(self) -> None:
+        """Block shows 'Night' for hours 22-4."""
+        service = ProactiveTriggerService()
+        for hour in [22, 23, 0, 1, 4]:
+            now = datetime(2026, 5, 17, hour, 0)
+            block = service.get_time_context_block(123, now=now)
+            assert "Time of day: Night" in block, f"Failed for hour {hour}"
 
     def test_weekend_indicator(self) -> None:
         """Block indicates weekend days."""
         service = ProactiveTriggerService()
         # Saturday
-        saturday = datetime(2026, 5, 16, 12, 0, tzinfo=timezone.utc)
+        saturday = datetime(2026, 5, 16, 12, 0)
         block = service.get_time_context_block(123, now=saturday)
         assert "weekend" in block.lower()
 
@@ -241,7 +272,7 @@ class TestTimeContextBlock:
         """Block does not indicate weekend on weekdays."""
         service = ProactiveTriggerService()
         # Wednesday
-        wednesday = datetime(2026, 5, 13, 12, 0, tzinfo=timezone.utc)
+        wednesday = datetime(2026, 5, 14, 12, 0)
         block = service.get_time_context_block(123, now=wednesday)
         assert "weekend" not in block.lower()
 
@@ -254,9 +285,16 @@ class TestTimeContextBlock:
                 ts = datetime(2026, 5, 1 + day, hour, 0, tzinfo=timezone.utc)
                 service.record_activity(123, timestamp=ts.timestamp())
 
-        now = datetime(2026, 5, 17, 12, 0, tzinfo=timezone.utc)
+        now = datetime(2026, 5, 17, 12, 0)
         block = service.get_time_context_block(123, now=now)
         assert "typically active" in block.lower()
+
+    def test_no_utc_in_block(self) -> None:
+        """Block must not contain 'UTC' label anymore."""
+        service = ProactiveTriggerService()
+        now = datetime(2026, 5, 17, 14, 30)
+        block = service.get_time_context_block(123, now=now)
+        assert "UTC" not in block
 
 
 class TestHasTimeReference:

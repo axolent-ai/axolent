@@ -31,22 +31,19 @@ class TestDetectForTextGuard:
         result = detect_for_text_guard("Yo soy un hombre y estoy aqui.")
         assert result == "es"
 
-    def test_empty_text_returns_de_default(self) -> None:
-        """Empty text falls back to 'de' (which has rules)."""
+    def test_empty_text_returns_en_default(self) -> None:
+        """Empty text falls back to 'en' (which has rules)."""
         result = detect_for_text_guard("")
-        assert result == "de"
+        assert result == "en"
 
     def test_unsupported_language_returns_none(self) -> None:
-        """Unsupported language returns None."""
-        # Chinese characters should not match any supported language
-        # The language detector will default to "de" for unknown text,
-        # but if it somehow returns a code we don't have rules for,
-        # detect_for_text_guard returns None.
-        # Since our detector defaults to "de" which we have rules for,
-        # most cases will return a language code.
-        # We test the None path with a known unsupported language
-        # by checking the underlying logic.
-        pass
+        """Unsupported language returns None when no rules exist."""
+        # The language detector now recognizes 20 languages including
+        # Chinese, Japanese, etc. If it returns a code without
+        # text-guard rules, detect_for_text_guard returns None.
+        # Chinese ("zh") is detected but has no text-guard rules.
+        result = detect_for_text_guard("你好世界这是一个测试")
+        assert result is None
 
 
 class TestDetectForTextGuardWithConfidence:
@@ -69,7 +66,7 @@ class TestDetectForTextGuardWithConfidence:
         assert conf > 0.3
 
     def test_empty_returns_low_confidence(self) -> None:
-        """Empty text returns de with 0.0 confidence."""
+        """Empty text returns en with 0.0 confidence (fallback)."""
         lang, conf = detect_for_text_guard_with_confidence("")
-        assert lang == "de"
+        assert lang == "en"
         assert conf == 0.0
