@@ -105,6 +105,10 @@ WHITELIST_PATHS = {
     "bridge/presentation/render.py",
     # Feature data: _STOP_WORDS_DE for keyword extraction (the words ARE the feature).
     "bridge/application/chat_service.py",
+    # Feature data: German nudge texts for proactive triggers (user-facing reminder strings).
+    "bridge/application/proactive_trigger_service.py",
+    # Feature data: German formality detection words (du/Sie) and English code-switching markers.
+    "bridge/application/style_adaption_service.py",
     # Feature data: _UMLAUT_REPLACEMENTS, _SS_TO_ESZETT_WORDS for German input
     # normalization. Umlauts in code ARE the feature.
     "bridge/application/task_router.py",

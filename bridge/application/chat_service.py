@@ -42,8 +42,10 @@ from infrastructure.providers.base import ProviderError
 if TYPE_CHECKING:
     from application.memory_service import MemoryService
     from application.model_service import ModelService
+    from application.proactive_trigger_service import ProactiveTriggerService
     from application.provider_router import ProviderRouter
     from application.self_awareness_service import SelfAwarenessService
+    from application.style_adaption_service import StyleAdaptionService
     from application.task_router import TaskRouter
     from infrastructure.providers.claude_persistent import ClaudePersistentProvider
 
@@ -212,12 +214,16 @@ class ChatService:
         model_service: "ModelService | None" = None,
         task_router: "TaskRouter | None" = None,
         self_awareness_service: "SelfAwarenessService | None" = None,
+        style_adaption_service: "StyleAdaptionService | None" = None,
+        proactive_trigger_service: "ProactiveTriggerService | None" = None,
     ) -> None:
         self.provider_router = provider_router
         self.memory_service = memory_service
         self.model_service = model_service
         self.task_router = task_router
         self.self_awareness_service = self_awareness_service
+        self.style_adaption_service = style_adaption_service
+        self.proactive_trigger_service = proactive_trigger_service
 
     def _get_memory_budget(self, provider_name: str | None = None) -> int:
         """Read the memory budget from ProviderCapabilities.
@@ -489,6 +495,36 @@ class ChatService:
             if memory_context:
                 effective_prompt = f"{effective_prompt}\n\n{memory_context}"
 
+            # P3: Style adaption (observe + inject profile)
+            if self.style_adaption_service is not None:
+                self.style_adaption_service.observe(uid, text)
+                style_block = self.style_adaption_service.get_prompt_block(uid, lang)
+                if style_block:
+                    effective_prompt = f"{effective_prompt}\n\n{style_block}"
+
+            # P1/P5: Proactive triggers (record activity + time context)
+            proactive_nudge = ""
+            if self.proactive_trigger_service is not None:
+                self.proactive_trigger_service.record_activity(uid)
+                # Inject time context into system prompt
+                time_block = self.proactive_trigger_service.get_time_context_block(uid)
+                if time_block:
+                    effective_prompt = f"{effective_prompt}\n\n{time_block}"
+                # Check proactive triggers
+                trigger_result = self.proactive_trigger_service.check_triggers(
+                    uid, cid, text, memory_entries=[]
+                )
+                if trigger_result.should_fire:
+                    proactive_nudge = trigger_result.nudge_text
+                # Check reactive triggers (memory-based)
+                if memory_context and self.memory_service is not None:
+                    entries = self.memory_service.list_recent(uid, "episodic", limit=5)
+                    reactive = self.proactive_trigger_service.check_reactive_trigger(
+                        uid, cid, text, entries
+                    )
+                    if reactive.should_fire and not proactive_nudge:
+                        proactive_nudge = reactive.nudge_text
+
             # Phase 2a: TaskRouter classification + model resolution
             task_slot_name: str | None = None
             task_score: int = 0
@@ -578,6 +614,10 @@ class ChatService:
                     detected_language=lang,
                     provider_name=result.provider_name,
                 )
+
+            # P1/P5: Append proactive nudge to response
+            if proactive_nudge:
+                response = f"{response}{proactive_nudge}"
 
             # C-3: System prompt leakage guard
             leak_replacement = check_for_system_prompt_leakage(
@@ -781,6 +821,20 @@ class ChatService:
         effective_prompt = build_effective_prompt(system_prompt, lang)
         if memory_context:
             effective_prompt = f"{effective_prompt}\n\n{memory_context}"
+
+        # P3: Style adaption (observe + inject profile) [streaming path]
+        if self.style_adaption_service is not None:
+            self.style_adaption_service.observe(uid, text)
+            style_block = self.style_adaption_service.get_prompt_block(uid, lang)
+            if style_block:
+                effective_prompt = f"{effective_prompt}\n\n{style_block}"
+
+        # P1/P5: Proactive triggers (record activity + time context) [streaming path]
+        if self.proactive_trigger_service is not None:
+            self.proactive_trigger_service.record_activity(uid)
+            time_block = self.proactive_trigger_service.get_time_context_block(uid)
+            if time_block:
+                effective_prompt = f"{effective_prompt}\n\n{time_block}"
 
         # Phase 2a: TaskRouter classification + model resolution
         user_model: str | None = None
