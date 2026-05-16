@@ -923,9 +923,10 @@ async def handle_reset_command(
 async def handle_lang_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Handles /lang <code>. Sets the sticky language for this chat.
+    """Handles /lang [code]. Sets the sticky language for this chat.
 
-    Usage: /lang de, /lang en, /lang es, /lang fr, etc.
+    Without argument: shows inline keyboard with all supported languages.
+    With argument: sets language directly (e.g. /lang de).
     """
     chat_service = _get_chat_service(context)
 
@@ -935,10 +936,12 @@ async def handle_lang_command(
 
     args: list[str] = context.args or []
     if not args:
-        supported = ", ".join(sorted(_SUPPORTED_LANGUAGES))
+        # Show inline keyboard with all languages
         _usage_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+        keyboard = _build_lang_keyboard()
         await update.message.reply_text(
-            t("lang.usage", _usage_lang, supported=supported)
+            t("lang.list_header", _usage_lang),
+            reply_markup=keyboard,
         )
         return
 
@@ -951,36 +954,89 @@ async def handle_lang_command(
         )
         return
 
+    await _apply_lang_change(update, chat_service, user_id, chat_id, lang_code, user)
+
+
+def _build_lang_keyboard() -> InlineKeyboardMarkup:
+    """Build an InlineKeyboardMarkup with all supported languages (3 columns)."""
+    from i18n.domain.i18n import get_supported_languages
+
+    languages = get_supported_languages()
+    # Only show languages that are in _SUPPORTED_LANGUAGES, sorted by code
+    languages = sorted(
+        [lang for lang in languages if lang["code"] in _SUPPORTED_LANGUAGES],
+        key=lambda x: x["code"],
+    )
+
+    buttons: list[InlineKeyboardButton] = []
+    for lang in languages:
+        label = f"{lang['native']} ({lang['code']})"
+        buttons.append(
+            InlineKeyboardButton(text=label, callback_data=f"lang_set:{lang['code']}")
+        )
+
+    # Arrange in rows of 3
+    rows: list[list[InlineKeyboardButton]] = []
+    for i in range(0, len(buttons), 3):
+        rows.append(buttons[i : i + 3])
+
+    return InlineKeyboardMarkup(rows)
+
+
+@require_whitelist
+@require_private_chat
+async def handle_lang_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handles lang_set:<code> callback from inline keyboard."""
+    query = update.callback_query
+    data: str = query.data or ""
+
+    if not data.startswith("lang_set:"):
+        return
+
+    lang_code = data.split(":", 1)[1].strip()
+    if lang_code not in _SUPPORTED_LANGUAGES:
+        await query.answer(text="Unknown language", show_alert=False)  # i18n: ok
+        return
+
+    chat_service = _get_chat_service(context)
+    user = query.from_user
+    user_id: int = user.id if user else 0
+    chat_id: int = update.effective_chat.id if update.effective_chat else 0
+
+    await query.answer()
+    await _apply_lang_change(update, chat_service, user_id, chat_id, lang_code, user)
+
+
+async def _apply_lang_change(
+    update: Update,
+    chat_service: ChatService,
+    user_id: int,
+    chat_id: int,
+    lang_code: str,
+    user: Any,
+) -> None:
+    """Apply language change and send confirmation. Used by both /lang and callback."""
+    from i18n.domain.i18n import get_supported_languages
+
+    lang_meta = {lg["code"]: lg for lg in get_supported_languages()}
+
     # Remember old language for audit details
     old_lang = await chat_service.get_chat_language(user_id, chat_id) or "auto"
 
     await chat_service.set_chat_language(user_id, chat_id, lang_code)
 
-    lang_names: dict[str, str] = {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "it": "Italiano",
-        "pt": "Português",
-        "nl": "Nederlands",
-        "pl": "Polski",
-        "sv": "Svenska",
-        "tr": "Türkçe",
-        "ru": "Русский",
-        "uk": "Українська",
-        "zh": "中文",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ar": "العربية",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "th": "ภาษาไทย",
-        "vi": "Tiếng Việt",
-    }
-    name = lang_names.get(lang_code, lang_code)
+    name = lang_meta.get(lang_code, {}).get("native", lang_code)
     lang_msg = t("lang.changed", lang_code, name=name, code=lang_code)
-    await update.message.reply_text(lang_msg)
+
+    # Determine reply target: regular message or callback query
+    cb = update.callback_query
+    if cb is not None and getattr(cb, "message", None) is not None:
+        await cb.message.edit_text(lang_msg)
+    else:
+        await update.message.reply_text(lang_msg)
+
     await chat_service.save_static_response_to_history(user_id, chat_id, lang_msg)
     log.info("User %d set language to '%s' in chat %d", user_id, lang_code, chat_id)
     log_command_audit(
@@ -1552,79 +1608,7 @@ async def handle_setlimit_command(
 # /setmodel + /models Commands (R18 Phase 1: User-Model-Override)
 # ---------------------------------------------------------------------------
 
-# i18n strings for setmodel/models
-_MODEL_STRINGS: dict[str, dict[str, str]] = {
-    "de": {
-        "set_success": "Modell gewechselt: {display_name} ({model_id})",
-        "set_success_note": "Gilt ab der nächsten Nachricht.",
-        "set_slot_success": "Modell für {slot} gewechselt: {display_name} ({model_id})",
-        "set_slot_note": "Gilt nur für {slot}-Anfragen.",
-        "reset_success": "Modell auf Default zurückgesetzt ({default_model}).",
-        "reset_slot_success": "Modell für {slot} auf Default zurückgesetzt.",
-        "reset_nothing": "Kein Modell-Override aktiv. Du nutzt bereits den Default ({default_model}).",
-        "reset_all_success": "Alle Modell-Overrides zurückgesetzt ({count} entfernt).",
-        "unknown_model": "Unbekanntes Modell: '{input}'",
-        "unknown_slot": "Unbekannter Slot: '{input}'. Verfügbar: {slots}",
-        "available_aliases": "Verfügbar: {aliases}",
-        "usage_hint": (
-            "Benutzung:\n"
-            "  /setmodel <modell> (global)\n"
-            "  /setmodel <slot> <modell> (pro Slot)\n"
-            "  /setmodel reset (alles zurück)\n"
-            "  /setmodel reset <slot> (Slot zurück)\n\n"
-            "Slots: {slots}\n"
-            "Beispiel: /setmodel code opus"
-        ),
-        "models_header": "Aktuelle Modell-Belegung:",
-        "models_slot_line_override": "{slot}: {display_name} (Override)",
-        "models_slot_line_default": "{slot}: {display_name} (Default)",
-        "models_active": "Aktiv: {display_name} ({model_id})",
-        "models_default": "Default: {display_name} ({model_id})",
-        "models_available": "Verfügbare Modelle:",
-        "models_change_hint": (
-            "Wechseln: /setmodel <slot> <modell>\nBeispiel: /setmodel code opus"
-        ),
-    },
-    "en": {
-        "set_success": "Model changed: {display_name} ({model_id})",
-        "set_success_note": "Takes effect from your next message.",
-        "set_slot_success": "Model for {slot} changed: {display_name} ({model_id})",
-        "set_slot_note": "Applies only to {slot} requests.",
-        "reset_success": "Model reset to default ({default_model}).",
-        "reset_slot_success": "Model for {slot} reset to default.",
-        "reset_nothing": "No model override active. You are already using the default ({default_model}).",
-        "reset_all_success": "All model overrides reset ({count} removed).",
-        "unknown_model": "Unknown model: '{input}'",
-        "unknown_slot": "Unknown slot: '{input}'. Available: {slots}",
-        "available_aliases": "Available: {aliases}",
-        "usage_hint": (
-            "Usage:\n"
-            "  /setmodel <model> (global)\n"
-            "  /setmodel <slot> <model> (per slot)\n"
-            "  /setmodel reset (reset all)\n"
-            "  /setmodel reset <slot> (reset slot)\n\n"
-            "Slots: {slots}\n"
-            "Example: /setmodel code opus"
-        ),
-        "models_header": "Current model assignment:",
-        "models_slot_line_override": "{slot}: {display_name} (Override)",
-        "models_slot_line_default": "{slot}: {display_name} (Default)",
-        "models_active": "Active: {display_name} ({model_id})",
-        "models_default": "Default: {display_name} ({model_id})",
-        "models_available": "Available models:",
-        "models_change_hint": (
-            "Switch: /setmodel <slot> <model>\nExample: /setmodel code opus"
-        ),
-    },
-}
-
-
-def _get_model_strings(lang: str = "de") -> dict[str, str]:
-    """Returns model i18n strings for the given language.
-
-    Falls back to EN for unsupported languages (not DE).
-    """
-    return _MODEL_STRINGS.get(lang, _MODEL_STRINGS["en"])
+# _MODEL_STRINGS legacy dict removed: migrated to t("setmodel.*", lang) i18n system.
 
 
 def _get_model_service(context: ContextTypes.DEFAULT_TYPE) -> Any:
@@ -1658,7 +1642,6 @@ async def handle_setmodel_command(
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
     lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
-    s = _get_model_strings(lang)
     slot_names = ", ".join(TaskSlot.all_names())
 
     args: list[str] = context.args or []
@@ -1666,8 +1649,8 @@ async def handle_setmodel_command(
         aliases = model_service.list_available_aliases()
         alias_list = ", ".join(sorted(aliases.keys()))
         msg = (
-            f"{s['usage_hint'].format(slots=slot_names)}\n\n"
-            f"{s['available_aliases'].format(aliases=alias_list)}"
+            f"{t('setmodel.usage_hint', lang, slots=slot_names)}\n\n"
+            f"{t('setmodel.available_aliases', lang, aliases=alias_list)}"
         )
         await update.message.reply_text(msg)
         return
@@ -1682,16 +1665,18 @@ async def handle_setmodel_command(
             slot = TaskSlot.from_string(slot_input)
             if slot is None:
                 await update.message.reply_text(
-                    s["unknown_slot"].format(input=slot_input, slots=slot_names)
+                    t("setmodel.unknown_slot", lang, input=slot_input, slots=slot_names)
                 )
                 return
             deleted = model_service.reset_user_model(user_id, slot=slot.value)
             if deleted:
-                msg = s["reset_slot_success"].format(slot=slot.value.upper())
+                msg = t("setmodel.reset_slot_success", lang, slot=slot.value.upper())
             else:
                 default_display = model_service.get_model_display_name(DEFAULT_MODEL)
-                msg = s["reset_nothing"].format(
-                    default_model=f"{default_display} ({DEFAULT_MODEL})"
+                msg = t(
+                    "setmodel.reset_nothing",
+                    lang,
+                    default_model=f"{default_display} ({DEFAULT_MODEL})",
                 )
             await update.message.reply_text(msg)
             log_command_audit(
@@ -1705,11 +1690,13 @@ async def handle_setmodel_command(
             # /setmodel reset (alles)
             count = model_service.reset_all_slots(user_id)
             if count > 0:
-                msg = s["reset_all_success"].format(count=count)
+                msg = t("setmodel.reset_all_success", lang, count=count)
             else:
                 default_display = model_service.get_model_display_name(DEFAULT_MODEL)
-                msg = s["reset_nothing"].format(
-                    default_model=f"{default_display} ({DEFAULT_MODEL})"
+                msg = t(
+                    "setmodel.reset_nothing",
+                    lang,
+                    default_model=f"{default_display} ({DEFAULT_MODEL})",
                 )
             await update.message.reply_text(msg)
             log_command_audit(
@@ -1734,8 +1721,8 @@ async def handle_setmodel_command(
             was_implicit_reset = model_service.last_was_implicit_reset
             display_name = model_service.get_model_display_name(result)
             msg = (
-                f"{s['set_slot_success'].format(slot=slot.value.upper(), display_name=display_name, model_id=result)}\n"
-                f"{s['set_slot_note'].format(slot=slot.value.upper())}"
+                f"{t('setmodel.set_slot_success', lang, slot=slot.value.upper(), display_name=display_name, model_id=result)}\n"
+                f"{t('setmodel.set_slot_note', lang, slot=slot.value.upper())}"
             )
             await update.message.reply_text(msg)
             if was_implicit_reset:
@@ -1758,8 +1745,8 @@ async def handle_setmodel_command(
             aliases = model_service.list_available_aliases()
             alias_list = ", ".join(sorted(aliases.keys()))
             msg = (
-                f"{s['unknown_model'].format(input=model_input)}\n"
-                f"{s['available_aliases'].format(aliases=alias_list)}"
+                f"{t('setmodel.unknown_model', lang, input=model_input)}\n"
+                f"{t('setmodel.available_aliases', lang, aliases=alias_list)}"
             )
             await update.message.reply_text(msg)
         return
@@ -1769,8 +1756,8 @@ async def handle_setmodel_command(
     if success:
         display_name = model_service.get_model_display_name(result)
         msg = (
-            f"{s['set_success'].format(display_name=display_name, model_id=result)}\n"
-            f"{s['set_success_note']}"
+            f"{t('setmodel.set_success', lang, display_name=display_name, model_id=result)}\n"
+            f"{t('setmodel.set_success_note', lang)}"
         )
         await update.message.reply_text(msg)
         log_command_audit(
@@ -1784,8 +1771,8 @@ async def handle_setmodel_command(
         aliases = model_service.list_available_aliases()
         alias_list = ", ".join(sorted(aliases.keys()))
         msg = (
-            f"{s['unknown_model'].format(input=first)}\n"
-            f"{s['available_aliases'].format(aliases=alias_list)}"
+            f"{t('setmodel.unknown_model', lang, input=first)}\n"
+            f"{t('setmodel.available_aliases', lang, aliases=alias_list)}"
         )
         await update.message.reply_text(msg)
 
@@ -1812,15 +1799,14 @@ async def handle_resetmodel_command(
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
     lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
-    s = _get_model_strings(lang)
 
     deleted = model_service.reset_user_model(user_id)
     default_display = model_service.get_model_display_name(DEFAULT_MODEL)
     default_label = f"{default_display} ({DEFAULT_MODEL})"
     if deleted:
-        msg = s["reset_success"].format(default_model=default_label)
+        msg = t("setmodel.reset_success", lang, default_model=default_label)
     else:
-        msg = s["reset_nothing"].format(default_model=default_label)
+        msg = t("setmodel.reset_nothing", lang, default_model=default_label)
     await update.message.reply_text(msg)
     log_command_audit(
         action="resetmodel",
@@ -1850,7 +1836,6 @@ async def handle_models_command(
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
     lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
-    s = _get_model_strings(lang)
 
     # Get TaskRouter for slot defaults
     task_router = context.application.bot_data.get("task_router")
@@ -1878,23 +1863,23 @@ async def handle_models_command(
         slot_override = overrides.get(slot.value)
         if slot_override:
             display = model_service.get_model_display_name(slot_override)
-            line = f"  {s['models_slot_line_override'].format(slot=slot_name, display_name=display)}"
+            line = f"  {t('setmodel.models_slot_line_override', lang, slot=slot_name, display_name=display)}"
         elif global_override:
             display = model_service.get_model_display_name(global_override)
-            line = f"  {s['models_slot_line_override'].format(slot=slot_name, display_name=display)}"
+            line = f"  {t('setmodel.models_slot_line_override', lang, slot=slot_name, display_name=display)}"
         elif slot.value in slot_defaults:
             display = model_service.get_model_display_name(slot_defaults[slot.value])
-            line = f"  {s['models_slot_line_default'].format(slot=slot_name, display_name=display)}"
+            line = f"  {t('setmodel.models_slot_line_default', lang, slot=slot_name, display_name=display)}"
         else:
             display = model_service.get_model_display_name(DEFAULT_MODEL)
-            line = f"  {s['models_slot_line_default'].format(slot=slot_name, display_name=display)}"
+            line = f"  {t('setmodel.models_slot_line_default', lang, slot=slot_name, display_name=display)}"
 
         slot_lines.append(line)
 
     msg = (
-        f"{s['models_header']}\n"
+        f"{t('setmodel.models_header', lang)}\n"
         + "\n".join(slot_lines)
-        + f"\n\n{s['models_change_hint']}"
+        + f"\n\n{t('setmodel.models_change_hint', lang)}"
     )
     await update.message.reply_text(msg)
     log_command_audit(

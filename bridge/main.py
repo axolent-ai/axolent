@@ -74,6 +74,7 @@ from presentation.handlers import (
     handle_debate_command,
     handle_forget_command,
     handle_help_command,
+    handle_lang_callback,
     handle_lang_command,
     handle_memory_command,
     handle_message,
@@ -477,6 +478,7 @@ def main() -> None:
         CallbackQueryHandler(handle_settings_callback, pattern=r"^settings_")
     )
     app.add_handler(CallbackQueryHandler(handle_wizard_callback, pattern=r"^wizard_"))
+    app.add_handler(CallbackQueryHandler(handle_lang_callback, pattern=r"^lang_set:"))
 
     log.info("Axolent Bridge starting, Mode B (R04: Persistent Pipe + Streaming)")
     log.info("Default-Provider: '%s'", router.default)

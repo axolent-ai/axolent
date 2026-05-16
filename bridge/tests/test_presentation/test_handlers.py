@@ -52,6 +52,8 @@ def _make_update(user_id: int = 1, chat_id: int = 10, text: str = "") -> MagicMo
     update.message.text = text
     update.message.reply_text = AsyncMock()
     update.message.reply_to_message = None
+    # Simulate non-callback invocation (command, not inline button tap)
+    update.callback_query = None
     return update
 
 
@@ -176,8 +178,8 @@ class TestHandleLangCommand:
         reply_text = update.message.reply_text.call_args[0][0]
         assert "English" in reply_text or "en" in reply_text
 
-    async def test_lang_command_no_args_shows_help(self) -> None:
-        """/lang without argument shows help."""
+    async def test_lang_command_no_args_shows_inline_keyboard(self) -> None:
+        """/lang without argument shows inline keyboard with language buttons."""
         from presentation.handlers import handle_lang_command
 
         update = _make_update()
@@ -185,8 +187,17 @@ class TestHandleLangCommand:
 
         await handle_lang_command(update, context)
 
-        reply_text = update.message.reply_text.call_args[0][0]
-        assert "Benutzung" in reply_text or "/lang" in reply_text
+        call_kwargs = update.message.reply_text.call_args
+        reply_text = call_kwargs[0][0]
+        # Header text (DE default: "Sprache wählen" or EN: "Choose language")
+        assert "Sprache" in reply_text or "language" in reply_text.lower()
+        # Inline keyboard must be present
+        assert "reply_markup" in call_kwargs[1]
+        keyboard = call_kwargs[1]["reply_markup"]
+        # Verify it has buttons with lang_set: callback data
+        all_buttons = [btn for row in keyboard.inline_keyboard for btn in row]
+        assert len(all_buttons) == 20  # 20 supported languages
+        assert any("lang_set:de" in btn.callback_data for btn in all_buttons)
 
     async def test_lang_command_invalid_code(self) -> None:
         """/lang xyz with invalid code returns error."""

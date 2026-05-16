@@ -285,7 +285,11 @@ class TestChatService:
         assert "Try again" in result.error_message
         # Original exception must NOT be in user text
         assert "Timeout" not in result.error_message
-        assert "120" not in result.error_message
+        # Check that "120" does not appear as a standalone number (word boundary).
+        # A UUID containing "120" as substring (e.g. e1200977) is fine.
+        import re
+
+        assert not re.search(r"\b120\b", result.error_message)
 
     async def test_process_user_message_provider_error_non_retryable(self) -> None:
         """Nicht-retryable ProviderError hat keinen Retry-Hint."""
