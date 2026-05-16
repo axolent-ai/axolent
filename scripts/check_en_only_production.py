@@ -79,6 +79,8 @@ WHITELIST_PATHS = {
     "scripts/check_no_fake_umlauts.py",
     # Self-exclude: this script contains German detection patterns by definition.
     "scripts/check_en_only_production.py",
+    # Contains German umlaut patterns and ASCII fallback mappings (detection target IS German).
+    "scripts/check_umlauts_in_obsidian.py",
     # Public documentation: already EN, hook double-checks for regressions.
     "README.md",
     "bridge/README.md",

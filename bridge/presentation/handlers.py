@@ -1345,6 +1345,41 @@ async def handle_remember_command(
     )
 
 
+async def _translate_memory_entries(
+    entries: list[dict],
+    target_lang: str,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> list[dict]:
+    """Translate memory entries to the user's language for /memory display.
+
+    T26: On-the-fly translation. Original entries in DB are never modified.
+    Falls back to originals if translation service is unavailable or fails.
+
+    Args:
+        entries: Memory entry dicts (must have 'id' and 'content').
+        target_lang: ISO 639-1 target language code.
+        context: Telegram handler context (for ProviderRouter access).
+
+    Returns:
+        List of entry dicts with translated content (or originals on failure).
+    """
+    try:
+        from application.memory_translation_service import translate_entries
+
+        chat_service = _get_chat_service(context)
+        router = chat_service.provider_router
+        if router is None:
+            return entries
+        return await translate_entries(
+            entries=entries,
+            target_lang=target_lang,
+            provider_router=router,
+        )
+    except Exception as exc:
+        log.warning("Memory translation failed, showing originals: %s", exc)
+        return entries
+
+
 @require_whitelist
 @require_private_chat
 async def handle_memory_command(
@@ -1354,6 +1389,9 @@ async def handle_memory_command(
 
     /memory              Show last 10 episodic entries
     /memory search <q>   Search memory
+
+    T26: Memory entries are translated on-the-fly to the user's
+    current language before display. Originals in DB are never modified.
     """
     memory_service = _get_memory_service(context)
     if memory_service is None:
@@ -1379,6 +1417,9 @@ async def handle_memory_command(
             )
             return
 
+        # T26: translate search results to user language
+        results = await _translate_memory_entries(results[:10], _mem_lang, context)
+
         lines: list[str] = [
             t(
                 "memory.search_header",
@@ -1387,7 +1428,7 @@ async def handle_memory_command(
                 count=len(results),
             )
         ]
-        for entry in results[:10]:
+        for entry in results:
             lines.append(f"  [{entry['id']}] {entry['content'][:80]}")
         await update.message.reply_text("\n".join(lines))
         return
@@ -1398,6 +1439,9 @@ async def handle_memory_command(
     if not entries:
         await update.message.reply_text(t("memory.empty", _mem_lang))
         return
+
+    # T26: translate entries to user language before display
+    entries = await _translate_memory_entries(entries, _mem_lang, context)
 
     lines: list[str] = [t("memory.list_header", _mem_lang, count=len(entries))]
     for entry in entries:
