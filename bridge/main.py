@@ -239,6 +239,11 @@ def _build_provider_router(process_pool: ClaudeProcessPool) -> ProviderRouter:
 
 def main() -> None:
     """Start the Axolent Bridge Bot via long-polling."""
+    # Ollama auto-start (best-effort, non-blocking on failure)
+    from application.ollama_service import ensure_ollama_running
+
+    ensure_ollama_running()
+
     # Whitelist validation
     if not WHITELIST and not ALLOW_ALL_USERS:
         log.critical(

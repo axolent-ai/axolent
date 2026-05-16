@@ -703,6 +703,30 @@
       "source_hash": "0974c6e004e46598",
       "auto_translated": true,
       "reviewed": false
+    },
+    "debate.only_one_provider": {
+      "text": "Chi co mot nha cung cap phan hoi. Khong the so sanh.",
+      "source_hash": "18f78c04d5c9b68c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_high": {
+      "text": "Cac nha cung cap dong y phan lon ve noi dung (trung lap tu: {overlap}). Su dong thuan cao ve cac phat bieu chinh.",
+      "source_hash": "b2c3c66f28c9aef0",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_partial": {
+      "text": "Cac nha cung cap cho thay su dong thuan mot phan (trung lap tu: {overlap}). Phat bieu chinh tuong tu, nhung trong tam khac.",
+      "source_hash": "6da94e3206f9ce25",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_low": {
+      "text": "Cac nha cung cap dua ra cau tra loi khac biet dang ke (trung lap tu: {overlap}). So sanh cac cau tra loi o tren de co goc nhin khac nhau.",
+      "source_hash": "cc2da76c6b4f98d2",
+      "auto_translated": true,
+      "reviewed": false
     }
   }
 }

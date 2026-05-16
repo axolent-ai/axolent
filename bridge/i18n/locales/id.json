@@ -703,6 +703,30 @@
       "source_hash": "0974c6e004e46598",
       "auto_translated": true,
       "reviewed": false
+    },
+    "debate.only_one_provider": {
+      "text": "Hanya satu penyedia yang merespons. Perbandingan tidak mungkin.",
+      "source_hash": "18f78c04d5c9b68c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_high": {
+      "text": "Para penyedia sebagian besar setuju tentang konten (tumpang tindih kata: {overlap}). Kesepakatan tinggi pada pernyataan inti.",
+      "source_hash": "b2c3c66f28c9aef0",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_partial": {
+      "text": "Para penyedia menunjukkan kesepakatan parsial (tumpang tindih kata: {overlap}). Pernyataan inti serupa, tetapi penekanan berbeda.",
+      "source_hash": "6da94e3206f9ce25",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_low": {
+      "text": "Para penyedia memberikan respons yang sangat berbeda (tumpang tindih kata: {overlap}). Bandingkan respons di atas untuk perspektif berbeda.",
+      "source_hash": "cc2da76c6b4f98d2",
+      "auto_translated": true,
+      "reviewed": false
     }
   }
 }

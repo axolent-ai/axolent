@@ -703,6 +703,30 @@
       "source_hash": "0974c6e004e46598",
       "auto_translated": true,
       "reviewed": false
+    },
+    "debate.only_one_provider": {
+      "text": "Yalnizca bir saglayici yanit verdi. Karsilastirma mumkun degil.",
+      "source_hash": "18f78c04d5c9b68c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_high": {
+      "text": "Saglayicilar icerik konusunda buyuk olcude hemfikir (kelime otusmesi: {overlap}). Temel ifadelerde yuksek uyum.",
+      "source_hash": "b2c3c66f28c9aef0",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_partial": {
+      "text": "Saglayicilar kismi uyum gosteriyor (kelime otusmesi: {overlap}). Temel ifadeler benzer, ancak farkli vurgular.",
+      "source_hash": "6da94e3206f9ce25",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_low": {
+      "text": "Saglayicilar onemli olcude farkli yanitlar veriyor (kelime otusmesi: {overlap}). Farkli bakis acilari icin yukaridaki yanitlari karsilastirin.",
+      "source_hash": "cc2da76c6b4f98d2",
+      "auto_translated": true,
+      "reviewed": false
     }
   }
 }

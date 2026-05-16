@@ -703,6 +703,30 @@
       "source_hash": "0974c6e004e46598",
       "auto_translated": true,
       "reviewed": false
+    },
+    "debate.only_one_provider": {
+      "text": "Endast en leverantor svarade. Ingen jamforelse mojlig.",
+      "source_hash": "18f78c04d5c9b68c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_high": {
+      "text": "Leverantorerna ar i stort sett overens om innehallet (ordoverlapp: {overlap}). Hog overensstammelse i karnuttalanden.",
+      "source_hash": "b2c3c66f28c9aef0",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_partial": {
+      "text": "Leverantorerna visar delvis overensstammelse (ordoverlapp: {overlap}). Karnuttalanden liknande, men olika betoning.",
+      "source_hash": "6da94e3206f9ce25",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_low": {
+      "text": "Leverantorerna ger markant olika svar (ordoverlapp: {overlap}). Jamfor svaren ovan for olika perspektiv.",
+      "source_hash": "cc2da76c6b4f98d2",
+      "auto_translated": true,
+      "reviewed": false
     }
   }
 }

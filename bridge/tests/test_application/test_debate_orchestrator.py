@@ -580,7 +580,7 @@ class TestFinalReviewIntegration:
         orchestrator = DebateOrchestrator(provider_router=router)
 
         # Mock: judge call delivers prepared JSON
-        async def _mock_final_review(question, responses, user_id, chat_id):
+        async def _mock_final_review(question, responses, user_id, chat_id, **kwargs):
             """Simulate a successful final review."""
             prompt, label_to_provider = orchestrator._build_judge_prompt(
                 question, responses
@@ -1128,7 +1128,7 @@ class TestMultiQuestionCoverage:
         router = _make_router(providers)
         orchestrator = DebateOrchestrator(provider_router=router)
 
-        async def _mock_final_review(question, responses, user_id, chat_id):
+        async def _mock_final_review(question, responses, user_id, chat_id, **kwargs):
             prompt, label_to_provider = orchestrator._build_judge_prompt(
                 question, responses
             )

@@ -1999,8 +1999,6 @@ _PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "mistral": "\U0001f32c️ Mistral",
 }
 
-DEBATE_HELP_TEXT: str = t("debate.usage", "en")
-
 
 # i18n strings for Debate output (DE default, EN prepared for future activation)
 def _get_debate_strings(lang: str = "de") -> dict[str, str]:
@@ -2157,17 +2155,17 @@ async def handle_debate_command(
     username: str | None = user.username if user else None
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
-    # Extract question from command arguments
-    args: list[str] = context.args or []
-    if not args:
-        await update.message.reply_text(DEBATE_HELP_TEXT)
-        return
-
-    question = " ".join(args)
-
     # Language for early messages
     chat_service = _get_chat_service(context)
     _deb_lang = await chat_service.get_chat_language(user_id, chat_id) or "en"
+
+    # Extract question from command arguments
+    args: list[str] = context.args or []
+    if not args:
+        await update.message.reply_text(t("debate.usage", _deb_lang))
+        return
+
+    question = " ".join(args)
 
     # Check rate limit (same logic as handle_message)
     rate_limiter = _get_rate_limiter(context)
@@ -2204,7 +2202,6 @@ async def handle_debate_command(
 
     try:
         # Get or create DebateOrchestrator
-        chat_service = _get_chat_service(context)
         orchestrator = DebateOrchestrator(
             provider_router=chat_service.provider_router,
         )
@@ -2213,6 +2210,7 @@ async def handle_debate_command(
             question=question,
             user_id=user_id,
             chat_id=chat_id,
+            user_lang=_deb_lang,
         )
     finally:
         keepalive.cancel()
@@ -2227,17 +2225,14 @@ async def handle_debate_command(
     except Exception:  # nosec B110
         pass
 
-    # Determine language for debate output
-    debate_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
-
-    # Format and send result
-    formatted = _format_debate_result(debate_result, lang=debate_lang)
+    # Format and send result (use same language as debate providers)
+    formatted = _format_debate_result(debate_result, lang=_deb_lang)
 
     # Text Guard: fix diacritics in debate output before sending
     from application.text_guard_service import TextGuardService
 
     _debate_tg = TextGuardService()
-    _debate_guard = _debate_tg.get_guard(debate_lang, mode="fix")
+    _debate_guard = _debate_tg.get_guard(_deb_lang, mode="fix")
     if _debate_guard is not None:
         formatted = _debate_guard.fix(formatted)
 

@@ -703,6 +703,30 @@
       "source_hash": "0974c6e004e46598",
       "auto_translated": false,
       "reviewed": true
+    },
+    "debate.only_one_provider": {
+      "text": "Only one provider responded. No comparison possible.",
+      "source_hash": "18f78c04d5c9b68c",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "debate.consensus_high": {
+      "text": "The providers largely agree on content (word overlap: {overlap}). High agreement on core statements.",
+      "source_hash": "b2c3c66f28c9aef0",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "debate.consensus_partial": {
+      "text": "The providers show partial agreement (word overlap: {overlap}). Core statements similar, but different emphasis.",
+      "source_hash": "6da94e3206f9ce25",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "debate.consensus_low": {
+      "text": "The providers give significantly different responses (word overlap: {overlap}). Compare the responses above for different perspectives.",
+      "source_hash": "cc2da76c6b4f98d2",
+      "auto_translated": false,
+      "reviewed": true
     }
   }
 }

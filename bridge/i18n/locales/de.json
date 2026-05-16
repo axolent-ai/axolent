@@ -703,6 +703,30 @@
       "source_hash": "0974c6e004e46598",
       "auto_translated": false,
       "reviewed": true
+    },
+    "debate.only_one_provider": {
+      "text": "Nur ein Provider hat geantwortet. Kein Vergleich möglich.",
+      "source_hash": "18f78c04d5c9b68c",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "debate.consensus_high": {
+      "text": "Die Provider stimmen inhaltlich weitgehend überein (Wortüberlappung: {overlap}). Hohe Übereinstimmung bei Kernaussagen.",
+      "source_hash": "b2c3c66f28c9aef0",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "debate.consensus_partial": {
+      "text": "Die Provider zeigen teilweise Übereinstimmung (Wortüberlappung: {overlap}). Kernaussagen ähnlich, aber unterschiedliche Schwerpunkte.",
+      "source_hash": "6da94e3206f9ce25",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "debate.consensus_low": {
+      "text": "Die Provider geben deutlich unterschiedliche Antworten (Wortüberlappung: {overlap}). Vergleiche die Antworten oben für verschiedene Perspektiven.",
+      "source_hash": "cc2da76c6b4f98d2",
+      "auto_translated": false,
+      "reviewed": true
     }
   }
 }

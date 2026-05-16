@@ -703,6 +703,30 @@
       "source_hash": "0974c6e004e46598",
       "auto_translated": true,
       "reviewed": false
+    },
+    "debate.only_one_provider": {
+      "text": "하나의 제공자만 응답했습니다. 비교가 불가능합니다.",
+      "source_hash": "18f78c04d5c9b68c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_high": {
+      "text": "제공자들이 내용에 대해 대체로 동의합니다 (단어 중복: {overlap}). 핵심 진술에서 높은 일치.",
+      "source_hash": "b2c3c66f28c9aef0",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_partial": {
+      "text": "제공자들이 부분적으로 동의합니다 (단어 중복: {overlap}). 핵심 진술은 유사하지만 강조점이 다릅니다.",
+      "source_hash": "6da94e3206f9ce25",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_low": {
+      "text": "제공자들이 상당히 다른 응답을 제공합니다 (단어 중복: {overlap}). 다양한 관점을 위해 위의 응답을 비교하세요.",
+      "source_hash": "cc2da76c6b4f98d2",
+      "auto_translated": true,
+      "reviewed": false
     }
   }
 }

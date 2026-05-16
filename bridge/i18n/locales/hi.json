@@ -703,6 +703,30 @@
       "source_hash": "0974c6e004e46598",
       "auto_translated": true,
       "reviewed": false
+    },
+    "debate.only_one_provider": {
+      "text": "केवल एक प्रदाता ने जवाब दिया। तुलना संभव नहीं है।",
+      "source_hash": "18f78c04d5c9b68c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_high": {
+      "text": "प्रदाता सामग्री पर काफी हद तक सहमत हैं (शब्द ओवरलैप: {overlap})। मुख्य कथनों पर उच्च सहमति।",
+      "source_hash": "b2c3c66f28c9aef0",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_partial": {
+      "text": "प्रदाता आंशिक सहमति दिखाते हैं (शब्द ओवरलैप: {overlap})। मुख्य कथन समान, लेकिन अलग जोर।",
+      "source_hash": "6da94e3206f9ce25",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_low": {
+      "text": "प्रदाता काफी अलग जवाब देते हैं (शब्द ओवरलैप: {overlap})। विभिन्न दृष्टिकोणों के लिए ऊपर दिए गए जवाबों की तुलना करें।",
+      "source_hash": "cc2da76c6b4f98d2",
+      "auto_translated": true,
+      "reviewed": false
     }
   }
 }

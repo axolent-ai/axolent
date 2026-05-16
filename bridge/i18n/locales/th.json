@@ -703,6 +703,30 @@
       "source_hash": "0974c6e004e46598",
       "auto_translated": true,
       "reviewed": false
+    },
+    "debate.only_one_provider": {
+      "text": "มีผู้ให้บริการเพียงรายเดียวที่ตอบ ไม่สามารถเปรียบเทียบได้",
+      "source_hash": "18f78c04d5c9b68c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_high": {
+      "text": "ผู้ให้บริการเห็นพ้องกันเป็นส่วนใหญ่ในเนื้อหา (การทับซ้อนของคำ: {overlap}) ความสอดคล้องสูงในข้อความหลัก",
+      "source_hash": "b2c3c66f28c9aef0",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_partial": {
+      "text": "ผู้ให้บริการแสดงความเห็นพ้องบางส่วน (การทับซ้อนของคำ: {overlap}) ข้อความหลักคล้ายกัน แต่เน้นต่างกัน",
+      "source_hash": "6da94e3206f9ce25",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_low": {
+      "text": "ผู้ให้บริการให้คำตอบที่แตกต่างกันอย่างมาก (การทับซ้อนของคำ: {overlap}) เปรียบเทียบคำตอบด้านบนเพื่อมุมมองที่แตกต่าง",
+      "source_hash": "cc2da76c6b4f98d2",
+      "auto_translated": true,
+      "reviewed": false
     }
   }
 }
