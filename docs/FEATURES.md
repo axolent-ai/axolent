@@ -26,6 +26,7 @@ As of: 2026-05-10
 * Memory token budget (400 chars/entry, 4000 chars total)
 * User isolation per user_id
 * Consolidation hook (consolidator.py stub)
+* T28 Active Curiosity: memory context instructs the LLM to reference only stored facts, never extrapolate, and ask with genuine interest when gaps are noticed (replaces passive constraint approach)
 * Commit: 92be2da, 9954df8
 
 ### Persistent Pipe + Streaming (R04)

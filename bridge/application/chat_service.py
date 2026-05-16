@@ -348,9 +348,19 @@ class ChatService:
 
         sections: list[str] = ["[STORED NOTES]", ""]
         sections.append(
-            "These entries were stored by the user and may be "
-            "relevant to the current question. Use them if appropriate, "
-            "ignore if not relevant."
+            "These entries were stored by the user. Honor them this way:\n"
+            "\n"
+            "  - Reference only what is explicitly stored. Never invent "
+            "reasons, motivations, or context that the user did not provide.\n"
+            "  - If you notice a gap that would help you understand the user "
+            "better, ask with genuine interest. Example: 'My memory says you "
+            "like dolphins, but not why. What draws you to them?'\n"
+            "  - Treat curiosity as a feature, not a weakness. The user's "
+            "actual answer is more valuable than your best guess.\n"
+            "  - Do not interrogate. Ask one natural follow-up question at "
+            "most, not a list.\n"
+            "  - Ignore entries that have nothing to do with the current "
+            "question."
         )
         sections.append("")
 
