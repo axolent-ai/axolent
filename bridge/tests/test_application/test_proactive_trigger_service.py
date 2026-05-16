@@ -132,14 +132,15 @@ class TestSessionStartTrigger:
     def test_long_pause_triggers(self) -> None:
         """Pause longer than 3 days triggers welcome-back."""
         service = ProactiveTriggerService()
+        # Use a fixed time that is guaranteed to be within active hours (7-23 UTC)
+        now = datetime(2026, 5, 17, 12, 0, tzinfo=timezone.utc)
+        now_ts = now.timestamp()
         # First message 4 days ago
-        old_ts = time.time() - (4 * 24 * 3600)
+        old_ts = now_ts - (4 * 24 * 3600)
         service.record_activity(123, timestamp=old_ts)
         # New message now
-        now_ts = time.time()
         service.record_activity(123, timestamp=now_ts)
 
-        now = datetime.now(timezone.utc)
         result = service.check_triggers(123, 1, "Hallo", current_time=now)
         assert result.should_fire is True
         assert result.trigger_type == "long_pause"

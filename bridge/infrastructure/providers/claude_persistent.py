@@ -21,6 +21,7 @@ import time
 from typing import AsyncIterator
 
 from infrastructure.claude_process_pool import (
+    CLAUDE_POOL_MODEL,
     ClaudeProcessPool,
     StreamEvent,
 )
@@ -139,6 +140,7 @@ class ClaudePersistentProvider(LLMProvider, StreamingProvider):
                 text=full_text.strip(),
                 duration_seconds=duration,
                 provider_name=self.name,
+                model=model or CLAUDE_POOL_MODEL,
             )
 
         except RuntimeError as e:

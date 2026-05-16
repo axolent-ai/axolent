@@ -313,7 +313,11 @@ class TestChatService:
         assert "API key" not in result.error_message
 
     async def test_reset_clears_conversation(self) -> None:
-        """reset() setzt Conversation-History und Sticky-Language zurück."""
+        """reset() clears history but preserves sticky language.
+
+        Language survives /reset intentionally so the user does not
+        have to re-set their preferred language after clearing history.
+        """
         from infrastructure.conversation_storage import (
             get_history,
             get_language,
@@ -330,7 +334,8 @@ class TestChatService:
         history = await get_history(1, 10)
         lang = await get_language(1, 10)
         assert history == []
-        assert lang is None
+        # Language is intentionally preserved across reset
+        assert lang == "en"
 
     async def test_set_chat_language(self) -> None:
         """set_chat_language() setzt die Sticky-Language."""

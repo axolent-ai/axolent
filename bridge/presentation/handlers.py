@@ -1989,7 +1989,7 @@ async def handle_settings_command(
 # /debate Command (R10: Multi-AI-Debate)
 # ---------------------------------------------------------------------------
 
-# Provider display names for formatted output
+# Provider display names for formatted output (generic fallback)
 _PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "claude_persistent": "\U0001f916 Claude",
     "claude": "\U0001f916 Claude",
@@ -1999,9 +1999,16 @@ _PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "mistral": "\U0001f32c️ Mistral",
 }
 
+# Model ID -> specific display name (more informative than generic provider name)
+_MODEL_DISPLAY_NAMES: dict[str, str] = {
+    "claude-opus-4-7": "\U0001f916 Claude Opus 4.7",
+    "claude-sonnet-4-6": "\U0001f916 Claude Sonnet 4.6",
+    "claude-haiku-4-5-20251001": "\U0001f916 Claude Haiku 4.5",
+}
+
 
 # i18n strings for Debate output (DE default, EN prepared for future activation)
-def _get_debate_strings(lang: str = "de") -> dict[str, str]:
+def _get_debate_strings(lang: str = "en") -> dict[str, str]:
     """Returns debate i18n strings for the given language via t().
 
     Args:
@@ -2027,7 +2034,7 @@ def _get_debate_strings(lang: str = "de") -> dict[str, str]:
     }
 
 
-def _format_debate_result(result: Any, lang: str = "de") -> str:
+def _format_debate_result(result: Any, lang: str = "en") -> str:
     """Formats a DebateResult as Telegram text (BLUF order).
 
     Block order (Bottom Line Up Front):
@@ -2041,13 +2048,24 @@ def _format_debate_result(result: Any, lang: str = "de") -> str:
 
     Args:
         result: DebateResult instance.
-        lang: Language for labels (default: "de").
+        lang: Language for labels (default: "en").
 
     Returns:
         Formatted text for Telegram.
     """
     s = _get_debate_strings(lang)
     lines: list[str] = []
+
+    # Build provider -> display name mapping (prefer specific model names)
+    provider_models: dict[str, str] = getattr(result, "provider_models", {})
+
+    def _display_name(provider_name: str) -> str:
+        """Get the most specific display name for a provider."""
+        model_id = provider_models.get(provider_name)
+        if model_id and model_id in _MODEL_DISPLAY_NAMES:
+            return _MODEL_DISPLAY_NAMES[model_id]
+        return _PROVIDER_DISPLAY_NAMES.get(provider_name, provider_name)
+
     lines.append(f"{s['header']}\n")
     lines.append(f"{s['question_label']}: {result.question}\n")
 
@@ -2067,9 +2085,7 @@ def _format_debate_result(result: Any, lang: str = "de") -> str:
             lines.append("")
 
         # --- Block 3: Strongest contribution ---
-        winner_display = _PROVIDER_DISPLAY_NAMES.get(
-            result.final_verdict.winner, result.final_verdict.winner
-        )
+        winner_display = _display_name(result.final_verdict.winner)
         if result.final_verdict.winner == "tie":
             lines.append(s["tie_result"])
         else:
@@ -2098,7 +2114,7 @@ def _format_debate_result(result: Any, lang: str = "de") -> str:
     lines.append("━" * 20)
     lines.append(f"{s['detail_header']}\n")
     for provider_name, response_text in result.responses.items():
-        display_name = _PROVIDER_DISPLAY_NAMES.get(provider_name, provider_name)
+        display_name = _display_name(provider_name)
         lines.append(f"{display_name}:")
         lines.append(response_text.strip())
         lines.append("")
@@ -2107,9 +2123,7 @@ def _format_debate_result(result: Any, lang: str = "de") -> str:
     if result.final_verdict is not None and result.final_verdict.evaluations:
         lines.append("━" * 20)
         for evaluation in result.final_verdict.evaluations:
-            eval_display = _PROVIDER_DISPLAY_NAMES.get(
-                evaluation.provider, evaluation.provider
-            )
+            eval_display = _display_name(evaluation.provider)
             pros_str = ", ".join(evaluation.pros) if evaluation.pros else ""
             cons_str = ", ".join(evaluation.cons) if evaluation.cons else ""
             if pros_str:
@@ -2123,7 +2137,7 @@ def _format_debate_result(result: Any, lang: str = "de") -> str:
         lines.append("━" * 20)
         lines.append(s["errors_section"])
         for provider_name, error_msg in result.errors.items():
-            display_name = _PROVIDER_DISPLAY_NAMES.get(provider_name, provider_name)
+            display_name = _display_name(provider_name)
             lines.append(f"  {display_name}: {error_msg}")
         lines.append("")
 

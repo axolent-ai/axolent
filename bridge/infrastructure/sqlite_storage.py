@@ -75,6 +75,15 @@ CREATE TABLE IF NOT EXISTS user_slot_models (
     PRIMARY KEY (user_id, slot)
 );
 
+-- Sticky language per (user_id, chat_id). Persistent across bot restart.
+CREATE TABLE IF NOT EXISTS user_language (
+    user_id INTEGER NOT NULL,
+    chat_id INTEGER NOT NULL,
+    lang TEXT NOT NULL,
+    set_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, chat_id)
+);
+
 -- FTS5 for full-text search
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
     content,
@@ -799,6 +808,76 @@ class SqliteModelStorage:
         Consistency pattern: analogous to conversation_storage._reset_all_for_tests.
         """
         self._conn.execute("DELETE FROM user_slot_models", ())
+
+
+class SqliteLanguageStorage:
+    """SQLite adapter for persistent user language preferences.
+
+    Stores the sticky language per (user_id, chat_id).
+    Survives bot restarts (unlike pure in-memory storage).
+    """
+
+    def __init__(self, conn: SqliteConnection) -> None:
+        self._conn = conn
+
+    def get_language(self, user_id: int, chat_id: int) -> Optional[str]:
+        """Read the sticky language for a user/chat pair.
+
+        Args:
+            user_id: Telegram user ID.
+            chat_id: Telegram chat ID.
+
+        Returns:
+            Language code or None if not set.
+        """
+        row = self._conn.fetchone(
+            "SELECT lang FROM user_language WHERE user_id = ? AND chat_id = ?",
+            (user_id, chat_id),
+        )
+        return row["lang"] if row else None
+
+    def set_language(self, user_id: int, chat_id: int, lang: str) -> None:
+        """Set the sticky language for a user/chat pair.
+
+        Args:
+            user_id: Telegram user ID.
+            chat_id: Telegram chat ID.
+            lang: ISO 639-1 language code.
+        """
+        ts = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """INSERT OR REPLACE INTO user_language
+               (user_id, chat_id, lang, set_at)
+               VALUES (?, ?, ?, ?)""",
+            (user_id, chat_id, lang, ts),
+        )
+        log.debug(
+            "Language saved: user_id=%d chat_id=%d lang=%s",
+            user_id,
+            chat_id,
+            lang,
+        )
+
+    def clear_language(self, user_id: int, chat_id: int) -> None:
+        """Remove the language preference for a user/chat pair.
+
+        Args:
+            user_id: Telegram user ID.
+            chat_id: Telegram chat ID.
+        """
+        self._conn.execute(
+            "DELETE FROM user_language WHERE user_id = ? AND chat_id = ?",
+            (user_id, chat_id),
+        )
+
+    def load_all(self) -> dict[tuple[int, int], str]:
+        """Load all language preferences (for startup population).
+
+        Returns:
+            Dict of (user_id, chat_id) -> lang.
+        """
+        rows = self._conn.fetchall("SELECT user_id, chat_id, lang FROM user_language")
+        return {(row["user_id"], row["chat_id"]): row["lang"] for row in rows}
 
 
 # ──────────────────────────────────────────────────────────────

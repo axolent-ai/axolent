@@ -63,7 +63,7 @@ class StatusSession:
     """
 
     callback: StatusCallback
-    language: str = "de"
+    language: str = "en"
     enabled: bool = field(default_factory=lambda: SHOW_STATUS_UPDATES)
     last_update_time: float = 0.0
     stream_started: bool = False

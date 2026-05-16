@@ -60,8 +60,12 @@ class TestConversationStorage:
         lang = await get_language(99, 99)
         assert lang is None
 
-    async def test_reset_clears_history_and_language(self) -> None:
-        """reset_conversation löscht sowohl History als auch Language."""
+    async def test_reset_clears_history_but_preserves_language(self) -> None:
+        """reset_conversation clears history but preserves sticky language.
+
+        Since language persistence (SQLite backing), /reset no longer
+        removes the user's language preference. Only /lang changes it.
+        """
         turn = ConversationTurn(role="user", content="Before reset")
         await save_turn(1, 10, turn)
         await set_language(1, 10, "fr")
@@ -71,7 +75,7 @@ class TestConversationStorage:
         history = await get_history(1, 10)
         lang = await get_language(1, 10)
         assert history == []
-        assert lang is None
+        assert lang == "fr"  # Language preserved across reset
 
     async def test_different_chats_isolated(self) -> None:
         """Verschiedene (user_id, chat_id) Paare sind isoliert."""

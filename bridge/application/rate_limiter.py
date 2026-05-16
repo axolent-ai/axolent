@@ -408,6 +408,8 @@ class RateLimiter:
         """Set the profile for a user.
 
         Persists the change and creates new buckets with the new limits.
+        Preserves existing usage counts (capped at new capacity) so that
+        a profile switch does not reset the user's counters to zero.
 
         Args:
             user_id: Telegram user ID.
@@ -422,8 +424,23 @@ class RateLimiter:
 
         with self._lock:
             self._profiles[user_id] = profile
-            if user_id in self._users:
-                self._users[user_id] = _UserBuckets(profile=profile)
+            old_buckets = self._users.get(user_id)
+            new_buckets = _UserBuckets(profile=profile)
+            if old_buckets is not None:
+                # Carry over existing usage (capped at new capacity)
+                new_buckets.minute_bucket.request_count = min(
+                    old_buckets.minute_bucket.consumed_count(),
+                    new_buckets.minute_bucket.capacity,
+                )
+                new_buckets.hour_bucket.request_count = min(
+                    old_buckets.hour_bucket.consumed_count(),
+                    new_buckets.hour_bucket.capacity,
+                )
+                new_buckets.day_bucket.request_count = min(
+                    old_buckets.day_bucket.consumed_count(),
+                    new_buckets.day_bucket.capacity,
+                )
+            self._users[user_id] = new_buckets
 
         # Persist
         if self._profile_storage is not None:
@@ -456,7 +473,23 @@ class RateLimiter:
             if user_id not in self._users:
                 self._users[user_id] = _UserBuckets(profile=profile)
             elif self._users[user_id].profile != profile:
-                self._users[user_id] = _UserBuckets(profile=profile)
+                # Profile changed externally (e.g. JSONL edited).
+                # Preserve existing usage counts (capped at new capacity).
+                old = self._users[user_id]
+                new = _UserBuckets(profile=profile)
+                new.minute_bucket.request_count = min(
+                    old.minute_bucket.consumed_count(),
+                    new.minute_bucket.capacity,
+                )
+                new.hour_bucket.request_count = min(
+                    old.hour_bucket.consumed_count(),
+                    new.hour_bucket.capacity,
+                )
+                new.day_bucket.request_count = min(
+                    old.day_bucket.consumed_count(),
+                    new.day_bucket.capacity,
+                )
+                self._users[user_id] = new
 
             buckets = self._users[user_id]
             buckets.last_activity = time.monotonic()

@@ -1477,7 +1477,7 @@ class TestFormatDebateSynthesis:
             providers_queried=["claude_persistent", "ollama_local"],
         )
 
-        formatted = _format_debate_result(result)
+        formatted = _format_debate_result(result, lang="de")
 
         # Synthese muss im Output sein (prominent)
         assert "dezentrale digitale Währung" in formatted
@@ -1535,7 +1535,7 @@ class TestFormatDebateSynthesis:
             providers_queried=["claude_persistent", "ollama_local"],
         )
 
-        formatted = _format_debate_result(result)
+        formatted = _format_debate_result(result, lang="de")
 
         # BLUF: Kernaussage -> Staerkster Beitrag -> Synthese -> Details -> Pro/Contra -> Timer
         emp_pos = formatted.index("Kernaussage:")
@@ -1630,7 +1630,7 @@ class TestFormatDebateSynthesis:
             providers_queried=["claude_persistent", "ollama_local"],
         )
 
-        formatted = _format_debate_result(result)
+        formatted = _format_debate_result(result, lang="de")
 
         # Synthese-Block wird NICHT gerendert wenn synthesis leer ist
         assert "Synthese" not in formatted

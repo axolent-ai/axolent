@@ -1,16 +1,19 @@
 """Conversation storage: in-memory conversation history per (user_id, chat_id).
 
 Thread-safe via asyncio.Lock. Stores conversation turns and sticky language.
-Prepared for later migration to SQLite if persistence is needed.
+Language is now also persisted to SQLite (survives bot restart).
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from domain.conversation import ConversationTurn, MAX_HISTORY_TURNS
+
+if TYPE_CHECKING:
+    from infrastructure.sqlite_storage import SqliteLanguageStorage
 
 log = logging.getLogger(__name__)
 
@@ -18,6 +21,28 @@ log = logging.getLogger(__name__)
 _histories: dict[tuple[int, int], list[ConversationTurn]] = {}
 _languages: dict[tuple[int, int], str] = {}
 _lock = asyncio.Lock()
+
+# Optional SQLite backing store for language persistence
+_language_storage: "SqliteLanguageStorage | None" = None
+
+
+def init_language_storage(storage: "SqliteLanguageStorage") -> None:
+    """Initialize the persistent language storage and load existing languages.
+
+    Called once at bot startup after SQLite is initialized.
+
+    Args:
+        storage: SqliteLanguageStorage instance.
+    """
+    global _language_storage
+    _language_storage = storage
+    # Populate in-memory cache from persistent store
+    persisted = storage.load_all()
+    _languages.update(persisted)
+    if persisted:
+        log.info(
+            "Loaded %d persistent language preferences from SQLite", len(persisted)
+        )
 
 
 async def save_turn(user_id: int, chat_id: int, turn: ConversationTurn) -> None:
@@ -54,7 +79,11 @@ async def get_history(user_id: int, chat_id: int) -> list[ConversationTurn]:
 
 
 async def reset_conversation(user_id: int, chat_id: int) -> None:
-    """Clear conversation history AND sticky language for a user/chat pair.
+    """Clear conversation history for a user/chat pair.
+
+    NOTE: Does NOT clear the sticky language anymore (since persistent
+    language storage). The user's language preference survives /reset.
+    Use /lang to explicitly change the language.
 
     Args:
         user_id: Telegram user ID.
@@ -63,12 +92,13 @@ async def reset_conversation(user_id: int, chat_id: int) -> None:
     key = (user_id, chat_id)
     async with _lock:
         _histories.pop(key, None)
-        _languages.pop(key, None)
     log.info("Conversation reset for user=%d chat=%d", user_id, chat_id)
 
 
 async def set_language(user_id: int, chat_id: int, lang: str) -> None:
     """Set the sticky language for a user/chat pair.
+
+    Persists to SQLite if the backing store is initialized.
 
     Args:
         user_id: Telegram user ID.
@@ -78,6 +108,12 @@ async def set_language(user_id: int, chat_id: int, lang: str) -> None:
     key = (user_id, chat_id)
     async with _lock:
         _languages[key] = lang
+    # Persist to SQLite (survives bot restart)
+    if _language_storage is not None:
+        try:
+            _language_storage.set_language(user_id, chat_id, lang)
+        except Exception as e:
+            log.warning("Failed to persist language to SQLite: %s", e)
     log.info("Sticky language set to '%s' for user=%d chat=%d", lang, user_id, chat_id)
 
 

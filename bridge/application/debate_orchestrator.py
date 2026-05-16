@@ -154,6 +154,7 @@ class DebateResult:
         final_verdict: LLM-as-Judge evaluation (optional, None if judge fails).
         duration_seconds: Total duration of the debate.
         providers_queried: List of all queried providers.
+        provider_models: Provider name -> resolved model ID (e.g. "claude-opus-4-7").
     """
 
     question: str
@@ -163,6 +164,7 @@ class DebateResult:
     final_verdict: Optional[FinalVerdict] = None
     duration_seconds: float = 0.0
     providers_queried: list[str] = field(default_factory=list)
+    provider_models: dict[str, str] = field(default_factory=dict)
 
 
 class DebateOrchestrator:
@@ -219,7 +221,7 @@ class DebateOrchestrator:
         user_id: int,
         chat_id: int,
         user_lang: str = "en",
-    ) -> tuple[str, str | None, str | None]:
+    ) -> tuple[str, str | None, str | None, str | None]:
         """Query a single provider with timeout.
 
         Args:
@@ -230,7 +232,7 @@ class DebateOrchestrator:
             user_lang: User language code (for response language instruction).
 
         Returns:
-            Tuple: (provider_name, response_text_or_None, error_or_None)
+            Tuple: (provider_name, response_text_or_None, error_or_None, model_id_or_None)
         """
         # Build language-aware system prompt so models respond in user's language
         lang_instruction = (
@@ -257,13 +259,13 @@ class DebateOrchestrator:
                 timeout=self.timeout_seconds + 5,
             )
             if response.success:
-                return (provider_name, response.text, None)
+                return (provider_name, response.text, None, response.model)
             else:
-                return (provider_name, None, response.error or "Unknown error")
+                return (provider_name, None, response.error or "Unknown error", None)
         except asyncio.TimeoutError:
-            return (provider_name, None, f"Timeout after {self.timeout_seconds}s")
+            return (provider_name, None, f"Timeout after {self.timeout_seconds}s", None)
         except Exception as exc:
-            return (provider_name, None, str(exc))
+            return (provider_name, None, str(exc), None)
 
     def _analyze_consensus(
         self, responses: dict[str, str], user_lang: str = "en"
@@ -716,14 +718,17 @@ class DebateOrchestrator:
 
         responses: dict[str, str] = {}
         errors: dict[str, str] = {}
+        provider_models: dict[str, str] = {}
 
         for result in results:
             if isinstance(result, Exception):
                 errors["unknown"] = str(result)
                 continue
-            provider_name, text, error = result
+            provider_name, text, error, model_id = result
             if text is not None:
                 responses[provider_name] = text
+                if model_id:
+                    provider_models[provider_name] = model_id
             elif error is not None:
                 errors[provider_name] = error
 
@@ -778,4 +783,5 @@ class DebateOrchestrator:
             final_verdict=verdict,
             duration_seconds=duration,
             providers_queried=providers,
+            provider_models=provider_models,
         )

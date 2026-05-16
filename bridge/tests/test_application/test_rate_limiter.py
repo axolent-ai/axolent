@@ -759,3 +759,88 @@ class TestBugReproduction:
             # Commands wuerden check_and_consume NICHT aufrufen,
             # daher bleibt der Counter bei 17 (kein Increment)
             # (Der Handler-Code zeigt: nur handle_message ruft check_and_consume auf)
+
+
+class TestProfileSwitchPreservesUsage:
+    """T35 Regression: /setlimit must not reset usage counters to zero.
+
+    Bug: When a user switches profiles, the existing request counts
+    were discarded because _UserBuckets was re-created from scratch.
+    Fix: Carry over existing usage (capped at new capacity).
+    """
+
+    def test_setlimit_preserves_existing_usage(self, tmp_path: Path) -> None:
+        """Switching profile must carry over consumed requests."""
+        profiles_path = tmp_path / "user_profiles.jsonl"
+        with patch("application.rate_limiter._PROFILES_PATH", profiles_path):
+            limiter = RateLimiter()
+            limiter.set_user_profile(user_id=1, chat_id=1, profile="normal")
+
+            # Consume 10 requests
+            for _ in range(10):
+                result = limiter.check_and_consume(user_id=1)
+                assert result.allowed is True
+
+            # Verify usage is 10
+            usage_before = limiter.get_usage(user_id=1)
+            assert usage_before.minute_used == 10
+            assert usage_before.hour_used == 10
+            assert usage_before.day_used == 10
+
+            # Switch to power profile
+            limiter.set_user_profile(user_id=1, chat_id=1, profile="power")
+
+            # Usage must still show 10 (not reset to 0)
+            usage_after = limiter.get_usage(user_id=1)
+            assert usage_after.minute_used == 10
+            assert usage_after.hour_used == 10
+            assert usage_after.day_used == 10
+            assert usage_after.profile == "power"
+
+    def test_setlimit_caps_at_new_capacity(self, tmp_path: Path) -> None:
+        """If old usage exceeds new capacity, cap at new capacity."""
+        profiles_path = tmp_path / "user_profiles.jsonl"
+        with patch("application.rate_limiter._PROFILES_PATH", profiles_path):
+            limiter = RateLimiter()
+            limiter.set_user_profile(user_id=1, chat_id=1, profile="power")
+
+            # Consume 50 requests (within power's 60/min limit)
+            for _ in range(50):
+                limiter.check_and_consume(user_id=1)
+
+            usage_before = limiter.get_usage(user_id=1)
+            assert usage_before.minute_used == 50
+
+            # Switch to light profile (17/min limit)
+            limiter.set_user_profile(user_id=1, chat_id=1, profile="light")
+
+            # Usage should be capped at light's capacity (17)
+            usage_after = limiter.get_usage(user_id=1)
+            assert usage_after.minute_used == 17
+            assert usage_after.profile == "light"
+
+    def test_check_and_consume_profile_drift_preserves_usage(
+        self, tmp_path: Path
+    ) -> None:
+        """When check_and_consume detects a profile mismatch, preserve usage."""
+        profiles_path = tmp_path / "user_profiles.jsonl"
+        with patch("application.rate_limiter._PROFILES_PATH", profiles_path):
+            limiter = RateLimiter()
+            limiter.set_user_profile(user_id=1, chat_id=1, profile="normal")
+
+            # Consume 5 requests
+            for _ in range(5):
+                limiter.check_and_consume(user_id=1)
+
+            # Manually change profile in _profiles (simulating external change)
+            limiter._profiles[1] = "power"
+
+            # Next check_and_consume should detect mismatch, recreate buckets
+            # but preserve the 5 consumed requests
+            result = limiter.check_and_consume(user_id=1)
+            assert result.allowed is True
+
+            usage = limiter.get_usage(user_id=1)
+            # 5 old + 1 new = 6
+            assert usage.minute_used == 6
+            assert usage.profile == "power"

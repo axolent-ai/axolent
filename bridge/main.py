@@ -47,6 +47,7 @@ from infrastructure.memory_storage import MemoryStorage
 from infrastructure.sqlite_storage import (
     SqliteBookmarkStorage,
     SqliteConnection,
+    SqliteLanguageStorage,
     SqliteMemoryStorage,
     SqliteModelStorage,
     SqliteProfileStorage,
@@ -405,6 +406,12 @@ def main() -> None:
 
         # JSONL profiles -> SQLite migration (one-time)
         _migrate_profiles_to_sqlite(profile_storage)
+
+        # Language persistence: load from SQLite on startup
+        from infrastructure.conversation_storage import init_language_storage
+
+        lang_storage = SqliteLanguageStorage(sqlite_conn)
+        init_language_storage(lang_storage)
     else:
         rate_limiter = RateLimiter()
 
