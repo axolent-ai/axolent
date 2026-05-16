@@ -164,7 +164,7 @@ class TestWizardStart:
         /onboarding und fiel auf Englisch zurueck weil nur de/en Uebersetzungen
         in _START_WELCOME_TEXTS existierten.
         """
-        from domain.onboarding import get_start_welcome_text
+        from i18n.domain.i18n import t
         from presentation.handlers import handle_start_command
 
         onboarding_storage.set_onboarded(1)
@@ -184,7 +184,7 @@ class TestWizardStart:
 
         update.message.reply_text.assert_called_once()
         text = update.message.reply_text.call_args[0][0]
-        expected = get_start_welcome_text("tr")
+        expected = t("start.welcome", "tr")
         assert text == expected
         assert "Axolent" in text
         # Darf nicht auf Englisch oder Deutsch fallen

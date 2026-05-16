@@ -1,0 +1,612 @@
+{
+  "_version": "1",
+  "_language": "pl",
+  "keys": {
+    "reset.confirmation": {
+      "text": "Konwersacja zresetowana. Zaczynamy od nowa!",
+      "source_hash": "e000fd1b2406e865",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "help.title": {
+      "text": "🦎 <b>Przegląd komend Axolent</b>",
+      "source_hash": "49575bbc77fd13d6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "help.body": {
+      "text": "<b>Czat</b>\n• Wyślij wiadomość, a bot odpowie\n• /new nowy czat (czyści historię)\n• /reset czyści historię konwersacji\n\n<b>Pamięć</b>\n• /remember &lt;tekst&gt; zapisuje notatkę\n• /memory pokazuje twoje notatki\n• /forget &lt;id&gt; usuwa notatkę\n\n<b>Zakładki</b>\n• /save (jako odpowiedź) zapisuje odpowiedź bota\n• /bookmarks pokazuje zapisane zakładki\n\n<b>Multi-AI</b>\n• /debate &lt;pytanie&gt; pyta wiele AI równolegle\n\n<b>Konfiguracja</b>\n• /settings ustawienia wizualne\n• /setmodel &lt;model&gt; zmienia model AI (opus, sonnet, haiku)\n• /resetmodel resetuje model do domyślnego\n• /models pokazuje bieżące przypisanie slotów\n• /setlimit &lt;profil&gt; zmienia profil (light, normal, power, unlimited)\n• /usage pokazuje zużycie i profil\n\n<b>Setup &amp; Język</b>\n• /start powitanie (kreator dla nowych użytkowników)\n• /onboarding uruchom kreator ręcznie\n• /lang &lt;kod&gt; zmień język (de, en, fr, ...)\n\n<b>Pomoc</b>\n• /help ten przegląd",
+      "source_hash": "cdaa4c2a933ffb3e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "remember.saved": {
+      "text": "Zapisano. [{entry_id}]",
+      "source_hash": "e38f978b1c256bb4",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "remember.usage": {
+      "text": "Użycie:\n/remember <tekst>  zapisz tekst\n/remember <etykieta>  (jako odpowiedź)  zapisz odpowiedź bota z etykietą",
+      "source_hash": "39bc9dcd1d8b2a46",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "forget.success": {
+      "text": "Zapomniano: {entry_id}\n\nUwaga: jeśli treść jest w bieżącej rozmowie, użyj /reset aby zacząć od nowa.",
+      "source_hash": "60fba3b1a943511e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "forget.not_found": {
+      "text": "Wpis '{entry_id}' nie znaleziony lub nie należy do ciebie.",
+      "source_hash": "47725ae8b2f7ee5b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "forget.usage": {
+      "text": "Użycie: /forget <id>\n\nID znajdziesz przez /memory",
+      "source_hash": "f677fe1f61d5e5d3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "memory.empty": {
+      "text": "Brak zapisanych notatek. Użyj /remember <tekst> aby coś zapisać.",
+      "source_hash": "c8020803455d49df",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "memory.list_header": {
+      "text": "Ostatnie {count} notatek:\n",
+      "source_hash": "09f7d74ffd6dca06",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "memory.search_no_results": {
+      "text": "Nie znaleziono notatek pasujących do '{query}'.",
+      "source_hash": "fd6770495d95e1b7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "memory.search_header": {
+      "text": "Wyniki wyszukiwania dla '{query}' ({count} wyników):\n",
+      "source_hash": "ad7ee7571623a7b9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.saved": {
+      "text": "Zakładka zapisana",
+      "source_hash": "8295d8d1d05c41cb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.removed": {
+      "text": "Zakładka usunięta",
+      "source_hash": "9c9fc0c810455ec4",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.save_hint": {
+      "text": "Odpowiedz na wiadomość bota poleceniem /save aby zapisać ją jako zakładkę.",
+      "source_hash": "59bde2efd344936b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.list_empty": {
+      "text": "Nie masz jeszcze zakładek. Odpowiedz na wiadomość bota poleceniem /save aby ją zapisać.",
+      "source_hash": "eea6ad8f4ce61a74",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.delete_confirm": {
+      "text": "Zakładka{date_display} usunięta",
+      "source_hash": "7a7ca27da766be24",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.list_header": {
+      "text": "Twoje ostatnie {count} zakładek:\n",
+      "source_hash": "81d277f4399b8552",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "lang.changed": {
+      "text": "Język zmieniony: {name} ({code})",
+      "source_hash": "dea60593b51b46d9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "lang.unknown": {
+      "text": "Nieznany język: '{code}'\n\nObsługiwane języki: {supported}",
+      "source_hash": "2af5b8e3701cc09b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "lang.usage": {
+      "text": "Użycie: /lang <kod>\n\nObsługiwane języki: {supported}\n\nPrzykład: /lang en",
+      "source_hash": "b701b9155d8b780b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "lang.list_header": {
+      "text": "Wybierz język",
+      "source_hash": "bba5b40bdd28c66e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "inline_command.warning": {
+      "text": "Uwaga: komendy jak /setmodel lub /reset muszą być wysłane jako osobna wiadomość, nie łączone z tekstem.",
+      "source_hash": "440ecd5d7d8f49d6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "status.memory_loading": {
+      "text": "🧠 Ładowanie notatek…",
+      "source_hash": "10a80da5fa0ce1f6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "status.memory_loaded": {
+      "text": "🧠 Ładowanie notatek… ({n} znalezionych)",
+      "source_hash": "661a08fbf1fdeede",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "status.thinking": {
+      "text": "💭 Myślę…",
+      "source_hash": "9f0fdd33fa5310c6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "status.formatting": {
+      "text": "✨ Formatowanie…",
+      "source_hash": "0058a0018f8c84c4",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.main_title": {
+      "text": "Ustawienia",
+      "source_hash": "74a883a037bc227f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.models_section": {
+      "text": "Modele na slot:",
+      "source_hash": "bc65cee013de3cc6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_section": {
+      "text": "Język:",
+      "source_hash": "8c16819a2bd49b95",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_all_btn": {
+      "text": "Zresetuj wszystko",
+      "source_hash": "645982c52b7c11ae",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.default_suffix": {
+      "text": "(Domyślny)",
+      "source_hash": "1fc1ffe61be98b40",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.global_override_suffix": {
+      "text": "(globalny)",
+      "source_hash": "07f3cbc08fc3a719",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.global_override_text": {
+      "text": "⚡ <b>Globalny override aktywny: {display_name} (wszystkie sloty)</b>",
+      "source_hash": "f20593b0c512835b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_global_btn": {
+      "text": "Usuń globalny override",
+      "source_hash": "32e0ac7f68c3bd74",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.slot_select_title": {
+      "text": "{slot} — Wybierz model",
+      "source_hash": "8ee3c5b2850b209b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.back_btn": {
+      "text": "← Powrót do menu głównego",
+      "source_hash": "e35c6e48aa36ab34",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_slot_btn": {
+      "text": "Przywróć domyślny",
+      "source_hash": "bc5b45ae7b60692a",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_confirm_title": {
+      "text": "Naprawdę zresetować wszystkie override'y modeli?",
+      "source_hash": "aa2918304c882ca5",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_confirm_yes": {
+      "text": "Tak, zresetuj wszystko",
+      "source_hash": "ab1bd30f87b6a4cb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_confirm_cancel": {
+      "text": "Anuluj",
+      "source_hash": "19766ed6ccb2f4a3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_all_done": {
+      "text": "Wszystkie override'y modeli zresetowane ({count} usuniętych).",
+      "source_hash": "3c3f13bb2c03d71f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_all_nothing": {
+      "text": "Brak aktywnych override'ów, nic do zrobienia.",
+      "source_hash": "db9152ed96a0122b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.model_set": {
+      "text": "Model dla {slot} ustawiony: {display_name}",
+      "source_hash": "82a2fbd779bb157c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.model_reset": {
+      "text": "Model dla {slot} przywrócony do domyślnego.",
+      "source_hash": "689584c3c977efae",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.model_reset_nothing": {
+      "text": "{slot} już używa domyślnego.",
+      "source_hash": "d9e4807e8fe83209",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_title": {
+      "text": "Wybierz język",
+      "source_hash": "bba5b40bdd28c66e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_back": {
+      "text": "← Wstecz",
+      "source_hash": "aceb696a04c19971",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_set": {
+      "text": "Język zmieniony: {name}",
+      "source_hash": "42fde17aaaca134d",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_button": {
+      "text": "Język: {name}",
+      "source_hash": "d99eed9b5921900c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.set_success": {
+      "text": "Model zmieniony: {display_name} ({model_id})",
+      "source_hash": "442d42b45287a661",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.set_success_note": {
+      "text": "Obowiązuje od następnej wiadomości.",
+      "source_hash": "28e9fdc02cd36661",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.set_slot_success": {
+      "text": "Model dla {slot} zmieniony: {display_name} ({model_id})",
+      "source_hash": "e013b9978ce2b58d",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.set_slot_note": {
+      "text": "Dotyczy tylko zapytań {slot}.",
+      "source_hash": "5417e4e1b684e4d6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.reset_success": {
+      "text": "Model przywrócony do domyślnego ({default_model}).",
+      "source_hash": "02f5db9f8f4e7d55",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.reset_slot_success": {
+      "text": "Model dla {slot} przywrócony do domyślnego.",
+      "source_hash": "689584c3c977efae",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.reset_nothing": {
+      "text": "Brak aktywnego override'a modelu. Już używasz domyślnego ({default_model}).",
+      "source_hash": "eb7586ca9b5dc239",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.reset_all_success": {
+      "text": "Wszystkie override'y modeli zresetowane ({count} usuniętych).",
+      "source_hash": "3c3f13bb2c03d71f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.unknown_model": {
+      "text": "Nieznany model: '{input}'",
+      "source_hash": "510d04b9902c64d8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.unknown_slot": {
+      "text": "Nieznany slot: '{input}'. Dostępne: {slots}",
+      "source_hash": "4d62546cd61b51e9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.available_aliases": {
+      "text": "Dostępne: {aliases}",
+      "source_hash": "656f9687725a4fde",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.usage_hint": {
+      "text": "Użycie:\n  /setmodel <model> (globalnie)\n  /setmodel <slot> <model> (na slot)\n  /setmodel reset (resetuj wszystko)\n  /setmodel reset <slot> (resetuj slot)\n\nSloty: {slots}\nPrzykład: /setmodel code opus",
+      "source_hash": "a6d8452f4264b1e8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.models_header": {
+      "text": "Bieżące przypisanie modeli:",
+      "source_hash": "e98b0f9d5ad51a11",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.models_slot_line_override": {
+      "text": "{slot}: {display_name} (Override)",
+      "source_hash": "b241c2a29e36829c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.models_slot_line_default": {
+      "text": "{slot}: {display_name} (Domyślny)",
+      "source_hash": "4a49900059a9f351",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.models_change_hint": {
+      "text": "Zmień: /setmodel <slot> <model>\nPrzykład: /setmodel code opus",
+      "source_hash": "e31ec4575b556e29",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.header": {
+      "text": "🎯 Debata Multi-AI",
+      "source_hash": "9ecb8b0f10ade430",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.question_label": {
+      "text": "📌 Pytanie",
+      "source_hash": "1e14bb22c641ccdc",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.no_providers": {
+      "text": "Żaden dostawca nie mógł odpowiedzieć.",
+      "source_hash": "af25905f8b7feb6c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.errors_label": {
+      "text": "Błędy",
+      "source_hash": "cb702378f31507ef",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.recommendation_label": {
+      "text": "Kluczowy wniosek",
+      "source_hash": "b02a732edcff69db",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.strongest_contribution": {
+      "text": "Najsilniejszy wkład",
+      "source_hash": "922f93e5094f0f48",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.tie_result": {
+      "text": "Wynik: Remis",
+      "source_hash": "036369a13f0c2ff6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.synthesis_header": {
+      "text": "🎯 Synteza",
+      "source_hash": "b14a8fbe3fa4fdff",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_header": {
+      "text": "✨ Konsensus / Rozbieżność",
+      "source_hash": "233a897e3cea920d",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.detail_header": {
+      "text": "📝 Szczegółowe odpowiedzi",
+      "source_hash": "3b23441a8d0136c7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.single_provider_hint": {
+      "text": "💡 Tylko 1 dostawca dostępny. Dla prawdziwej debaty Multi-AI: skonfiguruj więcej dostawców (np. zainstaluj Ollama).",
+      "source_hash": "db948d353715fff3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.usage": {
+      "text": "Użyj /debate <pytanie> aby zapytać wiele AI równolegle.\n\nPrzykład: /debate Czym jest Bitcoin?",
+      "source_hash": "27ff9c0e1f1e4771",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.step1": {
+      "text": "Witaj! Wybierz preferowany język:",
+      "source_hash": "e9cd022986c687cd",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.step2": {
+      "text": "Gotowe! 🚀\n\nJęzyk: {lang_name}\n\nWarto wiedzieć:\n• Twój język nie jest ustalony na stałe, możesz go zmienić w każdej chwili w /settings\n• Użyj /help aby zobaczyć wszystkie komendy\n• Zadaj mi pytanie i zaczynajmy",
+      "source_hash": "1e6a6d3009b469a7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.auto_detect": {
+      "text": "Automatyczne wykrywanie (Zalecane)",
+      "source_hash": "7cd64a915587ac5f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.skip": {
+      "text": "Pomiń konfigurację",
+      "source_hash": "93a66cdbe86655b5",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.lets_go": {
+      "text": "Zaczynajmy",
+      "source_hash": "b59bed0f27171022",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.done": {
+      "text": "Miłego korzystania!",
+      "source_hash": "b8f291487a0c82eb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.skip_step1": {
+      "text": "Konfiguracja pominięta.",
+      "source_hash": "e84dd1d7c8d76d95",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.skip_step2": {
+      "text": "Konfiguracja zakończona.",
+      "source_hash": "8de10ee156b68821",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.hint": {
+      "text": "Wskazówka: użyj /onboarding aby dokończyć konfigurację.",
+      "source_hash": "5d82890cd6baacd2",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "start.welcome": {
+      "text": "Axolent jest gotowy.\n\nWyślij mi pytanie, a odpowiem.\n\nWskazówka: możesz zapisywać wiadomości bota jako zakładki. Odpowiedz poleceniem /save.",
+      "source_hash": "e4d137f9fc86f267",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "error.generic": {
+      "text": "Dostawca modelu językowego zgłasza problem (ref: {error_id}). Spróbuj ponownie za chwilę.",
+      "source_hash": "b87ca0fb5fe1dbf9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "error.internal": {
+      "text": "Błąd wewnętrzny (ref: {error_id}).",
+      "source_hash": "4759aa5be6a143d1",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "usage.header": {
+      "text": "📊 Twoje zużycie i profil:",
+      "source_hash": "0e587ddc36b3a09c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "usage.profile_unlimited": {
+      "text": "Profil: Unlimited\n\n🔓 Brak aktywnych limitów.\n\nZmień profil: /setlimit normal",
+      "source_hash": "66730ece1509535e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "usage.change_hint": {
+      "text": "Zmień profil: /setlimit <light|normal|power|unlimited>",
+      "source_hash": "4ea082d2eb752104",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.exceeded": {
+      "text": "Osiągnąłeś limit {period} ({current}/{limit} {window}, profil {profile}).\n\n{reset_info}.\n\n{options}",
+      "source_hash": "d4ec3e5db1e7b557",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.warning_70": {
+      "text": "💡 Aktywnie korzystasz z Axolent, już {used}/{limit} zapytań w tym {period}.\n{reset_info}.\n\n{upgrade_hint}",
+      "source_hash": "115a42f5385214df",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.unlimited_reminder": {
+      "text": "🔓 Uwaga: jesteś w trybie unlimited. Brak aktywnych limitów.\nDla więcej struktury: /setlimit normal",
+      "source_hash": "e3c1bc39e8d5bb48",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.current": {
+      "text": "Bieżący profil: {profile}\n\nUżycie: /setlimit <profil>\nDostępne: {available}",
+      "source_hash": "c8280eeabdd0cc81",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.confirm_unlimited": {
+      "text": "⚠️ Chcesz wyłączyć wszystkie limity.\n\nRyzyko:\n• Telegram może tymczasowo zablokować bota przy zbyt wielu edycjach\n• Twoja subskrypcja zostanie zużyta szybciej\n• Otrzymasz przypomnienie co 100 zapytań\n\nJeśli jesteś pewien: /setlimit unlimited confirm",
+      "source_hash": "9a0f5fa8c3b3895c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.unknown_profile": {
+      "text": "Nieznany profil: '{profile}'\n\nDostępne: {available}",
+      "source_hash": "177301890eb951d3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.changed_unlimited": {
+      "text": "🔓 Profil zmieniony: {old} → Unlimited\n\nBrak aktywnych limitów. Przypomnienie co 100 zapytań.\nPowrót: /setlimit normal",
+      "source_hash": "1662c24bd2d25695",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.changed": {
+      "text": "✓ Profil zmieniony: {old} → {new}\n\nNowe limity:\n• {per_minute}/min\n• {per_hour}/godz.\n• {per_day}/dzień",
+      "source_hash": "f1d2fce191749991",
+      "auto_translated": true,
+      "reviewed": false
+    }
+  }
+}

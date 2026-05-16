@@ -177,28 +177,19 @@ class TestStartRespectsStickyLanguage:
 # ──────────────────────────────────────────────────────────────
 
 
-_WIZARD_DONE_EXPECTED: dict[str, str] = {
-    "de": "Viel Spaß",
-    "en": "Enjoy",
-    "fr": "Amusez-vous",
-    "es": "disfrutar",
-    "it": "divertimento",
-    "pt": "Aproveite",
-    "nl": "Veel plezier",
-    "pl": "zabawy",
-    "sv": "Ha det kul",
-    "tr": "eğlenceler",
-    "ru": "использования",
-    "uk": "користування",
-    "zh": "使用愉快",
-    "ja": "楽しんで",
-    "ko": "즐겁게",
-    "ar": "استمتع",
-    "hi": "आनंद",
-    "id": "menikmati",
-    "th": "สนุก",
-    "vi": "vui vẻ",
-}
+def _get_wizard_done_expected() -> dict[str, str]:
+    """Derive expected fragments from the canonical i18n JSON source."""
+    from i18n.domain.i18n import t
+
+    result = {}
+    for code in WIZARD_LANGUAGES:
+        text = t("onboarding.done", code)
+        # Use the first 4+ characters as the expected fragment (enough to validate)
+        result[code] = text[:6] if len(text) >= 6 else text
+    return result
+
+
+_WIZARD_DONE_EXPECTED: dict[str, str] = _get_wizard_done_expected()
 
 
 class TestWizardDoneI18n:
@@ -291,10 +282,9 @@ class TestHelpRespectsStickyLanguage:
             "vi",
         ],
     )
-    async def test_help_falls_back_to_english_for_other_langs(
-        self, lang_code: str
-    ) -> None:
-        """/help falls back to EN for lang={lang_code} (not DE)."""
+    async def test_help_shows_native_text_for_all_langs(self, lang_code: str) -> None:
+        """/help shows native translation for lang={lang_code}."""
+        from i18n.domain.i18n import t
         from presentation.handlers import handle_help_command
 
         update = _make_update()
@@ -304,7 +294,9 @@ class TestHelpRespectsStickyLanguage:
 
         call_args = update.message.reply_text.call_args
         text = call_args[0][0]
-        assert "Command Overview" in text
+        # The help text should contain the native help.title for this language
+        expected_title = t("help.title", lang_code)
+        assert expected_title in text
 
 
 # ──────────────────────────────────────────────────────────────

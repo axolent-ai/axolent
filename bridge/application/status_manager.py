@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from domain.i18n import get_status_text  # noqa: F401 (re-export)
+from i18n.domain.i18n import get_status_text  # noqa: F401 (re-export)
 
 log = logging.getLogger(__name__)
 

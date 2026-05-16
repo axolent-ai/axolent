@@ -1,0 +1,612 @@
+{
+  "_version": "1",
+  "_language": "hi",
+  "keys": {
+    "reset.confirmation": {
+      "text": "बातचीत रीस���ट की गई। नई शुरुआत करते हैं!",
+      "source_hash": "e000fd1b2406e865",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "help.title": {
+      "text": "🦎 <b>Axolent कमांड अवलोकन</b>",
+      "source_hash": "49575bbc77fd13d6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "help.body": {
+      "text": "<b>चैट</b>\n• एक संदे��� भेजें और बॉट जवाब देगा\n• /new नई चैट (इतिहास साफ करता है)\n• /reset बातचीत इतिहास साफ करता है\n\n<b>मेमोरी</b>\n• /remember &lt;टेक्स्ट&gt; एक नोट सह���जता है\n• /memory आपके नोट्स दिखाता है\n• /forget &lt;id&gt; एक नोट हटाता है\n\n<b>बु��मार्क</b>\n• /save (उत्तर के रूप में) बॉट का उत्तर सहेजता है\n• /bookmarks सहेजे गए बुकमार्क दिखाता है\n\n<b>मल्टी-AI</b>\n• /debate &lt;प्रश्न&gt; समानांतर में कई AI से पूछता है\n\n<b>कॉन्फ़िगरेशन</b>\n• /settings दृश्य सेटिंग्स\n• /setmodel &lt;मॉडल&gt; AI मॉडल बदलता है\n• /resetmodel मॉडल को डिफ़ॉल्ट पर रीसेट करता है\n• /models वर्तमान स्लॉट असाइनमेंट दिखाता है\n• /setlimit &lt;प��रोफ़ाइल&gt; प्रोफ़ाइल बदलता है\n• /usage उपयोग और प्रोफ़ाइल दिखाता है\n\n<b>सेटअप &amp; भाषा</b>\n• /start स्वागत (नए उपयोगकर्ताओं के लिए सेटअप)\n• /onboarding मैन्युअल रूप से सेटअप शुरू करें\n• /lang &lt;कोड&gt; भाषा बदलें\n\n<b>सहायता</b>\n• /help यह अवलोकन",
+      "source_hash": "cdaa4c2a933ffb3e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "remember.saved": {
+      "text": "सहेजा गया। [{entry_id}]",
+      "source_hash": "e38f978b1c256bb4",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "remember.usage": {
+      "text": "उपयोग:\n/remember <टेक्स्ट>  टेक्स्ट सहेजें\n/remember <लेबल>  (उत्तर के रूप में)  बॉट उत्तर लेबल के साथ सहेजें",
+      "source_hash": "39bc9dcd1d8b2a46",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "forget.success": {
+      "text": "हटाया गया: {entry_id}\n\nनोट: यदि सामग���री वर्तमान बातचीत में है, पूर्ण पुनरारंभ के लिए /reset उपयोग करें।",
+      "source_hash": "60fba3b1a943511e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "forget.not_found": {
+      "text": "प्रविष्टि '{entry_id}' नहीं मिली या आपकी नहीं है।",
+      "source_hash": "47725ae8b2f7ee5b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "forget.usage": {
+      "text": "उपयो��: /forget <id>\n\nID /memory से खोजें",
+      "source_hash": "f677fe1f61d5e5d3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "memory.empty": {
+      "text": "अभी तक कोई नो�� सहेजा नहीं गया। /remember <टेक्स्ट> से कुछ सहेजें।",
+      "source_hash": "c8020803455d49df",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "memory.list_header": {
+      "text": "अंतिम {count} नोट्स:\n",
+      "source_hash": "09f7d74ffd6dca06",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "memory.search_no_results": {
+      "text": "'{query}' से मेल खाने वाले कोई नोट नहीं मिले।",
+      "source_hash": "fd6770495d95e1b7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "memory.search_header": {
+      "text": "'{query}' के लिए खोज परिणाम ({count} मिलान):\n",
+      "source_hash": "ad7ee7571623a7b9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.saved": {
+      "text": "बुकमार्क सहेजा गया",
+      "source_hash": "8295d8d1d05c41cb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.removed": {
+      "text": "बुकमार्क हटाया गया",
+      "source_hash": "9c9fc0c810455ec4",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.save_hint": {
+      "text": "बॉट संदेश पर /save से उत्तर दें बुकमार्क के रूप में सहेजने के लिए।",
+      "source_hash": "59bde2efd344936b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.list_empty": {
+      "text": "आपके पास अभी तक कोई बुकमार्क नहीं है। बॉट संदेश पर /save से उत्तर दें।",
+      "source_hash": "eea6ad8f4ce61a74",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.delete_confirm": {
+      "text": "बुकमार्क{date_display} हटाया गया",
+      "source_hash": "7a7ca27da766be24",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.list_header": {
+      "text": "आपके अंतिम {count} बुकमार्क:\n",
+      "source_hash": "81d277f4399b8552",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "lang.changed": {
+      "text": "भाषा बदली गई: {name} ({code})",
+      "source_hash": "dea60593b51b46d9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "lang.unknown": {
+      "text": "अज्ञात भाषा: '{code}'\n\nसमर्थित भाषाएँ: {supported}",
+      "source_hash": "2af5b8e3701cc09b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "lang.usage": {
+      "text": "उपयोग: /lang <कोड>\n\nसमर्थित भाषाएँ: {supported}\n\nउदाहरण: /lang en",
+      "source_hash": "b701b9155d8b780b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "lang.list_header": {
+      "text": "भाषा चु���ें",
+      "source_hash": "bba5b40bdd28c66e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "inline_command.warning": {
+      "text": "नोट: /setmodel या /reset जैसे कमांड अलग संदेश के रूप में भेजे जाने चाहिए, टेक्स्ट के साथ नहीं।",
+      "source_hash": "440ecd5d7d8f49d6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "status.memory_loading": {
+      "text": "🧠 नोट्स लोड हो रहे हैं…",
+      "source_hash": "10a80da5fa0ce1f6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "status.memory_loaded": {
+      "text": "🧠 नोट्स लोड हो रहे हैं… ({n} मिले)",
+      "source_hash": "661a08fbf1fdeede",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "status.thinking": {
+      "text": "💭 सोच रहा हूँ…",
+      "source_hash": "9f0fdd33fa5310c6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "status.formatting": {
+      "text": "✨ फॉर्मेट कर रहा हूँ…",
+      "source_hash": "0058a0018f8c84c4",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.main_title": {
+      "text": "स���टिंग्स",
+      "source_hash": "74a883a037bc227f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.models_section": {
+      "text": "प्रति स्लॉट मॉडल:",
+      "source_hash": "bc65cee013de3cc6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_section": {
+      "text": "भाषा:",
+      "source_hash": "8c16819a2bd49b95",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_all_btn": {
+      "text": "सब रीसेट करें",
+      "source_hash": "645982c52b7c11ae",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.default_suffix": {
+      "text": "(डिफ़ॉल्ट)",
+      "source_hash": "1fc1ffe61be98b40",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.global_override_suffix": {
+      "text": "(वैश्विक)",
+      "source_hash": "07f3cbc08fc3a719",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.global_override_text": {
+      "text": "⚡ <b>वैश्विक ओवरराइड सक्रिय: {display_name} (सभी स्लॉट)</b>",
+      "source_hash": "f20593b0c512835b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_global_btn": {
+      "text": "वैश्विक ओवरराइड हटाएँ",
+      "source_hash": "32e0ac7f68c3bd74",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.slot_select_title": {
+      "text": "{slot} — मॉडल चुनें",
+      "source_hash": "8ee3c5b2850b209b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.back_btn": {
+      "text": "← मुख्य मेनू पर वापस",
+      "source_hash": "e35c6e48aa36ab34",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_slot_btn": {
+      "text": "डिफ़ॉल्ट पर रीसेट करें",
+      "source_hash": "bc5b45ae7b60692a",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_confirm_title": {
+      "text": "क्या सच में सभी मॉडल ओवरराइड रीसेट करें?",
+      "source_hash": "aa2918304c882ca5",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_confirm_yes": {
+      "text": "हाँ, सब रीसेट करें",
+      "source_hash": "ab1bd30f87b6a4cb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_confirm_cancel": {
+      "text": "रद्द करें",
+      "source_hash": "19766ed6ccb2f4a3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_all_done": {
+      "text": "सभी मॉडल ओवरराइड रीसेट ({count} हटाए गए)।",
+      "source_hash": "3c3f13bb2c03d71f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_all_nothing": {
+      "text": "कोई सक्रिय ओवरराइड नहीं, कुछ करने को नहीं।",
+      "source_hash": "db9152ed96a0122b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.model_set": {
+      "text": "{slot} के लिए मॉडल सेट: {display_name}",
+      "source_hash": "82a2fbd779bb157c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.model_reset": {
+      "text": "{slot} का मॉडल डिफ़ॉल्ट पर रीसेट।",
+      "source_hash": "689584c3c977efae",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.model_reset_nothing": {
+      "text": "{slot} ��हले से डिफ़ॉल्ट उपयोग कर रहा है।",
+      "source_hash": "d9e4807e8fe83209",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_title": {
+      "text": "भाषा चुनें",
+      "source_hash": "bba5b40bdd28c66e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_back": {
+      "text": "← वापस",
+      "source_hash": "aceb696a04c19971",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_set": {
+      "text": "भाषा बदली: {name}",
+      "source_hash": "42fde17aaaca134d",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_button": {
+      "text": "भाषा: {name}",
+      "source_hash": "d99eed9b5921900c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.set_success": {
+      "text": "मॉ��ल बदला: {display_name} ({model_id})",
+      "source_hash": "442d42b45287a661",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.set_success_note": {
+      "text": "अगले संदेश से लागू होगा।",
+      "source_hash": "28e9fdc02cd36661",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.set_slot_success": {
+      "text": "{slot} का मॉडल बदला: {display_name} ({model_id})",
+      "source_hash": "e013b9978ce2b58d",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.set_slot_note": {
+      "text": "केवल {slot} अनुरोधों पर लागू।",
+      "source_hash": "5417e4e1b684e4d6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.reset_success": {
+      "text": "मॉडल डिफ़ॉल्ट पर रीसेट ({default_model})।",
+      "source_hash": "02f5db9f8f4e7d55",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.reset_slot_success": {
+      "text": "{slot} का मॉडल डिफ़ॉल्ट पर रीसेट।",
+      "source_hash": "689584c3c977efae",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.reset_nothing": {
+      "text": "कोई मॉडल ओवरराइड सक्रिय नहीं। आप पहले से डिफ़ॉल्ट ({default_model}) उपयोग कर रहे हैं।",
+      "source_hash": "eb7586ca9b5dc239",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.reset_all_success": {
+      "text": "सभी मॉडल ओवरराइड रीसेट ({count} हटाए गए)।",
+      "source_hash": "3c3f13bb2c03d71f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.unknown_model": {
+      "text": "अज्ञात मॉडल: '{input}'",
+      "source_hash": "510d04b9902c64d8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.unknown_slot": {
+      "text": "अज्ञात स्लॉट: '{input}'। उपलब्ध: {slots}",
+      "source_hash": "4d62546cd61b51e9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.available_aliases": {
+      "text": "उपलब्ध: {aliases}",
+      "source_hash": "656f9687725a4fde",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.usage_hint": {
+      "text": "उपयोग:\n  /setmodel <मॉडल> (वैश्विक)\n  /setmodel <स्लॉट> <मॉडल> (प्र��ि स्लॉट)\n  /setmodel reset (सब रीसेट)\n  /setmodel reset <स्लॉट> (स्लॉट रीसेट)\n\nस्लॉट: {slots}\nउदाहरण: /setmodel code opus",
+      "source_hash": "a6d8452f4264b1e8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.models_header": {
+      "text": "वर्तमान मॉडल असाइनमेंट:",
+      "source_hash": "e98b0f9d5ad51a11",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.models_slot_line_override": {
+      "text": "{slot}: {display_name} (ओवरराइड)",
+      "source_hash": "b241c2a29e36829c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.models_slot_line_default": {
+      "text": "{slot}: {display_name} (डिफ़ॉल्ट)",
+      "source_hash": "4a49900059a9f351",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.models_change_hint": {
+      "text": "बदलें: /setmodel <स्लॉट> <मॉडल>\nउदाहरण: /setmodel code opus",
+      "source_hash": "e31ec4575b556e29",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.header": {
+      "text": "🎯 मल्टी-AI बहस",
+      "source_hash": "9ecb8b0f10ade430",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.question_label": {
+      "text": "📌 प्रश्न",
+      "source_hash": "1e14bb22c641ccdc",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.no_providers": {
+      "text": "कोई प्रदाता जवाब नहीं दे सका।",
+      "source_hash": "af25905f8b7feb6c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.errors_label": {
+      "text": "त्रुटियाँ",
+      "source_hash": "cb702378f31507ef",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.recommendation_label": {
+      "text": "मुख्य निष्कर्ष",
+      "source_hash": "b02a732edcff69db",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.strongest_contribution": {
+      "text": "सबसे मजबूत योगदान",
+      "source_hash": "922f93e5094f0f48",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.tie_result": {
+      "text": "परिणाम: बराबरी",
+      "source_hash": "036369a13f0c2ff6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.synthesis_header": {
+      "text": "🎯 संश्लेषण",
+      "source_hash": "b14a8fbe3fa4fdff",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_header": {
+      "text": "✨ सहमति / असहमति",
+      "source_hash": "233a897e3cea920d",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.detail_header": {
+      "text": "📝 विस्तृत उत्तर",
+      "source_hash": "3b23441a8d0136c7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.single_provider_hint": {
+      "text": "💡 केवल 1 प्रदाता उपलब्ध। वास्तविक मल्टी-AI बहस के लिए: और प्रदाता कॉन्फ़िगर करें।",
+      "source_hash": "db948d353715fff3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.usage": {
+      "text": "/debate <प्रश्न> से कई AI से समानांतर में पूछें।\n\nउदाहरण: /debate बिटकॉइन क्या है?",
+      "source_hash": "27ff9c0e1f1e4771",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.step1": {
+      "text": "स्वागत है! अपनी पसंदीदा भाषा चुनें:",
+      "source_hash": "e9cd022986c687cd",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.step2": {
+      "text": "आप तैयार हैं! 🚀\n\nभाषा: {lang_name}\n\n���ानने योग्य:\n• भाषा निश्चित नहीं है, /settings से कभी भी बदल सकते हैं\n• /help से सभी कमांड देखें\n• मुझसे एक सवाल पूछें और शुरू करें",
+      "source_hash": "1e6a6d3009b469a7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.auto_detect": {
+      "text": "स्वतः पहचान (अनुशंसित)",
+      "source_hash": "7cd64a915587ac5f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.skip": {
+      "text": "सेटअप छोड़ें",
+      "source_hash": "93a66cdbe86655b5",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.lets_go": {
+      "text": "शुरू करें",
+      "source_hash": "b59bed0f27171022",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.done": {
+      "text": "आनंद लें!",
+      "source_hash": "b8f291487a0c82eb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.skip_step1": {
+      "text": "सेटअप छोड़ दिया गया।",
+      "source_hash": "e84dd1d7c8d76d95",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.skip_step2": {
+      "text": "सेटअप पूरा हुआ।",
+      "source_hash": "8de10ee156b68821",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.hint": {
+      "text": "सुझाव: सेटअप पूरा करने के लिए /onboarding उपयोग करें।",
+      "source_hash": "5d82890cd6baacd2",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "start.welcome": {
+      "text": "Axolent तैयार है।\n\nमुझे एक सवाल भेजें और मैं जवाब दूँगा।\n\nसुझाव: बॉट संदेशों को बुकमार्क के रूप में सहेज सकते हैं। बस /save से उत्तर दें।",
+      "source_hash": "e4d137f9fc86f267",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "error.generic": {
+      "text": "भाषा मॉडल प्रदाता एक समस्या की रिपोर्ट करता है (ref: {error_id})। कृपया थोड़ी देर बाद पुनः प्रयास करें।",
+      "source_hash": "b87ca0fb5fe1dbf9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "error.internal": {
+      "text": "आंतरिक त्रुटि (ref: {error_id})।",
+      "source_hash": "4759aa5be6a143d1",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "usage.header": {
+      "text": "📊 आपका उपयोग और प्रोफ़ाइल:",
+      "source_hash": "0e587ddc36b3a09c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "usage.profile_unlimited": {
+      "text": "प्रोफ़ाइल: Unlimited\n\n🔓 कोई सीमा नहीं।\n\nप्रोफ़ाइल बदलें: /setlimit normal",
+      "source_hash": "66730ece1509535e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "usage.change_hint": {
+      "text": "प्रोफ़ाइल बदलें: /setlimit <light|normal|power|unlimited>",
+      "source_hash": "4ea082d2eb752104",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.exceeded": {
+      "text": "आप अपनी {period} सीमा तक पहुँच गए ({current}/{limit} {window}, {profile} प्रोफ़ाइल)।\n\n{reset_info}।\n\n{options}",
+      "source_hash": "d4ec3e5db1e7b557",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.warning_70": {
+      "text": "💡 आप Axolent का सक्रिय उपयोग कर रहे हैं, इस {period} में पहले से {used}/{limit} अनुरोध।\n{reset_info}।\n\n{upgrade_hint}",
+      "source_hash": "115a42f5385214df",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.unlimited_reminder": {
+      "text": "🔓 नोट: आप unlimited मोड में है���। कोई सीमा नहीं।\nअधिक संरचना के लिए: /setlimit normal",
+      "source_hash": "e3c1bc39e8d5bb48",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.current": {
+      "text": "वर्तमान प्रोफ़ाइल: {profile}\n\nउपयोग: /setlimit <प्रोफ़ाइल>\nउपलब्ध: {available}",
+      "source_hash": "c8280eeabdd0cc81",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.confirm_unlimited": {
+      "text": "⚠️ आप सभी सीमाएँ निष्क्रिय करना चाहते हैं।\n\nजोखिम:\n• बहुत अधिक संपादन पर Telegram बॉट को अस्थायी रूप से ब्लॉक कर सकता है\n• सदस्यता तेजी से खत्म होगी\n• हर 100 अनुरोधों पर रिमाइंडर मिलेगा\n\nयदि निश्चित हैं: /setlimit unlimited confirm",
+      "source_hash": "9a0f5fa8c3b3895c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.unknown_profile": {
+      "text": "अज्ञात प्रोफ़ाइल: '{profile}'\n\nउपलब्ध: {available}",
+      "source_hash": "177301890eb951d3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.changed_unlimited": {
+      "text": "🔓 प्रोफ़ाइल बदली: {old} → Unlimited\n\nकोई सीमा नहीं। हर 100 अनुरोधों पर रिमाइंडर।\nवापस: /setlimit normal",
+      "source_hash": "1662c24bd2d25695",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.changed": {
+      "text": "✓ प्रोफ़ाइल बदली: {old} → {new}\n\nनई स��माएँ:\n• {per_minute}/मिनट\n• {per_hour}/घंटा\n• {per_day}/दिन",
+      "source_hash": "f1d2fce191749991",
+      "auto_translated": true,
+      "reviewed": false
+    }
+  }
+}

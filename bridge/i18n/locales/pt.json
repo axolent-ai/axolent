@@ -1,0 +1,612 @@
+{
+  "_version": "1",
+  "_language": "pt",
+  "keys": {
+    "reset.confirmation": {
+      "text": "Conversa reiniciada. Vamos começar do zero!",
+      "source_hash": "e000fd1b2406e865",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "help.title": {
+      "text": "🦎 <b>Visão geral dos comandos Axolent</b>",
+      "source_hash": "49575bbc77fd13d6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "help.body": {
+      "text": "<b>Chat</b>\n• Envie uma mensagem e o bot responderá\n• /new novo chat (limpa histórico)\n• /reset limpa o histórico da conversa\n\n<b>Memória</b>\n• /remember &lt;texto&gt; salva uma nota\n• /memory mostra suas notas\n• /forget &lt;id&gt; exclui uma nota\n\n<b>Favoritos</b>\n• /save (como resposta) salva uma resposta do bot\n• /bookmarks mostra favoritos salvos\n\n<b>Multi-IA</b>\n• /debate &lt;pergunta&gt; consulta várias IAs em paralelo\n\n<b>Configuração</b>\n• /settings configurações visuais\n• /setmodel &lt;modelo&gt; muda o modelo de IA (opus, sonnet, haiku)\n• /resetmodel restaura o modelo padrão\n• /models mostra a atribuição atual dos slots\n��� /setlimit &lt;perfil&gt; muda o perfil (light, normal, power, unlimited)\n• /usage mostra consumo e perfil\n\n<b>Setup &amp; Idioma</b>\n• /start boas-vindas (assistente de configuração para novos usuários)\n• /onboarding iniciar assistente manualmente\n• /lang &lt;código&gt; mudar idioma (de, en, fr, ...)\n\n<b>Ajuda</b>\n• /help esta visão geral",
+      "source_hash": "cdaa4c2a933ffb3e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "remember.saved": {
+      "text": "Salvo. [{entry_id}]",
+      "source_hash": "e38f978b1c256bb4",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "remember.usage": {
+      "text": "Uso:\n/remember <texto>  salvar texto\n/remember <rótulo>  (como resposta)  salvar resposta do bot com rótulo",
+      "source_hash": "39bc9dcd1d8b2a46",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "forget.success": {
+      "text": "Esquecido: {entry_id}\n\nNota: se o conteúdo está na conversa atual, use /reset para reiniciar completamente.",
+      "source_hash": "60fba3b1a943511e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "forget.not_found": {
+      "text": "Entrada '{entry_id}' não encontrada ou não pertence a você.",
+      "source_hash": "47725ae8b2f7ee5b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "forget.usage": {
+      "text": "Uso: /forget <id>\n\nEncontre os IDs via /memory",
+      "source_hash": "f677fe1f61d5e5d3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "memory.empty": {
+      "text": "Nenhuma nota salva ainda. Use /remember <texto> para salvar algo.",
+      "source_hash": "c8020803455d49df",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "memory.list_header": {
+      "text": "Últimas {count} notas:\n",
+      "source_hash": "09f7d74ffd6dca06",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "memory.search_no_results": {
+      "text": "Nenhuma nota encontrada para '{query}'.",
+      "source_hash": "fd6770495d95e1b7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "memory.search_header": {
+      "text": "Resultados da busca por '{query}' ({count} resultados):\n",
+      "source_hash": "ad7ee7571623a7b9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.saved": {
+      "text": "Favorito salvo",
+      "source_hash": "8295d8d1d05c41cb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.removed": {
+      "text": "Favorito removido",
+      "source_hash": "9c9fc0c810455ec4",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.save_hint": {
+      "text": "Responda a uma mensagem do bot com /save para salvá-la como favorito.",
+      "source_hash": "59bde2efd344936b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.list_empty": {
+      "text": "Você ainda não tem favoritos. Responda a uma mensagem do bot com /save para salvá-la.",
+      "source_hash": "eea6ad8f4ce61a74",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.delete_confirm": {
+      "text": "Favorito{date_display} removido",
+      "source_hash": "7a7ca27da766be24",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.list_header": {
+      "text": "Seus últimos {count} favoritos:\n",
+      "source_hash": "81d277f4399b8552",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "lang.changed": {
+      "text": "Idioma alterado: {name} ({code})",
+      "source_hash": "dea60593b51b46d9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "lang.unknown": {
+      "text": "Idioma desconhecido: '{code}'\n\nIdiomas suportados: {supported}",
+      "source_hash": "2af5b8e3701cc09b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "lang.usage": {
+      "text": "Uso: /lang <código>\n\nIdiomas suportados: {supported}\n\nExemplo: /lang en",
+      "source_hash": "b701b9155d8b780b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "lang.list_header": {
+      "text": "Escolher idioma",
+      "source_hash": "bba5b40bdd28c66e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "inline_command.warning": {
+      "text": "Nota: comandos como /setmodel ou /reset devem ser enviados em uma mensagem separada, não combinados com texto.",
+      "source_hash": "440ecd5d7d8f49d6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "status.memory_loading": {
+      "text": "🧠 Carregando notas…",
+      "source_hash": "10a80da5fa0ce1f6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "status.memory_loaded": {
+      "text": "🧠 Carregando notas… ({n} encontradas)",
+      "source_hash": "661a08fbf1fdeede",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "status.thinking": {
+      "text": "💭 Pensando…",
+      "source_hash": "9f0fdd33fa5310c6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "status.formatting": {
+      "text": "✨ Formatando…",
+      "source_hash": "0058a0018f8c84c4",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.main_title": {
+      "text": "Configurações",
+      "source_hash": "74a883a037bc227f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.models_section": {
+      "text": "Modelos por slot:",
+      "source_hash": "bc65cee013de3cc6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_section": {
+      "text": "Idioma:",
+      "source_hash": "8c16819a2bd49b95",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_all_btn": {
+      "text": "Restaurar tudo",
+      "source_hash": "645982c52b7c11ae",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.default_suffix": {
+      "text": "(Padrão)",
+      "source_hash": "1fc1ffe61be98b40",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.global_override_suffix": {
+      "text": "(global)",
+      "source_hash": "07f3cbc08fc3a719",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.global_override_text": {
+      "text": "⚡ <b>Override global ativo: {display_name} (todos os slots)</b>",
+      "source_hash": "f20593b0c512835b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_global_btn": {
+      "text": "Remover override global",
+      "source_hash": "32e0ac7f68c3bd74",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.slot_select_title": {
+      "text": "{slot} — Escolher modelo",
+      "source_hash": "8ee3c5b2850b209b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.back_btn": {
+      "text": "← Voltar ao menu principal",
+      "source_hash": "e35c6e48aa36ab34",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_slot_btn": {
+      "text": "Restaurar para padrão",
+      "source_hash": "bc5b45ae7b60692a",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_confirm_title": {
+      "text": "Realmente restaurar todos os overrides de modelo?",
+      "source_hash": "aa2918304c882ca5",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_confirm_yes": {
+      "text": "Sim, restaurar tudo",
+      "source_hash": "ab1bd30f87b6a4cb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_confirm_cancel": {
+      "text": "Cancelar",
+      "source_hash": "19766ed6ccb2f4a3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_all_done": {
+      "text": "Todos os overrides de modelo restaurados ({count} removidos).",
+      "source_hash": "3c3f13bb2c03d71f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_all_nothing": {
+      "text": "Nenhum override ativo, nada a fazer.",
+      "source_hash": "db9152ed96a0122b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.model_set": {
+      "text": "Modelo para {slot} definido: {display_name}",
+      "source_hash": "82a2fbd779bb157c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.model_reset": {
+      "text": "Modelo para {slot} restaurado para padrão.",
+      "source_hash": "689584c3c977efae",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.model_reset_nothing": {
+      "text": "{slot} já usa o padrão.",
+      "source_hash": "d9e4807e8fe83209",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_title": {
+      "text": "Escolher idioma",
+      "source_hash": "bba5b40bdd28c66e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_back": {
+      "text": "← Voltar",
+      "source_hash": "aceb696a04c19971",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_set": {
+      "text": "Idioma alterado: {name}",
+      "source_hash": "42fde17aaaca134d",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_button": {
+      "text": "Idioma: {name}",
+      "source_hash": "d99eed9b5921900c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.set_success": {
+      "text": "Modelo alterado: {display_name} ({model_id})",
+      "source_hash": "442d42b45287a661",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.set_success_note": {
+      "text": "Válido a partir da sua próxima mensagem.",
+      "source_hash": "28e9fdc02cd36661",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.set_slot_success": {
+      "text": "Modelo para {slot} alterado: {display_name} ({model_id})",
+      "source_hash": "e013b9978ce2b58d",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.set_slot_note": {
+      "text": "Aplica-se apenas a solicitações de {slot}.",
+      "source_hash": "5417e4e1b684e4d6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.reset_success": {
+      "text": "Modelo restaurado para padrão ({default_model}).",
+      "source_hash": "02f5db9f8f4e7d55",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.reset_slot_success": {
+      "text": "Modelo para {slot} restaurado para padrão.",
+      "source_hash": "689584c3c977efae",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.reset_nothing": {
+      "text": "Nenhum override de modelo ativo. Você já usa o padrão ({default_model}).",
+      "source_hash": "eb7586ca9b5dc239",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.reset_all_success": {
+      "text": "Todos os overrides de modelo restaurados ({count} removidos).",
+      "source_hash": "3c3f13bb2c03d71f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.unknown_model": {
+      "text": "Modelo desconhecido: '{input}'",
+      "source_hash": "510d04b9902c64d8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.unknown_slot": {
+      "text": "Slot desconhecido: '{input}'. Disponíveis: {slots}",
+      "source_hash": "4d62546cd61b51e9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.available_aliases": {
+      "text": "Disponíveis: {aliases}",
+      "source_hash": "656f9687725a4fde",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.usage_hint": {
+      "text": "Uso:\n  /setmodel <modelo> (global)\n  /setmodel <slot> <modelo> (por slot)\n  /setmodel reset (restaurar tudo)\n  /setmodel reset <slot> (restaurar slot)\n\nSlots: {slots}\nExemplo: /setmodel code opus",
+      "source_hash": "a6d8452f4264b1e8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.models_header": {
+      "text": "Atribuição atual dos modelos:",
+      "source_hash": "e98b0f9d5ad51a11",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.models_slot_line_override": {
+      "text": "{slot}: {display_name} (Override)",
+      "source_hash": "b241c2a29e36829c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.models_slot_line_default": {
+      "text": "{slot}: {display_name} (Padrão)",
+      "source_hash": "4a49900059a9f351",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.models_change_hint": {
+      "text": "Mudar: /setmodel <slot> <modelo>\nExemplo: /setmodel code opus",
+      "source_hash": "e31ec4575b556e29",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.header": {
+      "text": "🎯 Debate Multi-IA",
+      "source_hash": "9ecb8b0f10ade430",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.question_label": {
+      "text": "📌 Pergunta",
+      "source_hash": "1e14bb22c641ccdc",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.no_providers": {
+      "text": "Nenhum provedor conseguiu responder.",
+      "source_hash": "af25905f8b7feb6c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.errors_label": {
+      "text": "Erros",
+      "source_hash": "cb702378f31507ef",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.recommendation_label": {
+      "text": "Ponto-chave",
+      "source_hash": "b02a732edcff69db",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.strongest_contribution": {
+      "text": "Contribuição mais forte",
+      "source_hash": "922f93e5094f0f48",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.tie_result": {
+      "text": "Resultado: Empate",
+      "source_hash": "036369a13f0c2ff6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.synthesis_header": {
+      "text": "🎯 Síntese",
+      "source_hash": "b14a8fbe3fa4fdff",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_header": {
+      "text": "✨ Consenso / Dissenso",
+      "source_hash": "233a897e3cea920d",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.detail_header": {
+      "text": "�� Respostas detalhadas",
+      "source_hash": "3b23441a8d0136c7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.single_provider_hint": {
+      "text": "💡 Apenas 1 provedor disponível. Para um verdadeiro Debate Multi-IA: configure mais provedores (ex. instale Ollama).",
+      "source_hash": "db948d353715fff3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.usage": {
+      "text": "Use /debate <pergunta> para consultar várias IAs em paralelo.\n\nExemplo: /debate O que é Bitcoin?",
+      "source_hash": "27ff9c0e1f1e4771",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.step1": {
+      "text": "Bem-vindo! Escolha seu idioma preferido:",
+      "source_hash": "e9cd022986c687cd",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.step2": {
+      "text": "Você está pronto! 🚀\n\nIdioma: {lang_name}\n\nBom saber:\n• Seu idioma não é fixo, você pode mudá-lo a qualquer momento em /settings\n• Use /help para ver todos os comandos\n• Faça-me uma pergunta e vamos começar",
+      "source_hash": "1e6a6d3009b469a7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.auto_detect": {
+      "text": "Detecção automática (Recomendado)",
+      "source_hash": "7cd64a915587ac5f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.skip": {
+      "text": "Pular configuração",
+      "source_hash": "93a66cdbe86655b5",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.lets_go": {
+      "text": "Vamos lá",
+      "source_hash": "b59bed0f27171022",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.done": {
+      "text": "Aproveite!",
+      "source_hash": "b8f291487a0c82eb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.skip_step1": {
+      "text": "Configuração pulada.",
+      "source_hash": "e84dd1d7c8d76d95",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.skip_step2": {
+      "text": "Configuração concluída.",
+      "source_hash": "8de10ee156b68821",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.hint": {
+      "text": "Dica: use /onboarding para completar a configuração.",
+      "source_hash": "5d82890cd6baacd2",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "start.welcome": {
+      "text": "Axolent está pronto.\n\nEnvie-me uma pergunta e eu responderei.\n\nDica: você pode salvar mensagens do bot como favorito. Basta responder com /save.",
+      "source_hash": "e4d137f9fc86f267",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "error.generic": {
+      "text": "O provedor do modelo de linguagem reporta um problema (ref: {error_id}). Tente novamente em breve.",
+      "source_hash": "b87ca0fb5fe1dbf9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "error.internal": {
+      "text": "Erro interno (ref: {error_id}).",
+      "source_hash": "4759aa5be6a143d1",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "usage.header": {
+      "text": "📊 Seu consumo e perfil:",
+      "source_hash": "0e587ddc36b3a09c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "usage.profile_unlimited": {
+      "text": "Perfil: Unlimited\n\n🔓 Sem limites ativos.\n\nMudar perfil: /setlimit normal",
+      "source_hash": "66730ece1509535e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "usage.change_hint": {
+      "text": "Mudar perfil: /setlimit <light|normal|power|unlimited>",
+      "source_hash": "4ea082d2eb752104",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.exceeded": {
+      "text": "Você atingiu seu limite {period} ({current}/{limit} {window}, perfil {profile}).\n\n{reset_info}.\n\n{options}",
+      "source_hash": "d4ec3e5db1e7b557",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.warning_70": {
+      "text": "💡 Você está usando Axolent ativamente, já {used}/{limit} solicitações nesta {period}.\n{reset_info}.\n\n{upgrade_hint}",
+      "source_hash": "115a42f5385214df",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.unlimited_reminder": {
+      "text": "🔓 Nota: você está no modo unlimited. Sem limites ativos.\nPara mais estrutura: /setlimit normal",
+      "source_hash": "e3c1bc39e8d5bb48",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.current": {
+      "text": "Perfil atual: {profile}\n\nUso: /setlimit <perfil>\nDisponíveis: {available}",
+      "source_hash": "c8280eeabdd0cc81",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.confirm_unlimited": {
+      "text": "⚠️ Você quer desativar todos os limites.\n\nRiscos:\n• Telegram pode bloquear temporariamente o bot com muitas edições\n• Sua assinatura será consumida mais rápido\n• Você receberá um lembrete a cada 100 solicitações\n\nSe tiver certeza: /setlimit unlimited confirm",
+      "source_hash": "9a0f5fa8c3b3895c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.unknown_profile": {
+      "text": "Perfil desconhecido: '{profile}'\n\nDisponíveis: {available}",
+      "source_hash": "177301890eb951d3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.changed_unlimited": {
+      "text": "🔓 Perfil alterado: {old} → Unlimited\n\nSem limites ativos. Lembrete a cada 100 solicitações.\nVoltar: /setlimit normal",
+      "source_hash": "1662c24bd2d25695",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.changed": {
+      "text": "✓ Perfil alterado: {old} → {new}\n\nNovos limites:\n• {per_minute}/min\n• {per_hour}/hora\n• {per_day}/dia",
+      "source_hash": "f1d2fce191749991",
+      "auto_translated": true,
+      "reviewed": false
+    }
+  }
+}

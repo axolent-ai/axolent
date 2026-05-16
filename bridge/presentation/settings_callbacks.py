@@ -22,70 +22,14 @@ from telegram.ext import ContextTypes
 from application.audit_service import log_command_audit
 from application.model_service import DEFAULT_MODEL, ModelService, resolve_alias
 from domain.task_slot import TaskSlot
+from i18n.domain.i18n import t
 from presentation.decorators import require_private_chat, require_whitelist
 
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# i18n Strings
+# i18n Strings (migrated to JSON-based t() system)
 # ---------------------------------------------------------------------------
-
-_SETTINGS_STRINGS: dict[str, dict[str, str]] = {
-    "de": {
-        "main_title": "Einstellungen",
-        "models_section": "Modelle pro Slot:",
-        "lang_section": "Sprache:",
-        "reset_all_btn": "Alle zurücksetzen",
-        "default_suffix": "(Default)",
-        "global_override_suffix": "(global)",
-        "global_override_headline": "Globaler Override: {display_name} (alle Slots)",
-        "global_override_text": "⚡ <b>Globaler Override aktiv: {display_name} (alle Slots)</b>",
-        "reset_global_btn": "Globalen Override aufheben",
-        "slot_select_title": "{slot} — Modell wählen",
-        "current_marker": "●",
-        "other_marker": "○",
-        "back_btn": "← Zurück zum Hauptmenü",
-        "reset_slot_btn": "Auf Default zurücksetzen",
-        "reset_confirm_title": "Wirklich alle Modell-Overrides zurücksetzen?",
-        "reset_confirm_yes": "Ja, alle zurücksetzen",
-        "reset_confirm_cancel": "Abbrechen",
-        "reset_all_done": "Alle Modell-Overrides zurückgesetzt ({count} entfernt).",
-        "reset_all_nothing": "Keine Overrides aktiv, nichts zu tun.",
-        "model_set": "Modell für {slot} gesetzt: {display_name}",
-        "model_reset": "Modell für {slot} auf Default zurückgesetzt.",
-        "model_reset_nothing": "{slot} nutzt bereits den Default.",
-        "lang_title": "Sprache wählen",
-        "lang_back": "← Zurück",
-        "lang_set": "Sprache gewechselt: {name}",
-    },
-    "en": {
-        "main_title": "Settings",
-        "models_section": "Models per slot:",
-        "lang_section": "Language:",
-        "reset_all_btn": "Reset all",
-        "default_suffix": "(Default)",
-        "global_override_suffix": "(global)",
-        "global_override_headline": "Global override: {display_name} (all slots)",
-        "global_override_text": "⚡ <b>Global Override active: {display_name} (all slots)</b>",
-        "reset_global_btn": "Remove global override",
-        "slot_select_title": "{slot} — Choose model",
-        "current_marker": "●",
-        "other_marker": "○",
-        "back_btn": "← Back to main menu",
-        "reset_slot_btn": "Reset to default",
-        "reset_confirm_title": "Really reset all model overrides?",
-        "reset_confirm_yes": "Yes, reset all",
-        "reset_confirm_cancel": "Cancel",
-        "reset_all_done": "All model overrides reset ({count} removed).",
-        "reset_all_nothing": "No overrides active, nothing to do.",
-        "model_set": "Model for {slot} set: {display_name}",
-        "model_reset": "Model for {slot} reset to default.",
-        "model_reset_nothing": "{slot} already uses default.",
-        "lang_title": "Choose language",
-        "lang_back": "← Back",
-        "lang_set": "Language changed: {name}",
-    },
-}
 
 # Available language options for the settings menu (synced with domain.onboarding.WIZARD_LANGUAGES)
 _SETTINGS_LANGUAGES: dict[str, str] = {
@@ -116,11 +60,40 @@ _AVAILABLE_ALIASES: list[str] = ["opus", "sonnet", "haiku"]
 
 
 def _get_settings_strings(lang: str = "de") -> dict[str, str]:
-    """Returns settings i18n strings for the given language.
+    """Returns settings i18n strings for the given language via t().
 
-    Falls back to EN for unsupported languages (not DE).
+    Maps internal keys to the JSON i18n system.
     """
-    return _SETTINGS_STRINGS.get(lang, _SETTINGS_STRINGS["en"])
+    return {
+        "main_title": t("settings.main_title", lang),
+        "models_section": t("settings.models_section", lang),
+        "lang_section": t("settings.lang_section", lang),
+        "reset_all_btn": t("settings.reset_all_btn", lang),
+        "default_suffix": t("settings.default_suffix", lang),
+        "global_override_suffix": t("settings.global_override_suffix", lang),
+        "global_override_text": t(
+            "settings.global_override_text", lang, display_name="{display_name}"
+        ),
+        "reset_global_btn": t("settings.reset_global_btn", lang),
+        "slot_select_title": t("settings.slot_select_title", lang, slot="{slot}"),
+        "current_marker": "●",
+        "other_marker": "○",
+        "back_btn": t("settings.back_btn", lang),
+        "reset_slot_btn": t("settings.reset_slot_btn", lang),
+        "reset_confirm_title": t("settings.reset_confirm_title", lang),
+        "reset_confirm_yes": t("settings.reset_confirm_yes", lang),
+        "reset_confirm_cancel": t("settings.reset_confirm_cancel", lang),
+        "reset_all_done": t("settings.reset_all_done", lang, count="{count}"),
+        "reset_all_nothing": t("settings.reset_all_nothing", lang),
+        "model_set": t(
+            "settings.model_set", lang, slot="{slot}", display_name="{display_name}"
+        ),
+        "model_reset": t("settings.model_reset", lang, slot="{slot}"),
+        "model_reset_nothing": t("settings.model_reset_nothing", lang, slot="{slot}"),
+        "lang_title": t("settings.lang_title", lang),
+        "lang_back": t("settings.lang_back", lang),
+        "lang_set": t("settings.lang_set", lang, name="{name}"),
+    }
 
 
 def _get_model_service(context: ContextTypes.DEFAULT_TYPE) -> Any:
@@ -212,12 +185,11 @@ def build_main_menu_keyboard(
 
     # Language button
     current_lang_name = _SETTINGS_LANGUAGES.get(lang, lang.upper())
+    lang_btn_text = t("settings.lang_button", lang, name=current_lang_name)
     buttons.append(
         [
             InlineKeyboardButton(
-                f"Sprache: {current_lang_name}"
-                if lang == "de"
-                else f"Language: {current_lang_name}",
+                lang_btn_text,
                 callback_data="settings_lang_menu",
             )
         ]

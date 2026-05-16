@@ -58,6 +58,20 @@ repos:
         files: ^bridge/(application|domain|infrastructure|presentation|config)/.*\.(py|ya?ml)$
         exclude: ^bridge/tests/
 
+      - id: i18n-check
+        name: i18n key parity and hash check
+        entry: python scripts/i18n_check.py
+        language: python
+        files: ^bridge/i18n/locales/.*\.json$
+        pass_filenames: false
+
+      - id: i18n-scan
+        name: i18n hardcoded string scanner
+        entry: python scripts/i18n_scan.py
+        language: python
+        files: ^bridge/(presentation|application)/.*\.py$
+        pass_filenames: false
+
       - id: import-linter
         name: import-linter
         entry: python scripts/run_with_venv.py lint-imports

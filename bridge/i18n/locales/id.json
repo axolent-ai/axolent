@@ -1,0 +1,612 @@
+{
+  "_version": "1",
+  "_language": "id",
+  "keys": {
+    "reset.confirmation": {
+      "text": "Percakapan direset. Mari mulai dari awal!",
+      "source_hash": "e000fd1b2406e865",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "help.title": {
+      "text": "🦎 <b>Ikhtisar Perintah Axolent</b>",
+      "source_hash": "49575bbc77fd13d6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "help.body": {
+      "text": "<b>Chat</b>\n• Kirim pesan dan bot akan menjawab\n• /new chat baru (hapus riwayat)\n• /reset hapus riwayat percakapan\n\n<b>Memori</b>\n• /remember &lt;teks&gt; simpan catatan\n• /memory tampilkan catatan\n• /forget &lt;id&gt; hapus catatan\n\n<b>Bookmark</b>\n• /save (sebagai balasan) simpan respons bot\n• /bookmarks tampilkan bookmark tersimpan\n\n<b>Multi-AI</b>\n• /debate &lt;pertanyaan&gt; tanya beberapa AI secara paralel\n\n<b>Konfigurasi</b>\n• /settings menu pengaturan visual\n• /setmodel &lt;model&gt; ubah model AI (opus, sonnet, haiku)\n• /resetmodel reset model ke default\n• /models tampilkan penugasan slot saat ini\n• /setlimit &lt;profil&gt; ubah profil (light, normal, power, unlimited)\n• /usage tampilkan penggunaan dan profil\n\n<b>Setup &amp; Bahasa</b>\n• /start selamat datang (wizard setup untuk pengguna baru)\n• /onboarding mulai wizard setup secara manual\n• /lang &lt;kode&gt; ubah bahasa (de, en, fr, ...)\n\n<b>Bantuan</b>\n• /help ikhtisar ini",
+      "source_hash": "cdaa4c2a933ffb3e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "remember.saved": {
+      "text": "Tersimpan. [{entry_id}]",
+      "source_hash": "e38f978b1c256bb4",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "remember.usage": {
+      "text": "Penggunaan:\n/remember <teks>  simpan teks\n/remember <label>  (sebagai balasan)  simpan respons bot dengan label",
+      "source_hash": "39bc9dcd1d8b2a46",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "forget.success": {
+      "text": "Dilupakan: {entry_id}\n\nCatatan: jika konten ada dalam percakapan saat ini, gunakan /reset untuk memulai ulang sepenuhnya.",
+      "source_hash": "60fba3b1a943511e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "forget.not_found": {
+      "text": "Entri '{entry_id}' tidak ditemukan atau bukan milik Anda.",
+      "source_hash": "47725ae8b2f7ee5b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "forget.usage": {
+      "text": "Penggunaan: /forget <id>\n\nTemukan ID melalui /memory",
+      "source_hash": "f677fe1f61d5e5d3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "memory.empty": {
+      "text": "Belum ada catatan tersimpan. Gunakan /remember <teks> untuk menyimpan sesuatu.",
+      "source_hash": "c8020803455d49df",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "memory.list_header": {
+      "text": "Terakhir {count} catatan:\n",
+      "source_hash": "09f7d74ffd6dca06",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "memory.search_no_results": {
+      "text": "Tidak ada catatan yang cocok dengan '{query}'.",
+      "source_hash": "fd6770495d95e1b7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "memory.search_header": {
+      "text": "Hasil pencarian '{query}' ({count} kecocokan):\n",
+      "source_hash": "ad7ee7571623a7b9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.saved": {
+      "text": "Bookmark tersimpan",
+      "source_hash": "8295d8d1d05c41cb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.removed": {
+      "text": "Bookmark dihapus",
+      "source_hash": "9c9fc0c810455ec4",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.save_hint": {
+      "text": "Balas pesan bot dengan /save untuk menyimpannya sebagai bookmark.",
+      "source_hash": "59bde2efd344936b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.list_empty": {
+      "text": "Belum ada bookmark. Balas pesan bot dengan /save untuk menambahkan.",
+      "source_hash": "eea6ad8f4ce61a74",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.delete_confirm": {
+      "text": "Bookmark{date_display} dihapus",
+      "source_hash": "7a7ca27da766be24",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.list_header": {
+      "text": "{count} bookmark terakhir:\n",
+      "source_hash": "81d277f4399b8552",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "lang.changed": {
+      "text": "Bahasa diubah: {name} ({code})",
+      "source_hash": "dea60593b51b46d9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "lang.unknown": {
+      "text": "Bahasa tidak dikenal: '{code}'\n\nBahasa yang didukung: {supported}",
+      "source_hash": "2af5b8e3701cc09b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "lang.usage": {
+      "text": "Penggunaan: /lang <kode>\n\nBahasa yang didukung: {supported}\n\nContoh: /lang en",
+      "source_hash": "b701b9155d8b780b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "lang.list_header": {
+      "text": "Pilih bahasa",
+      "source_hash": "bba5b40bdd28c66e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "inline_command.warning": {
+      "text": "Catatan: Perintah seperti /setmodel atau /reset harus dikirim sebagai pesan terpisah, tidak digabungkan dengan teks.",
+      "source_hash": "440ecd5d7d8f49d6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "status.memory_loading": {
+      "text": "🧠 Memuat catatan…",
+      "source_hash": "10a80da5fa0ce1f6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "status.memory_loaded": {
+      "text": "🧠 Memuat catatan… ({n} ditemukan)",
+      "source_hash": "661a08fbf1fdeede",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "status.thinking": {
+      "text": "💭 Sedang berpikir…",
+      "source_hash": "9f0fdd33fa5310c6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "status.formatting": {
+      "text": "✨ Memformat…",
+      "source_hash": "0058a0018f8c84c4",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.main_title": {
+      "text": "Pengaturan",
+      "source_hash": "74a883a037bc227f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.models_section": {
+      "text": "Model per slot:",
+      "source_hash": "bc65cee013de3cc6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_section": {
+      "text": "Bahasa:",
+      "source_hash": "8c16819a2bd49b95",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_all_btn": {
+      "text": "Reset semua",
+      "source_hash": "645982c52b7c11ae",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.default_suffix": {
+      "text": "(Default)",
+      "source_hash": "1fc1ffe61be98b40",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.global_override_suffix": {
+      "text": "(global)",
+      "source_hash": "07f3cbc08fc3a719",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.global_override_text": {
+      "text": "⚡ <b>Override global aktif: {display_name} (semua slot)</b>",
+      "source_hash": "f20593b0c512835b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_global_btn": {
+      "text": "Hapus override global",
+      "source_hash": "32e0ac7f68c3bd74",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.slot_select_title": {
+      "text": "{slot} — Pilih model",
+      "source_hash": "8ee3c5b2850b209b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.back_btn": {
+      "text": "← Kembali ke menu utama",
+      "source_hash": "e35c6e48aa36ab34",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_slot_btn": {
+      "text": "Reset ke default",
+      "source_hash": "bc5b45ae7b60692a",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_confirm_title": {
+      "text": "Yakin ingin mereset semua override model?",
+      "source_hash": "aa2918304c882ca5",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_confirm_yes": {
+      "text": "Ya, reset semua",
+      "source_hash": "ab1bd30f87b6a4cb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_confirm_cancel": {
+      "text": "Batal",
+      "source_hash": "19766ed6ccb2f4a3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_all_done": {
+      "text": "Semua override model direset ({count} dihapus).",
+      "source_hash": "3c3f13bb2c03d71f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_all_nothing": {
+      "text": "Tidak ada override aktif, tidak ada yang perlu dilakukan.",
+      "source_hash": "db9152ed96a0122b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.model_set": {
+      "text": "Model untuk {slot} disetel: {display_name}",
+      "source_hash": "82a2fbd779bb157c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.model_reset": {
+      "text": "Model untuk {slot} direset ke default.",
+      "source_hash": "689584c3c977efae",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.model_reset_nothing": {
+      "text": "{slot} sudah menggunakan default.",
+      "source_hash": "d9e4807e8fe83209",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_title": {
+      "text": "Pilih bahasa",
+      "source_hash": "bba5b40bdd28c66e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_back": {
+      "text": "← Kembali",
+      "source_hash": "aceb696a04c19971",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_set": {
+      "text": "Bahasa diubah: {name}",
+      "source_hash": "42fde17aaaca134d",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_button": {
+      "text": "Bahasa: {name}",
+      "source_hash": "d99eed9b5921900c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.set_success": {
+      "text": "Model diubah: {display_name} ({model_id})",
+      "source_hash": "442d42b45287a661",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.set_success_note": {
+      "text": "Berlaku mulai pesan berikutnya.",
+      "source_hash": "28e9fdc02cd36661",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.set_slot_success": {
+      "text": "Model untuk {slot} diubah: {display_name} ({model_id})",
+      "source_hash": "e013b9978ce2b58d",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.set_slot_note": {
+      "text": "Hanya berlaku untuk permintaan {slot}.",
+      "source_hash": "5417e4e1b684e4d6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.reset_success": {
+      "text": "Model direset ke default ({default_model}).",
+      "source_hash": "02f5db9f8f4e7d55",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.reset_slot_success": {
+      "text": "Model untuk {slot} direset ke default.",
+      "source_hash": "689584c3c977efae",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.reset_nothing": {
+      "text": "Tidak ada override model aktif. Anda sudah menggunakan default ({default_model}).",
+      "source_hash": "eb7586ca9b5dc239",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.reset_all_success": {
+      "text": "Semua override model direset ({count} dihapus).",
+      "source_hash": "3c3f13bb2c03d71f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.unknown_model": {
+      "text": "Model tidak dikenal: '{input}'",
+      "source_hash": "510d04b9902c64d8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.unknown_slot": {
+      "text": "Slot tidak dikenal: '{input}'. Tersedia: {slots}",
+      "source_hash": "4d62546cd61b51e9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.available_aliases": {
+      "text": "Tersedia: {aliases}",
+      "source_hash": "656f9687725a4fde",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.usage_hint": {
+      "text": "Penggunaan:\n  /setmodel <model> (global)\n  /setmodel <slot> <model> (per slot)\n  /setmodel reset (reset semua)\n  /setmodel reset <slot> (reset slot)\n\nSlot: {slots}\nContoh: /setmodel code opus",
+      "source_hash": "a6d8452f4264b1e8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.models_header": {
+      "text": "Penugasan model saat ini:",
+      "source_hash": "e98b0f9d5ad51a11",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.models_slot_line_override": {
+      "text": "{slot}: {display_name} (Override)",
+      "source_hash": "b241c2a29e36829c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.models_slot_line_default": {
+      "text": "{slot}: {display_name} (Default)",
+      "source_hash": "4a49900059a9f351",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.models_change_hint": {
+      "text": "Ubah: /setmodel <slot> <model>\nContoh: /setmodel code opus",
+      "source_hash": "e31ec4575b556e29",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.header": {
+      "text": "🎯 Multi-AI Debat",
+      "source_hash": "9ecb8b0f10ade430",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.question_label": {
+      "text": "📌 Pertanyaan",
+      "source_hash": "1e14bb22c641ccdc",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.no_providers": {
+      "text": "Tidak ada provider yang bisa merespons.",
+      "source_hash": "af25905f8b7feb6c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.errors_label": {
+      "text": "Error",
+      "source_hash": "cb702378f31507ef",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.recommendation_label": {
+      "text": "Poin Utama",
+      "source_hash": "b02a732edcff69db",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.strongest_contribution": {
+      "text": "Kontribusi Terkuat",
+      "source_hash": "922f93e5094f0f48",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.tie_result": {
+      "text": "Hasil: Seri",
+      "source_hash": "036369a13f0c2ff6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.synthesis_header": {
+      "text": "🎯 Sintesis",
+      "source_hash": "b14a8fbe3fa4fdff",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_header": {
+      "text": "✨ Konsensus / Disensus",
+      "source_hash": "233a897e3cea920d",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.detail_header": {
+      "text": "📝 Respons Detail",
+      "source_hash": "3b23441a8d0136c7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.single_provider_hint": {
+      "text": "💡 Hanya 1 provider tersedia. Untuk Multi-AI Debat sesungguhnya: konfigurasikan lebih banyak provider (misal instal Ollama).",
+      "source_hash": "db948d353715fff3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.usage": {
+      "text": "Gunakan /debate <pertanyaan> untuk menanyakan beberapa AI secara paralel.\n\nContoh: /debate Apa itu Bitcoin?",
+      "source_hash": "27ff9c0e1f1e4771",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.step1": {
+      "text": "Selamat datang! Pilih bahasa yang Anda inginkan:",
+      "source_hash": "e9cd022986c687cd",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.step2": {
+      "text": "Siap! 🚀\n\nBahasa: {lang_name}\n\nPenting untuk diketahui:\n• Bahasa kamu tidak tetap, bisa diubah kapan saja lewat /settings\n• Gunakan /help untuk melihat semua perintah\n• Tanyakan saja dan kita mulai",
+      "source_hash": "1e6a6d3009b469a7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.auto_detect": {
+      "text": "Deteksi otomatis (Disarankan)",
+      "source_hash": "7cd64a915587ac5f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.skip": {
+      "text": "Lewati Setup",
+      "source_hash": "93a66cdbe86655b5",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.lets_go": {
+      "text": "Ayo mulai",
+      "source_hash": "b59bed0f27171022",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.done": {
+      "text": "Selamat menikmati!",
+      "source_hash": "b8f291487a0c82eb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.skip_step1": {
+      "text": "Setup dilewati.",
+      "source_hash": "e84dd1d7c8d76d95",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.skip_step2": {
+      "text": "Setup selesai.",
+      "source_hash": "8de10ee156b68821",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.hint": {
+      "text": "Tips: Gunakan /onboarding untuk menyelesaikan setup.",
+      "source_hash": "5d82890cd6baacd2",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "start.welcome": {
+      "text": "Axolent siap.\n\nKirim pertanyaan dan saya akan menjawabnya.\n\nTips: Kamu bisa menyimpan pesan bot sebagai bookmark. Cukup balas dengan /save.",
+      "source_hash": "e4d137f9fc86f267",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "error.generic": {
+      "text": "Provider model bahasa melaporkan masalah (ref: {error_id}). Silakan coba lagi nanti.",
+      "source_hash": "b87ca0fb5fe1dbf9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "error.internal": {
+      "text": "Kesalahan internal (ref: {error_id}).",
+      "source_hash": "4759aa5be6a143d1",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "usage.header": {
+      "text": "📊 Penggunaan & profil Anda:",
+      "source_hash": "0e587ddc36b3a09c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "usage.profile_unlimited": {
+      "text": "Profil: Unlimited\n\n🔓 Tidak ada batasan aktif.\n\nUbah profil: /setlimit normal",
+      "source_hash": "66730ece1509535e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "usage.change_hint": {
+      "text": "Ubah profil: /setlimit <light|normal|power|unlimited>",
+      "source_hash": "4ea082d2eb752104",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.exceeded": {
+      "text": "Anda telah mencapai batas {period} ({current}/{limit} {window}, profil {profile}).\n\n{reset_info}.\n\n{options}",
+      "source_hash": "d4ec3e5db1e7b557",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.warning_70": {
+      "text": "💡 Anda menggunakan Axolent secara aktif, sudah {used}/{limit} permintaan {period} ini.\n{reset_info}.\n\n{upgrade_hint}",
+      "source_hash": "115a42f5385214df",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.unlimited_reminder": {
+      "text": "🔓 Catatan: Anda dalam mode unlimited. Tidak ada batasan aktif.\nUntuk lebih terstruktur: /setlimit normal",
+      "source_hash": "e3c1bc39e8d5bb48",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.current": {
+      "text": "Profil saat ini: {profile}\n\nPenggunaan: /setlimit <profil>\nTersedia: {available}",
+      "source_hash": "c8280eeabdd0cc81",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.confirm_unlimited": {
+      "text": "⚠️ Anda ingin menonaktifkan semua batasan.\n\nRisiko:\n• Telegram mungkin memblokir bot sementara jika terlalu banyak edit\n• Langganan Anda akan lebih cepat habis\n• Anda akan mendapat pengingat setiap 100 permintaan\n\nJika Anda yakin: /setlimit unlimited confirm",
+      "source_hash": "9a0f5fa8c3b3895c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.unknown_profile": {
+      "text": "Profil tidak dikenal: '{profile}'\n\nTersedia: {available}",
+      "source_hash": "177301890eb951d3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.changed_unlimited": {
+      "text": "🔓 Profil diubah: {old} → Unlimited\n\nTidak ada batasan aktif. Pengingat setiap 100 permintaan.\nKembali: /setlimit normal",
+      "source_hash": "1662c24bd2d25695",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.changed": {
+      "text": "✓ Profil diubah: {old} → {new}\n\nBatasan baru:\n• {per_minute}/menit\n• {per_hour}/jam\n• {per_day}/hari",
+      "source_hash": "f1d2fce191749991",
+      "auto_translated": true,
+      "reviewed": false
+    }
+  }
+}

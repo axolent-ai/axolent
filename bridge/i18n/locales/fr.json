@@ -1,0 +1,612 @@
+{
+  "_version": "1",
+  "_language": "fr",
+  "keys": {
+    "reset.confirmation": {
+      "text": "Conversation réinitialisée. On repart à zéro !",
+      "source_hash": "e000fd1b2406e865",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "help.title": {
+      "text": "🦎 <b>Aperçu des commandes Axolent</b>",
+      "source_hash": "49575bbc77fd13d6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "help.body": {
+      "text": "<b>Chat</b>\n• Envoie un message et le bot répondra\n• /new nouveau chat (efface l'historique)\n• /reset efface l'historique de conversation\n\n<b>Mémoire</b>\n• /remember &lt;texte&gt; enregistre une note\n• /memory affiche tes notes\n• /forget &lt;id&gt; supprime une note\n\n<b>Signets</b>\n• /save (en réponse) enregistre une réponse du bot\n• /bookmarks affiche les signets enregistrés\n\n<b>Multi-IA</b>\n• /debate &lt;question&gt; interroge plusieurs IA en parallèle\n\n<b>Configuration</b>\n• /settings paramètres visuels\n• /setmodel &lt;modèle&gt; change le modèle IA (opus, sonnet, haiku)\n• /resetmodel réinitialise le modèle par défaut\n• /models affiche l'attribution actuelle des slots\n• /setlimit &lt;profil&gt; change le profil (light, normal, power, unlimited)\n• /usage affiche la consommation et le profil\n\n<b>Setup &amp; Langue</b>\n• /start bienvenue (assistant de configuration pour les nouveaux)\n• /onboarding démarrer l'assistant manuellement\n• /lang &lt;code&gt; changer la langue (de, en, fr, ...)\n\n<b>Aide</b>\n• /help cet aperçu",
+      "source_hash": "cdaa4c2a933ffb3e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "remember.saved": {
+      "text": "Enregistré. [{entry_id}]",
+      "source_hash": "e38f978b1c256bb4",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "remember.usage": {
+      "text": "Utilisation :\n/remember <texte>  enregistrer du texte\n/remember <label>  (en réponse)  enregistrer la réponse du bot avec un label",
+      "source_hash": "39bc9dcd1d8b2a46",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "forget.success": {
+      "text": "Oublié : {entry_id}\n\nNote : si le contenu est dans la conversation actuelle, utilise /reset pour un redémarrage complet.",
+      "source_hash": "60fba3b1a943511e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "forget.not_found": {
+      "text": "Entrée '{entry_id}' non trouvée ou ne t'appartient pas.",
+      "source_hash": "47725ae8b2f7ee5b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "forget.usage": {
+      "text": "Utilisation : /forget <id>\n\nTrouve les ID via /memory",
+      "source_hash": "f677fe1f61d5e5d3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "memory.empty": {
+      "text": "Aucune note enregistrée. Utilise /remember <texte> pour enregistrer quelque chose.",
+      "source_hash": "c8020803455d49df",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "memory.list_header": {
+      "text": "Dernières {count} notes :\n",
+      "source_hash": "09f7d74ffd6dca06",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "memory.search_no_results": {
+      "text": "Aucune note correspondant à '{query}' trouvée.",
+      "source_hash": "fd6770495d95e1b7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "memory.search_header": {
+      "text": "Résultats de recherche pour '{query}' ({count} résultats) :\n",
+      "source_hash": "ad7ee7571623a7b9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.saved": {
+      "text": "Signet enregistré",
+      "source_hash": "8295d8d1d05c41cb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.removed": {
+      "text": "Signet supprimé",
+      "source_hash": "9c9fc0c810455ec4",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.save_hint": {
+      "text": "Réponds à un message du bot avec /save pour l'enregistrer en signet.",
+      "source_hash": "59bde2efd344936b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.list_empty": {
+      "text": "Tu n'as pas encore de signets. Réponds à un message du bot avec /save pour l'enregistrer.",
+      "source_hash": "eea6ad8f4ce61a74",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.delete_confirm": {
+      "text": "Signet{date_display} supprimé",
+      "source_hash": "7a7ca27da766be24",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.list_header": {
+      "text": "Tes {count} derniers signets :\n",
+      "source_hash": "81d277f4399b8552",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "lang.changed": {
+      "text": "Langue changée : {name} ({code})",
+      "source_hash": "dea60593b51b46d9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "lang.unknown": {
+      "text": "Langue inconnue : '{code}'\n\nLangues supportées : {supported}",
+      "source_hash": "2af5b8e3701cc09b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "lang.usage": {
+      "text": "Utilisation : /lang <code>\n\nLangues supportées : {supported}\n\nExemple : /lang en",
+      "source_hash": "b701b9155d8b780b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "lang.list_header": {
+      "text": "Choisir la langue",
+      "source_hash": "bba5b40bdd28c66e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "inline_command.warning": {
+      "text": "Note : les commandes comme /setmodel ou /reset doivent être envoyées dans un message séparé, pas combinées avec du texte.",
+      "source_hash": "440ecd5d7d8f49d6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "status.memory_loading": {
+      "text": "🧠 Chargement des notes…",
+      "source_hash": "10a80da5fa0ce1f6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "status.memory_loaded": {
+      "text": "🧠 Chargement des notes… ({n} trouvées)",
+      "source_hash": "661a08fbf1fdeede",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "status.thinking": {
+      "text": "💭 Réflexion…",
+      "source_hash": "9f0fdd33fa5310c6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "status.formatting": {
+      "text": "✨ Mise en forme…",
+      "source_hash": "0058a0018f8c84c4",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.main_title": {
+      "text": "Paramètres",
+      "source_hash": "74a883a037bc227f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.models_section": {
+      "text": "Modèles par slot :",
+      "source_hash": "bc65cee013de3cc6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_section": {
+      "text": "Langue :",
+      "source_hash": "8c16819a2bd49b95",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_all_btn": {
+      "text": "Tout réinitialiser",
+      "source_hash": "645982c52b7c11ae",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.default_suffix": {
+      "text": "(Par défaut)",
+      "source_hash": "1fc1ffe61be98b40",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.global_override_suffix": {
+      "text": "(global)",
+      "source_hash": "07f3cbc08fc3a719",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.global_override_text": {
+      "text": "⚡ <b>Override global actif : {display_name} (tous les slots)</b>",
+      "source_hash": "f20593b0c512835b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_global_btn": {
+      "text": "Supprimer l'override global",
+      "source_hash": "32e0ac7f68c3bd74",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.slot_select_title": {
+      "text": "{slot} — Choisir le modèle",
+      "source_hash": "8ee3c5b2850b209b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.back_btn": {
+      "text": "← Retour au menu principal",
+      "source_hash": "e35c6e48aa36ab34",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_slot_btn": {
+      "text": "Réinitialiser par défaut",
+      "source_hash": "bc5b45ae7b60692a",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_confirm_title": {
+      "text": "Vraiment réinitialiser tous les overrides de modèle ?",
+      "source_hash": "aa2918304c882ca5",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_confirm_yes": {
+      "text": "Oui, tout réinitialiser",
+      "source_hash": "ab1bd30f87b6a4cb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_confirm_cancel": {
+      "text": "Annuler",
+      "source_hash": "19766ed6ccb2f4a3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_all_done": {
+      "text": "Tous les overrides de modèle réinitialisés ({count} supprimés).",
+      "source_hash": "3c3f13bb2c03d71f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.reset_all_nothing": {
+      "text": "Aucun override actif, rien à faire.",
+      "source_hash": "db9152ed96a0122b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.model_set": {
+      "text": "Modèle pour {slot} défini : {display_name}",
+      "source_hash": "82a2fbd779bb157c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.model_reset": {
+      "text": "Modèle pour {slot} réinitialisé par défaut.",
+      "source_hash": "689584c3c977efae",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.model_reset_nothing": {
+      "text": "{slot} utilise déjà le modèle par défaut.",
+      "source_hash": "d9e4807e8fe83209",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_title": {
+      "text": "Choisir la langue",
+      "source_hash": "bba5b40bdd28c66e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_back": {
+      "text": "← Retour",
+      "source_hash": "aceb696a04c19971",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_set": {
+      "text": "Langue changée : {name}",
+      "source_hash": "42fde17aaaca134d",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "settings.lang_button": {
+      "text": "Langue : {name}",
+      "source_hash": "d99eed9b5921900c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.set_success": {
+      "text": "Modèle changé : {display_name} ({model_id})",
+      "source_hash": "442d42b45287a661",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.set_success_note": {
+      "text": "Prend effet à partir de ton prochain message.",
+      "source_hash": "28e9fdc02cd36661",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.set_slot_success": {
+      "text": "Modèle pour {slot} changé : {display_name} ({model_id})",
+      "source_hash": "e013b9978ce2b58d",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.set_slot_note": {
+      "text": "S'applique uniquement aux requêtes {slot}.",
+      "source_hash": "5417e4e1b684e4d6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.reset_success": {
+      "text": "Modèle réinitialisé par défaut ({default_model}).",
+      "source_hash": "02f5db9f8f4e7d55",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.reset_slot_success": {
+      "text": "Modèle pour {slot} réinitialisé par défaut.",
+      "source_hash": "689584c3c977efae",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.reset_nothing": {
+      "text": "Aucun override de modèle actif. Tu utilises déjà le modèle par défaut ({default_model}).",
+      "source_hash": "eb7586ca9b5dc239",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.reset_all_success": {
+      "text": "Tous les overrides de modèle réinitialisés ({count} supprimés).",
+      "source_hash": "3c3f13bb2c03d71f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.unknown_model": {
+      "text": "Modèle inconnu : '{input}'",
+      "source_hash": "510d04b9902c64d8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.unknown_slot": {
+      "text": "Slot inconnu : '{input}'. Disponibles : {slots}",
+      "source_hash": "4d62546cd61b51e9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.available_aliases": {
+      "text": "Disponibles : {aliases}",
+      "source_hash": "656f9687725a4fde",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.usage_hint": {
+      "text": "Utilisation :\n  /setmodel <modèle> (global)\n  /setmodel <slot> <modèle> (par slot)\n  /setmodel reset (tout réinitialiser)\n  /setmodel reset <slot> (réinitialiser slot)\n\nSlots : {slots}\nExemple : /setmodel code opus",
+      "source_hash": "a6d8452f4264b1e8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.models_header": {
+      "text": "Attribution actuelle des modèles :",
+      "source_hash": "e98b0f9d5ad51a11",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.models_slot_line_override": {
+      "text": "{slot} : {display_name} (Override)",
+      "source_hash": "b241c2a29e36829c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.models_slot_line_default": {
+      "text": "{slot} : {display_name} (Par défaut)",
+      "source_hash": "4a49900059a9f351",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setmodel.models_change_hint": {
+      "text": "Changer : /setmodel <slot> <modèle>\nExemple : /setmodel code opus",
+      "source_hash": "e31ec4575b556e29",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.header": {
+      "text": "🎯 Débat Multi-IA",
+      "source_hash": "9ecb8b0f10ade430",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.question_label": {
+      "text": "📌 Question",
+      "source_hash": "1e14bb22c641ccdc",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.no_providers": {
+      "text": "Aucun fournisseur n'a pu répondre.",
+      "source_hash": "af25905f8b7feb6c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.errors_label": {
+      "text": "Erreurs",
+      "source_hash": "cb702378f31507ef",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.recommendation_label": {
+      "text": "Point clé",
+      "source_hash": "b02a732edcff69db",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.strongest_contribution": {
+      "text": "Contribution la plus forte",
+      "source_hash": "922f93e5094f0f48",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.tie_result": {
+      "text": "Résultat : Égalité",
+      "source_hash": "036369a13f0c2ff6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.synthesis_header": {
+      "text": "🎯 Synthèse",
+      "source_hash": "b14a8fbe3fa4fdff",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.consensus_header": {
+      "text": "✨ Consensus / Dissensus",
+      "source_hash": "233a897e3cea920d",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.detail_header": {
+      "text": "📝 Réponses détaillées",
+      "source_hash": "3b23441a8d0136c7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.single_provider_hint": {
+      "text": "💡 Un seul fournisseur disponible. Pour un vrai débat Multi-IA : configurez d'autres fournisseurs (ex. installer Ollama).",
+      "source_hash": "db948d353715fff3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.usage": {
+      "text": "Utilise /debate <question> pour interroger plusieurs IA en parallèle.\n\nExemple : /debate Qu'est-ce que le Bitcoin ?",
+      "source_hash": "27ff9c0e1f1e4771",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.step1": {
+      "text": "Bienvenue ! Choisis ta langue préférée :",
+      "source_hash": "e9cd022986c687cd",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.step2": {
+      "text": "Tu es prêt ! 🚀\n\nLangue : {lang_name}\n\nBon à savoir :\n• Ta langue n'est pas figée, tu peux la changer à tout moment via /settings\n• Utilise /help pour voir toutes les commandes\n• Pose-moi une question et c'est parti",
+      "source_hash": "1e6a6d3009b469a7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.auto_detect": {
+      "text": "Détection automatique (Recommandé)",
+      "source_hash": "7cd64a915587ac5f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.skip": {
+      "text": "Passer la configuration",
+      "source_hash": "93a66cdbe86655b5",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.lets_go": {
+      "text": "C'est parti",
+      "source_hash": "b59bed0f27171022",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.done": {
+      "text": "Bonne utilisation !",
+      "source_hash": "b8f291487a0c82eb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.skip_step1": {
+      "text": "Configuration passée.",
+      "source_hash": "e84dd1d7c8d76d95",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.skip_step2": {
+      "text": "Configuration terminée.",
+      "source_hash": "8de10ee156b68821",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "onboarding.hint": {
+      "text": "Astuce : utilise /onboarding pour compléter la configuration.",
+      "source_hash": "5d82890cd6baacd2",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "start.welcome": {
+      "text": "Axolent est prêt.\n\nEnvoie-moi une question et j'y répondrai.\n\nAstuce : tu peux enregistrer des messages du bot en signet. Réponds simplement avec /save.",
+      "source_hash": "e4d137f9fc86f267",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "error.generic": {
+      "text": "Le fournisseur du modèle linguistique signale un problème (réf : {error_id}). Réessaie dans un instant.",
+      "source_hash": "b87ca0fb5fe1dbf9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "error.internal": {
+      "text": "Erreur interne (réf : {error_id}).",
+      "source_hash": "4759aa5be6a143d1",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "usage.header": {
+      "text": "📊 Ta consommation & profil :",
+      "source_hash": "0e587ddc36b3a09c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "usage.profile_unlimited": {
+      "text": "Profil : Unlimited\n\n🔓 Aucune limite active.\n\nChanger de profil : /setlimit normal",
+      "source_hash": "66730ece1509535e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "usage.change_hint": {
+      "text": "Changer de profil : /setlimit <light|normal|power|unlimited>",
+      "source_hash": "4ea082d2eb752104",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.exceeded": {
+      "text": "Tu as atteint ta limite {period} ({current}/{limit} {window}, profil {profile}).\n\n{reset_info}.\n\n{options}",
+      "source_hash": "d4ec3e5db1e7b557",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.warning_70": {
+      "text": "💡 Tu utilises Axolent activement, déjà {used}/{limit} requêtes cette {period}.\n{reset_info}.\n\n{upgrade_hint}",
+      "source_hash": "115a42f5385214df",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.unlimited_reminder": {
+      "text": "🔓 Note : tu es en mode unlimited. Aucune limite active.\nPour plus de structure : /setlimit normal",
+      "source_hash": "e3c1bc39e8d5bb48",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.current": {
+      "text": "Profil actuel : {profile}\n\nUtilisation : /setlimit <profil>\nDisponibles : {available}",
+      "source_hash": "c8280eeabdd0cc81",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.confirm_unlimited": {
+      "text": "⚠️ Tu veux désactiver toutes les limites.\n\nRisques :\n• Telegram pourrait bloquer temporairement le bot en cas de trop d'éditions\n• Ton abonnement sera consommé plus rapidement\n• Tu recevras un rappel tous les 100 requêtes\n\nSi tu es sûr : /setlimit unlimited confirm",
+      "source_hash": "9a0f5fa8c3b3895c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.unknown_profile": {
+      "text": "Profil inconnu : '{profile}'\n\nDisponibles : {available}",
+      "source_hash": "177301890eb951d3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.changed_unlimited": {
+      "text": "🔓 Profil changé : {old} → Unlimited\n\nAucune limite active. Rappel tous les 100 requêtes.\nRetour : /setlimit normal",
+      "source_hash": "1662c24bd2d25695",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "setlimit.changed": {
+      "text": "✓ Profil changé : {old} → {new}\n\nNouvelles limites :\n• {per_minute}/min\n• {per_hour}/heure\n• {per_day}/jour",
+      "source_hash": "f1d2fce191749991",
+      "auto_translated": true,
+      "reviewed": false
+    }
+  }
+}

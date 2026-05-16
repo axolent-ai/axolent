@@ -33,25 +33,7 @@ from application.streaming_handler import (
     process_streaming_edit,
 )
 from domain.bookmark import format_bookmark_preview
-from domain.i18n import (
-    BOOKMARK_LIST_EMPTY_TEXTS,
-    BOOKMARK_REMOVED_TEXTS,
-    BOOKMARK_SAVE_HINT_TEXTS,
-    BOOKMARK_SAVED_TEXTS,
-    FORGET_NOT_FOUND_TEXTS,
-    FORGET_SUCCESS_TEXTS,
-    FORGET_USAGE_TEXTS,
-    INLINE_COMMAND_WARNING_TEXTS,
-    LANG_CHANGED_TEXTS,
-    MEMORY_EMPTY_TEXTS,
-    MEMORY_HEADER_TEXTS,
-    MEMORY_SEARCH_HEADER_TEXTS,
-    MEMORY_SEARCH_NO_RESULTS_TEXTS,
-    REMEMBER_SAVED_TEXTS,
-    REMEMBER_USAGE_TEXTS,
-    RESET_TEXTS,
-    get_text,
-)
+from i18n.domain.i18n import t
 from presentation.decorators import require_private_chat, require_whitelist
 from presentation.render import (
     get_cached_response,
@@ -269,75 +251,14 @@ def build_bookmarks_keyboard(bookmarks: list[dict[str, Any]]) -> InlineKeyboardM
     return InlineKeyboardMarkup(rows)
 
 
-HELP_TEXT_DE: str = (
-    "\U0001f98e <b>Axolent Befehlsübersicht</b>\n\n"
-    "<b>Chat</b>\n"
-    "• Schreibe einfach eine Nachricht und der Bot antwortet\n"
-    "• /new neuer Chat (löscht Verlauf)\n"
-    "• /reset löscht den Konversationsverlauf\n\n"
-    "<b>Memory</b>\n"
-    "• /remember &lt;Text&gt; speichert eine Notiz\n"
-    "• /memory zeigt deine Notizen\n"
-    "• /forget &lt;id&gt; löscht eine Notiz\n\n"
-    "<b>Bookmarks</b>\n"
-    "• /save (als Reply) speichert eine Bot-Antwort\n"
-    "• /bookmarks zeigt gespeicherte Bookmarks\n\n"
-    "<b>Multi-AI</b>\n"
-    "• /debate &lt;Frage&gt; fragt mehrere KIs parallel\n\n"
-    "<b>Konfiguration</b>\n"
-    "• /settings visuelle Einstellungen\n"
-    "• /setmodel &lt;modell&gt; wechselt KI-Modell (opus, sonnet, haiku)\n"
-    "• /resetmodel setzt Modell auf Default zurück\n"
-    "• /models zeigt aktuelle Slot-Belegung\n"
-    "• /setlimit &lt;profil&gt; wechselt Profil (light, normal, power, unlimited)\n"
-    "• /usage zeigt Verbrauch und Profil\n\n"
-    "<b>Setup &amp; Sprache</b>\n"
-    "• /start Begrüßung (Setup-Wizard für neue User)\n"
-    "• /onboarding Setup-Wizard manuell starten\n"
-    "• /lang &lt;code&gt; Sprache wechseln (de, en, fr, ...)\n\n"
-    "<b>Hilfe</b>\n"
-    "• /help diese Übersicht"
-)
+HELP_TEXT_DE: str = t("help.title", "de") + "\n\n" + t("help.body", "de")
 
-HELP_TEXT_EN: str = (
-    "\U0001f98e <b>Axolent Command Overview</b>\n\n"
-    "<b>Chat</b>\n"
-    "• Just send a message and the bot will answer\n"
-    "• /new new chat (clears history)\n"
-    "• /reset clears conversation history\n\n"
-    "<b>Memory</b>\n"
-    "• /remember &lt;text&gt; saves a note\n"
-    "• /memory shows your notes\n"
-    "• /forget &lt;id&gt; deletes a note\n\n"
-    "<b>Bookmarks</b>\n"
-    "• /save (as reply) bookmarks a bot response\n"
-    "• /bookmarks shows saved bookmarks\n\n"
-    "<b>Multi-AI</b>\n"
-    "• /debate &lt;question&gt; asks multiple AIs in parallel\n\n"
-    "<b>Configuration</b>\n"
-    "• /settings visual settings menu\n"
-    "• /setmodel &lt;model&gt; changes AI model (opus, sonnet, haiku)\n"
-    "• /resetmodel resets model to default\n"
-    "• /models shows current slot assignments\n"
-    "• /setlimit &lt;profile&gt; changes profile (light, normal, power, unlimited)\n"
-    "• /usage shows usage and profile\n\n"
-    "<b>Setup &amp; Language</b>\n"
-    "• /start welcome (setup wizard for new users)\n"
-    "• /onboarding start setup wizard manually\n"
-    "• /lang &lt;code&gt; change language (de, en, fr, ...)\n\n"
-    "<b>Help</b>\n"
-    "• /help this overview"
-)
+HELP_TEXT_EN: str = t("help.title", "en") + "\n\n" + t("help.body", "en")
 
 # Legacy alias for backwards compatibility
 HELP_TEXT: str = HELP_TEXT_DE
 
-START_TEXT: str = (
-    "Axolent is ready.\n\n"
-    "Send me a question and I will answer it.\n\n"
-    "Tip: You can bookmark bot messages. "
-    "Just reply with /save."
-)
+START_TEXT: str = t("start.welcome", "en")
 
 
 def _get_persistent_provider(
@@ -394,9 +315,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
     if _inline_cmd_match and not text.strip().startswith("/"):
         _cmd_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
-        await update.message.reply_text(
-            get_text(INLINE_COMMAND_WARNING_TEXTS, _cmd_lang)
-        )
+        await update.message.reply_text(t("inline_command.warning", _cmd_lang))
         # Strip the command from the text before sending to LLM
         text = text[: _inline_cmd_match.start()].rstrip()
         if not text:
@@ -421,12 +340,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if not onboarding_storage.is_hint_shown(user_id):
             skip_count = onboarding_storage.increment_skip_count(user_id)
             if skip_count == 3:
-                from domain.onboarding import get_onboarding_hint_text
-
                 hint_lang = (
                     await chat_service.get_chat_language(user_id, chat_id) or "de"
                 )
-                hint = get_onboarding_hint_text(hint_lang)
+                hint = t("onboarding.hint", hint_lang)
                 await update.message.reply_text(hint)
                 onboarding_storage.set_hint_shown(user_id)
 
@@ -951,9 +868,6 @@ async def _handle_message_legacy(
     )
 
 
-_RESET_TEXTS: dict[str, str] = RESET_TEXTS
-
-
 @require_whitelist
 async def handle_reset_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -990,11 +904,7 @@ async def handle_reset_command(
     if raw_lang is not None:
         await chat_service.set_chat_language(user_id, chat_id, raw_lang)
 
-    reset_msg = (
-        _RESET_TEXTS.get(lang, _RESET_TEXTS["en"])
-        if lang != "de"
-        else _RESET_TEXTS["de"]
-    )
+    reset_msg = t("reset.confirmation", lang)
     await update.message.reply_text(reset_msg)
     await chat_service.save_static_response_to_history(user_id, chat_id, reset_msg)
     log.info("User %d reset conversation in chat %d", user_id, chat_id)
@@ -1023,18 +933,18 @@ async def handle_lang_command(
     args: list[str] = context.args or []
     if not args:
         supported = ", ".join(sorted(_SUPPORTED_LANGUAGES))
+        _usage_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
         await update.message.reply_text(
-            f"Usage: /lang <code>\n\n"
-            f"Supported languages: {supported}\n\n"
-            f"Example: /lang en"
+            t("lang.usage", _usage_lang, supported=supported)
         )
         return
 
     lang_code = args[0].lower().strip()
     if lang_code not in _SUPPORTED_LANGUAGES:
         supported = ", ".join(sorted(_SUPPORTED_LANGUAGES))
+        _err_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
         await update.message.reply_text(
-            f"Unknown language: '{lang_code}'\n\nSupported languages: {supported}"
+            t("lang.unknown", _err_lang, code=lang_code, supported=supported)
         )
         return
 
@@ -1066,7 +976,7 @@ async def handle_lang_command(
         "vi": "Tiếng Việt",
     }
     name = lang_names.get(lang_code, lang_code)
-    lang_msg = get_text(LANG_CHANGED_TEXTS, lang_code, name=name, code=lang_code)
+    lang_msg = t("lang.changed", lang_code, name=name, code=lang_code)
     await update.message.reply_text(lang_msg)
     await chat_service.save_static_response_to_history(user_id, chat_id, lang_msg)
     log.info("User %d set language to '%s' in chat %d", user_id, lang_code, chat_id)
@@ -1107,7 +1017,7 @@ async def handle_save_command(
     # Must be a reply to another message
     reply_msg = update.message.reply_to_message
     if reply_msg is None:
-        await update.message.reply_text(get_text(BOOKMARK_SAVE_HINT_TEXTS, _save_lang))
+        await update.message.reply_text(t("bookmark.save_hint", _save_lang))
         return
 
     msg_id: int = reply_msg.message_id
@@ -1127,8 +1037,8 @@ async def handle_save_command(
         message_id=msg_id,
         content=content,
     )
-    _bm_text = get_text(
-        BOOKMARK_SAVED_TEXTS if was_saved else BOOKMARK_REMOVED_TEXTS,
+    _bm_text = t(
+        "bookmark.saved" if was_saved else "bookmark.removed",
         _save_lang,
     )
     await update.message.reply_text(f"✓ {_bm_text}")
@@ -1179,7 +1089,7 @@ async def handle_bookmarks_command(
 
         if not results:
             await update.message.reply_text(
-                get_text(MEMORY_SEARCH_NO_RESULTS_TEXTS, _bm_lang, query=query_term)
+                t("memory.search_no_results", _bm_lang, query=query_term)
             )
             log_command_audit(
                 action="list_bookmarks",
@@ -1220,7 +1130,7 @@ async def handle_bookmarks_command(
     bm_chat_id = update.effective_chat.id if update.effective_chat else 0
 
     if not bookmarks:
-        await update.message.reply_text(get_text(BOOKMARK_LIST_EMPTY_TEXTS, _bm_lang))
+        await update.message.reply_text(t("bookmark.list_empty", _bm_lang))
         log_command_audit(
             action="list_bookmarks",
             user_id=user_id,
@@ -1269,7 +1179,9 @@ async def handle_help_command(
     # Choose language-specific help text (DE for "de", EN for all other languages)
     lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
 
-    help_text = HELP_TEXT_DE if lang == "de" else HELP_TEXT_EN
+    _help_title = t("help.title", lang)
+    _help_body = t("help.body", lang)
+    help_text = f"{_help_title}\n\n{_help_body}"
     try:
         await update.message.reply_text(help_text, parse_mode="HTML")
     except Exception:
@@ -1301,10 +1213,8 @@ async def handle_start_command(
         return
 
     # Already onboarded: show welcome in sticky language
-    from domain.onboarding import get_start_welcome_text
-
     lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
-    welcome_text = get_start_welcome_text(lang)
+    welcome_text = t("start.welcome", lang)
     await update.message.reply_text(welcome_text)
     await chat_service.save_static_response_to_history(user_id, chat_id, welcome_text)
 
@@ -1359,12 +1269,12 @@ async def handle_remember_command(
         # No reply: save text directly
         content = " ".join(args)
     else:
-        await update.message.reply_text(get_text(REMEMBER_USAGE_TEXTS, _remember_lang))
+        await update.message.reply_text(t("remember.usage", _remember_lang))
         return
 
     entry_id = memory_service.remember_episodic(user_id=user_id, content=content)
     await update.message.reply_text(
-        get_text(REMEMBER_SAVED_TEXTS, _remember_lang, entry_id=entry_id)
+        t("remember.saved", _remember_lang, entry_id=entry_id)
     )
     log.info("User %d remembered: %s (id=%s)", user_id, content[:50], entry_id)
     log_command_audit(
@@ -1406,13 +1316,13 @@ async def handle_memory_command(
 
         if not results:
             await update.message.reply_text(
-                get_text(MEMORY_SEARCH_NO_RESULTS_TEXTS, _mem_lang, query=query_term)
+                t("memory.search_no_results", _mem_lang, query=query_term)
             )
             return
 
         lines: list[str] = [
-            get_text(
-                MEMORY_SEARCH_HEADER_TEXTS,
+            t(
+                "memory.search_header",
                 _mem_lang,
                 query=query_term,
                 count=len(results),
@@ -1427,10 +1337,10 @@ async def handle_memory_command(
     entries = memory_service.list_recent(user_id, layer="episodic", limit=10)
 
     if not entries:
-        await update.message.reply_text(get_text(MEMORY_EMPTY_TEXTS, _mem_lang))
+        await update.message.reply_text(t("memory.empty", _mem_lang))
         return
 
-    lines: list[str] = [get_text(MEMORY_HEADER_TEXTS, _mem_lang, count=len(entries))]
+    lines: list[str] = [t("memory.list_header", _mem_lang, count=len(entries))]
     for entry in entries:
         lines.append(f"  [{entry['id']}] {entry['content'][:80]}")
     await update.message.reply_text("\n".join(lines))
@@ -1459,19 +1369,19 @@ async def handle_forget_command(
     _forget_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
 
     if not args:
-        await update.message.reply_text(get_text(FORGET_USAGE_TEXTS, _forget_lang))
+        await update.message.reply_text(t("forget.usage", _forget_lang))
         return
 
     entry_id = args[0].strip().strip("[]")
     deleted = memory_service.forget(user_id, entry_id)
 
     if deleted:
-        forget_msg = get_text(FORGET_SUCCESS_TEXTS, _forget_lang, entry_id=entry_id)
+        forget_msg = t("forget.success", _forget_lang, entry_id=entry_id)
         await update.message.reply_text(forget_msg)
         log.info("User %d forgot memory: %s", user_id, entry_id)
     else:
         await update.message.reply_text(
-            get_text(FORGET_NOT_FOUND_TEXTS, _forget_lang, entry_id=entry_id)
+            t("forget.not_found", _forget_lang, entry_id=entry_id)
         )
     log_command_audit(
         action="forget",
@@ -2048,59 +1958,12 @@ _PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "mistral": "\U0001f32c️ Mistral",
 }
 
-DEBATE_HELP_TEXT: str = (
-    "Use /debate <question> to query multiple AIs in parallel.\n\n"
-    "Example: /debate What is Bitcoin?"
-)
+DEBATE_HELP_TEXT: str = t("debate.usage", "en")
 
 
 # i18n strings for Debate output (DE default, EN prepared for future activation)
-_DEBATE_STRINGS: dict[str, dict[str, str]] = {
-    "de": {
-        "header": "\U0001f3af Multi-AI-Debate",
-        "question_label": "\U0001f4cc Frage",
-        "no_providers": "Keine Provider konnten antworten.",
-        "errors_label": "Fehler",
-        "recommendation_label": "Kernaussage",
-        "strongest_contribution": "Stärkster Beitrag",
-        "tie_result": "Ergebnis: Gleichstand",
-        "synthesis_header": "\U0001f3af Synthese",
-        "consensus_header": "✨ Konsens / Dissens",
-        "detail_header": "\U0001f4dd Detail-Antworten",
-        "single_provider_hint": (
-            "\U0001f4a1 Nur 1 Provider verfügbar. "
-            "Für echtes Multi-AI-Debate: weitere Provider konfigurieren "
-            "(z.B. Ollama installieren)."
-        ),
-        "quality_warning_prefix": "⚠️",
-        "errors_section": "⚠️ Fehler:",
-    },
-    "en": {
-        "header": "\U0001f3af Multi-AI Debate",
-        "question_label": "\U0001f4cc Question",
-        "no_providers": "No providers could respond.",
-        "errors_label": "Errors",
-        "recommendation_label": "Key Takeaway",
-        "strongest_contribution": "Strongest Contribution",
-        "tie_result": "Result: Tie",
-        "synthesis_header": "\U0001f3af Synthesis",
-        "consensus_header": "✨ Consensus / Dissent",
-        "detail_header": "\U0001f4dd Detail Responses",
-        "single_provider_hint": (
-            "\U0001f4a1 Only 1 provider available. "
-            "For a real Multi-AI Debate: configure more providers "
-            "(e.g. install Ollama)."
-        ),
-        "quality_warning_prefix": "⚠️",
-        "errors_section": "⚠️ Errors:",
-    },
-}
-
-
 def _get_debate_strings(lang: str = "de") -> dict[str, str]:
-    """Returns debate i18n strings for the given language.
-
-    Falls back to German if language not available.
+    """Returns debate i18n strings for the given language via t().
 
     Args:
         lang: ISO-639-1 language code.
@@ -2108,7 +1971,21 @@ def _get_debate_strings(lang: str = "de") -> dict[str, str]:
     Returns:
         Dict of string keys to localized values.
     """
-    return _DEBATE_STRINGS.get(lang, _DEBATE_STRINGS["de"])
+    return {
+        "header": t("debate.header", lang),
+        "question_label": t("debate.question_label", lang),
+        "no_providers": t("debate.no_providers", lang),
+        "errors_label": t("debate.errors_label", lang),
+        "recommendation_label": t("debate.recommendation_label", lang),
+        "strongest_contribution": t("debate.strongest_contribution", lang),
+        "tie_result": t("debate.tie_result", lang),
+        "synthesis_header": t("debate.synthesis_header", lang),
+        "consensus_header": t("debate.consensus_header", lang),
+        "detail_header": t("debate.detail_header", lang),
+        "single_provider_hint": t("debate.single_provider_hint", lang),
+        "quality_warning_prefix": "⚠️",
+        "errors_section": f"⚠️ {t('debate.errors_label', lang)}:",
+    }
 
 
 def _format_debate_result(result: Any, lang: str = "de") -> str:

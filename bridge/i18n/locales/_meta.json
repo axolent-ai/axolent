@@ -1,0 +1,22 @@
+{
+  "en": {"native": "English", "english": "English", "rtl": false},
+  "de": {"native": "Deutsch", "english": "German", "rtl": false},
+  "nl": {"native": "Nederlands", "english": "Dutch", "rtl": false},
+  "fr": {"native": "Français", "english": "French", "rtl": false},
+  "es": {"native": "Español", "english": "Spanish", "rtl": false},
+  "it": {"native": "Italiano", "english": "Italian", "rtl": false},
+  "pt": {"native": "Português", "english": "Portuguese", "rtl": false},
+  "pl": {"native": "Polski", "english": "Polish", "rtl": false},
+  "sv": {"native": "Svenska", "english": "Swedish", "rtl": false},
+  "tr": {"native": "Türkçe", "english": "Turkish", "rtl": false},
+  "ru": {"native": "Русский", "english": "Russian", "rtl": false},
+  "uk": {"native": "Українська", "english": "Ukrainian", "rtl": false},
+  "zh": {"native": "中文", "english": "Chinese", "rtl": false},
+  "ja": {"native": "日本語", "english": "Japanese", "rtl": false},
+  "ko": {"native": "한국어", "english": "Korean", "rtl": false},
+  "ar": {"native": "العربية", "english": "Arabic", "rtl": true},
+  "hi": {"native": "हिन्दी", "english": "Hindi", "rtl": false},
+  "id": {"native": "Bahasa Indonesia", "english": "Indonesian", "rtl": false},
+  "th": {"native": "ภาษาไทย", "english": "Thai", "rtl": false},
+  "vi": {"native": "Tiếng Việt", "english": "Vietnamese", "rtl": false}
+}

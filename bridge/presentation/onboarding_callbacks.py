@@ -20,16 +20,9 @@ from domain.onboarding import (
     LANGUAGE_KEYBOARD_ROWS,
     VALID_LANGUAGE_CODES,
     WIZARD_LANGUAGES,
-    get_auto_detect_text,
     get_language_name,
-    get_lets_go_text,
-    get_skip_wizard_text,
-    get_step1_text,
-    get_step2_text,
-    get_wizard_done_text,
-    get_wizard_skip_step1_text,
-    get_wizard_skip_step2_text,
 )
+from i18n.domain.i18n import t
 from presentation.decorators import require_private_chat, require_whitelist
 
 log = logging.getLogger(__name__)
@@ -71,11 +64,11 @@ def build_language_keyboard(ui_lang: str = "de") -> InlineKeyboardMarkup:
         buttons.append(row)
 
     # Auto-detect row (full width)
-    auto_text = f"🌐 {get_auto_detect_text(ui_lang)}"
+    auto_text = f"🌐 {t('onboarding.auto_detect', ui_lang)}"
     buttons.append([InlineKeyboardButton(auto_text, callback_data="wizard_lang_auto")])
 
     # Skip row
-    skip_text = get_skip_wizard_text(ui_lang)
+    skip_text = t("onboarding.skip", ui_lang)
     buttons.append([InlineKeyboardButton(skip_text, callback_data="wizard_skip")])
 
     return InlineKeyboardMarkup(buttons)
@@ -92,7 +85,7 @@ def build_completion_keyboard(lang: str = "de") -> InlineKeyboardMarkup:
     Returns:
         InlineKeyboardMarkup with the completion button.
     """
-    text = get_lets_go_text(lang)
+    text = t("onboarding.lets_go", lang)
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton(f"🚀 {text}", callback_data="wizard_done")]]
     )
@@ -128,7 +121,7 @@ async def start_wizard(
         if stored_lang in ("de", "en"):
             ui_lang = stored_lang
 
-    step1_text = get_step1_text(ui_lang)
+    step1_text = t("onboarding.step1", ui_lang)
     keyboard = build_language_keyboard(ui_lang)
 
     prefix = ""
@@ -197,7 +190,7 @@ async def handle_wizard_callback(
 
         # Show Step 2
         lang_name = get_language_name(lang_code)
-        step2_text = get_step2_text(lang_code, lang_name)
+        step2_text = t("onboarding.step2", lang_code, lang_name=lang_name)
         keyboard = build_completion_keyboard(lang_code)
 
         await query.edit_message_text(step2_text, reply_markup=keyboard)
@@ -220,7 +213,7 @@ async def handle_wizard_callback(
 
         # Show Step 2 in German (default for auto)
         lang_name = get_language_name("auto")
-        step2_text = get_step2_text("de", lang_name)
+        step2_text = t("onboarding.step2", "de", lang_name=lang_name)
         keyboard = build_completion_keyboard("de")
 
         await query.edit_message_text(step2_text, reply_markup=keyboard)
@@ -242,7 +235,7 @@ async def handle_wizard_callback(
             # Skip from Step 2: mark as onboarded, keep language
             skip_lang = state.wizard_lang if state.wizard_lang != "auto" else "de"
             onboarding_storage.set_onboarded(user_id, state.wizard_lang)
-            skip_text = get_wizard_skip_step2_text(skip_lang)
+            skip_text = t("onboarding.skip_step2", skip_lang)
             await query.edit_message_text(f"✓ {skip_text}")
             log_command_audit(
                 action="wizard_skip_step2",
@@ -258,7 +251,7 @@ async def handle_wizard_callback(
                 stored = await chat_service.get_chat_language(user_id, chat_id)
                 if stored:
                     skip_lang = stored
-            skip_text = get_wizard_skip_step1_text(skip_lang)
+            skip_text = t("onboarding.skip_step1", skip_lang)
             await query.edit_message_text(skip_text)
             log_command_audit(
                 action="wizard_skip_step1",
@@ -276,7 +269,7 @@ async def handle_wizard_callback(
         onboarding_storage.set_onboarded(user_id, lang)
 
         done_lang = lang if lang and lang != "auto" else "de"
-        done_text = get_wizard_done_text(done_lang)
+        done_text = t("onboarding.done", done_lang)
         await query.edit_message_text(f"✓ {done_text}")
 
         log_command_audit(
