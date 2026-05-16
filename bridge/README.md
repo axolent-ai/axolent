@@ -1,6 +1,6 @@
 # Bridge Service
 
-Backend of AXOLENT AI (Axolent). Telegram bot that spawns Claude Code CLI as a local subprocess (Mode B). Hexagonal Architecture, 1190+ tests, UTF-8 throughout.
+Backend of AXOLENT AI (Axolent). Telegram bot that spawns Claude Code CLI as a local subprocess (Mode B). Hexagonal Architecture, 1636+ tests, UTF-8 throughout.
 
 ## Architecture (Hexagonal)
 
@@ -38,7 +38,7 @@ Backend of AXOLENT AI (Axolent). Telegram bot that spawns Claude Code CLI as a l
 | `config/` | system_prompt.md, user_constitution.md |
 | `data/` | axolent.db (SQLite), user_profiles.jsonl (runtime data) |
 | `logs/` | audit.jsonl (with rotation) |
-| `tests/` | 1190+ pytest tests |
+| `tests/` | 1636+ pytest tests |
 
 ## Setup
 
@@ -140,7 +140,7 @@ python -m pytest tests/test_bookmark.py
 python -m pytest --snapshot-update
 ```
 
-Currently: **1190+ tests**, all passing, runtime ~3 seconds.
+Currently: **1636+ tests**, all passing, runtime ~3 seconds.
 
 ## Generate Coverage Report
 
