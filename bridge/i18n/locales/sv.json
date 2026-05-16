@@ -607,6 +607,102 @@
       "source_hash": "f1d2fce191749991",
       "auto_translated": true,
       "reviewed": false
+    },
+    "errors.memory_not_initialized": {
+      "text": "Minnessystem inte initialiserat.",
+      "source_hash": "486a762932720d3f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.rate_limiter_not_initialized": {
+      "text": "Hastighetsbegransare inte initialiserad.",
+      "source_hash": "213468ada900d8c3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.model_not_initialized": {
+      "text": "Modellsystem inte initialiserat.",
+      "source_hash": "e759202b3bc44636",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.profile_change_failed": {
+      "text": "Fel vid profilbyte.",
+      "source_hash": "d16c9c55355aeafc",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.settings_not_available": {
+      "text": "Installningar inte tillgangliga.",
+      "source_hash": "41a6aaded4864a7d",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.unknown_slot": {
+      "text": "Okand slot.",
+      "source_hash": "3dbfaeec9d431ebf",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.onboarding_not_available": {
+      "text": "Onboarding inte tillganglig.",
+      "source_hash": "d3bb61431d9e7e32",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.invalid_id": {
+      "text": "Ogiltigt ID",
+      "source_hash": "ea6bde759ba1f9e5",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.bookmark_service_not_initialized": {
+      "text": "Bokmrkestjanst inte initialiserad",
+      "source_hash": "d29654679f035e09",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.bookmark_not_found": {
+      "text": "Bokmrke inte hittat",
+      "source_hash": "cbb864daf23ee235",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.not_authorized": {
+      "text": "Du ar inte behorig att anvanda denna bot.",
+      "source_hash": "ef4e757003e2b36a",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.removed_toast": {
+      "text": "Borttaget",
+      "source_hash": "4118fb4fed0ecec9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.full_text_btn": {
+      "text": "Fullstandig text",
+      "source_hash": "9ed54584159ceee1",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.remove_btn": {
+      "text": "Ta bort",
+      "source_hash": "c3812fc4acb861d5",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.rate_limit_short": {
+      "text": "Du har natt din grans. Vanta en stund eller oka din profil med /setlimit.",
+      "source_hash": "3cff2b3a562e0d21",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.querying": {
+      "text": "Forfragar AI:er parallellt... kan ta 30-60 sekunder.",
+      "source_hash": "0974c6e004e46598",
+      "auto_translated": true,
+      "reviewed": false
     }
   }
 }

@@ -607,6 +607,102 @@
       "source_hash": "f1d2fce191749991",
       "auto_translated": true,
       "reviewed": false
+    },
+    "errors.memory_not_initialized": {
+      "text": "ระบบหน่วยความจำยังไม่ได้เริ่มต้น",
+      "source_hash": "486a762932720d3f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.rate_limiter_not_initialized": {
+      "text": "ตัวจำกัดอัตรายังไม่ได้เริ่มต้น",
+      "source_hash": "213468ada900d8c3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.model_not_initialized": {
+      "text": "ระบบโมเดลยังไม่ได้เริ่มต้น",
+      "source_hash": "e759202b3bc44636",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.profile_change_failed": {
+      "text": "เกิดข้อผิดพลาดในการเปลี่ยนโปรไฟล์",
+      "source_hash": "d16c9c55355aeafc",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.settings_not_available": {
+      "text": "การตั้งค่าไม่พร้อมใช้งาน",
+      "source_hash": "41a6aaded4864a7d",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.unknown_slot": {
+      "text": "สล็อตไม่รู้จัก",
+      "source_hash": "3dbfaeec9d431ebf",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.onboarding_not_available": {
+      "text": "การตั้งค่าเริ่มต้นไม่พร้อมใช้งาน",
+      "source_hash": "d3bb61431d9e7e32",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.invalid_id": {
+      "text": "ID ไม่ถูกต้อง",
+      "source_hash": "ea6bde759ba1f9e5",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.bookmark_service_not_initialized": {
+      "text": "บริการบุ๊กมาร์คยังไม่ได้เริ่มต้น",
+      "source_hash": "d29654679f035e09",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.bookmark_not_found": {
+      "text": "ไม่พบบุ๊กมาร์ค",
+      "source_hash": "cbb864daf23ee235",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.not_authorized": {
+      "text": "คุณไม่ได้รับอนุญาตให้ใช้บอทนี้",
+      "source_hash": "ef4e757003e2b36a",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.removed_toast": {
+      "text": "ลบแล้ว",
+      "source_hash": "4118fb4fed0ecec9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.full_text_btn": {
+      "text": "ข้อความเต็ม",
+      "source_hash": "9ed54584159ceee1",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.remove_btn": {
+      "text": "ลบ",
+      "source_hash": "c3812fc4acb861d5",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.rate_limit_short": {
+      "text": "คุณถึงขีดจำกัดแล้ว รอสักครู่หรือเพิ่มโปรไฟล์ด้วย /setlimit",
+      "source_hash": "3cff2b3a562e0d21",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.querying": {
+      "text": "กำลังสอบถาม AI แบบขนาน... อาจใช้เวลา 30-60 วินาที",
+      "source_hash": "0974c6e004e46598",
+      "auto_translated": true,
+      "reviewed": false
     }
   }
 }

@@ -15,6 +15,7 @@ from telegram.ext import ContextTypes
 from application.audit_service import log_command_audit
 from application.bookmark_service import BookmarkService
 from domain.markdown import markdown_to_telegram_html, strip_markdown
+from i18n.domain.i18n import t
 from presentation.decorators import require_private_chat, require_whitelist
 from presentation.render import split_message
 
@@ -43,7 +44,7 @@ async def handle_bookmark_show_callback(
         bm_chat_id = int(parts[1])
         msg_id = int(parts[2])
     except (ValueError, IndexError):
-        await query.answer(text="Invalid ID", show_alert=False)
+        await query.answer(text=t("errors.invalid_id", "en"), show_alert=False)
         return
 
     user = query.from_user
@@ -53,12 +54,14 @@ async def handle_bookmark_show_callback(
         "bookmark_service"
     )
     if bookmark_service is None:
-        await query.answer(text="Bookmark service not initialized", show_alert=False)
+        await query.answer(
+            text=t("errors.bookmark_service_not_initialized", "en"), show_alert=False
+        )
         return
 
     bm = bookmark_service.get_bookmark(user_id, bm_chat_id, msg_id)
     if bm is None:
-        await query.answer(text="Bookmark not found", show_alert=False)
+        await query.answer(text=t("errors.bookmark_not_found", "en"), show_alert=False)
         log_command_audit(
             action="bm_show",
             user_id=user_id,
@@ -118,7 +121,7 @@ async def handle_bookmark_delete_callback(
         bm_chat_id = int(parts[1])
         msg_id = int(parts[2])
     except (ValueError, IndexError):
-        await query.answer(text="Invalid ID", show_alert=False)
+        await query.answer(text=t("errors.invalid_id", "en"), show_alert=False)
         return
 
     user = query.from_user
@@ -128,7 +131,9 @@ async def handle_bookmark_delete_callback(
         "bookmark_service"
     )
     if bookmark_service is None:
-        await query.answer(text="Bookmark service not initialized", show_alert=False)
+        await query.answer(
+            text=t("errors.bookmark_service_not_initialized", "en"), show_alert=False
+        )
         return
 
     # Get bookmark data BEFORE deleting (for date in confirmation)
@@ -136,7 +141,7 @@ async def handle_bookmark_delete_callback(
 
     deleted: bool = bookmark_service.remove_bookmark(user_id, bm_chat_id, msg_id)
     if deleted:
-        await query.answer(text="Removed", show_alert=False)
+        await query.answer(text=t("bookmark.removed_toast", "en"), show_alert=False)
 
         # Format date for chat confirmation
         date_display = ""
@@ -161,12 +166,12 @@ async def handle_bookmark_delete_callback(
         _del_text = get_text(
             BOOKMARK_DELETE_CONFIRM_TEXTS, _del_lang, date_display=date_display
         )
-        await query.message.reply_text(f"✓ {_del_text}")
+        await query.message.reply_text(f"✓ {_del_text}")  # i18n: ok
         log.info(
             "Bookmark removed via button: user_id=%d message_id=%d", user_id, msg_id
         )
     else:
-        await query.answer(text="Bookmark not found", show_alert=False)
+        await query.answer(text=t("errors.bookmark_not_found", "en"), show_alert=False)
     log_command_audit(
         action="bm_del",
         user_id=user_id,

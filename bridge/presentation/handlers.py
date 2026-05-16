@@ -221,13 +221,16 @@ def _get_rate_limiter(
     return context.application.bot_data.get("rate_limiter")
 
 
-def build_bookmarks_keyboard(bookmarks: list[dict[str, Any]]) -> InlineKeyboardMarkup:
+def build_bookmarks_keyboard(
+    bookmarks: list[dict[str, Any]], lang: str = "en"
+) -> InlineKeyboardMarkup:
     """Builds an InlineKeyboard for the /bookmarks listing.
 
     Each bookmark gets two buttons: 'Full text' and 'Remove'.
 
     Args:
         bookmarks: List of bookmark dicts with 'message_id' and 'chat_id'.
+        lang: ISO-639-1 language code for button labels.
 
     Returns:
         InlineKeyboardMarkup with two buttons per bookmark row.
@@ -239,11 +242,11 @@ def build_bookmarks_keyboard(bookmarks: list[dict[str, Any]]) -> InlineKeyboardM
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"#{i} Full text",
+                    text=f"#{i} {t('bookmark.full_text_btn', lang)}",
                     callback_data=f"bm_show:{bm_chat_id}:{msg_id}",
                 ),
                 InlineKeyboardButton(
-                    text=f"#{i} Remove",
+                    text=f"#{i} {t('bookmark.remove_btn', lang)}",
                     callback_data=f"bm_del:{bm_chat_id}:{msg_id}",
                 ),
             ]
@@ -1041,7 +1044,7 @@ async def handle_save_command(
         "bookmark.saved" if was_saved else "bookmark.removed",
         _save_lang,
     )
-    await update.message.reply_text(f"✓ {_bm_text}")
+    await update.message.reply_text(f"✓ {_bm_text}")  # i18n: ok
     log.info(
         "Bookmark %s via /save: user=%s message_id=%d",
         "saved" if was_saved else "removed",
@@ -1107,7 +1110,7 @@ async def handle_bookmarks_command(
             lines.append(format_bookmark_preview(bm, i))
             lines.append("")
 
-        keyboard = build_bookmarks_keyboard(results)
+        keyboard = build_bookmarks_keyboard(results, lang=_bm_lang)
         text_body = "\n".join(lines)
         chunks = split_message(text_body)
         last_idx = len(chunks) - 1
@@ -1147,7 +1150,7 @@ async def handle_bookmarks_command(
         lines.append(format_bookmark_preview(bm, i))
         lines.append("")
 
-    keyboard = build_bookmarks_keyboard(bookmarks)
+    keyboard = build_bookmarks_keyboard(bookmarks, lang=_bm_lang)
     text_body = "\n".join(lines)
     chunks = split_message(text_body)
     last_idx = len(chunks) - 1
@@ -1243,7 +1246,7 @@ async def handle_remember_command(
     """
     memory_service = _get_memory_service(context)
     if memory_service is None:
-        await update.message.reply_text("Memory system not initialized.")
+        await update.message.reply_text(t("errors.memory_not_initialized", "en"))
         return
 
     user = update.effective_user
@@ -1298,7 +1301,7 @@ async def handle_memory_command(
     """
     memory_service = _get_memory_service(context)
     if memory_service is None:
-        await update.message.reply_text("Memory system not initialized.")
+        await update.message.reply_text(t("errors.memory_not_initialized", "en"))
         return
 
     user = update.effective_user
@@ -1357,7 +1360,7 @@ async def handle_forget_command(
     """
     memory_service = _get_memory_service(context)
     if memory_service is None:
-        await update.message.reply_text("Memory system not initialized.")
+        await update.message.reply_text(t("errors.memory_not_initialized", "en"))
         return
 
     user = update.effective_user
@@ -1401,7 +1404,7 @@ async def handle_usage_command(
     """Handles /usage. Shows current usage and limits."""
     rate_limiter = _get_rate_limiter(context)
     if rate_limiter is None:
-        await update.message.reply_text("Rate limiter not initialized.")
+        await update.message.reply_text(t("errors.rate_limiter_not_initialized", "en"))
         return
 
     user = update.effective_user
@@ -1410,12 +1413,7 @@ async def handle_usage_command(
     usage = rate_limiter.get_usage(user_id)
 
     if usage.profile == "unlimited":
-        msg = (
-            "\U0001f4ca Your usage & profile:\n\n"
-            "Profile: Unlimited\n\n"
-            "\U0001f513 No limits active.\n\n"
-            "Change profile: /setlimit normal"
-        )
+        msg = f"{t('usage.header', 'en')}\n\n{t('usage.profile_unlimited', 'en')}"  # i18n: ok
     else:
         profile_display = usage.profile.capitalize()
 
@@ -1450,7 +1448,7 @@ async def handle_usage_command(
             f"Change profile: /setlimit <light|normal|power|unlimited>"
         )
 
-    await update.message.reply_text(msg)
+    await update.message.reply_text(msg)  # i18n: ok
     log_command_audit(
         action="usage",
         user_id=user_id,
@@ -1472,7 +1470,7 @@ async def handle_setlimit_command(
     """
     rate_limiter = _get_rate_limiter(context)
     if rate_limiter is None:
-        await update.message.reply_text("Rate limiter not initialized.")
+        await update.message.reply_text(t("errors.rate_limiter_not_initialized", "en"))
         return
 
     user = update.effective_user
@@ -1480,13 +1478,19 @@ async def handle_setlimit_command(
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
     args: list[str] = context.args or []
 
+    chat_service = _get_chat_service(context)
+    _sl_lang = await chat_service.get_chat_language(user_id, chat_id) or "en"
+
     if not args:
         current = rate_limiter.get_user_profile(user_id)
         available = ", ".join(PROFILES.keys())
         await update.message.reply_text(
-            f"Current profile: {current.capitalize()}\n\n"
-            f"Usage: /setlimit <profile>\n"
-            f"Available: {available}"
+            t(
+                "setlimit.current",
+                _sl_lang,
+                profile=current.capitalize(),
+                available=available,
+            )
         )
         return
 
@@ -1495,20 +1499,18 @@ async def handle_setlimit_command(
     # Unlimited: two-step confirmation
     if target_profile == "unlimited":
         if len(args) < 2 or args[1].lower() != "confirm":
-            await update.message.reply_text(
-                "⚠️ You want to disable all limits.\n\n"
-                "Risk:\n"
-                "• Telegram may temporarily block the bot with too many edits\n"
-                "• Your subscription will be used up faster\n"
-                "• You will get a reminder every 100 requests\n\n"
-                "If you are sure: /setlimit unlimited confirm"
-            )
+            await update.message.reply_text(t("setlimit.confirm_unlimited", _sl_lang))
             return
 
     if target_profile not in PROFILES:
         available = ", ".join(PROFILES.keys())
         await update.message.reply_text(
-            f"Unknown profile: '{target_profile}'\n\nAvailable: {available}"
+            t(
+                "setlimit.unknown_profile",
+                _sl_lang,
+                profile=target_profile,
+                available=available,
+            )
         )
         return
 
@@ -1518,24 +1520,24 @@ async def handle_setlimit_command(
     if success:
         limits = PROFILES[target_profile]
         if target_profile == "unlimited":
-            confirm_msg = (
-                f"\U0001f513 Profile changed: {old_profile.capitalize()} → "
-                f"Unlimited\n\n"
-                f"No limits active. Reminder every 100 requests.\n"
-                f"Revert: /setlimit normal"
+            confirm_msg = t(
+                "setlimit.changed_unlimited",
+                _sl_lang,
+                old=old_profile.capitalize(),
             )
         else:
-            confirm_msg = (
-                f"✓ Profile changed: {old_profile.capitalize()} → "
-                f"{target_profile.capitalize()}\n\n"
-                f"New limits:\n"
-                f"• {limits['per_minute']}/min\n"
-                f"• {limits['per_hour']}/hour\n"
-                f"• {limits['per_day']}/day"
+            confirm_msg = t(
+                "setlimit.changed",
+                _sl_lang,
+                old=old_profile.capitalize(),
+                new=target_profile.capitalize(),
+                per_minute=str(limits["per_minute"]),
+                per_hour=str(limits["per_hour"]),
+                per_day=str(limits["per_day"]),
             )
         await update.message.reply_text(confirm_msg)
     else:
-        await update.message.reply_text("Error changing profile.")
+        await update.message.reply_text(t("errors.profile_change_failed", _sl_lang))
 
     log_command_audit(
         action="setlimit",
@@ -1647,7 +1649,7 @@ async def handle_setmodel_command(
 
     model_service = _get_model_service(context)
     if model_service is None or not isinstance(model_service, ModelService):
-        await update.message.reply_text("Model system not initialized.")
+        await update.message.reply_text(t("errors.model_not_initialized", "en"))
         return
 
     chat_service = _get_chat_service(context)
@@ -1801,7 +1803,7 @@ async def handle_resetmodel_command(
     """
     model_service = _get_model_service(context)
     if model_service is None or not isinstance(model_service, ModelService):
-        await update.message.reply_text("Model system not initialized.")
+        await update.message.reply_text(t("errors.model_not_initialized", "en"))
         return
 
     chat_service = _get_chat_service(context)
@@ -1839,7 +1841,7 @@ async def handle_models_command(
 
     model_service = _get_model_service(context)
     if model_service is None or not isinstance(model_service, ModelService):
-        await update.message.reply_text("Model system not initialized.")
+        await update.message.reply_text(t("errors.model_not_initialized", "en"))
         return
 
     chat_service = _get_chat_service(context)
@@ -1921,7 +1923,7 @@ async def handle_settings_command(
     """
     model_service = _get_model_service(context)
     if model_service is None or not isinstance(model_service, ModelService):
-        await update.message.reply_text("Model system not initialized.")
+        await update.message.reply_text(t("errors.model_not_initialized", "en"))
         return
 
     chat_service = _get_chat_service(context)
@@ -2124,15 +2126,16 @@ async def handle_debate_command(
 
     question = " ".join(args)
 
+    # Language for early messages
+    chat_service = _get_chat_service(context)
+    _deb_lang = await chat_service.get_chat_language(user_id, chat_id) or "en"
+
     # Check rate limit (same logic as handle_message)
     rate_limiter = _get_rate_limiter(context)
     if rate_limiter is not None:
         result_rl: RateLimitResult = rate_limiter.check_and_consume(user_id)
         if not result_rl.allowed:
-            await update.message.reply_text(
-                "You have reached your limit. Wait a moment or "
-                "increase your profile with /setlimit."
-            )
+            await update.message.reply_text(t("debate.rate_limit_short", _deb_lang))
             write_raw_audit(
                 {
                     "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -2149,7 +2152,7 @@ async def handle_debate_command(
 
     # Send status message
     status_msg = await update.message.reply_text(
-        "\U0001f3af Querying AIs in parallel... may take 30-60 seconds."
+        f"\U0001f3af {t('debate.querying', _deb_lang)}"
     )
 
     # Typing keepalive during debate

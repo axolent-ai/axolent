@@ -607,6 +607,102 @@
       "source_hash": "f1d2fce191749991",
       "auto_translated": false,
       "reviewed": true
+    },
+    "errors.memory_not_initialized": {
+      "text": "Speichersystem nicht initialisiert.",
+      "source_hash": "486a762932720d3f",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "errors.rate_limiter_not_initialized": {
+      "text": "Ratenlimiter nicht initialisiert.",
+      "source_hash": "213468ada900d8c3",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "errors.model_not_initialized": {
+      "text": "Modellsystem nicht initialisiert.",
+      "source_hash": "e759202b3bc44636",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "errors.profile_change_failed": {
+      "text": "Fehler beim Profilwechsel.",
+      "source_hash": "d16c9c55355aeafc",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "errors.settings_not_available": {
+      "text": "Einstellungen nicht verfügbar.",
+      "source_hash": "41a6aaded4864a7d",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "errors.unknown_slot": {
+      "text": "Unbekannter Slot.",
+      "source_hash": "3dbfaeec9d431ebf",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "errors.onboarding_not_available": {
+      "text": "Onboarding nicht verfügbar.",
+      "source_hash": "d3bb61431d9e7e32",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "errors.invalid_id": {
+      "text": "Ungültige ID",
+      "source_hash": "ea6bde759ba1f9e5",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "errors.bookmark_service_not_initialized": {
+      "text": "Lesezeichen-Service nicht initialisiert",
+      "source_hash": "d29654679f035e09",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "errors.bookmark_not_found": {
+      "text": "Lesezeichen nicht gefunden",
+      "source_hash": "cbb864daf23ee235",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "errors.not_authorized": {
+      "text": "Du bist nicht autorisiert, diesen Bot zu nutzen.",
+      "source_hash": "ef4e757003e2b36a",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "bookmark.removed_toast": {
+      "text": "Entfernt",
+      "source_hash": "4118fb4fed0ecec9",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "bookmark.full_text_btn": {
+      "text": "Volltext",
+      "source_hash": "9ed54584159ceee1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "bookmark.remove_btn": {
+      "text": "Entfernen",
+      "source_hash": "c3812fc4acb861d5",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "debate.rate_limit_short": {
+      "text": "Du hast dein Limit erreicht. Warte einen Moment oder erhöhe dein Profil mit /setlimit.",
+      "source_hash": "3cff2b3a562e0d21",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "debate.querying": {
+      "text": "KIs werden parallel abgefragt... kann 30-60 Sekunden dauern.",
+      "source_hash": "0974c6e004e46598",
+      "auto_translated": false,
+      "reviewed": true
     }
   }
 }

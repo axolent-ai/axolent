@@ -170,7 +170,7 @@ async def handle_wizard_callback(
 
     onboarding_storage = _get_onboarding_storage(context)
     if onboarding_storage is None:
-        await query.edit_message_text("Onboarding not available.")
+        await query.edit_message_text(t("errors.onboarding_not_available", "en"))
         return
 
     chat_service = _get_chat_service(context)
@@ -236,7 +236,7 @@ async def handle_wizard_callback(
             skip_lang = state.wizard_lang if state.wizard_lang != "auto" else "de"
             onboarding_storage.set_onboarded(user_id, state.wizard_lang)
             skip_text = t("onboarding.skip_step2", skip_lang)
-            await query.edit_message_text(f"✓ {skip_text}")
+            await query.edit_message_text(f"✓ {skip_text}")  # i18n: ok
             log_command_audit(
                 action="wizard_skip_step2",
                 user_id=user_id,
@@ -270,7 +270,7 @@ async def handle_wizard_callback(
 
         done_lang = lang if lang and lang != "auto" else "de"
         done_text = t("onboarding.done", done_lang)
-        await query.edit_message_text(f"✓ {done_text}")
+        await query.edit_message_text(f"✓ {done_text}")  # i18n: ok
 
         log_command_audit(
             action="wizard_done",

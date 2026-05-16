@@ -607,6 +607,102 @@
       "source_hash": "f1d2fce191749991",
       "auto_translated": true,
       "reviewed": false
+    },
+    "errors.memory_not_initialized": {
+      "text": "메모리 시스템이 초기화되지 않았습니다.",
+      "source_hash": "486a762932720d3f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.rate_limiter_not_initialized": {
+      "text": "속도 제한기가 초기화되지 않았습니다.",
+      "source_hash": "213468ada900d8c3",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.model_not_initialized": {
+      "text": "모델 시스템이 초기화되지 않았습니다.",
+      "source_hash": "e759202b3bc44636",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.profile_change_failed": {
+      "text": "프로필 변경 오류.",
+      "source_hash": "d16c9c55355aeafc",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.settings_not_available": {
+      "text": "설정을 사용할 수 없습니다.",
+      "source_hash": "41a6aaded4864a7d",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.unknown_slot": {
+      "text": "알 수 없는 슬롯.",
+      "source_hash": "3dbfaeec9d431ebf",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.onboarding_not_available": {
+      "text": "온보딩을 사용할 수 없습니다.",
+      "source_hash": "d3bb61431d9e7e32",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.invalid_id": {
+      "text": "잘못된 ID",
+      "source_hash": "ea6bde759ba1f9e5",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.bookmark_service_not_initialized": {
+      "text": "북마크 서비스가 초기화되지 않았습니다",
+      "source_hash": "d29654679f035e09",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.bookmark_not_found": {
+      "text": "북마크를 찾을 수 없습니다",
+      "source_hash": "cbb864daf23ee235",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "errors.not_authorized": {
+      "text": "이 봇을 사용할 권한이 없습니다.",
+      "source_hash": "ef4e757003e2b36a",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.removed_toast": {
+      "text": "제거됨",
+      "source_hash": "4118fb4fed0ecec9",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.full_text_btn": {
+      "text": "전체 텍스트",
+      "source_hash": "9ed54584159ceee1",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "bookmark.remove_btn": {
+      "text": "제거",
+      "source_hash": "c3812fc4acb861d5",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.rate_limit_short": {
+      "text": "한도에 도달했습니다. 잠시 기다리거나 /setlimit으로 프로필을 올리세요.",
+      "source_hash": "3cff2b3a562e0d21",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "debate.querying": {
+      "text": "AI에 병렬로 질의 중... 30-60초 소요될 수 있습니다.",
+      "source_hash": "0974c6e004e46598",
+      "auto_translated": true,
+      "reviewed": false
     }
   }
 }

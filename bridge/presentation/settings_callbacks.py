@@ -368,7 +368,7 @@ async def handle_settings_callback(
 
     model_service = _get_model_service(context)
     if model_service is None or not isinstance(model_service, ModelService):
-        await query.edit_message_text("Settings not available.")
+        await query.edit_message_text(t("errors.settings_not_available", "en"))
         return
 
     chat_service = _get_chat_service(context)
@@ -402,7 +402,7 @@ async def handle_settings_callback(
         slot_name = data.split(":")[1]
         slot = TaskSlot.from_string(slot_name)
         if slot is None:
-            await query.edit_message_text("Unknown slot.")
+            await query.edit_message_text(t("errors.unknown_slot", "en"))
             return
         text, keyboard = build_slot_menu_keyboard(
             slot, user_id, model_service, context, lang

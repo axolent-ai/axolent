@@ -13,6 +13,8 @@ from typing import Callable
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from i18n.domain.i18n import t
+
 log = logging.getLogger(__name__)
 
 
@@ -74,9 +76,7 @@ def require_whitelist(func: Callable) -> Callable:
                 "Unauthorized access: user_id=%s username=%s", user_id, username
             )
             if update.message:
-                await update.message.reply_text(
-                    "You are not authorized to use this bot."
-                )
+                await update.message.reply_text(t("errors.not_authorized", "en"))
             return
 
         return await func(update, context)
