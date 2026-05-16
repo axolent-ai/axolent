@@ -70,6 +70,8 @@ async def translate_entry(
     target_lang: str,
     provider_router: "ProviderRouter",
     model: Optional[str] = None,
+    user_id: Optional[int] = None,
+    chat_id: Optional[int] = None,
 ) -> str:
     """Translate a single memory entry to the target language.
 
@@ -79,6 +81,8 @@ async def translate_entry(
         target_lang: ISO 639-1 target language code.
         provider_router: Router for LLM calls.
         model: Optional model override (default: haiku for speed).
+        user_id: Telegram user ID (required by claude_persistent provider).
+        chat_id: Telegram chat ID (required by claude_persistent provider).
 
     Returns:
         Translated text, or original if translation fails or is unnecessary.
@@ -96,6 +100,13 @@ async def translate_entry(
     if cached is not None:
         return cached
 
+    log.info(
+        "translate_entry: source_lang=%s, target_lang=%s, content_preview=%s",
+        source_lang,
+        target_lang,
+        content[:30],
+    )
+
     # Translate via LLM
     try:
         prompt = _TRANSLATION_PROMPT.format(
@@ -109,6 +120,8 @@ async def translate_entry(
             system_prompt=_TRANSLATION_SYSTEM_PROMPT,
             model=model or "claude-haiku-4-5-20251001",
             timeout_seconds=15,
+            user_id=user_id,
+            chat_id=chat_id,
         )
 
         if result.error or not result.text.strip():
@@ -153,6 +166,8 @@ async def translate_entries(
     target_lang: str,
     provider_router: "ProviderRouter",
     model: Optional[str] = None,
+    user_id: Optional[int] = None,
+    chat_id: Optional[int] = None,
 ) -> list[dict[str, Any]]:
     """Translate a list of memory entries for display.
 
@@ -164,6 +179,8 @@ async def translate_entries(
         target_lang: Target language code.
         provider_router: Router for LLM calls.
         model: Optional model override.
+        user_id: Telegram user ID (required by claude_persistent provider).
+        chat_id: Telegram chat ID (required by claude_persistent provider).
 
     Returns:
         List of entry dicts with translated content.
@@ -187,6 +204,8 @@ async def translate_entries(
             target_lang=target_lang,
             provider_router=provider_router,
             model=model,
+            user_id=user_id,
+            chat_id=chat_id,
         )
 
         # Create a new dict (do not mutate original)

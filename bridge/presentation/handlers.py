@@ -1349,6 +1349,8 @@ async def _translate_memory_entries(
     entries: list[dict],
     target_lang: str,
     context: ContextTypes.DEFAULT_TYPE,
+    user_id: int = 0,
+    chat_id: int = 0,
 ) -> list[dict]:
     """Translate memory entries to the user's language for /memory display.
 
@@ -1359,6 +1361,8 @@ async def _translate_memory_entries(
         entries: Memory entry dicts (must have 'id' and 'content').
         target_lang: ISO 639-1 target language code.
         context: Telegram handler context (for ProviderRouter access).
+        user_id: Telegram user ID (needed by claude_persistent provider).
+        chat_id: Telegram chat ID (needed by claude_persistent provider).
 
     Returns:
         List of entry dicts with translated content (or originals on failure).
@@ -1374,6 +1378,8 @@ async def _translate_memory_entries(
             entries=entries,
             target_lang=target_lang,
             provider_router=router,
+            user_id=user_id or None,
+            chat_id=chat_id or None,
         )
     except Exception as exc:
         log.warning("Memory translation failed, showing originals: %s", exc)
@@ -1418,7 +1424,9 @@ async def handle_memory_command(
             return
 
         # T26: translate search results to user language
-        results = await _translate_memory_entries(results[:10], _mem_lang, context)
+        results = await _translate_memory_entries(
+            results[:10], _mem_lang, context, user_id=user_id, chat_id=chat_id
+        )
 
         lines: list[str] = [
             t(
@@ -1441,7 +1449,9 @@ async def handle_memory_command(
         return
 
     # T26: translate entries to user language before display
-    entries = await _translate_memory_entries(entries, _mem_lang, context)
+    entries = await _translate_memory_entries(
+        entries, _mem_lang, context, user_id=user_id, chat_id=chat_id
+    )
 
     lines: list[str] = [t("memory.list_header", _mem_lang, count=len(entries))]
     for entry in entries:
