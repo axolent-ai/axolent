@@ -236,3 +236,117 @@ class TestDetectLanguageWithConfidence:
             simple = detect_language(text)
             with_conf, _ = detect_language_with_confidence(text)
             assert simple == with_conf, f"Mismatch for: {text}"
+
+
+class TestCharHintDisambiguation:
+    """Regression tests for shared diacritics disambiguation (2026-05-18).
+
+    Verifies that languages sharing ä/ö (DE, SV, FI) or å/æ/ø (SV, DA, NB)
+    are correctly disambiguated via marker-word priority over shared char hints.
+    """
+
+    def test_sv_with_shared_umlauts(self) -> None:
+        """Swedish text with ä/ö must detect as 'sv', not 'de'."""
+        text = "Berätta hela historien om NVIDIA fram till idag."
+        result = detect_language(text)
+        assert result == "sv", f"Expected 'sv', got '{result}' for: {text}"
+
+    def test_sv_with_short_marker_phrase(self) -> None:
+        """Short Swedish sentence with ö must detect as 'sv'."""
+        text = "Vilka är fördelarna med öppen källkod?"
+        result = detect_language(text)
+        assert result == "sv", f"Expected 'sv', got '{result}' for: {text}"
+
+    def test_de_clear_marker(self) -> None:
+        """Clear German text without shared-char ambiguity."""
+        text = "Was sind die Vorteile von Open-Source-Software?"
+        result = detect_language(text)
+        assert result == "de", f"Expected 'de', got '{result}' for: {text}"
+
+    def test_da_with_shared_chars(self) -> None:
+        """Danish text with shared markers must detect as 'da'."""
+        text = "Hvad er fordelene ved open source-software?"
+        result = detect_language(text)
+        assert result == "da", f"Expected 'da', got '{result}' for: {text}"
+
+    def test_nl_with_shared_chars(self) -> None:
+        """Dutch text must detect as 'nl'."""
+        text = "Wat zijn de voordelen van open source software?"
+        result = detect_language(text)
+        assert result == "nl", f"Expected 'nl', got '{result}' for: {text}"
+
+    def test_no_with_shared_chars(self) -> None:
+        """Norwegian text with å must detect as 'nb'."""
+        text = "Hva er fordelene med åpen kildekode-programvare?"
+        result = detect_language(text)
+        assert result in ("nb", "no"), f"Expected 'nb'/'no', got '{result}' for: {text}"
+
+    def test_fi_with_shared_chars(self) -> None:
+        """Finnish text with ä/ö must detect as 'fi'."""
+        text = "Mitkä ovat avoimen lähdekoodin ohjelmistojen edut?"
+        result = detect_language(text)
+        assert result == "fi", f"Expected 'fi', got '{result}' for: {text}"
+
+    def test_en_no_diacritics(self) -> None:
+        """English text without diacritics must detect as 'en'."""
+        text = "What are the advantages of open-source software?"
+        result = detect_language(text)
+        assert result == "en", f"Expected 'en', got '{result}' for: {text}"
+
+    def test_de_long_text_no_diacritics(self) -> None:
+        """Longer German text without ä/ö/ü must still detect as 'de'."""
+        text = (
+            "Ich bin der Meinung dass wir hier nicht nur mit den "
+            "Vorteilen sondern auch mit den Risiken von Open Source "
+            "Software rechnen sollten wenn wir eine Entscheidung treffen"
+        )
+        result = detect_language(text)
+        assert result == "de", f"Expected 'de', got '{result}' for: {text}"
+
+    def test_short_text_de_confidence(self) -> None:
+        """Short German text has medium confidence (marker-based)."""
+        lang, conf = detect_language_with_confidence("ist das richtig")
+        assert lang == "de", f"Expected 'de', got '{lang}'"
+        assert conf > 0.0, "Confidence should be above zero"
+
+    def test_short_text_sv_confidence(self) -> None:
+        """Short Swedish text has medium confidence (marker-based)."""
+        lang, conf = detect_language_with_confidence("är detta rätt")
+        assert lang == "sv", f"Expected 'sv', got '{lang}'"
+        assert conf > 0.0, "Confidence should be above zero"
+
+    def test_mixed_de_sv_majority_wins(self) -> None:
+        """Mixed text with majority Swedish markers detects as 'sv'."""
+        text = (
+            "Det var inte mycket att göra sedan dess men jag har "
+            "försökt att hitta en lösning som alla kan acceptera"
+        )
+        result = detect_language(text)
+        assert result == "sv", f"Expected 'sv', got '{result}' for: {text}"
+
+    def test_de_with_exclusive_eszett(self) -> None:
+        """German text with ß (DE-exclusive) must detect as 'de'."""
+        text = "Die Straße ist sehr groß und schön"
+        result = detect_language(text)
+        assert result == "de", f"Expected 'de', got '{result}' for: {text}"
+
+    def test_sv_long_nvidia_prompt(self) -> None:
+        """The original bug: long SV prompt must NOT detect as 'de'."""
+        text = (
+            "Berätta hela historien om NVIDIA fram till idag. "
+            "Var så utförlig som möjligt minst 4 000 ord."
+        )
+        result = detect_language(text)
+        assert result == "sv", f"Expected 'sv', got '{result}' for: {text}"
+
+    def test_da_with_oe_ligature(self) -> None:
+        """Danish text with ø (DA/NB-exclusive) must detect as 'da'."""
+        text = "Vi bør gøre det bedre næste gang"
+        result = detect_language(text)
+        assert result == "da", f"Expected 'da', got '{result}' for: {text}"
+
+    def test_nb_with_oe_and_markers(self) -> None:
+        """Norwegian text with ø and NB markers must detect as 'nb'."""
+        text = "Vi bør gjøre det bedre neste gang fordi det ikke var bra"
+        result = detect_language(text)
+        assert result == "nb", f"Expected 'nb', got '{result}' for: {text}"

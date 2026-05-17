@@ -474,6 +474,17 @@ _MARKERS: dict[str, set[str]] = {
         "helt",
         "mellan",
         "redan",
+        # Common SV words with diacritics (essential for short-text detection)
+        "är",
+        "för",
+        "på",
+        "från",
+        "här",
+        "där",
+        "också",
+        "så",
+        "över",
+        "göra",
     },
     "tr": {
         "bir",
@@ -487,18 +498,25 @@ _MARKERS: dict[str, set[str]] = {
         "onun",
         "kadar",
         "olarak",
-        "nasil",
+        "nasıl",
         "neden",
         "evet",
-        "hayir",
+        "hayır",
         "burada",
         "orada",
-        "simdi",
+        "şimdi",
         "sadece",
         "hepsi",
+        "bazı",
+        "çok",
+        "iyi",
+        "teşekkür",
+        # ASCII fallbacks for markers (some users type without diacritics)
+        "nasil",
+        "hayir",
+        "simdi",
         "bazi",
         "cok",
-        "iyi",
         "tesekkur",
     },
     "id": {
@@ -553,16 +571,162 @@ _MARKERS: dict[str, set[str]] = {
         "hom",
         "nay",
     },
+    "da": {
+        "og",
+        "er",
+        "det",
+        "en",
+        "af",
+        "til",
+        "den",
+        "som",
+        "med",
+        "har",
+        "ikke",
+        "kan",
+        "skal",
+        "vil",
+        "jeg",
+        "hun",
+        "han",
+        "hvad",
+        "hvor",
+        "hvorfor",
+        "fordi",
+        "meget",
+        "denne",
+        "efter",
+        "bare",
+        "eller",
+        "men",
+        "alle",
+        "ved",
+        "fra",
+    },
+    "nb": {
+        "og",
+        "er",
+        "det",
+        "en",
+        "av",
+        "til",
+        "den",
+        "som",
+        "med",
+        "har",
+        "ikke",
+        "kan",
+        "skal",
+        "vil",
+        "jeg",
+        "hun",
+        "han",
+        "hva",
+        "hvor",
+        "hvorfor",
+        "fordi",
+        "veldig",
+        "denne",
+        "etter",
+        "bare",
+        "eller",
+        "men",
+        "alle",
+        "fra",
+        "også",
+        "gjøre",
+        "neste",
+        "bra",
+    },
+    "fi": {
+        "ja",
+        "on",
+        "ei",
+        "se",
+        "että",
+        "kun",
+        "mutta",
+        "tai",
+        "niin",
+        "kuin",
+        "ovat",
+        "olla",
+        "hän",
+        "minä",
+        "sinä",
+        "mitä",
+        "miksi",
+        "missä",
+        "milloin",
+        "myös",
+        "vain",
+        "hyvin",
+        "paljon",
+        "tämä",
+        "kanssa",
+        "sitten",
+        "ennen",
+        "jälkeen",
+        "kaikki",
+        "ohjelmistojen",
+    },
 }
 
-# Diacritical character patterns for Latin-script disambiguation
+# Diacritical character patterns for Latin-script disambiguation.
+#
+# DESIGN (2026-05-18, Fix for SV/DE/DA/NB/FI overlap):
+# Some diacritical characters are SHARED across languages (e.g. ä/ö appear
+# in both German and Swedish). To prevent false positives:
+# - _CHAR_HINTS_EXCLUSIVE: chars that ONLY appear in one language family.
+#   These always count as strong indicators (weight: 0.15 per occurrence).
+# - _CHAR_HINTS_SHARED: chars shared across multiple languages.
+#   These only count for the language with the highest marker-word score
+#   (see _detect_language_core for the disambiguation logic).
+#
+# Exclusive indicators:
+#   DE: ß (unique to German in Latin scripts)
+#   DA/NB: ø/Ø (unique to Danish/Norwegian)
+#   SV: no truly exclusive char (å shared with DA/NB), relies on markers
+#   FI: no exclusive diacritics, relies on markers + word patterns
+#
+_CHAR_HINTS_EXCLUSIVE: dict[str, re.Pattern] = {
+    "de": re.compile(r"[ß]"),  # ß is truly DE-only in Latin scripts
+    "fr": re.compile(r"[àâéèêëîïôùûçÀÂÉÈÊËÎÏÔÙÛÇ]"),
+    "es": re.compile(r"[áéíóúñ¿¡ÁÉÍÓÚÑ]"),
+    "pt": re.compile(r"[ãõâêôàáéíóúçÃÕÂÊÔÀÁÉÍÓÚÇ]"),
+    "pl": re.compile(r"[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]"),
+    "da": re.compile(r"[øØ]"),  # ø is DA/NB-exclusive (not SV/DE/FI)
+    "nb": re.compile(r"[øØ]"),  # shared with DA but exclusive vs DE/SV/FI
+    "tr": re.compile(r"[çğışÇĞİŞ]"),  # ö/ü shared with DE (handled separately)
+    "vi": re.compile(
+        r"[àáạảãăắằặẳẵâấầậẩẫèéẹẻẽêếềệểễìíịỉĩòóọỏõôốồộổỗơớờợởỡùúụủũưứừựửữỳýỵỷỹđ]"
+    ),
+}
+
+# Shared diacritical characters: ä, ö appear in DE, SV, FI.
+# å appears in SV, DA, NB. ö/ü appear in DE and TR.
+# These are only awarded to the language with the best marker-word score
+# (see disambiguation in _detect_language_core).
+_CHAR_HINTS_SHARED: dict[str, re.Pattern] = {
+    "de": re.compile(r"[äöüÄÖÜ]"),
+    "sv": re.compile(r"[äöåÄÖÅ]"),
+    "da": re.compile(r"[åæÅÆ]"),
+    "nb": re.compile(r"[åæÅÆ]"),
+    "fi": re.compile(r"[äöÄÖ]"),
+    "tr": re.compile(r"[öüÖÜ]"),
+}
+
+# Legacy alias kept for external imports (read-only, not used internally)
 _CHAR_HINTS: dict[str, re.Pattern] = {
     "de": re.compile(r"[äöüßÄÖÜ]"),
     "fr": re.compile(r"[àâéèêëîïôùûüçÀÂÉÈÊËÎÏÔÙÛÜÇ]"),
     "es": re.compile(r"[áéíóúñ¿¡ÁÉÍÓÚÑ]"),
     "pt": re.compile(r"[ãõâêôàáéíóúçÃÕÂÊÔÀÁÉÍÓÚÇ]"),
     "pl": re.compile(r"[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]"),
-    "sv": re.compile(r"[åÅ]"),
+    "sv": re.compile(r"[åÅäöÄÖ]"),
+    "da": re.compile(r"[æøåÆØÅ]"),
+    "nb": re.compile(r"[æøåÆØÅ]"),
+    "fi": re.compile(r"[äöÄÖ]"),
     "tr": re.compile(r"[çğışöüÇĞİŞÖÜ]"),
     "vi": re.compile(
         r"[àáạảãăắằặẳẵâấầậẩẫèéẹẻẽêếềệểễìíịỉĩòóọỏõôốồộổỗơớờợởỡùúụủũưứừựửữỳýỵỷỹđ]"
@@ -571,8 +735,8 @@ _CHAR_HINTS: dict[str, re.Pattern] = {
 
 # Word extraction pattern (includes accented chars and apostrophes)
 _WORD_PATTERN = re.compile(
-    r"[a-zA-ZäöüßÄÖÜàâéèêëîïôùûüçáéíóúñãõåąćęłńśźżğışđ"
-    r"ắằặẳẵấầậẩẫếềệểễốồộổỗớờợởỡứừựửữỳýỵỷỹ'']+"
+    r"[a-zA-ZäöüßÄÖÜàâéèêëîïôùûüçáéíóúñãõåæøÅÆØąćęłńśźżğışđ"
+    r"ắằặẳẵấầậẩẫếềệểễốồộổỗớờợ��ỡứừựửữỳýỵỷỹ'']+"
 )
 
 
@@ -647,8 +811,17 @@ def _detect_language_core(text: str) -> tuple[str, float]:
 
     Strategy:
     1. Check for non-Latin scripts (deterministic).
-    2. Score Latin-script languages by marker words + char hints.
-    3. Return best match with confidence score.
+    2. Score Latin-script languages by marker words.
+    3. Add EXCLUSIVE char hints unconditionally.
+    4. Add SHARED char hints only to the language with the best marker score
+       among contenders for those shared characters.
+    5. Return best match with confidence score.
+
+    Disambiguation hierarchy (markers > shared chars):
+    Word markers are the primary signal. Shared diacritical characters
+    (ä/ö between DE/SV/FI, å between SV/DA/NB) only reinforce a language
+    that already has marker evidence. This prevents e.g. Swedish text with
+    ä/ö from being misclassified as German.
 
     Confidence is a value between 0.0 and 1.0 indicating
     how certain the detection is.
@@ -673,30 +846,71 @@ def _detect_language_core(text: str) -> tuple[str, float]:
     # Normalize smart quotes before marker match
     text_lower = text_lower.replace("‘", "'").replace("’", "'")
 
-    # Step 2: Character-based hints (diacritics)
-    char_scores: dict[str, int] = {}
-    for lang, pattern in _CHAR_HINTS.items():
+    # Step 2: Exclusive character hints (always counted)
+    exclusive_scores: dict[str, int] = {}
+    for lang, pattern in _CHAR_HINTS_EXCLUSIVE.items():
         count = len(pattern.findall(text))
         if count > 0:
-            char_scores[lang] = count
+            exclusive_scores[lang] = count
 
-    # Step 3: Word-based analysis
+    # Step 3: Shared character hints (counted later, after marker scoring)
+    shared_counts: dict[str, int] = {}
+    for lang, pattern in _CHAR_HINTS_SHARED.items():
+        count = len(pattern.findall(text))
+        if count > 0:
+            shared_counts[lang] = count
+
+    # Step 4: Word-based analysis (primary signal)
     words = _WORD_PATTERN.findall(text_lower)
 
     if not words:
         return "en", 0.0
 
     word_set = set(words)
-    scores: dict[str, float] = {}
+    marker_scores: dict[str, float] = {}
 
     for lang, markers in _MARKERS.items():
         matches = word_set & markers
         if matches:
-            scores[lang] = len(matches) / len(words)
+            marker_scores[lang] = len(matches) / len(words)
 
-    # Add character hints as bonus (weighted)
-    for lang, char_count in char_scores.items():
+    # Step 5: Build final scores
+    scores: dict[str, float] = {}
+
+    # 5a: Start with marker scores
+    for lang, score in marker_scores.items():
+        scores[lang] = score
+
+    # 5b: Add exclusive char hints unconditionally (weight: 0.15 per char)
+    for lang, char_count in exclusive_scores.items():
         scores[lang] = scores.get(lang, 0) + (char_count * 0.15)
+
+    # 5c: Award shared chars using marker-priority disambiguation.
+    # Rule: Among all languages that got shared-char hits, only the one
+    # with the highest marker-word score receives the bonus. This prevents
+    # e.g. Swedish ä/ö from inflating the German score when SV markers are
+    # present. If NO language has marker evidence, award shared chars to
+    # all (preserves detection for very short text with only diacritics).
+    if shared_counts:
+        # Find the best marker score among languages with shared hits
+        best_shared_marker_lang = None
+        best_shared_marker_val = 0.0
+        for lang in shared_counts:
+            ms = marker_scores.get(lang, 0.0)
+            if ms > best_shared_marker_val:
+                best_shared_marker_val = ms
+                best_shared_marker_lang = lang
+
+        if best_shared_marker_lang is not None and best_shared_marker_val > 0:
+            # Award shared chars ONLY to the marker-winner
+            scores[best_shared_marker_lang] = scores.get(best_shared_marker_lang, 0) + (
+                shared_counts[best_shared_marker_lang] * 0.15
+            )
+        else:
+            # No marker evidence among shared-char languages:
+            # award to all with reduced weight (short-text fallback)
+            for lang, char_count in shared_counts.items():
+                scores[lang] = scores.get(lang, 0) + (char_count * 0.10)
 
     if not scores:
         return "en", 0.0
@@ -709,8 +923,9 @@ def _detect_language_core(text: str) -> tuple[str, float]:
     if best_score < 0.05:
         return "en", 0.0
 
-    # Normalize confidence: score of 0.2+ counts as very certain (1.0)
-    confidence = min(1.0, best_score / 0.2)
+    # Normalize confidence: score of 0.3+ counts as very certain (1.0)
+    # (raised from 0.2 to account for the new two-tier char scoring)
+    confidence = min(1.0, best_score / 0.3)
 
     return best_lang, confidence
 
@@ -718,8 +933,8 @@ def _detect_language_core(text: str) -> tuple[str, float]:
 def detect_language(text: str) -> str:
     """Detect the language of a short text via heuristic.
 
-    Supports 20 languages: de, en, nl, fr, es, it, pt, pl, ru, tr,
-    sv, ja, ko, zh, uk, ar, hi, id, th, vi.
+    Supports 23 languages: de, en, nl, fr, es, it, pt, pl, ru, tr,
+    sv, da, nb, fi, ja, ko, zh, uk, ar, hi, id, th, vi.
 
     Args:
         text: User message.

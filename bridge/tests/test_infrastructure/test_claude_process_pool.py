@@ -938,3 +938,170 @@ class TestPoolMaxSizeConfiguration:
                 del __import__("os").environ["CLAUDE_POOL_MAX_SIZE"]
             importlib.reload(mod)
             assert mod.POOL_MAX_SIZE == 20
+
+
+class TestStreamingBufferEnv:
+    """T23: Verify spawn environment includes unbuffered settings."""
+
+    @pytest.mark.asyncio
+    async def test_spawn_env_includes_no_color(self) -> None:
+        """Subprocess environment has NO_COLOR=1 for buffer reduction."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process()
+        captured_env = {}
+
+        async def capture_exec(*args, **kwargs):
+            captured_env.update(kwargs.get("env", {}))
+            return mock_proc
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch("asyncio.create_subprocess_exec", side_effect=capture_exec):
+                await pool.get_or_create(user_id=1, chat_id=100)
+
+        assert captured_env.get("NO_COLOR") == "1"
+        assert captured_env.get("FORCE_COLOR") == "0"
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_spawn_env_includes_pythonunbuffered(self) -> None:
+        """Subprocess environment has PYTHONUNBUFFERED=1."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process()
+        captured_env = {}
+
+        async def capture_exec(*args, **kwargs):
+            captured_env.update(kwargs.get("env", {}))
+            return mock_proc
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch("asyncio.create_subprocess_exec", side_effect=capture_exec):
+                await pool.get_or_create(user_id=1, chat_id=100)
+
+        assert captured_env.get("PYTHONUNBUFFERED") == "1"
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_spawn_env_includes_node_no_warnings(self) -> None:
+        """Subprocess NODE_OPTIONS includes --no-warnings."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process()
+        captured_env = {}
+
+        async def capture_exec(*args, **kwargs):
+            captured_env.update(kwargs.get("env", {}))
+            return mock_proc
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch("asyncio.create_subprocess_exec", side_effect=capture_exec):
+                await pool.get_or_create(user_id=1, chat_id=100)
+
+        node_opts = captured_env.get("NODE_OPTIONS", "")
+        assert "--no-warnings" in node_opts
+        await pool.shutdown()
+
+
+class TestCancelDuringReadline:
+    """T25: Verify cancel_event interrupts readline() in _read_response."""
+
+    @pytest.mark.asyncio
+    async def test_cancel_during_readline_unblocks_immediately(self) -> None:
+        """cancel_event set during readline() yields error event and returns."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process()
+
+        # Make readline() block indefinitely (simulates slow stream)
+        async def blocking_readline():
+            await asyncio.sleep(999)  # effectively infinite
+            return b""
+
+        mock_proc.stdout.readline = blocking_readline
+
+        managed = ManagedProcess(
+            routing_key=(1, 100, "claude-sonnet-4-6"),
+            process=mock_proc,
+            lock=asyncio.Lock(),
+            last_used=0.0,
+            pid=12345,
+            is_ready=True,
+            model="claude-sonnet-4-6",
+        )
+
+        cancel_event = asyncio.Event()
+
+        # Set cancel after a tiny delay
+        async def set_cancel():
+            await asyncio.sleep(0.05)
+            cancel_event.set()
+
+        asyncio.create_task(set_cancel())
+
+        events = []
+        async for event in pool._read_response(managed, cancel_event):
+            events.append(event)
+
+        assert len(events) == 1
+        assert events[0].event_type == "error"
+        assert "cancelled" in events[0].text.lower()
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_readline_without_cancel_works_normally(self) -> None:
+        """Without cancel_event, normal readline still works."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process()
+
+        # Return a result event line
+        result_line = '{"type":"result","result":"Hello world"}\n'.encode("utf-8")
+        mock_proc.stdout.readline = AsyncMock(return_value=result_line)
+
+        managed = ManagedProcess(
+            routing_key=(1, 100, "claude-sonnet-4-6"),
+            process=mock_proc,
+            lock=asyncio.Lock(),
+            last_used=0.0,
+            pid=12345,
+            is_ready=True,
+            model="claude-sonnet-4-6",
+        )
+
+        events = []
+        async for event in pool._read_response(managed, cancel_event=None):
+            events.append(event)
+
+        assert len(events) == 1
+        assert events[0].event_type == "result"
+        assert events[0].full_text == "Hello world"
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_concurrent_cancel_and_stream_end_no_race(self) -> None:
+        """When stream ends naturally at same time as cancel, no crash."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process()
+
+        result_line = '{"type":"result","result":"Done"}\n'.encode("utf-8")
+        mock_proc.stdout.readline = AsyncMock(return_value=result_line)
+
+        managed = ManagedProcess(
+            routing_key=(1, 100, "claude-sonnet-4-6"),
+            process=mock_proc,
+            lock=asyncio.Lock(),
+            last_used=0.0,
+            pid=12345,
+            is_ready=True,
+            model="claude-sonnet-4-6",
+        )
+
+        # Cancel event already set (race scenario)
+        cancel_event = asyncio.Event()
+        cancel_event.set()
+
+        events = []
+        async for event in pool._read_response(managed, cancel_event):
+            events.append(event)
+
+        # With pre-check: cancel_event already set means immediate cancel
+        assert len(events) == 1
+        assert events[0].event_type == "error"
+        assert "cancelled" in events[0].text.lower()
+        await pool.shutdown()

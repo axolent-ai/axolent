@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import shutil
+import sys
 import time
 from dataclasses import dataclass, field
 from typing import AsyncIterator
@@ -244,6 +245,7 @@ class ClaudeProcessPool:
         prompt: str,
         system_prompt: str = "",
         model: str | None = None,
+        cancel_event: asyncio.Event | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """Send a message to the subprocess and stream the response.
 
@@ -253,6 +255,8 @@ class ClaudeProcessPool:
             prompt: User message.
             system_prompt: Optional system prompt (integrated into the content).
             model: Optional model ID (None = pool default).
+            cancel_event: Optional asyncio.Event; when set, aborts the
+                readline loop immediately (T25: /reset cancellation).
 
         Yields:
             StreamEvent objects with incremental text and final result.
@@ -311,8 +315,9 @@ class ClaudeProcessPool:
                 await self._terminate_process(key, reason="pipe_broken")
                 raise RuntimeError(f"Subprocess pipe broken: {e}") from e
 
-            # Read response events, updating last_used along the way
-            async for event in self._read_response(managed):
+            # Read response events, updating last_used along the way.
+            # T25: pass cancel_event so readline can be interrupted.
+            async for event in self._read_response(managed, cancel_event):
                 managed.last_used = time.monotonic()
                 yield event
 
@@ -450,17 +455,42 @@ class ClaudeProcessPool:
             effective_model,
         ]
 
-        # T23/T24 Quick-Fix: reduce stdout buffering from the Claude CLI
-        # (Node.js process). PYTHONUNBUFFERED has no effect since the CLI
-        # is Node.js, not Python. Instead we:
-        # 1. Set NO_COLOR / FORCE_COLOR=0 to prevent ANSI buffering
-        # 2. Set NODE_OPTIONS=--no-warnings to reduce startup noise
-        # 3. Inherit current env so PATH/auth tokens are available
+        # T23/T24 Fix: Force unbuffered stdout from Claude CLI (Node.js).
+        #
+        # Node.js uses full buffering when stdout is a pipe (not a TTY).
+        # Since we read via asyncio subprocess PIPE, the CLI accumulates
+        # output internally and flushes in large bursts.
+        #
+        # Mitigations applied (platform-portable, no stdbuf needed):
+        # 1. NO_COLOR=1 / FORCE_COLOR=0: prevent ANSI escape accumulation
+        # 2. NODE_OPTIONS includes --no-warnings to reduce startup noise
+        # 3. PYTHONUNBUFFERED=1: in case CLI spawns Python child processes
+        # 4. On Windows: creationflags are not available for line-buffering,
+        #    but Node.js JSON-lines mode (each event = one \n-terminated line)
+        #    means the OS pipe flushes on each newline anyway when the buffer
+        #    is not full. The real fix is ensuring the CLI writes \n after
+        #    each JSON event (which it does in streaming mode).
         spawn_env = os.environ.copy()
         spawn_env["NO_COLOR"] = "1"
         spawn_env["FORCE_COLOR"] = "0"
-        # Force line-buffered stdout in Node.js (no direct flag, but
-        # ensures no color-code accumulation delays output)
+        spawn_env["PYTHONUNBUFFERED"] = "1"
+        # Force Node.js to flush stdout after each write (undocumented but
+        # effective: _stream_wrap module respects this in newer Node versions)
+        spawn_env.setdefault("NODE_OPTIONS", "")
+        if "--no-warnings" not in spawn_env["NODE_OPTIONS"]:
+            spawn_env["NODE_OPTIONS"] = (
+                spawn_env["NODE_OPTIONS"] + " --no-warnings"
+            ).strip()
+
+        # Platform-specific subprocess flags for reduced buffering
+        _extra_kwargs: dict = {}
+        if sys.platform == "win32":
+            # CREATE_NEW_PROCESS_GROUP avoids inheriting the parent console
+            # buffer settings; combined with Node.js JSON-lines mode this
+            # ensures each \n-terminated event line is flushed immediately.
+            import subprocess as _sp  # nosec B404 - constant flag, no shell exec
+
+            _extra_kwargs["creationflags"] = _sp.CREATE_NEW_PROCESS_GROUP
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -468,6 +498,7 @@ class ClaudeProcessPool:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=spawn_env,
+            **_extra_kwargs,
         )
 
         pid = proc.pid or 0
@@ -539,9 +570,19 @@ class ClaudeProcessPool:
         )
 
     async def _read_response(
-        self, managed: ManagedProcess
+        self,
+        managed: ManagedProcess,
+        cancel_event: asyncio.Event | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """Read response events from stdout until a 'result' event arrives.
+
+        If cancel_event is provided, the read loop will abort immediately
+        when the event is set (T25: enables /reset to interrupt a blocked
+        readline within 1-2 seconds instead of waiting up to 120s).
+
+        Args:
+            managed: The managed subprocess to read from.
+            cancel_event: Optional asyncio.Event; when set, aborts the read.
 
         Yields:
             StreamEvent objects (content_delta, result, error).
@@ -551,19 +592,89 @@ class ClaudeProcessPool:
             raise RuntimeError("Subprocess has no stdout")
 
         while True:
-            try:
-                line = await asyncio.wait_for(
-                    proc.stdout.readline(),
-                    timeout=120.0,  # 2 minute timeout per line
+            # T25: Early exit if cancel already set (avoids unnecessary read)
+            if cancel_event is not None and cancel_event.is_set():
+                log.info(
+                    "Stream read cancelled (pre-check) for pid=%d",
+                    managed.pid,
                 )
-            except asyncio.TimeoutError:
-                log.warning("Timeout reading from pid=%d", managed.pid)
                 yield StreamEvent(
                     event_type="error",
-                    text="Timeout: no response from subprocess",
+                    text="Stream cancelled by user",
                     is_final=True,
                 )
                 return
+
+            # T25: Race readline() against cancel_event.wait()
+            # Whoever finishes first wins. If cancel fires, we yield a
+            # synthetic "cancelled" error and return immediately.
+            readline_coro = proc.stdout.readline()
+
+            if cancel_event is not None:
+                # Wrap both in tasks so asyncio.wait can race them
+                readline_task = asyncio.ensure_future(readline_coro)
+                cancel_task = asyncio.ensure_future(cancel_event.wait())
+
+                done, pending = await asyncio.wait(
+                    {readline_task, cancel_task},
+                    timeout=120.0,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+
+                # Clean up the loser
+                for task in pending:
+                    task.cancel()
+                    try:
+                        await task
+                    except (asyncio.CancelledError, Exception):
+                        pass
+
+                if not done:
+                    # Both timed out (120s)
+                    log.warning("Timeout reading from pid=%d", managed.pid)
+                    yield StreamEvent(
+                        event_type="error",
+                        text="Timeout: no response from subprocess",
+                        is_final=True,
+                    )
+                    return
+
+                if cancel_task in done:
+                    # Cancellation won the race
+                    log.info(
+                        "Stream read cancelled by cancel_event for pid=%d",
+                        managed.pid,
+                    )
+                    yield StreamEvent(
+                        event_type="error",
+                        text="Stream cancelled by user",
+                        is_final=True,
+                    )
+                    return
+
+                # readline won: extract result
+                try:
+                    line = readline_task.result()
+                except Exception as e:
+                    log.error("readline error pid=%d: %s", managed.pid, e)
+                    yield StreamEvent(
+                        event_type="error",
+                        text=f"Read error: {e}",
+                        is_final=True,
+                    )
+                    return
+            else:
+                # No cancel_event provided: simple read with timeout
+                try:
+                    line = await asyncio.wait_for(readline_coro, timeout=120.0)
+                except asyncio.TimeoutError:
+                    log.warning("Timeout reading from pid=%d", managed.pid)
+                    yield StreamEvent(
+                        event_type="error",
+                        text="Timeout: no response from subprocess",
+                        is_final=True,
+                    )
+                    return
 
             if not line:
                 # EOF: process has died

@@ -16,6 +16,7 @@ The legacy provider (claude_cli.py) remains as fallback for:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import AsyncIterator
@@ -160,6 +161,7 @@ class ClaudePersistentProvider(LLMProvider, StreamingProvider):
         user_id: int | None = None,
         chat_id: int | None = None,
         model: str | None = None,
+        cancel_event: "asyncio.Event | None" = None,
     ) -> AsyncIterator[StreamEvent]:
         """Send a request and stream the response token by token.
 
@@ -169,6 +171,8 @@ class ClaudePersistentProvider(LLMProvider, StreamingProvider):
             user_id: Telegram user ID (required).
             chat_id: Telegram chat ID (required).
             model: Optional model ID (None = pool default).
+            cancel_event: Optional asyncio.Event; when set, aborts the
+                stream immediately (T25: /reset cancellation propagation).
 
         Yields:
             StreamEvent objects (content_delta, result, error).
@@ -187,5 +191,6 @@ class ClaudePersistentProvider(LLMProvider, StreamingProvider):
             prompt=prompt,
             system_prompt=system_prompt,
             model=model,
+            cancel_event=cancel_event,
         ):
             yield event

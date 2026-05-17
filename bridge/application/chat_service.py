@@ -777,6 +777,7 @@ class ChatService:
         *,
         context: Optional[ExecutionContext] = None,
         plan: Optional[ExecutionPlan] = None,
+        cancel_event: Optional["asyncio.Event"] = None,
     ) -> tuple[AsyncIterator[StreamEvent], int, dict[str, Any]]:
         """Streaming variant of process_user_message.
 
@@ -941,6 +942,7 @@ class ChatService:
             await status_session.update("thinking")
 
         # Streaming via persistent provider
+        # T25: cancel_event is captured in closure and propagated to the pool.
         async def _stream() -> AsyncIterator[StreamEvent]:
             first_token = True
             async for event in persistent_provider.query_streaming(
@@ -949,6 +951,7 @@ class ChatService:
                 user_id=uid,
                 chat_id=cid,
                 model=user_model,
+                cancel_event=cancel_event,
             ):
                 # On first token: stop status updates
                 if first_token and event.event_type == "content_delta":

@@ -2110,3 +2110,32 @@ class TestContextKernelIntegrationInHandler:
         assert first_entry["event_type"] == "stream_started"
         assert "request_id" in first_entry
         assert len(first_entry["request_id"]) == 12
+
+
+class TestStreamingSessionCancelPropagation:
+    """T25/EK-03: StreamingSession.cancel_event propagation primitives."""
+
+    @pytest.mark.asyncio
+    async def test_cancel_method_sets_event_and_is_cancelled_flag(self) -> None:
+        """session.cancel() sets the asyncio.Event AND is_cancelled flag."""
+        from application.streaming_handler import StreamingSession
+
+        mock_msg = MagicMock()
+        session = StreamingSession(message=mock_msg)
+        assert not session.is_cancelled
+
+        session.cancel()
+        assert session.is_cancelled
+        assert session.cancel_event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_direct_event_set_reflects_in_is_cancelled(self) -> None:
+        """Setting cancel_event directly (as /reset does) flips is_cancelled."""
+        from application.streaming_handler import StreamingSession
+
+        mock_msg = MagicMock()
+        session = StreamingSession(message=mock_msg)
+
+        assert not session.is_cancelled
+        session.cancel_event.set()
+        assert session.is_cancelled

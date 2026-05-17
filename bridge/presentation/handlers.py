@@ -766,6 +766,7 @@ async def _handle_message_streaming(
                 status_session=status_session,
                 context=_exec_ctx,
                 plan=_exec_plan,
+                cancel_event=session.cancel_event,  # T25: propagate for readline interrupt
             )
             async for event in stream_iter:
                 # T25: Check cancellation before processing each event
@@ -1057,8 +1058,11 @@ async def handle_reset_command(
         active_session = _active_streaming_sessions.get(session_key)
     if active_session is not None:
         active_session.cancel()
-        # Wait up to 500ms in 100ms increments for stream loop to acknowledge
-        for _ in range(5):
+        # T25: Wait up to 2s in 100ms increments for the stream loop to
+        # acknowledge cancellation. The cancel_event now propagates into
+        # the readline() race in the process pool, so acknowledgement
+        # should arrive within one readline cycle (typically <500ms).
+        for _ in range(20):
             await asyncio.sleep(0.1)
             with _active_sessions_lock:
                 if _active_streaming_sessions.get(session_key) is None:
