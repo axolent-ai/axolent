@@ -727,6 +727,24 @@
       "source_hash": "cc2da76c6b4f98d2",
       "auto_translated": true,
       "reviewed": false
+    },
+    "fallback.notice": {
+      "text": "Nota: modelo principal no disponible, respuesta de {backup}.",
+      "source_hash": "fb01a1c2d3e4f5a6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "fallback.all_failed": {
+      "text": "Lo siento, ningun proveedor de IA esta disponible en este momento. Intentalo de nuevo mas tarde.",
+      "source_hash": "fb02b2c3d4e5f6a7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "fallback.rate_limited": {
+      "text": "Limite de tasa alcanzado. Probando modelo de respaldo...",
+      "source_hash": "fb03c3d4e5f6a7b8",
+      "auto_translated": true,
+      "reviewed": false
     }
   }
 }

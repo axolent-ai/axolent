@@ -727,6 +727,24 @@
       "source_hash": "cc2da76c6b4f98d2",
       "auto_translated": true,
       "reviewed": false
+    },
+    "fallback.notice": {
+      "text": "Nota: modello principale non disponibile, risposta da {backup}.",
+      "source_hash": "fb01a1c2d3e4f5a6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "fallback.all_failed": {
+      "text": "Spiacente, nessun provider IA e disponibile al momento. Riprova piu tardi.",
+      "source_hash": "fb02b2c3d4e5f6a7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "fallback.rate_limited": {
+      "text": "Limite di frequenza raggiunto. Provo il modello di backup...",
+      "source_hash": "fb03c3d4e5f6a7b8",
+      "auto_translated": true,
+      "reviewed": false
     }
   }
 }

@@ -727,6 +727,24 @@
       "source_hash": "cc2da76c6b4f98d2",
       "auto_translated": true,
       "reviewed": false
+    },
+    "fallback.notice": {
+      "text": "참고: 기본 모델을 사용할 수 없어 {backup}에서 응답합니다.",
+      "source_hash": "fb01a1c2d3e4f5a6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "fallback.all_failed": {
+      "text": "죄송합니다. 현재 사용 가능한 AI 제공자가 없습니다. 나중에 다시 시도해 주세요.",
+      "source_hash": "fb02b2c3d4e5f6a7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "fallback.rate_limited": {
+      "text": "요청 한도에 도달했습니다. 백업 모델을 시도 중...",
+      "source_hash": "fb03c3d4e5f6a7b8",
+      "auto_translated": true,
+      "reviewed": false
     }
   }
 }

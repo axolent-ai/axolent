@@ -727,6 +727,24 @@
       "source_hash": "cc2da76c6b4f98d2",
       "auto_translated": true,
       "reviewed": false
+    },
+    "fallback.notice": {
+      "text": "Opmerking: primair model niet beschikbaar, antwoord van {backup}.",
+      "source_hash": "fb01a1c2d3e4f5a6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "fallback.all_failed": {
+      "text": "Sorry, er is momenteel geen AI-provider beschikbaar. Probeer het later opnieuw.",
+      "source_hash": "fb02b2c3d4e5f6a7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "fallback.rate_limited": {
+      "text": "Snelheidslimiet bereikt. Back-up model wordt geprobeerd...",
+      "source_hash": "fb03c3d4e5f6a7b8",
+      "auto_translated": true,
+      "reviewed": false
     }
   }
 }

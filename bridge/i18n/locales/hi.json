@@ -727,6 +727,24 @@
       "source_hash": "cc2da76c6b4f98d2",
       "auto_translated": true,
       "reviewed": false
+    },
+    "fallback.notice": {
+      "text": "नोट: प्राथमिक मॉडल उपलब्ध नहीं है, {backup} से प्रतिक्रिया।",
+      "source_hash": "fb01a1c2d3e4f5a6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "fallback.all_failed": {
+      "text": "क्षमा करें, इस समय कोई AI प्रदाता उपलब्ध नहीं है। कृपया बाद में पुनः प्रयास करें।",
+      "source_hash": "fb02b2c3d4e5f6a7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "fallback.rate_limited": {
+      "text": "दर सीमा पहुँच गई। बैकअप मॉडल आज़मा रहे हैं...",
+      "source_hash": "fb03c3d4e5f6a7b8",
+      "auto_translated": true,
+      "reviewed": false
     }
   }
 }

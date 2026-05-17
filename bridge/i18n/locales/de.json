@@ -727,6 +727,24 @@
       "source_hash": "cc2da76c6b4f98d2",
       "auto_translated": false,
       "reviewed": true
+    },
+    "fallback.notice": {
+      "text": "Hinweis: Primäres Modell nicht verfügbar, Antwort von {backup}.",
+      "source_hash": "fb01a1c2d3e4f5a6",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "fallback.all_failed": {
+      "text": "Leider ist gerade kein KI-Provider erreichbar. Bitte versuche es später erneut.",
+      "source_hash": "fb02b2c3d4e5f6a7",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "fallback.rate_limited": {
+      "text": "Rate-Limit erreicht. Versuche Backup-Modell...",
+      "source_hash": "fb03c3d4e5f6a7b8",
+      "auto_translated": false,
+      "reviewed": true
     }
   }
 }

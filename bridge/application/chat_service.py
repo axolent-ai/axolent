@@ -40,6 +40,7 @@ from infrastructure.conversation_storage import (
 from infrastructure.providers.base import ProviderError
 
 if TYPE_CHECKING:
+    from application.fallback_resolver import FallbackResolver
     from application.memory_service import MemoryService
     from application.model_service import ModelService
     from application.proactive_trigger_service import ProactiveTriggerService
@@ -216,6 +217,7 @@ class ChatService:
         self_awareness_service: "SelfAwarenessService | None" = None,
         style_adaption_service: "StyleAdaptionService | None" = None,
         proactive_trigger_service: "ProactiveTriggerService | None" = None,
+        fallback_resolver: "FallbackResolver | None" = None,
     ) -> None:
         self.provider_router = provider_router
         self.memory_service = memory_service
@@ -224,6 +226,7 @@ class ChatService:
         self.self_awareness_service = self_awareness_service
         self.style_adaption_service = style_adaption_service
         self.proactive_trigger_service = proactive_trigger_service
+        self.fallback_resolver = fallback_resolver
 
     def _get_memory_budget(self, provider_name: str | None = None) -> int:
         """Read the memory budget from ProviderCapabilities.
@@ -556,15 +559,34 @@ class ChatService:
                 if self_awareness:
                     effective_prompt = f"{effective_prompt}\n\n{self_awareness}"
 
-            # Provider router call (replaces direct claude_cli call)
-            result = await self.provider_router.route(
-                prompt=context_prompt,
-                system_prompt=effective_prompt,
-                provider_name=provider_name,
-                user_id=uid,
-                chat_id=cid,
-                model=user_model,
-            )
+            # Provider call: use FallbackResolver if available, else direct route
+            fallback_notice = ""
+            if self.fallback_resolver is not None and task_slot_name is not None:
+                resolve_result = await self.fallback_resolver.resolve(
+                    slot=task_slot_name,
+                    prompt=context_prompt,
+                    system_prompt=effective_prompt,
+                    user_id=uid,
+                    chat_id=cid,
+                    user_lang=lang,
+                    model=user_model,
+                )
+                result = resolve_result.response
+                if resolve_result.fallback_used:
+                    audit["fallback_used"] = True
+                    audit["fallback_level"] = resolve_result.fallback_level
+                    audit["fallback_provider"] = resolve_result.provider_name
+                if resolve_result.user_notice:
+                    fallback_notice = resolve_result.user_notice
+            else:
+                result = await self.provider_router.route(
+                    prompt=context_prompt,
+                    system_prompt=effective_prompt,
+                    provider_name=provider_name,
+                    user_id=uid,
+                    chat_id=cid,
+                    model=user_model,
+                )
 
             audit.update(
                 {
@@ -618,6 +640,10 @@ class ChatService:
             # P1/P5: Append proactive nudge to response
             if proactive_nudge:
                 response = f"{response}{proactive_nudge}"
+
+            # Fallback notice: inform user about provider switch
+            if fallback_notice:
+                response = f"{response}\n\n_{fallback_notice}_"
 
             # C-3: System prompt leakage guard
             leak_replacement = check_for_system_prompt_leakage(
