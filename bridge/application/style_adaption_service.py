@@ -224,57 +224,22 @@ class StyleAdaptionService:
     def get_prompt_block(self, user_id: int, lang: str = "de") -> str:
         """Get the style profile as a system prompt block.
 
-        Includes anti-repetition rule for all users (even before
-        profile is mature), since filler word overuse is a systemic issue.
+        Returns only the user style profile (formality, tonality, etc.).
+        Anti-repetition is handled separately by PromptComposer via i18n
+        (supports all 20 languages, not just DE/EN).
 
         Args:
             user_id: Telegram user ID.
             lang: Language code.
 
         Returns:
-            Prompt block string (may contain only anti-repetition rule
-            if profile is not yet mature).
+            Prompt block string with style profile, or empty string
+            if profile is not yet mature.
         """
-        parts: list[str] = []
-
         profile = self._profiles.get(user_id)
         if profile is not None:
-            profile_block = profile.to_prompt_block(lang)
-            if profile_block:
-                parts.append(profile_block)
-
-        # Anti-repetition rule (always active, regardless of profile maturity)
-        anti_rep = self._get_anti_repetition_block(lang)
-        if anti_rep:
-            parts.append(anti_rep)
-
-        return "\n\n".join(parts)
-
-    def _get_anti_repetition_block(self, lang: str = "de") -> str:
-        """Build the anti-repetition prompt block.
-
-        Args:
-            lang: Language code.
-
-        Returns:
-            Anti-repetition instruction block.
-        """
-        fillers = self.REPETITION_FILLERS.get(lang, self.REPETITION_FILLERS["en"])
-        filler_str = ", ".join(f"'{w}'" for w in fillers[:4])
-
-        if lang == "de":
-            return (
-                "[ANTI-REPETITION]\n"
-                f"Vermeide repetitive Satzanfaenge und Fuellwoerter wie {filler_str}. "
-                "Variiere bewusst. Beginne Antworten NICHT mit Floskeln. "
-                "Komme direkt zum Inhalt."
-            )
-        return (
-            "[ANTI-REPETITION]\n"
-            f"Avoid repetitive sentence starters and filler words like {filler_str}. "
-            "Vary your openings consciously. Do NOT start responses with pleasantries. "
-            "Get straight to the content."
-        )
+            return profile.to_prompt_block(lang)
+        return ""
 
     def check_repetition_warning(self, response: str, lang: str = "de") -> str | None:
         """Check a response for filler word overuse.

@@ -27,9 +27,10 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
+from application.language_resolver import LanguageResolver
+from application.prompt_composer import PromptComposer
 from application.provider_router import ProviderRouter
 from domain.language import DEFAULT_LANGUAGE
-from domain.personality import build_effective_prompt
 from i18n import t
 
 log = logging.getLogger(__name__)
@@ -187,6 +188,7 @@ class DebateOrchestrator:
     ) -> None:
         self.provider_router = provider_router
         self.timeout_seconds = timeout_seconds
+        self._composer = PromptComposer()
 
     def _select_providers(self) -> list[str]:
         """Determine which providers to use for the debate.
@@ -236,11 +238,9 @@ class DebateOrchestrator:
         Returns:
             Tuple: (provider_name, response_text_or_None, error_or_None, model_id_or_None)
         """
-        # Build language-aware system prompt via central build_effective_prompt
-        base_prompt = (
-            "Answer concisely and informatively. Keep it to 2-4 sentences if possible."
-        )
-        system_prompt = build_effective_prompt(base_prompt, user_lang)
+        # Build language-aware system prompt via PromptComposer
+        _ctx = LanguageResolver.from_code(user_lang, "debate")
+        system_prompt = self._composer.compose_for_debate_provider(_ctx)
 
         try:
             response = await asyncio.wait_for(
@@ -565,13 +565,9 @@ class DebateOrchestrator:
             question, responses, user_lang=user_lang
         )
 
-        judge_base_prompt = (
-            "You are a neutral arbiter evaluating AI answers. "
-            "You do not know the provider names and evaluate purely on quality: "
-            "correctness, completeness, clarity, and relevance. "
-            "ALWAYS respond with valid JSON, never with prose."
-        )
-        judge_system_prompt = build_effective_prompt(judge_base_prompt, user_lang)
+        # Build judge system prompt via PromptComposer
+        _judge_ctx = LanguageResolver.from_code(user_lang, "debate_judge")
+        judge_system_prompt = self._composer.compose_for_debate_judge(_judge_ctx)
 
         # Judge provider selection: claude_persistent > claude > ollama_local
         judge_candidates = ["claude_persistent", "claude", "ollama_local"]

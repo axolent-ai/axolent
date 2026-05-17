@@ -203,13 +203,12 @@ class TestStyleAdaptionService:
         assert profile.uses_code_switching is True
 
     def test_get_prompt_block_immature(self) -> None:
-        """Prompt block for immature profiles still has anti-repetition."""
+        """Prompt block for immature profiles returns empty (no style data)."""
         service = StyleAdaptionService()
         service.observe(303, "Hallo")
         block = service.get_prompt_block(303)
-        # Since Phase 2: anti-repetition is always present
-        assert "[ANTI-REPETITION]" in block
-        # But no style profile section
+        # Anti-repetition moved to PromptComposer (i18n, all 20 languages)
+        assert block == ""
         assert "[USER STYLE PROFILE]" not in block
 
     def test_get_prompt_block_mature(self) -> None:
@@ -220,13 +219,12 @@ class TestStyleAdaptionService:
         block = service.get_prompt_block(404)
         assert "[USER STYLE PROFILE]" in block
 
-    def test_unknown_user_returns_anti_repetition_only(self) -> None:
-        """Unknown user_id returns only anti-repetition block."""
+    def test_unknown_user_returns_empty(self) -> None:
+        """Unknown user_id returns empty block (anti-repetition via PromptComposer)."""
         service = StyleAdaptionService()
         block = service.get_prompt_block(999)
-        # Since Phase 2: anti-repetition is always present
-        assert "[ANTI-REPETITION]" in block
-        assert "[USER STYLE PROFILE]" not in block
+        # Anti-repetition is now handled by PromptComposer, not StyleAdaptionService
+        assert block == ""
         assert service.get_profile(999) is None
 
     def test_mobile_detection(self) -> None:
@@ -240,27 +238,25 @@ class TestStyleAdaptionService:
 
 
 class TestAntiRepetition:
-    """Tests for the anti-repetition feature (NEU-03 / Item 11)."""
+    """Tests for the anti-repetition feature (NEU-03 / Item 11).
 
-    def test_anti_repetition_block_always_present(self) -> None:
-        """Anti-repetition block is present even without mature profile."""
-        service = StyleAdaptionService()
-        # No observations at all
-        block = service.get_prompt_block(999, lang="de")
-        # Should still contain anti-repetition (it's always-on)
-        assert "[ANTI-REPETITION]" in block
+    Note: Anti-repetition prompt injection moved to PromptComposer (i18n).
+    StyleAdaptionService retains only the post-response check
+    (check_repetition_warning) and the filler word list (REPETITION_FILLERS).
+    """
 
-    def test_anti_repetition_block_german(self) -> None:
-        """German anti-repetition block mentions German fillers."""
+    def test_anti_repetition_not_in_style_block(self) -> None:
+        """Anti-repetition is no longer part of get_prompt_block (moved to Composer)."""
         service = StyleAdaptionService()
         block = service.get_prompt_block(999, lang="de")
-        assert "Gerne" in block or "Fuellwoerter" in block
+        # Anti-repetition is now exclusively via PromptComposer
+        assert "[ANTI-REPETITION]" not in block
 
-    def test_anti_repetition_block_english(self) -> None:
-        """English anti-repetition block mentions English fillers."""
+    def test_filler_list_still_available(self) -> None:
+        """Filler list is retained for check_repetition_warning."""
         service = StyleAdaptionService()
-        block = service.get_prompt_block(999, lang="en")
-        assert "Sure" in block or "filler" in block
+        assert "Gerne" in service.REPETITION_FILLERS["de"]
+        assert "Sure" in service.REPETITION_FILLERS["en"]
 
     def test_check_repetition_warning_detects_gerne(self) -> None:
         """check_repetition_warning flags repeated 'Gerne'."""
@@ -288,12 +284,12 @@ class TestAntiRepetition:
         assert warning is not None
         assert "Sure" in warning
 
-    def test_prompt_block_combines_profile_and_anti_repetition(self) -> None:
-        """Mature profile prompt block includes BOTH style and anti-repetition."""
+    def test_prompt_block_mature_only_style(self) -> None:
+        """Mature profile prompt block includes only style, not anti-repetition."""
         service = StyleAdaptionService()
         for _ in range(_MIN_MESSAGES_FOR_PROFILE + 1):
             service.observe(606, "Super toll! \U0001f60d Danke dir!")
         block = service.get_prompt_block(606, lang="de")
-        # Should contain both profile section and anti-repetition
+        # Only style profile, anti-repetition handled by PromptComposer
         assert "[USER STYLE PROFILE]" in block
-        assert "[ANTI-REPETITION]" in block
+        assert "[ANTI-REPETITION]" not in block

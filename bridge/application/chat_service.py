@@ -23,9 +23,9 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, AsyncIterator, Optional
 
 from application.leakage_filter import check_for_system_prompt_leakage
+from application.prompt_composer import PromptComposer
 from domain.conversation import ConversationTurn, build_context_block
 from domain.language import DEFAULT_LANGUAGE
-from domain.personality import build_effective_prompt
 from infrastructure.audit_log import write_audit_log
 from infrastructure.claude_process_pool import StreamEvent
 from infrastructure.conversation_storage import (
@@ -227,6 +227,13 @@ class ChatService:
         self.style_adaption_service = style_adaption_service
         self.proactive_trigger_service = proactive_trigger_service
         self.fallback_resolver = fallback_resolver
+
+        # Central prompt composer (Phase 2): single source for system prompt construction
+        self._composer = PromptComposer(
+            proactive_trigger_service=proactive_trigger_service,
+            style_adaption_service=style_adaption_service,
+            self_awareness_service=self_awareness_service,
+        )
 
     def _get_memory_budget(self, provider_name: str | None = None) -> int:
         """Read the memory budget from ProviderCapabilities.
@@ -469,30 +476,13 @@ class ChatService:
             if lang != DEFAULT_LANGUAGE:
                 log.info("Language for chat: '%s' (source=%s)", lang, _lang_ctx.source)
 
-            # Build effective prompt with language override
-            effective_prompt = build_effective_prompt(system_prompt, lang)
-
-            # Inject memory context into system prompt (before LLM call)
-            if memory_context:
-                effective_prompt = f"{effective_prompt}\n\n{memory_context}"
-
-            # P3: Style adaption (observe + inject profile)
+            # Side-effects: style observation + proactive activity recording
             if self.style_adaption_service is not None:
                 self.style_adaption_service.observe(uid, text)
-                style_block = self.style_adaption_service.get_prompt_block(uid, lang)
-                if style_block:
-                    effective_prompt = f"{effective_prompt}\n\n{style_block}"
 
-            # P1/P5: Proactive triggers (record activity + time context)
             proactive_nudge = ""
             if self.proactive_trigger_service is not None:
                 self.proactive_trigger_service.record_activity(uid)
-                # Inject time context into system prompt (with language)
-                time_block = self.proactive_trigger_service.get_time_context_block(
-                    uid, lang=lang
-                )
-                if time_block:
-                    effective_prompt = f"{effective_prompt}\n\n{time_block}"
                 # Check proactive triggers
                 trigger_result = self.proactive_trigger_service.check_triggers(
                     uid, cid, text, memory_entries=[]
@@ -528,16 +518,15 @@ class ChatService:
                 # Fallback: Phase 1 behavior (global override only)
                 user_model = self.model_service.get_user_model(uid)
 
-            # Self-awareness block: inject model info into system prompt
-            if self.self_awareness_service is not None:
-                self_awareness = self.self_awareness_service.build(
-                    user_id=uid,
-                    user_model=user_model,
-                    task_slot_name=task_slot_name,
-                    lang=lang,
-                )
-                if self_awareness:
-                    effective_prompt = f"{effective_prompt}\n\n{self_awareness}"
+            # Central prompt composition via PromptComposer (Phase 2)
+            effective_prompt = self._composer.compose_for_chat(
+                base_prompt=system_prompt,
+                ctx=_lang_ctx,
+                user_id=uid,
+                user_model=user_model,
+                task_slot_name=task_slot_name,
+                memory_block=memory_context,
+            )
 
             # Provider call: use FallbackResolver if available, else direct route
             fallback_notice = ""
@@ -807,35 +796,19 @@ class ChatService:
         if status_session is not None:
             status_session.set_language(lang)
 
-        effective_prompt = build_effective_prompt(system_prompt, lang)
-        if memory_context:
-            effective_prompt = f"{effective_prompt}\n\n{memory_context}"
-
-        # P3: Style adaption (observe + inject profile) [streaming path]
+        # Side-effects: style observation + proactive activity recording
         if self.style_adaption_service is not None:
             self.style_adaption_service.observe(uid, text)
-            style_block = self.style_adaption_service.get_prompt_block(uid, lang)
-            if style_block:
-                effective_prompt = f"{effective_prompt}\n\n{style_block}"
 
-        # P1/P5: Proactive triggers (record activity + time context) [streaming path]
-        # Symmetric with non-streaming: check_triggers + reactive_trigger
+        proactive_nudge_text = ""
         if self.proactive_trigger_service is not None:
             self.proactive_trigger_service.record_activity(uid)
-            time_block = self.proactive_trigger_service.get_time_context_block(
-                uid, lang=lang
-            )
-            if time_block:
-                effective_prompt = f"{effective_prompt}\n\n{time_block}"
             # Check proactive triggers (symmetric with non-streaming path)
             trigger_result = self.proactive_trigger_service.check_triggers(
                 uid, cid, text, memory_entries=[]
             )
             if trigger_result.should_fire and trigger_result.nudge_text:
-                effective_prompt = (
-                    f"{effective_prompt}\n\n"
-                    f"[PROACTIVE NUDGE] {trigger_result.nudge_text}"
-                )
+                proactive_nudge_text = trigger_result.nudge_text
             # Check reactive triggers (memory-based)
             if memory_context and self.memory_service is not None:
                 entries = self.memory_service.list_recent(uid, "episodic", limit=5)
@@ -843,11 +816,8 @@ class ChatService:
                     uid, cid, text, entries
                 )
                 if reactive.should_fire and reactive.nudge_text:
-                    if not trigger_result.should_fire:
-                        effective_prompt = (
-                            f"{effective_prompt}\n\n"
-                            f"[PROACTIVE NUDGE] {reactive.nudge_text}"
-                        )
+                    if not proactive_nudge_text:
+                        proactive_nudge_text = reactive.nudge_text
 
         # Phase 2a: TaskRouter classification + model resolution
         user_model: str | None = None
@@ -877,16 +847,21 @@ class ChatService:
             if user_model:
                 task_meta["resolved_model"] = user_model
 
-        # Self-awareness block: inject model info into system prompt (i18n)
-        if self.self_awareness_service is not None:
-            self_awareness = self.self_awareness_service.build(
-                user_id=uid,
-                user_model=user_model,
-                task_slot_name=task_slot_name,
-                lang=lang,
+        # Central prompt composition via PromptComposer (Phase 2)
+        effective_prompt = self._composer.compose_for_chat(
+            base_prompt=system_prompt,
+            ctx=_lang_ctx,
+            user_id=uid,
+            user_model=user_model,
+            task_slot_name=task_slot_name,
+            memory_block=memory_context,
+        )
+
+        # Proactive nudge: appended after composition (not part of standard blocks)
+        if proactive_nudge_text:
+            effective_prompt = (
+                f"{effective_prompt}\n\n[PROACTIVE NUDGE] {proactive_nudge_text}"
             )
-            if self_awareness:
-                effective_prompt = f"{effective_prompt}\n\n{self_awareness}"
 
         # Status: thinking (before provider call)
         if status_session is not None:
