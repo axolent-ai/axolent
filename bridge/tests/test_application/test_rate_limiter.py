@@ -844,3 +844,175 @@ class TestProfileSwitchPreservesUsage:
             # 5 old + 1 new = 6
             assert usage.minute_used == 6
             assert usage.profile == "power"
+
+
+class TestCounterPersistence:
+    """T35: Rate limit counters survive bot restart via SQLite persistence."""
+
+    def _make_storage(self, tmp_path: Path):
+        """Create an in-memory SQLite connection + storage pair for testing."""
+
+        from infrastructure.sqlite_storage import (
+            SqliteConnection,
+            SqliteProfileStorage,
+            SqliteRateLimitStorage,
+        )
+
+        # Use a file-based DB in tmp_path so we can create multiple connections
+        db_path = tmp_path / "test_ratelimit.db"
+        conn = SqliteConnection(db_path)
+        # Force schema init
+        conn.fetchall("SELECT 1", ())
+        profile_storage = SqliteProfileStorage(conn)
+        rate_limit_storage = SqliteRateLimitStorage(conn)
+        return conn, profile_storage, rate_limit_storage
+
+    def test_counters_survive_restart(self, tmp_path: Path) -> None:
+        """Counters persist across simulated bot restart."""
+        conn, profile_storage, rl_storage = self._make_storage(tmp_path)
+
+        # First "session": consume 7 requests
+        limiter1 = RateLimiter(
+            profile_storage=profile_storage,
+            rate_limit_storage=rl_storage,
+        )
+        for _ in range(7):
+            result = limiter1.check_and_consume(user_id=42)
+            assert result.allowed is True
+
+        usage1 = limiter1.get_usage(user_id=42)
+        assert usage1.minute_used == 7
+        assert usage1.hour_used == 7
+        assert usage1.day_used == 7
+
+        # Simulate restart: create new RateLimiter with same storage
+        limiter2 = RateLimiter(
+            profile_storage=profile_storage,
+            rate_limit_storage=rl_storage,
+        )
+
+        # Counters must be restored
+        usage2 = limiter2.get_usage(user_id=42)
+        assert usage2.minute_used == 7
+        assert usage2.hour_used == 7
+        assert usage2.day_used == 7
+
+        # Can still consume more
+        result = limiter2.check_and_consume(user_id=42)
+        assert result.allowed is True
+        usage3 = limiter2.get_usage(user_id=42)
+        assert usage3.minute_used == 8
+
+    def test_expired_window_resets_on_restore(self, tmp_path: Path) -> None:
+        """If the persisted window has expired, counters reset to 0."""
+        conn, profile_storage, rl_storage = self._make_storage(tmp_path)
+
+        # Consume some requests
+        limiter1 = RateLimiter(
+            profile_storage=profile_storage,
+            rate_limit_storage=rl_storage,
+        )
+        for _ in range(5):
+            limiter1.check_and_consume(user_id=10)
+
+        # Manually expire the persisted window_start (simulate 2 minutes passing)
+        # We need to manipulate the DB directly
+        conn.execute(
+            "UPDATE user_rate_limit_state SET bucket_window_start = ? "
+            "WHERE user_id = ? AND period = ?",
+            (time.time() - 120.0, 10, "minute"),
+        )
+
+        # Simulate restart
+        limiter2 = RateLimiter(
+            profile_storage=profile_storage,
+            rate_limit_storage=rl_storage,
+        )
+
+        # Minute bucket should be reset (window expired), but hour/day still valid
+        usage = limiter2.get_usage(user_id=10)
+        assert usage.minute_used == 0  # expired
+        assert usage.hour_used == 5  # still within 1h window
+        assert usage.day_used == 5  # still within 24h window
+
+    def test_multiple_users_independent(self, tmp_path: Path) -> None:
+        """Multiple users have independent persisted state."""
+        conn, profile_storage, rl_storage = self._make_storage(tmp_path)
+
+        limiter1 = RateLimiter(
+            profile_storage=profile_storage,
+            rate_limit_storage=rl_storage,
+        )
+        for _ in range(3):
+            limiter1.check_and_consume(user_id=100)
+        for _ in range(8):
+            limiter1.check_and_consume(user_id=200)
+
+        # Restart
+        limiter2 = RateLimiter(
+            profile_storage=profile_storage,
+            rate_limit_storage=rl_storage,
+        )
+        usage_100 = limiter2.get_usage(user_id=100)
+        usage_200 = limiter2.get_usage(user_id=200)
+        assert usage_100.minute_used == 3
+        assert usage_200.minute_used == 8
+
+    def test_profile_switch_persists(self, tmp_path: Path) -> None:
+        """Profile switch with counter carry-over is persisted correctly."""
+        conn, profile_storage, rl_storage = self._make_storage(tmp_path)
+
+        limiter1 = RateLimiter(
+            profile_storage=profile_storage,
+            rate_limit_storage=rl_storage,
+        )
+        limiter1.set_user_profile(user_id=50, chat_id=50, profile="normal")
+        for _ in range(10):
+            limiter1.check_and_consume(user_id=50)
+
+        # Switch to power
+        limiter1.set_user_profile(user_id=50, chat_id=50, profile="power")
+
+        # Restart
+        limiter2 = RateLimiter(
+            profile_storage=profile_storage,
+            rate_limit_storage=rl_storage,
+        )
+        usage = limiter2.get_usage(user_id=50)
+        assert usage.profile == "power"
+        assert usage.minute_used == 10
+        assert usage.hour_used == 10
+        assert usage.day_used == 10
+
+    def test_no_storage_means_in_memory_only(self) -> None:
+        """Without storage injection, behavior is pure in-memory (backward compat)."""
+        limiter = RateLimiter()
+        for _ in range(5):
+            limiter.check_and_consume(user_id=1)
+        usage = limiter.get_usage(user_id=1)
+        assert usage.minute_used == 5
+        # No crash, no persistence attempt
+
+    def test_clear_user_removes_persisted_state(self, tmp_path: Path) -> None:
+        """clear_user on storage removes all state for that user."""
+        conn, profile_storage, rl_storage = self._make_storage(tmp_path)
+
+        limiter = RateLimiter(
+            profile_storage=profile_storage,
+            rate_limit_storage=rl_storage,
+        )
+        for _ in range(5):
+            limiter.check_and_consume(user_id=77)
+
+        # Clear persisted state
+        rl_storage.clear_user(77)
+
+        # Restart: should have no state
+        limiter2 = RateLimiter(
+            profile_storage=profile_storage,
+            rate_limit_storage=rl_storage,
+        )
+        usage = limiter2.get_usage(user_id=77)
+        assert usage.minute_used == 0
+        assert usage.hour_used == 0
+        assert usage.day_used == 0

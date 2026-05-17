@@ -29,7 +29,10 @@ from infrastructure.encoding import append_jsonl_utf8, open_utf8
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from infrastructure.sqlite_storage import SqliteProfileStorage
+    from infrastructure.sqlite_storage import (
+        SqliteProfileStorage,
+        SqliteRateLimitStorage,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -384,14 +387,113 @@ class RateLimiter:
     def __init__(
         self,
         profile_storage: "SqliteProfileStorage | None" = None,
+        rate_limit_storage: "SqliteRateLimitStorage | None" = None,
     ) -> None:
         self._users: dict[int, _UserBuckets] = {}
         self._lock = Lock()
         self._profile_storage = profile_storage
+        self._rate_limit_storage = rate_limit_storage
         if profile_storage is not None:
             self._profiles = profile_storage.load_all()
         else:
             self._profiles = _load_user_profiles()
+
+        # Restore counter state from persistent storage
+        if rate_limit_storage is not None:
+            self._restore_from_storage(rate_limit_storage)
+
+    def _restore_from_storage(self, storage: "SqliteRateLimitStorage") -> None:
+        """Restore bucket state from SQLite on startup.
+
+        For each persisted (user_id, profile, period) triple, reconstruct
+        the in-memory buckets. If the persisted window has expired, the
+        bucket starts fresh (count=0).
+
+        Args:
+            storage: SqliteRateLimitStorage instance.
+        """
+        all_state = storage.load_all()
+        if not all_state:
+            return
+
+        now_wall = time.time()
+        now_mono = time.monotonic()
+
+        # Group by user_id
+        user_states: dict[int, dict[str, tuple[int, float]]] = {}
+        for (uid, profile, period), (count, window_start_wall) in all_state.items():
+            if uid not in user_states:
+                user_states[uid] = {}
+            user_states[uid][f"{profile}:{period}"] = (count, window_start_wall)
+
+        for uid, periods in user_states.items():
+            profile = self._profiles.get(uid, DEFAULT_PROFILE)
+            buckets = _UserBuckets(profile=profile)
+
+            for period_name, bucket in [
+                ("minute", buckets.minute_bucket),
+                ("hour", buckets.hour_bucket),
+                ("day", buckets.day_bucket),
+            ]:
+                key = f"{profile}:{period_name}"
+                if key not in periods:
+                    continue
+                count, window_start_wall = periods[key]
+                elapsed_since_window_start = now_wall - window_start_wall
+
+                if elapsed_since_window_start >= bucket.window_seconds:
+                    # Window expired: start fresh
+                    bucket.request_count = 0
+                    bucket.window_start = now_mono
+                else:
+                    # Window still active: restore count and compute
+                    # monotonic window_start relative to now
+                    bucket.request_count = count
+                    bucket.window_start = now_mono - elapsed_since_window_start
+
+            self._users[uid] = buckets
+
+        log.info(
+            "Rate limiter: restored %d user bucket states from SQLite",
+            len(user_states),
+        )
+
+    def _persist_user_state(self, user_id: int) -> None:
+        """Persist current bucket state for a user to SQLite.
+
+        Converts monotonic window_start to wall-clock for persistence.
+        Called after each successful check_and_consume.
+
+        Args:
+            user_id: Telegram user ID.
+        """
+        if self._rate_limit_storage is None:
+            return
+
+        buckets = self._users.get(user_id)
+        if buckets is None:
+            return
+
+        profile = buckets.profile
+        now_wall = time.time()
+        now_mono = time.monotonic()
+
+        for period_name, bucket in [
+            ("minute", buckets.minute_bucket),
+            ("hour", buckets.hour_bucket),
+            ("day", buckets.day_bucket),
+        ]:
+            # Convert monotonic window_start to wall-clock
+            elapsed_in_window = now_mono - bucket.window_start
+            window_start_wall = now_wall - elapsed_in_window
+
+            self._rate_limit_storage.save_state(
+                user_id=user_id,
+                profile=profile,
+                period=period_name,
+                count=bucket.request_count,
+                window_start=window_start_wall,
+            )
 
     def get_user_profile(self, user_id: int) -> str:
         """Return the active profile for a user.
@@ -442,11 +544,13 @@ class RateLimiter:
                 )
             self._users[user_id] = new_buckets
 
-        # Persist
+        # Persist profile
         if self._profile_storage is not None:
             self._profile_storage.save(user_id, chat_id, profile)
         else:
             _save_user_profile(user_id, chat_id, profile)
+        # Persist counter state (counts may have been capped)
+        self._persist_user_state(user_id)
         log.info("User %d: profile changed to '%s'", user_id, profile)
         return True
 
@@ -500,6 +604,7 @@ class RateLimiter:
                 show_reminder = (
                     buckets.unlimited_counter % _UNLIMITED_REMINDER_INTERVAL == 0
                 )
+                self._persist_user_state(user_id)
                 return RateLimitResult(
                     allowed=True,
                     profile=profile,
@@ -591,6 +696,7 @@ class RateLimiter:
             if day_cap > 0 and day_consumed < int(day_cap * 0.5):
                 buckets.warning_sent_day = False
 
+            self._persist_user_state(user_id)
             return RateLimitResult(
                 allowed=True,
                 profile=profile,

@@ -16,6 +16,7 @@ import json
 import logging
 import sqlite3
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, Optional
@@ -82,6 +83,17 @@ CREATE TABLE IF NOT EXISTS user_language (
     lang TEXT NOT NULL,
     set_at TEXT NOT NULL,
     PRIMARY KEY (user_id, chat_id)
+);
+
+-- Rate limit counter state (persistent across bot restart).
+CREATE TABLE IF NOT EXISTS user_rate_limit_state (
+    user_id INTEGER NOT NULL,
+    profile TEXT NOT NULL,
+    period TEXT NOT NULL,
+    bucket_count INTEGER NOT NULL DEFAULT 0,
+    bucket_window_start REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    PRIMARY KEY (user_id, profile, period)
 );
 
 -- FTS5 for full-text search
@@ -878,6 +890,80 @@ class SqliteLanguageStorage:
         """
         rows = self._conn.fetchall("SELECT user_id, chat_id, lang FROM user_language")
         return {(row["user_id"], row["chat_id"]): row["lang"] for row in rows}
+
+
+# ──────────────────────────────────────────────────────────────
+# Rate Limit State Storage (SQLite)
+# ──────────────────────────────────────────────────────────────
+
+
+class SqliteRateLimitStorage:
+    """SQLite adapter for rate limit counter persistence.
+
+    Stores bucket_count and bucket_window_start per (user_id, profile, period).
+    Survives bot restarts so counters are not lost.
+    """
+
+    def __init__(self, conn: SqliteConnection) -> None:
+        self._conn = conn
+
+    def save_state(
+        self,
+        user_id: int,
+        profile: str,
+        period: str,
+        count: int,
+        window_start: float,
+    ) -> None:
+        """Save or update rate limit counter state for one bucket.
+
+        Args:
+            user_id: Telegram user ID.
+            profile: Active profile name.
+            period: Time period (minute, hour, day).
+            count: Current request count in the window.
+            window_start: Unix timestamp of window start (time.time based).
+        """
+        now = time.time()
+        self._conn.execute(
+            """INSERT OR REPLACE INTO user_rate_limit_state
+               (user_id, profile, period, bucket_count, bucket_window_start, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (user_id, profile, period, count, window_start, now),
+        )
+
+    def load_all(self) -> dict[tuple[int, str, str], tuple[int, float]]:
+        """Load all persisted rate limit states.
+
+        Returns:
+            Dict of (user_id, profile, period) -> (count, window_start).
+        """
+        rows = self._conn.fetchall(
+            "SELECT user_id, profile, period, bucket_count, bucket_window_start "
+            "FROM user_rate_limit_state"
+        )
+        return {
+            (int(row["user_id"]), row["profile"], row["period"]): (
+                int(row["bucket_count"]),
+                float(row["bucket_window_start"]),
+            )
+            for row in rows
+        }
+
+    def clear_user(self, user_id: int) -> None:
+        """Remove all rate limit state for a user (e.g. on /reset).
+
+        Args:
+            user_id: Telegram user ID.
+        """
+        self._conn.execute(
+            "DELETE FROM user_rate_limit_state WHERE user_id = ?",
+            (user_id,),
+        )
+
+    def _reset_all_for_tests(self) -> None:
+        """Delete all rate limit state entries (test-only)."""
+        self._conn.execute("DELETE FROM user_rate_limit_state", ())
 
 
 # ──────────────────────────────────────────────────────────────

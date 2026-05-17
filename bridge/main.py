@@ -51,6 +51,7 @@ from infrastructure.sqlite_storage import (
     SqliteMemoryStorage,
     SqliteModelStorage,
     SqliteProfileStorage,
+    SqliteRateLimitStorage,
     migrate_jsonl_to_sqlite,
 )
 from infrastructure.personality_loader import build_combined_prompt
@@ -399,10 +400,14 @@ def main() -> None:
 
     log.info("Trinity memory system initialized (auto-loading active)")
 
-    # C-2: Initialize rate limiter (with SQLite profile storage if available)
+    # C-2: Initialize rate limiter (with SQLite profile + counter storage)
     if use_sqlite:
         profile_storage = SqliteProfileStorage(sqlite_conn)
-        rate_limiter = RateLimiter(profile_storage=profile_storage)
+        rate_limit_storage = SqliteRateLimitStorage(sqlite_conn)
+        rate_limiter = RateLimiter(
+            profile_storage=profile_storage,
+            rate_limit_storage=rate_limit_storage,
+        )
 
         # JSONL profiles -> SQLite migration (one-time)
         _migrate_profiles_to_sqlite(profile_storage)
