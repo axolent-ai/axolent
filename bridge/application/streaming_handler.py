@@ -118,8 +118,8 @@ class StreamingSession:
     """State of a running streaming session.
 
     Attributes:
-        message: The Telegram message being edited.
-        accumulated_text: Text collected so far.
+        message: The Telegram message being edited (current active part).
+        accumulated_text: Text collected so far (CURRENT PART only).
         last_edit_time: Timestamp of the last edit.
         edit_count: Number of edits so far.
         started_at: Session start time.
@@ -132,6 +132,11 @@ class StreamingSession:
         _backoff_active: Whether backoff has raised throttle above the curve.
         cancel_event: When set, the streaming loop should stop immediately.
             Used by /reset to cancel an active stream before clearing state.
+        part_count: Number of message parts sent so far (1 = first/only).
+        previous_parts: Finalized text for each completed part.
+        current_part_offset: Character offset into the full accumulated text
+            where the current part starts.
+        _full_accumulated_text: Complete text across ALL parts (for history/audit).
     """
 
     message: "Message"
@@ -147,6 +152,11 @@ class StreamingSession:
     _edits_sent: int = 0
     _backoff_active: bool = False
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
+    # T23: Live multi-message rollover state
+    part_count: int = 1
+    previous_parts: list[str] = field(default_factory=list)
+    current_part_offset: int = 0
+    _full_accumulated_text: str = ""
 
     @property
     def is_cancelled(self) -> bool:
@@ -156,6 +166,11 @@ class StreamingSession:
     def cancel(self) -> None:
         """Request cancellation of this streaming session."""
         self.cancel_event.set()
+
+    @property
+    def full_text(self) -> str:
+        """Return the complete accumulated text across all parts."""
+        return self._full_accumulated_text
 
 
 def _compute_base_throttle(edits_sent: int) -> float:
@@ -246,17 +261,24 @@ async def process_streaming_edit(
     During flood control pause, intermediate edits are skipped.
     In local mode: no throttling at all.
 
+    T23: Live multi-message rollover. When the current part's HTML
+    approaches 4096 chars, the current message is finalized and a new
+    message is sent as the next part. Subsequent edits go to the new message.
+
     Args:
         session: The current StreamingSession.
         new_text: New incremental text.
     """
     session.accumulated_text += new_text
+    session._full_accumulated_text += new_text
     now = time.monotonic()
 
     # Local mode: skip first-edit delay entirely
     if STREAMING_MODE == "local":
         session.is_first_edit = False
         await _do_edit(session)
+        # T23: Check rollover after edit
+        await _check_live_rollover(session)
         return
 
     # First edit: wait until enough text has accumulated (burst-mode delay)
@@ -280,14 +302,153 @@ async def process_streaming_edit(
 
     await _do_edit(session)
 
+    # T23: Check if we need to rollover to a new message part
+    await _check_live_rollover(session)
+
+
+# ---------------------------------------------------------------------------
+# T23: Live Multi-Message Rollover
+# ---------------------------------------------------------------------------
+# Threshold at which we trigger a rollover to a new message.
+# Below TELEGRAM_MAX_LENGTH to leave room for part markers and HTML expansion.
+_ROLLOVER_THRESHOLD: int = 3900
+
+
+def _find_rollover_boundary(text: str, threshold: int = _ROLLOVER_THRESHOLD) -> int:
+    """Find a safe split point near the threshold for live rollover.
+
+    Searches backward from threshold for a safe boundary:
+    1. Paragraph break (double newline)
+    2. Single newline
+    3. Sentence end
+    4. Word boundary (space)
+
+    Returns 0 if no safe boundary found (should not trigger rollover).
+
+    Args:
+        text: The accumulated markdown text for the current part.
+        threshold: The target threshold to search near.
+
+    Returns:
+        Split position, or 0 if no safe boundary found.
+    """
+    if len(text) < threshold:
+        return 0
+
+    search_text = text[:threshold]
+
+    # Priority 1: paragraph break (double newline)
+    pos = search_text.rfind("\n\n")
+    if pos > threshold // 2:
+        candidate = pos + 2
+        if _is_safe_markdown_position(text, candidate):
+            return candidate
+
+    # Priority 2: single newline
+    pos = search_text.rfind("\n")
+    if pos > threshold // 2:
+        candidate = pos + 1
+        if _is_safe_markdown_position(text, candidate):
+            return candidate
+
+    # Priority 3: sentence end
+    sentence_end = None
+    for m in re.finditer(r"[.!?]\s", search_text):
+        if m.end() > threshold // 2:
+            sentence_end = m.end()
+    if sentence_end and _is_safe_markdown_position(text, sentence_end):
+        return sentence_end
+
+    # Priority 4: word boundary
+    pos = search_text.rfind(" ")
+    if pos > threshold // 2:
+        candidate = pos + 1
+        if _is_safe_markdown_position(text, candidate):
+            return candidate
+
+    return 0
+
+
+async def _check_live_rollover(session: StreamingSession) -> None:
+    """Check if the current part needs a live rollover to a new message.
+
+    Triggered after each successful edit. If the current part's text
+    exceeds _ROLLOVER_THRESHOLD and a safe boundary exists, the current
+    message is finalized with the text up to the boundary, and a new
+    message is sent to continue streaming.
+
+    Args:
+        session: The current StreamingSession.
+    """
+    current_text = session.accumulated_text
+    if len(current_text) < _ROLLOVER_THRESHOLD:
+        return
+
+    # Check HTML length (which is what Telegram actually limits)
+    safe_end = find_safe_markdown_end(current_text)
+    if safe_end <= 0:
+        return
+
+    html_check = markdown_to_telegram_html(current_text[:safe_end])
+    if len(html_check) < _ROLLOVER_THRESHOLD:
+        return
+
+    # Find a safe boundary to split at
+    split_pos = _find_rollover_boundary(current_text)
+    if split_pos == 0:
+        return
+
+    # Finalize current part: split text at boundary
+    part_text = current_text[:split_pos]
+    remaining_text = current_text[split_pos:]
+
+    # First: try to send a new message for the continuation.
+    # If this fails, we abort the rollover without modifying the current message.
+    try:
+        new_msg = await session.message.chat.send_message("...")
+    except Exception as e:
+        log.warning("T23: Failed to send rollover message, skipping: %s", e)
+        return  # Abort rollover, current message continues growing
+
+    # New message created successfully. Now finalize the current message.
+    part_html = markdown_to_telegram_html(part_text)
+    try:
+        await _send_html_with_fallback(session.message, part_html, part_text)
+        session._last_edit_html = part_html
+        session.last_edit_time = time.monotonic()
+        _record_edit_success(session)
+    except Exception as e:
+        retry_after = _is_retry_after(e)
+        if retry_after is not None:
+            _apply_flood_backoff(session, retry_after)
+        else:
+            _handle_edit_error(e)
+        # Even if edit fails, continue with rollover (new msg already exists)
+
+    # Record the completed part and switch to new message
+    session.previous_parts.append(part_text)
+    session.part_count += 1
+    session.message = new_msg
+    session.accumulated_text = remaining_text
+    session.current_part_offset += split_pos
+    session._last_edit_html = ""
+    session.is_first_edit = False
+    session.last_edit_time = time.monotonic()
+    log.info(
+        "T23: Live rollover to part %d (split at %d chars)",
+        session.part_count,
+        split_pos,
+    )
+
 
 async def finalize_streaming(session: StreamingSession, final_text: str) -> str:
     """Finalize the streaming session with the complete text.
 
-    For short responses (<= 4096 chars): one edit with HTML.
-    For long responses (> 4096 chars): multi-message split.
-    The first message is updated via edit, follow-up parts as
-    new messages in the same chat.
+    T23: If live rollover already happened, only finalizes the LAST
+    (current) part. Previous parts are already finalized in-place.
+
+    For short responses (<= 4096 chars) without rollover: one edit with HTML.
+    For long responses without rollover: multi-message split in finalize.
 
     Args:
         session: The current StreamingSession.
@@ -296,6 +457,26 @@ async def finalize_streaming(session: StreamingSession, final_text: str) -> str:
     Returns:
         The final text (untruncated, for history storage).
     """
+    # T23: If rollover already happened, we only need to finalize the last part.
+    if session.part_count > 1:
+        # The final_text is the FULL text. Extract only the current part's portion.
+        # current_part_offset marks where the current part starts in the full text.
+        current_part_text = final_text[session.current_part_offset :]
+        session.accumulated_text = current_part_text
+
+        html_text = markdown_to_telegram_html(current_part_text)
+        if len(html_text) <= TELEGRAM_MAX_LENGTH:
+            await _do_edit_html(session)
+        else:
+            # Current part itself is still too long (edge case): split it
+            await _finalize_multi_message(session, current_part_text)
+
+        # Previous parts were sent without markers during stream.
+        # We don't re-edit them with markers to avoid rate-limits — the
+        # live-streaming UX is more important than cosmetic markers.
+        return final_text
+
+    # Standard path: no rollover happened
     session.accumulated_text = final_text
 
     # HTML-converted text determines whether split is needed

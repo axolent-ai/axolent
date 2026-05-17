@@ -61,13 +61,19 @@ from application.streaming_handler import (
 )
 
 
-def _make_session(started_offset: float = 0.0) -> StreamingSession:
-    """Erstellt eine Test-StreamingSession mit gemockter Message."""
+def _make_fake_message() -> AsyncMock:
+    """Create a fake Telegram Message mock with proper async methods."""
     msg = AsyncMock()
     msg.edit_text = AsyncMock()
-    # Mock chat für Multi-Message-Split (send_message auf dem Chat)
     msg.chat = MagicMock()
-    msg.chat.send_message = AsyncMock()
+    # send_message returns another fake message (for rollover support)
+    msg.chat.send_message = AsyncMock(side_effect=lambda *a, **kw: _make_fake_message())
+    return msg
+
+
+def _make_session(started_offset: float = 0.0) -> StreamingSession:
+    """Erstellt eine Test-StreamingSession mit gemockter Message."""
+    msg = _make_fake_message()
     return StreamingSession(
         message=msg,
         started_at=time.monotonic() - started_offset,
@@ -1304,3 +1310,171 @@ class TestLocalMode:
 
         # All 5 should have been sent
         assert session.message.edit_text.call_count == 5
+
+
+class TestLiveMultiMessageRollover:
+    """T23: Live multi-message rollover during streaming.
+
+    Verifies that long responses trigger a rollover to a new message
+    DURING process_streaming_edit(), not just in finalize_streaming().
+    """
+
+    @pytest.mark.asyncio
+    async def test_live_rollover_above_4096(self) -> None:
+        """50 Chunks a 100 Zeichen: chat.send_message() wird WAEHREND
+        process_streaming_edit aufgerufen, NICHT erst in finalize_streaming."""
+        session = _make_session(started_offset=5.0)
+        session.is_first_edit = False
+        session.last_edit_time = 0
+
+        # Keep reference to original message for call counting
+        original_msg = session.message
+
+        # Send 50 chunks of 100 chars each (5000 chars total)
+        chunk = "A" * 95 + ".\n\n  "  # 100 chars with paragraph boundary
+        for _ in range(50):
+            session.last_edit_time = 0  # Allow every edit through
+            await process_streaming_edit(session, chunk)
+
+        # chat.send_message must have been called DURING streaming on the
+        # ORIGINAL message (rollover sends "..." on the first part's chat)
+        assert original_msg.chat.send_message.call_count >= 1
+        # The session must show that rollover happened
+        assert session.part_count > 1
+        assert len(session.previous_parts) >= 1
+
+    @pytest.mark.asyncio
+    async def test_rollover_preserves_text_integrity(self) -> None:
+        """Lange Antwort mit Code-Block ueber Part-Boundary: Code-Block wird
+        nicht zerrissen, beide Parts sind valides HTML."""
+        session = _make_session(started_offset=5.0)
+        session.is_first_edit = False
+        session.last_edit_time = 0
+
+        # Build text with a code block that spans across the threshold
+        # First ~3800 chars of normal text, then a code block
+        normal = "Ein normaler Absatz.\n\n" * 180  # ~3780 chars
+        code_block = "```python\nfor i in range(100):\n    print(i)\n```\n\n"
+        full_text = normal + code_block + "Nach dem Code.\n\n" * 20
+
+        # Feed in large chunks
+        pos = 0
+        chunk_size = 200
+        while pos < len(full_text):
+            session.last_edit_time = 0
+            await process_streaming_edit(session, full_text[pos : pos + chunk_size])
+            pos += chunk_size
+
+        # If rollover happened, verify no part ends inside a code block
+        for part_text in session.previous_parts:
+            # Count fenced code markers: must be even (all blocks closed)
+            fence_count = part_text.count("```")
+            assert fence_count % 2 == 0, (
+                f"Part ends with unclosed code block (``` count = {fence_count})"
+            )
+
+    @pytest.mark.asyncio
+    async def test_rollover_split_at_paragraph_boundary(self) -> None:
+        """Antwort mit klaren Absatz-Grenzen knapp ueber 4096: Split passiert
+        an Absatz, nicht mitten im Satz."""
+        session = _make_session(started_offset=5.0)
+        session.is_first_edit = False
+        session.last_edit_time = 0
+
+        # Create text with clear paragraphs, just over threshold
+        paragraph = "Dies ist ein vollstaendiger Absatz mit genug Text.\n\n"
+        # ~4160 chars = 80 paragraphs * 52 chars
+        full_text = paragraph * 85
+
+        pos = 0
+        chunk_size = 150
+        while pos < len(full_text):
+            session.last_edit_time = 0
+            await process_streaming_edit(session, full_text[pos : pos + chunk_size])
+            pos += chunk_size
+
+        if session.part_count > 1:
+            # Each previous part should end at a paragraph boundary
+            for part_text in session.previous_parts:
+                assert part_text.rstrip().endswith("."), (
+                    f"Part does not end at sentence/paragraph boundary: "
+                    f"...{part_text[-30:]!r}"
+                )
+
+    @pytest.mark.asyncio
+    async def test_finalize_without_rollover_works_normally(self) -> None:
+        """Antwort < 4096 Zeichen: Genau ein Edit, kein send_message-Call."""
+        session = _make_session(started_offset=5.0)
+        session.is_first_edit = False
+        session.last_edit_time = 0
+
+        short_text = "Ein kurzer Text unter 4096 Zeichen."
+        await process_streaming_edit(session, short_text)
+
+        # No rollover
+        assert session.part_count == 1
+        assert len(session.previous_parts) == 0
+        # Finalize should work normally
+        result = await finalize_streaming(session, short_text)
+        assert result == short_text
+        # Only edits on the original message, no send_message for new parts
+        session.message.chat.send_message.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_finalize_after_rollover_only_finalizes_last_part(self) -> None:
+        """Antwort die 3 Parts braucht: finalize finalisiert nur Part 3,
+        Part 1+2 sind schon final."""
+        session = _make_session(started_offset=5.0)
+        session.is_first_edit = False
+        session.last_edit_time = 0
+
+        # Generate enough text for 3 parts (~12000 chars)
+        paragraph = "Absatz fuer den Multi-Part-Test mit Text.\n\n"
+        full_text = paragraph * 300  # ~12600 chars
+
+        pos = 0
+        chunk_size = 200
+        while pos < len(full_text):
+            session.last_edit_time = 0
+            await process_streaming_edit(session, full_text[pos : pos + chunk_size])
+            pos += chunk_size
+
+        # Should have at least 2 rollovers (3 parts)
+        assert session.part_count >= 2, f"Expected >= 2 parts, got {session.part_count}"
+
+        # Record send_message count BEFORE finalize
+        send_count_before = session.message.chat.send_message.call_count
+
+        # Now finalize
+        result = await finalize_streaming(session, full_text)
+        assert result == full_text
+
+        # Finalize should NOT have sent additional new messages for parts
+        # that were already handled by rollover. At most it edits the last part.
+        send_count_after = session.message.chat.send_message.call_count
+        # Finalize may send 0 or 1 new message (if last part needs sub-split)
+        # but definitely not re-sending all parts
+        assert send_count_after - send_count_before <= 1
+
+    @pytest.mark.asyncio
+    async def test_history_audit_full_text_preserved(self) -> None:
+        """Antwort ueber Rollover: _full_accumulated_text ist VOLLSTAENDIG."""
+        session = _make_session(started_offset=5.0)
+        session.is_first_edit = False
+        session.last_edit_time = 0
+
+        # Feed text that will trigger rollover
+        paragraph = "Vollstaendiger Text fuer den History-Test.\n\n"
+        full_text = paragraph * 150  # ~6450 chars
+
+        pos = 0
+        chunk_size = 100
+        while pos < len(full_text):
+            session.last_edit_time = 0
+            await process_streaming_edit(session, full_text[pos : pos + chunk_size])
+            pos += chunk_size
+
+        # The full accumulated text must contain everything
+        assert session._full_accumulated_text == full_text
+        # Also via the property
+        assert session.full_text == full_text

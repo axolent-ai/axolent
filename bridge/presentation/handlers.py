@@ -68,6 +68,35 @@ _USER_LOCK_TTL_SECONDS = 3600  # 1h without activity -> removed
 _active_streaming_sessions: dict[tuple[int, int], StreamingSession] = {}
 _active_sessions_lock = Lock()
 
+# T25: Background task registry. Prevents GC of streaming tasks and enables
+# cleanup on shutdown. Key: (user_id, chat_id), Value: asyncio.Task.
+_background_streaming_tasks: dict[tuple[int, int], asyncio.Task] = {}  # type: ignore[type-arg]
+
+
+def _register_background_task(
+    task: "asyncio.Task[None]", user_id: int, chat_id: int
+) -> None:
+    """Register a background streaming task and set up cleanup callback."""
+    key = (user_id, chat_id)
+    _background_streaming_tasks[key] = task
+
+    def _on_task_done(t: "asyncio.Task[None]") -> None:
+        _background_streaming_tasks.pop(key, None)
+        if t.cancelled():
+            log.debug(
+                "Background stream task cancelled: user=%d chat=%d", user_id, chat_id
+            )
+        elif t.exception():
+            log.error(
+                "Background stream task crashed: user=%d chat=%d: %s",
+                user_id,
+                chat_id,
+                t.exception(),
+            )
+
+    task.add_done_callback(_on_task_done)
+
+
 # Supported languages for /lang command (synced with domain.onboarding.WIZARD_LANGUAGES)
 _SUPPORTED_LANGUAGES: set[str] = {
     "de",
@@ -578,32 +607,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Typing indicator
     await context.bot.send_chat_action(update.effective_chat.id, ChatAction.TYPING)
 
-    # Per-user lock + global semaphore
-    user_lock = _get_user_lock(user_id)
-    async with user_lock:
-        async with GLOBAL_CLAUDE_SEMAPHORE:
-            # R04: Streaming path when PersistentProvider available
-            # Type safety: hasattr instead of isinstance due to layer contract
-            # (presentation must not import infrastructure.providers.base)
-            if (
-                persistent_provider is not None
-                and hasattr(persistent_provider, "query_streaming")
-                and persistent_provider.is_available()
-            ):
-                await _handle_message_streaming(
-                    update=update,
-                    context=context,
-                    chat_service=chat_service,
-                    persistent_provider=persistent_provider,
-                    user_id=user_id,
-                    chat_id=chat_id,
-                    username=username,
-                    text=text,
-                    reply_to_text=reply_to_text,
-                    envelope=_msg_envelope,
-                )
-            else:
-                # Legacy-Fallback: non-streaming
+    # T25: Background-Task pattern for streaming.
+    # Instead of blocking the entire handler (which blocks the Update queue),
+    # the streaming call runs as a background task. This allows /reset and other
+    # commands to be processed while a long stream is running.
+    # The per-user lock + global semaphore are acquired INSIDE the task to
+    # serialize messages from the same user without blocking other updates.
+    if (
+        persistent_provider is not None
+        and hasattr(persistent_provider, "query_streaming")
+        and persistent_provider.is_available()
+    ):
+        task = asyncio.create_task(
+            _streaming_background_task(
+                update=update,
+                context=context,
+                chat_service=chat_service,
+                persistent_provider=persistent_provider,
+                user_id=user_id,
+                chat_id=chat_id,
+                username=username,
+                text=text,
+                reply_to_text=reply_to_text,
+                envelope=_msg_envelope,
+            ),
+            name=f"stream_{user_id}_{chat_id}_{_msg_envelope.request_id[:8]}",
+        )
+        # Register task to prevent garbage collection and enable cleanup
+        _register_background_task(task, user_id, chat_id)
+    else:
+        # Legacy-Fallback: non-streaming (runs synchronously, short-lived)
+        user_lock = _get_user_lock(user_id)
+        async with user_lock:
+            async with GLOBAL_CLAUDE_SEMAPHORE:
                 await _handle_message_legacy(
                     update=update,
                     context=context,
@@ -615,6 +651,42 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     reply_to_text=reply_to_text,
                     envelope=_msg_envelope,
                 )
+
+
+async def _streaming_background_task(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_service: ChatService,
+    persistent_provider: Any,
+    user_id: int,
+    chat_id: int,
+    username: str | None,
+    text: str,
+    reply_to_text: str | None,
+    *,
+    envelope: RequestEnvelope,
+) -> None:
+    """T25: Background wrapper that acquires locks then runs streaming.
+
+    This runs as an asyncio.Task so handle_message can return immediately,
+    allowing /reset and other commands to be processed in parallel.
+    The per-user lock ensures messages from the same user are serialized.
+    """
+    user_lock = _get_user_lock(user_id)
+    async with user_lock:
+        async with GLOBAL_CLAUDE_SEMAPHORE:
+            await _handle_message_streaming(
+                update=update,
+                context=context,
+                chat_service=chat_service,
+                persistent_provider=persistent_provider,
+                user_id=user_id,
+                chat_id=chat_id,
+                username=username,
+                text=text,
+                reply_to_text=reply_to_text,
+                envelope=envelope,
+            )
 
 
 async def _handle_message_streaming(
