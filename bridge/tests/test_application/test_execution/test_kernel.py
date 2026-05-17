@@ -139,4 +139,4 @@ class TestContextKernelResolvesPipeline:
         env = RequestEnvelope.from_telegram(user_id=1, chat_id=2, text="test")
         ctx = await kernel.build(env)
 
-        assert ctx.audit_tags.get("custom") is True
+        assert ctx.get_audit_tag("custom") is True

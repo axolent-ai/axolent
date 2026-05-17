@@ -97,7 +97,30 @@ class ExecutionContext:
     channel_capabilities: ChannelCapabilities = field(
         default_factory=ChannelCapabilities
     )
-    audit_tags: dict[str, Any] = field(default_factory=dict)
+    audit_tags: tuple[tuple[str, Any], ...] = field(default_factory=tuple)
+
+    def get_audit_tag(self, key: str, default: Any = None) -> Any:
+        """Look up a single audit tag by key.
+
+        Args:
+            key: The tag key to look up.
+            default: Value to return if key is not found.
+
+        Returns:
+            The tag value, or default.
+        """
+        for k, v in self.audit_tags:
+            if k == key:
+                return v
+        return default
+
+    def as_audit_dict(self) -> dict[str, Any]:
+        """Convert audit_tags to a plain dict for serialization.
+
+        Returns:
+            Dict representation of audit tags.
+        """
+        return dict(self.audit_tags)
 
 
 @dataclass(slots=True)
@@ -169,5 +192,5 @@ class PartialExecutionContext:
             language=lang,
             time=self.time or TimeContext(),
             channel_capabilities=self.channel_capabilities or ChannelCapabilities(),
-            audit_tags=dict(self.audit_tags),
+            audit_tags=tuple(self.audit_tags.items()),
         )

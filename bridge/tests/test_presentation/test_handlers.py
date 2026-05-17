@@ -1507,6 +1507,70 @@ class TestHandleDebateCommand:
         assert audit_entry["event_type"] == "rate_limit_exceeded"
         assert audit_entry["command"] == "debate"
 
+    @patch("presentation.handlers.write_raw_audit")
+    async def test_debate_rate_limit_does_not_build_context(
+        self, mock_audit: MagicMock
+    ) -> None:
+        """EK-02: Rate-limited debate must NOT call ContextKernel.build.
+
+        This ensures rejected requests cannot mutate sticky language
+        via LanguageResolver side-effects.
+        """
+        from application.rate_limiter import PROFILES, RateLimiter
+        from presentation.handlers import handle_debate_command
+
+        limiter = RateLimiter()
+        # Exhaust all minute tokens
+        normal_min = PROFILES["normal"]["per_minute"]
+        for _ in range(normal_min):
+            limiter.check_and_consume(user_id=1)
+
+        mock_kernel = _make_mock_context_kernel()
+        update = _make_update(user_id=1, chat_id=10, text="/debate Hallo?")
+        context = _make_context(
+            args=["Hallo?"],
+            rate_limiter=limiter,
+            context_kernel=mock_kernel,
+        )
+
+        await handle_debate_command(update, context)
+
+        # ContextKernel.build must NOT have been called
+        mock_kernel.build.assert_not_called()
+
+    @patch("presentation.handlers.write_raw_audit")
+    async def test_debate_rate_limit_reject_message_uses_sticky(
+        self, mock_audit: MagicMock
+    ) -> None:
+        """EK-02: Reject message uses sticky language (read-only, no mutation)."""
+        from application.rate_limiter import PROFILES, RateLimiter
+        from presentation.handlers import handle_debate_command
+
+        limiter = RateLimiter()
+        # Exhaust all minute tokens
+        normal_min = PROFILES["normal"]["per_minute"]
+        for _ in range(normal_min):
+            limiter.check_and_consume(user_id=1)
+
+        # Create a chat service that returns "en" as sticky language
+        mock_svc = _make_mock_chat_service()
+        mock_svc.get_chat_language = AsyncMock(return_value="en")
+
+        update = _make_update(user_id=1, chat_id=10, text="/debate Test?")
+        context = _make_context(
+            args=["Test?"],
+            rate_limiter=limiter,
+            chat_service=mock_svc,
+        )
+
+        await handle_debate_command(update, context)
+
+        # Sticky language was read (non-mutating)
+        mock_svc.get_chat_language.assert_called_once_with(1, 10)
+
+        # Reply was sent (rate limit message)
+        update.message.reply_text.assert_called_once()
+
 
 class TestFormatDebateSynthesis:
     """Tests for the synthesis display in the debate formatter."""

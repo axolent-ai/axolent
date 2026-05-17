@@ -147,7 +147,7 @@ class TestAcceptanceCriteria:
         # Prompt is a single compiled string with all required blocks
         assert "[LANGUAGE LOCK]" in result.system_prompt
         assert "System prompt." in result.system_prompt
-        assert result.metadata["request_id"] == "r5"
+        assert result.get_metadata("request_id") == "r5"
 
     def test_criterion_6_time_context_via_compiler(self) -> None:
         """AC6: Time context comes through the same compiler."""
@@ -173,7 +173,7 @@ class TestAcceptanceCriteria:
 
         result = compiler.compile_chat(ctx, plan, base_prompt="Base.")
         assert "[TIME CONTEXT] Saturday, afternoon" in result.system_prompt
-        assert "time_context" in result.metadata["blocks_included"]
+        assert "time_context" in result.get_metadata("blocks_included")
 
     @pytest.mark.asyncio
     async def test_audit_event_includes_request_id(self) -> None:

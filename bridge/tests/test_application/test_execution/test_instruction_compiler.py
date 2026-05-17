@@ -166,10 +166,11 @@ class TestInstructionCompilerBlockOrder:
             memory_block="[STORED NOTES]\nTest.",
         )
 
-        assert "language_lock" in result.metadata["blocks_included"]
-        assert "task_objective" in result.metadata["blocks_included"]
-        assert "memory" in result.metadata["blocks_included"]
-        assert "anti_repetition" in result.metadata["blocks_included"]
+        blocks = result.get_metadata("blocks_included")
+        assert "language_lock" in blocks
+        assert "task_objective" in blocks
+        assert "memory" in blocks
+        assert "anti_repetition" in blocks
 
     def test_metadata_request_id(self) -> None:
         """Metadata includes request_id for audit correlation."""
@@ -178,7 +179,7 @@ class TestInstructionCompilerBlockOrder:
         plan = _make_plan(lang="en")
 
         result = compiler.compile_chat(ctx, plan, base_prompt="x")
-        assert result.metadata["request_id"] == "audit-123"
+        assert result.get_metadata("request_id") == "audit-123"
 
 
 class TestInstructionCompilerDebate:
@@ -215,22 +216,97 @@ class TestInstructionCompilerDebate:
         plan = _make_plan(lang="de", task_type="debate")
 
         result = compiler.compile_debate(ctx, plan, role="provider")
-        assert result.metadata["debate_role"] == "provider"
-        assert result.metadata["task_type"] == "debate"
+        assert result.get_metadata("debate_role") == "provider"
+        assert result.get_metadata("task_type") == "debate"
 
 
 class TestCompiledPrompt:
     """Test CompiledPrompt dataclass."""
 
     def test_default_empty(self) -> None:
-        """Default CompiledPrompt has empty strings."""
+        """Default CompiledPrompt has empty strings and empty metadata tuple."""
         cp = CompiledPrompt()
         assert cp.system_prompt == ""
         assert cp.user_prompt == ""
-        assert cp.metadata == {}
+        assert cp.metadata == ()
 
     def test_frozen(self) -> None:
         """CompiledPrompt is immutable."""
         cp = CompiledPrompt(system_prompt="test")
         with pytest.raises(Exception):
             cp.system_prompt = "changed"  # type: ignore[misc]
+
+
+class TestCompiledPromptMetadataImmutability:
+    """EK-06: CompiledPrompt.metadata must be immutable tuple-of-tuples."""
+
+    def test_metadata_is_tuple(self) -> None:
+        """metadata field is a tuple, not a mutable dict."""
+        cp = CompiledPrompt(
+            system_prompt="s",
+            metadata=(("key", "val"), ("n", 42)),
+        )
+        assert isinstance(cp.metadata, tuple)
+
+    def test_metadata_immutable_no_assignment(self) -> None:
+        """Cannot reassign metadata on a frozen CompiledPrompt."""
+        cp = CompiledPrompt(
+            system_prompt="s",
+            metadata=(("a", 1),),
+        )
+        with pytest.raises(Exception):
+            cp.metadata = (("b", 2),)  # type: ignore[misc]
+
+    def test_metadata_item_assignment_fails(self) -> None:
+        """Tuple does not support item assignment."""
+        cp = CompiledPrompt(
+            system_prompt="s",
+            metadata=(("x", "y"),),
+        )
+        with pytest.raises(TypeError):
+            cp.metadata[0] = ("z", "w")  # type: ignore[index]
+
+    def test_get_metadata_helper(self) -> None:
+        """get_metadata helper looks up keys correctly."""
+        cp = CompiledPrompt(
+            metadata=(("request_id", "r1"), ("language", "de")),
+        )
+        assert cp.get_metadata("request_id") == "r1"
+        assert cp.get_metadata("language") == "de"
+        assert cp.get_metadata("missing") is None
+        assert cp.get_metadata("missing", "fb") == "fb"
+
+    def test_as_metadata_dict_helper(self) -> None:
+        """as_metadata_dict converts to plain dict."""
+        cp = CompiledPrompt(
+            metadata=(("a", 1), ("b", "two")),
+        )
+        d = cp.as_metadata_dict()
+        assert d == {"a": 1, "b": "two"}
+        # Mutation of returned dict does not affect original
+        d["c"] = "injected"
+        assert cp.get_metadata("c") is None
+
+    def test_blocks_included_immutable(self) -> None:
+        """blocks_included inside metadata is a tuple, not a mutable list."""
+        compiler = InstructionCompiler()
+        ctx = ExecutionContext(
+            request_id="bi-1",
+            user_id=1,
+            chat_id=2,
+            language=LanguageContext(
+                code="de",
+                source="detected",
+                confidence=0.9,
+                switched_from=None,
+                request_id="bi-1",
+            ),
+        )
+        plan = ExecutionPlan(request_id="bi-1", language="de")
+
+        result = compiler.compile_chat(ctx, plan, base_prompt="Base.")
+        blocks = result.get_metadata("blocks_included")
+        assert isinstance(blocks, tuple)
+        # Cannot append to a tuple
+        with pytest.raises(AttributeError):
+            blocks.append("injected")  # type: ignore[attr-defined]

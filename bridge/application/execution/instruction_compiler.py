@@ -47,12 +47,35 @@ class CompiledPrompt:
     Attributes:
         system_prompt: Complete system prompt with all blocks.
         user_prompt: The user-facing prompt (context + message).
-        metadata: Compilation metadata (which blocks were included).
+        metadata: Compilation metadata (immutable tuple-of-tuples).
     """
 
     system_prompt: str = ""
     user_prompt: str = ""
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: tuple[tuple[str, Any], ...] = field(default_factory=tuple)
+
+    def get_metadata(self, key: str, default: Any = None) -> Any:
+        """Look up a metadata value by key.
+
+        Args:
+            key: The metadata key to look up.
+            default: Value to return if key is not found.
+
+        Returns:
+            The metadata value, or default.
+        """
+        for k, v in self.metadata:
+            if k == key:
+                return v
+        return default
+
+    def as_metadata_dict(self) -> dict[str, Any]:
+        """Convert metadata to a plain dict for serialization.
+
+        Returns:
+            Dict representation of metadata.
+        """
+        return dict(self.metadata)
 
 
 class InstructionCompiler:
@@ -173,12 +196,12 @@ class InstructionCompiler:
         # Block 8: Format contract (Phase 0: no-op)
         # TODO Phase 2: output format enforcement
 
-        metadata = {
-            "request_id": ctx.request_id,
-            "language": lang,
-            "task_type": plan.task_type,
-            "blocks_included": blocks_included,
-        }
+        metadata = (
+            ("request_id", ctx.request_id),
+            ("language", lang),
+            ("task_type", plan.task_type),
+            ("blocks_included", tuple(blocks_included)),
+        )
 
         return CompiledPrompt(
             system_prompt=result,
@@ -225,13 +248,13 @@ class InstructionCompiler:
             if rule_text:
                 result = f"{result}\n\n[STYLE RULE] {rule_text}"
 
-        metadata = {
-            "request_id": ctx.request_id,
-            "language": lang,
-            "task_type": "debate",
-            "debate_role": role,
-            "blocks_included": ["language_lock", "task_objective"],
-        }
+        metadata = (
+            ("request_id", ctx.request_id),
+            ("language", lang),
+            ("task_type", "debate"),
+            ("debate_role", role),
+            ("blocks_included", ("language_lock", "task_objective")),
+        )
 
         return CompiledPrompt(
             system_prompt=result,

@@ -2396,7 +2396,33 @@ async def handle_debate_command(
         }
     )
 
+    # EK-02 FIX: Rate-limit check BEFORE ContextKernel.build to prevent
+    # rejected requests from mutating sticky language via LanguageResolver.
+    rate_limiter = _get_rate_limiter(context)
+    if rate_limiter is not None:
+        result_rl: RateLimitResult = rate_limiter.check_and_consume(user_id)
+        if not result_rl.allowed:
+            # Use sticky language (read-only, already fetched above) for reject message
+            await update.message.reply_text(
+                t("debate.rate_limit_short", _fallback_lang)
+            )
+            write_raw_audit(
+                {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "event_type": "rate_limit_exceeded",
+                    "request_id": envelope.request_id,
+                    "user_id": user_id,
+                    "chat_id": chat_id,
+                    "username": username,
+                    "command": "debate",
+                    "profile": result_rl.profile,
+                    "period": result_rl.period,
+                }
+            )
+            return
+
     # Resolve ExecutionContext: language comes from the question text
+    # (only reached if rate limit allows the request)
     context_kernel = _get_context_kernel(context)
     exec_ctx = await context_kernel.build(envelope)
 
@@ -2426,27 +2452,6 @@ async def handle_debate_command(
 
     # Effective language from the resolved context
     resolved_lang = exec_ctx.language.code
-
-    # Check rate limit (same logic as handle_message)
-    rate_limiter = _get_rate_limiter(context)
-    if rate_limiter is not None:
-        result_rl: RateLimitResult = rate_limiter.check_and_consume(user_id)
-        if not result_rl.allowed:
-            await update.message.reply_text(t("debate.rate_limit_short", resolved_lang))
-            write_raw_audit(
-                {
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "event_type": "rate_limit_exceeded",
-                    "request_id": envelope.request_id,
-                    "user_id": user_id,
-                    "chat_id": chat_id,
-                    "username": username,
-                    "command": "debate",
-                    "profile": result_rl.profile,
-                    "period": result_rl.period,
-                }
-            )
-            return
 
     # Send status message with resolved language
     status_msg = await update.message.reply_text(

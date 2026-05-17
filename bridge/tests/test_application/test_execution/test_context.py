@@ -64,9 +64,9 @@ class TestExecutionContext:
         assert ctx.language.code == "de"
 
     def test_audit_tags_default_empty(self) -> None:
-        """audit_tags default to empty dict."""
+        """audit_tags default to empty tuple."""
         ctx = ExecutionContext()
-        assert ctx.audit_tags == {}
+        assert ctx.audit_tags == ()
 
 
 class TestPartialExecutionContext:
@@ -126,3 +126,61 @@ class TestPartialExecutionContext:
         ctx = partial.freeze()
         with pytest.raises(Exception):
             ctx.user_id = 999  # type: ignore[misc]
+
+
+class TestAuditTagsImmutability:
+    """EK-06: audit_tags on frozen ExecutionContext must be immutable."""
+
+    def test_audit_tags_is_tuple(self) -> None:
+        """audit_tags is a tuple-of-tuples, not a mutable dict."""
+        ctx = ExecutionContext(
+            request_id="imm-1",
+            audit_tags=(("key1", "val1"), ("key2", 42)),
+        )
+        assert isinstance(ctx.audit_tags, tuple)
+        assert ctx.audit_tags == (("key1", "val1"), ("key2", 42))
+
+    def test_audit_tags_immutable_no_append(self) -> None:
+        """Cannot mutate audit_tags on a frozen ExecutionContext."""
+        ctx = ExecutionContext(request_id="imm-2", audit_tags=(("a", 1),))
+        with pytest.raises(Exception):
+            ctx.audit_tags = (("b", 2),)  # type: ignore[misc]
+
+    def test_audit_tags_mutation_via_subscript_fails(self) -> None:
+        """Tuple does not support item assignment."""
+        ctx = ExecutionContext(request_id="imm-3", audit_tags=(("x", "y"),))
+        with pytest.raises(TypeError):
+            ctx.audit_tags[0] = ("z", "w")  # type: ignore[index]
+
+    def test_get_audit_tag_helper(self) -> None:
+        """get_audit_tag looks up keys correctly."""
+        ctx = ExecutionContext(
+            request_id="imm-4",
+            audit_tags=(("lang", "de"), ("mode", "debate")),
+        )
+        assert ctx.get_audit_tag("lang") == "de"
+        assert ctx.get_audit_tag("mode") == "debate"
+        assert ctx.get_audit_tag("missing") is None
+        assert ctx.get_audit_tag("missing", "fallback") == "fallback"
+
+    def test_as_audit_dict_helper(self) -> None:
+        """as_audit_dict converts to plain dict for serialization."""
+        ctx = ExecutionContext(
+            request_id="imm-5",
+            audit_tags=(("k1", "v1"), ("k2", 2)),
+        )
+        d = ctx.as_audit_dict()
+        assert d == {"k1": "v1", "k2": 2}
+        # Mutating returned dict does not affect original
+        d["k3"] = "injected"
+        assert ctx.get_audit_tag("k3") is None
+
+    def test_freeze_converts_dict_to_tuple(self) -> None:
+        """PartialExecutionContext.freeze() converts audit_tags dict to tuple."""
+        env = RequestEnvelope.from_telegram(user_id=1, chat_id=2, text="t")
+        partial = PartialExecutionContext.from_envelope(env)
+        partial.audit_tags["source"] = "test"
+        partial.audit_tags["count"] = 5
+        ctx = partial.freeze()
+        assert ("source", "test") in ctx.audit_tags
+        assert ("count", 5) in ctx.audit_tags
