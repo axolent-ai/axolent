@@ -5,8 +5,8 @@ Telegram message edits. Rate-limited with adaptive throttle.
 
 Features:
     * Aggregates tokens until the next edit time
-    * First edit after ~1.5s with accumulated text
-    * Subsequent edits every ~1.5s with the full text so far
+    * Burst-mode: first 5 edits are fast (0.2s), then gradually slows
+    * Subsequent edits follow a graduated throttle curve up to 1.5s
     * On final result: last edit with complete text + HTML formatting
     * Intermediate edits: markdown is rendered live, incomplete tokens
       at the end are safely trimmed (Option A: smart-trim)
@@ -17,12 +17,14 @@ Features:
       pauses, intermediate edits are skipped, throttle is increased
       exponentially and recovers after successful edits.
     * Final edits have highest priority and are retried on 429.
+    * AXOLENT_STREAMING_MODE=local disables all throttling (desktop app).
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -34,6 +36,35 @@ if TYPE_CHECKING:
     from telegram import Message
 
 log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Streaming mode (env-driven)
+# ---------------------------------------------------------------------------
+# "telegram" (default): burst-then-throttle for Telegram rate limits
+# "local": no throttling at all (desktop app, direct socket)
+STREAMING_MODE: str = os.environ.get("AXOLENT_STREAMING_MODE", "telegram").lower()
+
+# ---------------------------------------------------------------------------
+# Burst-mode throttle curve constants
+# ---------------------------------------------------------------------------
+# Edits 1-5:  fast burst (user sees immediate response)
+BURST_PHASE_END: int = 5
+BURST_THROTTLE: float = 0.2
+
+# Edits 6-10: linear ramp from MID_THROTTLE_START to MID_THROTTLE_END
+MID_PHASE_START: int = 6
+MID_PHASE_END: int = 10
+MID_THROTTLE_START: float = 0.4
+MID_THROTTLE_END: float = 1.0
+
+# Edits 11-20: linear ramp from RAMP_THROTTLE_START to RAMP_THROTTLE_END
+RAMP_PHASE_START: int = 11
+RAMP_PHASE_END: int = 20
+RAMP_THROTTLE_START: float = 1.0
+RAMP_THROTTLE_END: float = 1.5
+
+# Edits 21+: stable at DEFAULT_THROTTLE
+STABLE_THROTTLE: float = 1.5
 
 # ---------------------------------------------------------------------------
 # Adaptive throttle / flood control constants
@@ -61,6 +92,9 @@ THROTTLE_RECOVERY_FACTOR: float = 0.7
 # Maximum retries for final edits on 429
 FINAL_EDIT_MAX_RETRIES: int = 2
 
+# Minimal throttle for local mode (prevents asyncio starvation)
+LOCAL_MODE_THROTTLE: float = 0.0
+
 # ---------------------------------------------------------------------------
 # Existing constants
 # ---------------------------------------------------------------------------
@@ -69,7 +103,7 @@ FINAL_EDIT_MAX_RETRIES: int = 2
 # Default throttle is now adaptively controlled (see above)
 EDIT_INTERVAL_SECONDS: float = DEFAULT_THROTTLE
 
-# First edit after this time (so enough text is available)
+# Legacy: first-edit delay (superseded by burst-mode; kept for reference)
 FIRST_EDIT_DELAY_SECONDS: float = 1.5
 
 # Maximum message length for Telegram (4096 chars)
@@ -94,6 +128,8 @@ class StreamingSession:
         _paused_until: Monotonic timestamp until which edits are paused (flood control).
         _current_throttle: Current adaptive edit interval in seconds.
         _consecutive_success: Counter of successful edits since last 429.
+        _edits_sent: Number of edits successfully sent (for burst-mode curve).
+        _backoff_active: Whether backoff has raised throttle above the curve.
         cancel_event: When set, the streaming loop should stop immediately.
             Used by /reset to cancel an active stream before clearing state.
     """
@@ -108,6 +144,8 @@ class StreamingSession:
     _paused_until: float = 0.0
     _current_throttle: float = field(default_factory=lambda: DEFAULT_THROTTLE)
     _consecutive_success: int = 0
+    _edits_sent: int = 0
+    _backoff_active: bool = False
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
 
     @property
@@ -118,6 +156,71 @@ class StreamingSession:
     def cancel(self) -> None:
         """Request cancellation of this streaming session."""
         self.cancel_event.set()
+
+
+def _compute_base_throttle(edits_sent: int) -> float:
+    """Compute the base throttle for the burst-mode curve.
+
+    The curve is:
+        edit 1-5:   0.2s (burst)
+        edit 6-10:  linear 0.4s -> 1.0s
+        edit 11-20: linear 1.0s -> 1.5s
+        edit 21+:   stable 1.5s
+
+    For local mode: always returns LOCAL_MODE_THROTTLE (0.0).
+
+    Args:
+        edits_sent: Number of edits already sent in this session.
+
+    Returns:
+        Base throttle interval in seconds.
+    """
+    if STREAMING_MODE == "local":
+        return LOCAL_MODE_THROTTLE
+
+    # Next edit number (1-indexed)
+    next_edit = edits_sent + 1
+
+    if next_edit <= BURST_PHASE_END:
+        return BURST_THROTTLE
+
+    if next_edit <= MID_PHASE_END:
+        # Linear interpolation from MID_THROTTLE_START to MID_THROTTLE_END
+        progress = (next_edit - MID_PHASE_START) / (MID_PHASE_END - MID_PHASE_START)
+        return MID_THROTTLE_START + progress * (MID_THROTTLE_END - MID_THROTTLE_START)
+
+    if next_edit <= RAMP_PHASE_END:
+        # Linear interpolation from RAMP_THROTTLE_START to RAMP_THROTTLE_END
+        progress = (next_edit - RAMP_PHASE_START) / (RAMP_PHASE_END - RAMP_PHASE_START)
+        return RAMP_THROTTLE_START + progress * (
+            RAMP_THROTTLE_END - RAMP_THROTTLE_START
+        )
+
+    return STABLE_THROTTLE
+
+
+def _get_effective_throttle(session: StreamingSession) -> float:
+    """Get the effective throttle for the next edit.
+
+    If backoff is active (429 occurred), use _current_throttle (which was
+    doubled by backoff). Otherwise, use the burst-mode curve.
+
+    Args:
+        session: The current StreamingSession.
+
+    Returns:
+        Effective throttle interval in seconds.
+    """
+    if STREAMING_MODE == "local":
+        return LOCAL_MODE_THROTTLE
+
+    base = _compute_base_throttle(session._edits_sent)
+
+    # If backoff raised the throttle above curve, use backoff value
+    if session._backoff_active and session._current_throttle > base:
+        return session._current_throttle
+
+    return base
 
 
 async def create_streaming_message(chat: Any) -> "Message":
@@ -138,9 +241,10 @@ async def process_streaming_edit(
 ) -> None:
     """Add new text and edit the message if needed.
 
-    Rate-limited: adaptive throttle (default 1.5s, increases on 429).
-    First edit only after FIRST_EDIT_DELAY_SECONDS.
+    Rate-limited with burst-mode curve: fast at start, gradually slower.
+    First edit only after a short delay (burst-mode: 0.2s, not 1.5s).
     During flood control pause, intermediate edits are skipped.
+    In local mode: no throttling at all.
 
     Args:
         session: The current StreamingSession.
@@ -149,10 +253,18 @@ async def process_streaming_edit(
     session.accumulated_text += new_text
     now = time.monotonic()
 
-    # First edit: wait until enough time has passed
+    # Local mode: skip first-edit delay entirely
+    if STREAMING_MODE == "local":
+        session.is_first_edit = False
+        await _do_edit(session)
+        return
+
+    # First edit: wait until enough text has accumulated (burst-mode delay)
     if session.is_first_edit:
         elapsed = now - session.started_at
-        if elapsed < FIRST_EDIT_DELAY_SECONDS:
+        # In burst mode, first edit fires after just BURST_THROTTLE
+        first_delay = BURST_THROTTLE if session._edits_sent == 0 else BURST_THROTTLE
+        if elapsed < first_delay:
             return
         session.is_first_edit = False
 
@@ -160,9 +272,10 @@ async def process_streaming_edit(
     if session._paused_until and now < session._paused_until:
         return
 
-    # Rate limiting: at least _current_throttle since last edit
+    # Rate limiting: use burst-mode curve (or backoff if active)
+    effective_throttle = _get_effective_throttle(session)
     time_since_edit = now - session.last_edit_time
-    if time_since_edit < session._current_throttle:
+    if time_since_edit < effective_throttle:
         return
 
     await _do_edit(session)
@@ -674,14 +787,20 @@ def _is_retry_after(exc: Exception) -> int | None:
 def _apply_flood_backoff(session: StreamingSession, retry_after: int) -> None:
     """Apply flood control backoff to the session.
 
-    Sets pause timestamp, doubles throttle, resets success counter.
+    Sets pause timestamp, doubles the current effective throttle (base from
+    burst-mode curve), resets success counter, marks backoff as active.
     """
     now = time.monotonic()
     session._paused_until = now + retry_after
+
+    # Double the current effective throttle (burst curve or existing backoff)
+    current_base = _compute_base_throttle(session._edits_sent)
+    effective = max(current_base, session._current_throttle)
     session._current_throttle = min(
-        session._current_throttle * THROTTLE_BACKOFF_FACTOR,
+        effective * THROTTLE_BACKOFF_FACTOR,
         MAX_THROTTLE,
     )
+    session._backoff_active = True
     session._consecutive_success = 0
     log.info(
         "Flood control: pausing for %ds, throttle adaptively raised to %.1fs",
@@ -691,15 +810,26 @@ def _apply_flood_backoff(session: StreamingSession, retry_after: int) -> None:
 
 
 def _record_edit_success(session: StreamingSession) -> None:
-    """Record a successful edit and reduce throttle on recovery."""
+    """Record a successful edit, advance burst counter, reduce backoff on recovery."""
+    session._edits_sent += 1
     session._consecutive_success += 1
-    if session._consecutive_success >= THROTTLE_RECOVERY_AFTER:
+
+    if (
+        session._backoff_active
+        and session._consecutive_success >= THROTTLE_RECOVERY_AFTER
+    ):
         old_throttle = session._current_throttle
         session._current_throttle = max(
             session._current_throttle * THROTTLE_RECOVERY_FACTOR,
-            DEFAULT_THROTTLE,
+            _compute_base_throttle(session._edits_sent),
         )
         session._consecutive_success = 0
+
+        # If throttle has recovered to the curve value, deactivate backoff
+        base = _compute_base_throttle(session._edits_sent)
+        if session._current_throttle <= base:
+            session._backoff_active = False
+
         if old_throttle > session._current_throttle:
             log.debug(
                 "Throttle reduced to %.1fs (was %.1fs)",

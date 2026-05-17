@@ -15,6 +15,8 @@ Verifies:
     - Adaptive flood control (RetryAfter/429)
     - Final edit retry on 429
     - Throttle backoff and recovery
+    - Burst-mode throttle curve (edits 1-5 fast, then gradual slowdown)
+    - Local streaming mode (no throttle for desktop app)
 """
 
 from __future__ import annotations
@@ -25,13 +27,28 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from application.streaming_handler import (
+    BURST_PHASE_END,
+    BURST_THROTTLE,
     DEFAULT_THROTTLE,
     FINAL_EDIT_MAX_RETRIES,
+    LOCAL_MODE_THROTTLE,
     MAX_THROTTLE,
+    MID_PHASE_END,
+    MID_PHASE_START,
+    MID_THROTTLE_END,
+    MID_THROTTLE_START,
+    RAMP_PHASE_END,
+    RAMP_PHASE_START,
+    RAMP_THROTTLE_END,
+    RAMP_THROTTLE_START,
+    STABLE_THROTTLE,
     THROTTLE_BACKOFF_FACTOR,
     THROTTLE_RECOVERY_AFTER,
+    THROTTLE_RECOVERY_FACTOR,
     StreamingSession,
     _apply_flood_backoff,
+    _compute_base_throttle,
+    _get_effective_throttle,
     _is_retry_after,
     _is_safe_markdown_position,
     _record_edit_success,
@@ -62,8 +79,8 @@ class TestStreamingEdit:
 
     @pytest.mark.asyncio
     async def test_first_edit_delayed(self) -> None:
-        """Keine Edit vor FIRST_EDIT_DELAY_SECONDS."""
-        session = _make_session(started_offset=0.5)  # Erst 0.5s vergangen
+        """Keine Edit vor BURST_THROTTLE (0.2s) in burst mode."""
+        session = _make_session(started_offset=0.1)  # Erst 0.1s vergangen (< 0.2s)
         await process_streaming_edit(session, "Hello")
 
         # Kein edit_text-Aufruf weil zu frueh
@@ -72,8 +89,8 @@ class TestStreamingEdit:
 
     @pytest.mark.asyncio
     async def test_edit_after_delay(self) -> None:
-        """Edit nach FIRST_EDIT_DELAY_SECONDS."""
-        session = _make_session(started_offset=2.0)  # 2s vergangen
+        """Edit nach BURST_THROTTLE Delay (0.2s in burst mode)."""
+        session = _make_session(started_offset=0.5)  # 0.5s vergangen (> 0.2s burst)
         await process_streaming_edit(session, "Hello World")
 
         session.message.edit_text.assert_called_once()
@@ -674,11 +691,12 @@ class TestApplyFloodBackoff:
         assert session._paused_until <= after + 70
 
     def test_doubles_throttle(self) -> None:
-        """Verdoppelt den Throttle."""
+        """Verdoppelt den Throttle (basierend auf Burst-Kurve oder existierendem Wert)."""
         session = _make_session(started_offset=5.0)
         assert session._current_throttle == DEFAULT_THROTTLE
 
         _apply_flood_backoff(session, 30)
+        # Effective = max(base_curve_for_0_edits=BURST_THROTTLE, DEFAULT_THROTTLE) * 2
         assert session._current_throttle == DEFAULT_THROTTLE * THROTTLE_BACKOFF_FACTOR
 
     def test_throttle_capped_at_max(self) -> None:
@@ -711,25 +729,31 @@ class TestRecordEditSuccess:
         """Throttle reduziert sich nach THROTTLE_RECOVERY_AFTER Erfolgen."""
         session = _make_session(started_offset=5.0)
         session._current_throttle = 6.0  # Erhöht durch vorherige 429
+        session._backoff_active = True  # Recovery only triggers when backoff is active
 
         for _ in range(THROTTLE_RECOVERY_AFTER):
             _record_edit_success(session)
 
         # Throttle sollte reduziert sein
+        base = _compute_base_throttle(session._edits_sent)
         assert session._current_throttle < 6.0
-        assert session._current_throttle == max(6.0 * 0.7, DEFAULT_THROTTLE)
+        assert session._current_throttle == max(6.0 * THROTTLE_RECOVERY_FACTOR, base)
         # Counter zurückgesetzt
         assert session._consecutive_success == 0
 
-    def test_throttle_never_below_default(self) -> None:
-        """Throttle fällt nicht unter DEFAULT_THROTTLE."""
+    def test_throttle_never_below_curve(self) -> None:
+        """Throttle fällt nicht unter den Burst-Kurve-Wert."""
         session = _make_session(started_offset=5.0)
-        session._current_throttle = DEFAULT_THROTTLE  # Bereits am Default
+        session._edits_sent = 25  # Stable phase
+        session._current_throttle = STABLE_THROTTLE  # At curve already
+        session._backoff_active = True
 
         for _ in range(THROTTLE_RECOVERY_AFTER):
             _record_edit_success(session)
 
-        assert session._current_throttle == DEFAULT_THROTTLE
+        # Should not go below stable throttle (curve floor)
+        base = _compute_base_throttle(session._edits_sent)
+        assert session._current_throttle >= base
 
 
 class TestFloodControlIntermediateEdits:
@@ -785,16 +809,19 @@ class TestFloodControlIntermediateEdits:
 
     @pytest.mark.asyncio
     async def test_throttle_doubles_on_429(self) -> None:
-        """Throttle verdoppelt sich bei 429."""
+        """Throttle verdoppelt sich bei 429 (based on max of curve and current)."""
         session = _make_session(started_offset=3.0)
         session.is_first_edit = False
         session.last_edit_time = 0
+        # Set edits_sent to stable phase so base = 1.5
+        session._edits_sent = 25
         original_throttle = session._current_throttle
 
         session.message.edit_text = AsyncMock(side_effect=_FakeRetryAfter(30))
 
         await process_streaming_edit(session, "Hello")
 
+        # effective = max(base=1.5, current=1.5) * 2.0 = 3.0
         assert session._current_throttle == original_throttle * THROTTLE_BACKOFF_FACTOR
 
     @pytest.mark.asyncio
@@ -803,6 +830,7 @@ class TestFloodControlIntermediateEdits:
         session = _make_session(started_offset=3.0)
         session.is_first_edit = False
         session._current_throttle = 6.0  # Erhöht
+        session._backoff_active = True  # Recovery needs backoff flag
 
         for i in range(THROTTLE_RECOVERY_AFTER):
             session.last_edit_time = 0
@@ -814,10 +842,12 @@ class TestFloodControlIntermediateEdits:
 
     @pytest.mark.asyncio
     async def test_uses_adaptive_throttle_for_rate_limiting(self) -> None:
-        """Rate-Limiting nutzt _current_throttle statt fixen Wert."""
+        """Rate-Limiting nutzt backoff-erhoehten Throttle statt fixen Wert."""
         session = _make_session(started_offset=3.0)
         session.is_first_edit = False
-        session._current_throttle = 5.0  # Erhöht
+        session._current_throttle = 5.0  # Erhöht durch Backoff
+        session._backoff_active = True  # Backoff is active
+        session._edits_sent = 25  # Stable phase (base=1.5s)
         # Letzte Edit war vor 2 Sekunden (unter 5.0s Throttle)
         session.last_edit_time = time.monotonic() - 2.0
 
@@ -1049,3 +1079,228 @@ class TestStreamingCancellation:
         session.cancel()
         session.cancel()
         assert session.is_cancelled is True
+
+
+# ---------------------------------------------------------------------------
+# Burst-Mode Throttle Curve Tests
+# ---------------------------------------------------------------------------
+
+
+class TestBurstModeCurve:
+    """Tests for the graduated throttle curve (_compute_base_throttle)."""
+
+    def test_burst_phase_edits_1_to_5(self) -> None:
+        """Edits 1-5 must have burst throttle (0.2s)."""
+        for edits_sent in range(BURST_PHASE_END):
+            throttle = _compute_base_throttle(edits_sent)
+            assert throttle == BURST_THROTTLE, (
+                f"Edit {edits_sent + 1}: expected {BURST_THROTTLE}, got {throttle}"
+            )
+
+    def test_mid_phase_edits_6_to_10_range(self) -> None:
+        """Edits 6-10 have intervals between 0.4s and 1.0s."""
+        for edits_sent in range(BURST_PHASE_END, MID_PHASE_END):
+            throttle = _compute_base_throttle(edits_sent)
+            assert MID_THROTTLE_START <= throttle <= MID_THROTTLE_END, (
+                f"Edit {edits_sent + 1}: {throttle} not in "
+                f"[{MID_THROTTLE_START}, {MID_THROTTLE_END}]"
+            )
+
+    def test_mid_phase_monotonically_increasing(self) -> None:
+        """Mid-phase throttle increases monotonically."""
+        values = [
+            _compute_base_throttle(i) for i in range(BURST_PHASE_END, MID_PHASE_END)
+        ]
+        for i in range(len(values) - 1):
+            assert values[i] <= values[i + 1], (
+                f"Mid-phase not monotonic at edit {i + MID_PHASE_START}: {values}"
+            )
+
+    def test_ramp_phase_edits_11_to_20_range(self) -> None:
+        """Edits 11-20 have intervals between 1.0s and 1.5s."""
+        for edits_sent in range(MID_PHASE_END, RAMP_PHASE_END):
+            throttle = _compute_base_throttle(edits_sent)
+            assert RAMP_THROTTLE_START <= throttle <= RAMP_THROTTLE_END, (
+                f"Edit {edits_sent + 1}: {throttle} not in "
+                f"[{RAMP_THROTTLE_START}, {RAMP_THROTTLE_END}]"
+            )
+
+    def test_ramp_phase_monotonically_increasing(self) -> None:
+        """Ramp-phase throttle increases monotonically."""
+        values = [
+            _compute_base_throttle(i) for i in range(MID_PHASE_END, RAMP_PHASE_END)
+        ]
+        for i in range(len(values) - 1):
+            assert values[i] <= values[i + 1], (
+                f"Ramp-phase not monotonic at edit {i + RAMP_PHASE_START}: {values}"
+            )
+
+    def test_stable_phase_edits_21_plus(self) -> None:
+        """Edits 21+ are stable at 1.5s."""
+        for edits_sent in [20, 25, 50, 100, 500]:
+            throttle = _compute_base_throttle(edits_sent)
+            assert throttle == STABLE_THROTTLE, (
+                f"Edit {edits_sent + 1}: expected {STABLE_THROTTLE}, got {throttle}"
+            )
+
+    def test_boundary_burst_to_mid(self) -> None:
+        """Edit 5 is burst, edit 6 starts mid-phase."""
+        assert _compute_base_throttle(4) == BURST_THROTTLE  # edit 5
+        assert _compute_base_throttle(5) == MID_THROTTLE_START  # edit 6
+
+    def test_boundary_mid_to_ramp(self) -> None:
+        """Edit 10 ends mid-phase, edit 11 starts ramp."""
+        assert _compute_base_throttle(9) == MID_THROTTLE_END  # edit 10
+        assert _compute_base_throttle(10) == RAMP_THROTTLE_START  # edit 11
+
+    def test_boundary_ramp_to_stable(self) -> None:
+        """Edit 20 ends ramp, edit 21 starts stable."""
+        assert _compute_base_throttle(19) == RAMP_THROTTLE_END  # edit 20
+        assert _compute_base_throttle(20) == STABLE_THROTTLE  # edit 21
+
+
+class TestBurstModeBackoff:
+    """Tests for backoff interaction with burst-mode curve."""
+
+    def test_backoff_during_burst_doubles_burst_throttle(self) -> None:
+        """429 during burst phase doubles the current base (burst) throttle."""
+        session = _make_session(started_offset=3.0)
+        session._edits_sent = 2  # In burst phase
+
+        _apply_flood_backoff(session, retry_after=5)
+
+        # base for edit 3 = BURST_THROTTLE (0.2)
+        # effective = max(BURST_THROTTLE, DEFAULT_THROTTLE) = DEFAULT_THROTTLE
+        # doubled = DEFAULT_THROTTLE * 2 = 3.0
+        expected = DEFAULT_THROTTLE * THROTTLE_BACKOFF_FACTOR
+        assert session._current_throttle == expected
+        assert session._backoff_active is True
+
+    def test_backoff_during_stable_doubles_stable_throttle(self) -> None:
+        """429 during stable phase doubles the stable throttle."""
+        session = _make_session(started_offset=3.0)
+        session._edits_sent = 25
+        session._current_throttle = STABLE_THROTTLE  # Reset to curve
+
+        _apply_flood_backoff(session, retry_after=3)
+
+        expected = STABLE_THROTTLE * THROTTLE_BACKOFF_FACTOR
+        assert session._current_throttle == expected
+
+    def test_effective_throttle_uses_backoff_over_curve(self) -> None:
+        """Effective throttle is backoff value when it exceeds the curve."""
+        session = _make_session(started_offset=3.0)
+        session._edits_sent = 2  # Burst phase, base = 0.2
+        _apply_flood_backoff(session, retry_after=5)
+
+        effective = _get_effective_throttle(session)
+        base = _compute_base_throttle(session._edits_sent)
+        assert effective > base
+        assert effective == session._current_throttle
+
+    def test_effective_throttle_uses_curve_when_no_backoff(self) -> None:
+        """Without backoff, effective throttle follows the curve."""
+        session = _make_session(started_offset=3.0)
+        session._edits_sent = 7  # Mid-phase
+        session._backoff_active = False
+
+        effective = _get_effective_throttle(session)
+        expected_base = _compute_base_throttle(7)
+        assert effective == expected_base
+
+
+class TestBurstModeRecovery:
+    """Tests for recovery from backoff back to burst-mode curve."""
+
+    def test_recovery_reduces_backoff_toward_curve(self) -> None:
+        """After 5 successful edits, throttle reduces by THROTTLE_RECOVERY_FACTOR."""
+        session = _make_session(started_offset=3.0)
+        session._edits_sent = 15  # Ramp phase
+        session._backoff_active = True
+        session._current_throttle = 4.0  # From backoff
+
+        throttle_before = session._current_throttle
+        for _ in range(THROTTLE_RECOVERY_AFTER):
+            _record_edit_success(session)
+
+        assert session._current_throttle < throttle_before
+
+    def test_recovery_deactivates_backoff_at_curve_floor(self) -> None:
+        """Backoff is deactivated when throttle reaches the curve value."""
+        session = _make_session(started_offset=3.0)
+        session._edits_sent = 25  # Stable = 1.5s
+        session._backoff_active = True
+        # Set throttle just slightly above curve so recovery brings it to floor
+        session._current_throttle = STABLE_THROTTLE * 1.05
+
+        for _ in range(THROTTLE_RECOVERY_AFTER):
+            _record_edit_success(session)
+
+        # Throttle should be at curve floor, backoff deactivated
+        assert session._backoff_active is False
+
+    def test_edits_sent_counter_increments(self) -> None:
+        """Each successful edit increments _edits_sent."""
+        session = _make_session(started_offset=3.0)
+        assert session._edits_sent == 0
+        _record_edit_success(session)
+        assert session._edits_sent == 1
+        _record_edit_success(session)
+        assert session._edits_sent == 2
+
+
+# ---------------------------------------------------------------------------
+# Local Mode Tests (AXOLENT_STREAMING_MODE=local)
+# ---------------------------------------------------------------------------
+
+
+class TestLocalMode:
+    """Tests for STREAMING_MODE=local (no throttle, desktop app)."""
+
+    @patch("application.streaming_handler.STREAMING_MODE", "local")
+    def test_compute_base_throttle_always_zero(self) -> None:
+        """In local mode, base throttle is always 0 regardless of edit count."""
+        for edits_sent in [0, 3, 7, 15, 25, 100]:
+            throttle = _compute_base_throttle(edits_sent)
+            assert throttle == LOCAL_MODE_THROTTLE, (
+                f"Local mode edit {edits_sent + 1}: expected 0, got {throttle}"
+            )
+
+    @patch("application.streaming_handler.STREAMING_MODE", "local")
+    def test_effective_throttle_zero_even_with_backoff(self) -> None:
+        """In local mode, effective throttle is 0 even if backoff was active."""
+        session = _make_session(started_offset=3.0)
+        session._edits_sent = 5
+        session._backoff_active = True
+        session._current_throttle = 5.0
+
+        effective = _get_effective_throttle(session)
+        assert effective == LOCAL_MODE_THROTTLE
+
+    @patch("application.streaming_handler.STREAMING_MODE", "local")
+    @pytest.mark.asyncio
+    async def test_process_streaming_edit_fires_immediately(self) -> None:
+        """In local mode, edits fire without any delay."""
+        session = _make_session(started_offset=0.0)  # Just started
+        session.accumulated_text = ""
+
+        await process_streaming_edit(session, "Hello")
+
+        # Should have fired an edit immediately (no first-edit delay)
+        session.message.edit_text.assert_called_once()
+
+    @patch("application.streaming_handler.STREAMING_MODE", "local")
+    @pytest.mark.asyncio
+    async def test_local_mode_rapid_successive_edits(self) -> None:
+        """In local mode, rapid successive edits all fire."""
+        session = _make_session(started_offset=0.0)
+        session.accumulated_text = ""
+
+        # Send 5 edits rapidly (simulating token-by-token)
+        for i in range(5):
+            session.last_edit_time = 0  # Reset for each
+            session.accumulated_text = ""
+            await process_streaming_edit(session, f"Token{i} ")
+
+        # All 5 should have been sent
+        assert session.message.edit_text.call_count == 5
