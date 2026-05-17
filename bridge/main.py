@@ -389,6 +389,11 @@ def main() -> None:
         model_registry=ModelRegistry(),
     )
 
+    # Initialize ProactiveTriggerService (time-awareness + nudges)
+    from application.proactive_trigger_service import ProactiveTriggerService
+
+    proactive_trigger_svc = ProactiveTriggerService()
+
     # Create ChatService with constructor injection
     chat_service = ChatService(
         provider_router=router,
@@ -396,6 +401,7 @@ def main() -> None:
         model_service=model_svc,
         task_router=task_router,
         self_awareness_service=self_awareness_svc,
+        proactive_trigger_service=proactive_trigger_svc,
     )
 
     log.info("Trinity memory system initialized (auto-loading active)")

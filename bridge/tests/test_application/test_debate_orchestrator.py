@@ -182,7 +182,9 @@ class TestDebateOrchestratorBasic:
         router = _make_router(providers)
         orchestrator = DebateOrchestrator(provider_router=router)
 
-        result = await orchestrator.debate(question="Test?", user_id=1, chat_id=10)
+        result = await orchestrator.debate(
+            question="Test?", user_id=1, chat_id=10, user_lang="en"
+        )
 
         assert "solo" in result.responses
         assert result.consensus_analysis is not None
@@ -214,7 +216,7 @@ class TestConsensusHeuristic:
         orchestrator = DebateOrchestrator(provider_router=router)
 
         result = await orchestrator.debate(
-            question="Was ist Bitcoin?", user_id=1, chat_id=10
+            question="Was ist Bitcoin?", user_id=1, chat_id=10, user_lang="en"
         )
 
         assert result.consensus_analysis is not None
@@ -242,7 +244,9 @@ class TestConsensusHeuristic:
         router = _make_router(providers)
         orchestrator = DebateOrchestrator(provider_router=router)
 
-        result = await orchestrator.debate(question="Irgendwas", user_id=1, chat_id=10)
+        result = await orchestrator.debate(
+            question="Irgendwas", user_id=1, chat_id=10, user_lang="en"
+        )
 
         assert result.consensus_analysis is not None
         assert "different" in result.consensus_analysis.lower()

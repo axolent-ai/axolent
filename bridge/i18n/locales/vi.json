@@ -730,19 +730,67 @@
     },
     "fallback.notice": {
       "text": "Luu y: mo hinh chinh khong kha dung, phan hoi tu {backup}.",
-      "source_hash": "fb01a1c2d3e4f5a6",
+      "source_hash": "a3ed60e28bf84345",
       "auto_translated": true,
       "reviewed": false
     },
     "fallback.all_failed": {
       "text": "Xin loi, hien khong co nha cung cap AI nao san sang. Vui long thu lai sau.",
-      "source_hash": "fb02b2c3d4e5f6a7",
+      "source_hash": "ad633918547bac01",
       "auto_translated": true,
       "reviewed": false
     },
     "fallback.rate_limited": {
       "text": "Da dat gioi han toc do. Dang thu mo hinh du phong...",
-      "source_hash": "fb03c3d4e5f6a7b8",
+      "source_hash": "818c678f09d7648f",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "time_context.header": {
+      "text": "[TIME CONTEXT]",
+      "source_hash": "9149c0e49b101be6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "time_context.current_time": {
+      "text": "Current local time: {time}",
+      "source_hash": "d2449d63d6cc091a",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "time_context.time_of_day": {
+      "text": "Time of day: {period}",
+      "source_hash": "275b5acf155e6be6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "time_context.day": {
+      "text": "Day: {weekday}",
+      "source_hash": "26471a4e11122373",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "time_context.weekend": {
+      "text": "It is the weekend.",
+      "source_hash": "dbd6a906fd01e0cb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "time_context.user_active_hours": {
+      "text": "User typically active: {start} to {end}",
+      "source_hash": "d55ddc70b30b58f8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "time_context.unusual_hours": {
+      "text": "Note: User is active outside their normal hours. Consider a gentle acknowledgment if appropriate.",
+      "source_hash": "53472c4411f507db",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "time_context.capability": {
+      "text": "You HAVE access to the current local time and date shown above. When the user asks about time or date, answer with these values. NEVER claim you have no access to current time or real-time data.",
+      "source_hash": "9a882b4725098fd7",
       "auto_translated": true,
       "reviewed": false
     }

@@ -730,19 +730,67 @@
     },
     "fallback.notice": {
       "text": "Hinweis: Primäres Modell nicht verfügbar, Antwort von {backup}.",
-      "source_hash": "fb01a1c2d3e4f5a6",
+      "source_hash": "a3ed60e28bf84345",
       "auto_translated": false,
       "reviewed": true
     },
     "fallback.all_failed": {
       "text": "Leider ist gerade kein KI-Provider erreichbar. Bitte versuche es später erneut.",
-      "source_hash": "fb02b2c3d4e5f6a7",
+      "source_hash": "ad633918547bac01",
       "auto_translated": false,
       "reviewed": true
     },
     "fallback.rate_limited": {
       "text": "Rate-Limit erreicht. Versuche Backup-Modell...",
-      "source_hash": "fb03c3d4e5f6a7b8",
+      "source_hash": "818c678f09d7648f",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "time_context.header": {
+      "text": "[ZEITKONTEXT]",
+      "source_hash": "9149c0e49b101be6",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "time_context.current_time": {
+      "text": "Aktuelle Ortszeit: {time}",
+      "source_hash": "d2449d63d6cc091a",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "time_context.time_of_day": {
+      "text": "Tageszeit: {period}",
+      "source_hash": "275b5acf155e6be6",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "time_context.day": {
+      "text": "Tag: {weekday}",
+      "source_hash": "26471a4e11122373",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "time_context.weekend": {
+      "text": "Es ist Wochenende.",
+      "source_hash": "dbd6a906fd01e0cb",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "time_context.user_active_hours": {
+      "text": "Nutzer typischerweise aktiv: {start} bis {end}",
+      "source_hash": "d55ddc70b30b58f8",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "time_context.unusual_hours": {
+      "text": "Hinweis: Nutzer ist außerhalb der üblichen Zeiten aktiv. Gegebenenfalls dezent ansprechen.",
+      "source_hash": "53472c4411f507db",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "time_context.capability": {
+      "text": "Du HAST Zugriff auf die aktuelle Ortszeit und das Datum (siehe oben). Wenn der Nutzer nach Uhrzeit oder Datum fragt, antworte mit diesen Werten. Behaupte NIEMALS, du hättest keinen Zugriff auf die aktuelle Zeit oder Echtzeitdaten.",
+      "source_hash": "9a882b4725098fd7",
       "auto_translated": false,
       "reviewed": true
     }

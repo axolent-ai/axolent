@@ -148,20 +148,25 @@ def build_self_awareness_block(
 
 
 def build_effective_prompt(base_prompt: str, language_hint: str = "") -> str:
-    """Build the effective system prompt including language override.
+    """Build the effective system prompt including language lock.
+
+    Always injects a [LANGUAGE LOCK] block for ALL languages (including "de")
+    to ensure the LLM never defaults to training-bias language.
 
     Args:
         base_prompt: The combined base prompt.
         language_hint: Detected language (e.g. "en", "de").
 
     Returns:
-        Effective prompt with optional language override.
+        Effective prompt with language lock and diacritic hint.
     """
     effective = base_prompt
-    if language_hint and language_hint != "de":
+
+    if language_hint:
         lang_instruction = (
-            f"\n\n[LANGUAGE OVERRIDE] The user's message is in '{language_hint}'. "
-            f"You MUST reply in '{language_hint}'. This overrides all other language rules."
+            f"\n\n[LANGUAGE LOCK] You MUST reply in '{language_hint}'. "
+            f"This overrides any default language behavior. "
+            f"Do not switch languages mid-response."
         )
         effective = (effective + lang_instruction) if effective else lang_instruction
 

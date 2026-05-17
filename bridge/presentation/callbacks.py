@@ -14,6 +14,7 @@ from telegram.ext import ContextTypes
 
 from application.audit_service import log_command_audit
 from application.bookmark_service import BookmarkService
+from domain.language import DEFAULT_LANGUAGE
 from domain.markdown import markdown_to_telegram_html, strip_markdown
 from i18n.domain.i18n import t
 from presentation.decorators import require_private_chat, require_whitelist
@@ -158,10 +159,11 @@ async def handle_bookmark_delete_callback(
 
         # Get user language for i18n
         chat_service = context.application.bot_data.get("chat_service")
-        _del_lang = "en"
+        _del_lang = DEFAULT_LANGUAGE
         if chat_service and hasattr(chat_service, "get_chat_language"):
             _del_lang = (
-                await chat_service.get_chat_language(user_id, bm_chat_id) or "en"
+                await chat_service.get_chat_language(user_id, bm_chat_id)
+                or DEFAULT_LANGUAGE
             )
         _del_text = get_text(
             BOOKMARK_DELETE_CONFIRM_TEXTS, _del_lang, date_display=date_display

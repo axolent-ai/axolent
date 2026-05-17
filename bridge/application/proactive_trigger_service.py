@@ -20,6 +20,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
+from domain.language import DEFAULT_LANGUAGE
+from i18n import t
+
 log = logging.getLogger(__name__)
 
 # Frequency cap constants
@@ -256,19 +259,22 @@ class ProactiveTriggerService:
             return "Night"
 
     def get_time_context_block(
-        self, user_id: int, now: Optional[datetime] = None
+        self, user_id: int, now: Optional[datetime] = None, lang: str = ""
     ) -> str:
         """Build a time/pattern awareness block for the system prompt.
 
         Gives the LLM awareness of current local time and user patterns.
+        Includes a capability statement so the LLM does not deny time access.
 
         Args:
             user_id: Telegram user ID.
             now: Override current time (for testing).
+            lang: Language code for i18n (defaults to DEFAULT_LANGUAGE).
 
         Returns:
-            Prompt block string (may be empty if no patterns detected).
+            Prompt block string (always non-empty: includes time + capability).
         """
+        effective_lang = lang or DEFAULT_LANGUAGE
         current = now or datetime.now()
         weekday_names = {
             0: "Monday",
@@ -283,29 +289,44 @@ class ProactiveTriggerService:
         time_of_day = self._get_time_of_day(current.hour)
 
         lines = [
-            "[TIME CONTEXT]",
-            f"Current local time: {current.strftime('%Y-%m-%d %H:%M')}",
-            f"Time of day: {time_of_day}",
-            f"Day: {weekday_names[current.weekday()]}",
+            t("time_context.header", effective_lang),
+            t(
+                "time_context.current_time",
+                effective_lang,
+                time=current.strftime("%Y-%m-%d %H:%M"),
+            ),
+            t("time_context.time_of_day", effective_lang, period=time_of_day),
+            t(
+                "time_context.day",
+                effective_lang,
+                weekday=weekday_names[current.weekday()],
+            ),
         ]
 
         # Add user pattern observations
         record = self._activity.get(user_id)
         if record and len(record.message_timestamps) >= 20:
             start_h, end_h = self.get_active_hours(user_id)
-            lines.append(f"User typically active: {start_h:02d}:00 to {end_h:02d}:00")
+            lines.append(
+                t(
+                    "time_context.user_active_hours",
+                    effective_lang,
+                    start=f"{start_h:02d}:00",
+                    end=f"{end_h:02d}:00",
+                )
+            )
 
             # Detect if this is an unusual time for the user
             current_hour = current.hour
             if current_hour < start_h or current_hour > end_h:
-                lines.append(
-                    "Note: User is active outside their normal hours. "
-                    "Consider a gentle acknowledgment if appropriate."
-                )
+                lines.append(t("time_context.unusual_hours", effective_lang))
 
         # Weekend awareness
         if current.weekday() >= 5:
-            lines.append("It is the weekend.")
+            lines.append(t("time_context.weekend", effective_lang))
+
+        # Capability statement: prevents LLM from denying time access
+        lines.append(t("time_context.capability", effective_lang))
 
         return "\n".join(lines)
 

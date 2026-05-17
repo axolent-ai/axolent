@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any, AsyncIterator, Optional
 
 from application.leakage_filter import check_for_system_prompt_leakage
 from domain.conversation import ConversationTurn, build_context_block
-from domain.language import detect_language_with_confidence
+from domain.language import DEFAULT_LANGUAGE, detect_language_with_confidence
 from domain.personality import build_effective_prompt
 from infrastructure.audit_log import write_audit_log
 from infrastructure.claude_process_pool import StreamEvent
@@ -473,7 +473,7 @@ class ChatService:
 
                 if not sticky_lang:
                     # First turn: detect and set sticky
-                    lang = detected_lang if confidence > 0 else "de"
+                    lang = detected_lang if confidence > 0 else DEFAULT_LANGUAGE
                     await set_language(uid, cid, lang)
                 elif confidence > 0.7 and detected_lang != sticky_lang:
                     # User implicitly switched language
@@ -488,7 +488,7 @@ class ChatService:
                 else:
                     lang = sticky_lang
 
-            if lang != "de":
+            if lang != DEFAULT_LANGUAGE:
                 log.info("Language for chat: '%s' (sticky)", lang)
 
             # Build effective prompt with language override
@@ -509,8 +509,10 @@ class ChatService:
             proactive_nudge = ""
             if self.proactive_trigger_service is not None:
                 self.proactive_trigger_service.record_activity(uid)
-                # Inject time context into system prompt
-                time_block = self.proactive_trigger_service.get_time_context_block(uid)
+                # Inject time context into system prompt (with language)
+                time_block = self.proactive_trigger_service.get_time_context_block(
+                    uid, lang=lang
+                )
                 if time_block:
                     effective_prompt = f"{effective_prompt}\n\n{time_block}"
                 # Check proactive triggers
@@ -824,7 +826,7 @@ class ChatService:
             detected_lang, confidence = detect_language_with_confidence(text)
 
             if not sticky_lang:
-                lang = detected_lang if confidence > 0 else "de"
+                lang = detected_lang if confidence > 0 else DEFAULT_LANGUAGE
                 await set_language(uid, cid, lang)
             elif confidence > 0.7 and detected_lang != sticky_lang:
                 # User implicitly switched language
@@ -858,7 +860,9 @@ class ChatService:
         # P1/P5: Proactive triggers (record activity + time context) [streaming path]
         if self.proactive_trigger_service is not None:
             self.proactive_trigger_service.record_activity(uid)
-            time_block = self.proactive_trigger_service.get_time_context_block(uid)
+            time_block = self.proactive_trigger_service.get_time_context_block(
+                uid, lang=lang
+            )
             if time_block:
                 effective_prompt = f"{effective_prompt}\n\n{time_block}"
 

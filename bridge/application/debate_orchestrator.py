@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from application.provider_router import ProviderRouter
+from domain.language import DEFAULT_LANGUAGE
+from domain.personality import build_effective_prompt
 from i18n import t
 
 log = logging.getLogger(__name__)
@@ -220,7 +222,7 @@ class DebateOrchestrator:
         question: str,
         user_id: int,
         chat_id: int,
-        user_lang: str = "en",
+        user_lang: str = DEFAULT_LANGUAGE,
     ) -> tuple[str, str | None, str | None, str | None]:
         """Query a single provider with timeout.
 
@@ -234,17 +236,11 @@ class DebateOrchestrator:
         Returns:
             Tuple: (provider_name, response_text_or_None, error_or_None, model_id_or_None)
         """
-        # Build language-aware system prompt so models respond in user's language
-        lang_instruction = (
-            f"Respond in the user's language: {user_lang}. "
-            if user_lang != "en"
-            else ""
+        # Build language-aware system prompt via central build_effective_prompt
+        base_prompt = (
+            "Answer concisely and informatively. Keep it to 2-4 sentences if possible."
         )
-        system_prompt = (
-            f"{lang_instruction}"
-            "Answer concisely and informatively. "
-            "Keep it to 2-4 sentences if possible."
-        )
+        system_prompt = build_effective_prompt(base_prompt, user_lang)
 
         try:
             response = await asyncio.wait_for(
@@ -268,7 +264,7 @@ class DebateOrchestrator:
             return (provider_name, None, str(exc), None)
 
     def _analyze_consensus(
-        self, responses: dict[str, str], user_lang: str = "en"
+        self, responses: dict[str, str], user_lang: str = DEFAULT_LANGUAGE
     ) -> str:
         """Simple consensus heuristic (Phase 1, no LLM judge).
 
@@ -319,7 +315,7 @@ class DebateOrchestrator:
         self,
         question: str,
         responses: dict[str, str],
-        user_lang: str = "en",
+        user_lang: str = DEFAULT_LANGUAGE,
     ) -> tuple[str, dict[str, str]]:
         """Build the judge prompt with anonymized provider names.
 
@@ -346,13 +342,11 @@ class DebateOrchestrator:
 
         answers_text = "\n".join(answer_blocks)
 
-        # Language instruction for synthesis/recommendation content
+        # Language instruction for synthesis/recommendation content (always active)
         lang_clause = (
             f"\nIMPORTANT: Write the synthesis and recommendation in "
             f"the user's language: {user_lang}. "
             f"JSON keys must remain in English.\n"
-            if user_lang != "en"
-            else ""
         )
 
         prompt = (
@@ -542,7 +536,7 @@ class DebateOrchestrator:
         responses: dict[str, str],
         user_id: int,
         chat_id: int,
-        user_lang: str = "en",
+        user_lang: str = DEFAULT_LANGUAGE,
     ) -> FinalVerdict | None:
         """Run the LLM-as-Judge final review.
 
@@ -571,12 +565,13 @@ class DebateOrchestrator:
             question, responses, user_lang=user_lang
         )
 
-        judge_system_prompt = (
+        judge_base_prompt = (
             "You are a neutral arbiter evaluating AI answers. "
             "You do not know the provider names and evaluate purely on quality: "
             "correctness, completeness, clarity, and relevance. "
             "ALWAYS respond with valid JSON, never with prose."
         )
+        judge_system_prompt = build_effective_prompt(judge_base_prompt, user_lang)
 
         # Judge provider selection: claude_persistent > claude > ollama_local
         judge_candidates = ["claude_persistent", "claude", "ollama_local"]
@@ -669,7 +664,7 @@ class DebateOrchestrator:
         question: str,
         user_id: int,
         chat_id: int,
-        user_lang: str = "en",
+        user_lang: str = DEFAULT_LANGUAGE,
     ) -> DebateResult:
         """Run a multi-AI debate.
 

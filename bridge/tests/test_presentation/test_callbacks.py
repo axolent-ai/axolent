@@ -207,8 +207,9 @@ class TestBookmarkDeleteCallback:
         # Chat confirmation must have been sent
         query.message.reply_text.assert_called_once()
         confirm_text = query.message.reply_text.call_args[0][0]
-        assert "Bookmark" in confirm_text
-        assert "removed" in confirm_text
+        # Confirmation contains bookmark-related word (EN or DE) and checkmark
+        assert "Bookmark" in confirm_text or "Lesezeichen" in confirm_text
+        assert "removed" in confirm_text.lower() or "entfernt" in confirm_text.lower()
 
         # Bookmark should actually be gone
         assert self._bookmark_svc.get_bookmark(1, 10, 200) is None

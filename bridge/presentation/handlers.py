@@ -33,6 +33,7 @@ from application.streaming_handler import (
     process_streaming_edit,
 )
 from domain.bookmark import format_bookmark_preview
+from domain.language import DEFAULT_LANGUAGE
 from i18n.domain.i18n import t
 from presentation.decorators import require_private_chat, require_whitelist
 from presentation.render import (
@@ -317,7 +318,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         re.IGNORECASE,
     )
     if _inline_cmd_match and not text.strip().startswith("/"):
-        _cmd_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+        _cmd_lang = (
+            await chat_service.get_chat_language(user_id, chat_id) or DEFAULT_LANGUAGE
+        )
         await update.message.reply_text(t("inline_command.warning", _cmd_lang))
         # Strip the command from the text before sending to LLM
         text = text[: _inline_cmd_match.start()].rstrip()
@@ -344,7 +347,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             skip_count = onboarding_storage.increment_skip_count(user_id)
             if skip_count == 3:
                 hint_lang = (
-                    await chat_service.get_chat_language(user_id, chat_id) or "de"
+                    await chat_service.get_chat_language(user_id, chat_id)
+                    or DEFAULT_LANGUAGE
                 )
                 hint = t("onboarding.hint", hint_lang)
                 await update.message.reply_text(hint)
@@ -596,8 +600,23 @@ async def _handle_message_streaming(
         with _active_sessions_lock:
             _active_streaming_sessions[session_key] = session
 
-        # Determine chat language once (used for text guard + status session)
-        chat_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+        # Resolve language ONCE before StatusSession (fixes race: NEU-08)
+        # This performs the same logic as ChatService smart-detection,
+        # so StatusSession starts with the correct language from the first update.
+        from domain.language import detect_language_with_confidence
+
+        sticky_lang = await chat_service.get_chat_language(user_id, chat_id)
+        detected_lang, confidence = detect_language_with_confidence(text)
+
+        if sticky_lang:
+            if confidence > 0.7 and detected_lang != sticky_lang:
+                chat_lang = detected_lang
+                await chat_service.set_chat_language(user_id, chat_id, chat_lang)
+            else:
+                chat_lang = sticky_lang
+        else:
+            chat_lang = detected_lang if confidence > 0 else DEFAULT_LANGUAGE
+            await chat_service.set_chat_language(user_id, chat_id, chat_lang)
 
         # Text Guard: streaming diacritic filter
         from application.text_guard_service import TextGuardService
@@ -644,6 +663,7 @@ async def _handle_message_streaming(
                 username=username,
                 system_prompt=_get_system_prompt(context),
                 persistent_provider=persistent_provider,
+                language_override=chat_lang,
                 reply_to_text=reply_to_text,
                 status_session=status_session,
             )
@@ -856,7 +876,9 @@ async def _handle_message_legacy(
     from application.text_guard_service import TextGuardService
 
     _legacy_tg = TextGuardService()
-    _legacy_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+    _legacy_lang = (
+        await chat_service.get_chat_language(user_id, chat_id) or DEFAULT_LANGUAGE
+    )
     _legacy_guard = _legacy_tg.get_guard(_legacy_lang, mode="fix")
     _response = result.response
     if _legacy_guard is not None:
@@ -899,7 +921,7 @@ async def handle_reset_command(
 
     # Read language BEFORE reset (reset clears sticky language)
     raw_lang = await chat_service.get_chat_language(user_id, chat_id)
-    lang = raw_lang or "de"
+    lang = raw_lang or DEFAULT_LANGUAGE
 
     await chat_service.reset(user_id, chat_id)
 
@@ -937,7 +959,9 @@ async def handle_lang_command(
     args: list[str] = context.args or []
     if not args:
         # Show inline keyboard with all languages
-        _usage_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+        _usage_lang = (
+            await chat_service.get_chat_language(user_id, chat_id) or DEFAULT_LANGUAGE
+        )
         keyboard = _build_lang_keyboard()
         await update.message.reply_text(
             t("lang.list_header", _usage_lang),
@@ -948,7 +972,9 @@ async def handle_lang_command(
     lang_code = args[0].lower().strip()
     if lang_code not in _SUPPORTED_LANGUAGES:
         supported = ", ".join(sorted(_SUPPORTED_LANGUAGES))
-        _err_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+        _err_lang = (
+            await chat_service.get_chat_language(user_id, chat_id) or DEFAULT_LANGUAGE
+        )
         await update.message.reply_text(
             t("lang.unknown", _err_lang, code=lang_code, supported=supported)
         )
@@ -1071,7 +1097,9 @@ async def handle_save_command(
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
     chat_service = _get_chat_service(context)
-    _save_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+    _save_lang = (
+        await chat_service.get_chat_language(user_id, chat_id) or DEFAULT_LANGUAGE
+    )
 
     # Must be a reply to another message
     reply_msg = update.message.reply_to_message
@@ -1137,7 +1165,9 @@ async def handle_bookmarks_command(
     username: str | None = user.username if user else None
 
     chat_service = _get_chat_service(context)
-    _bm_lang = await chat_service.get_chat_language(user_id, _bm_chat_id) or "de"
+    _bm_lang = (
+        await chat_service.get_chat_language(user_id, _bm_chat_id) or DEFAULT_LANGUAGE
+    )
 
     bookmark_service = _get_bookmark_service(context)
 
@@ -1236,7 +1266,7 @@ async def handle_help_command(
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
     # Choose language-specific help text (DE for "de", EN for all other languages)
-    lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+    lang = await chat_service.get_chat_language(user_id, chat_id) or DEFAULT_LANGUAGE
 
     _help_title = t("help.title", lang)
     _help_body = t("help.body", lang)
@@ -1272,7 +1302,7 @@ async def handle_start_command(
         return
 
     # Already onboarded: show welcome in sticky language
-    lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+    lang = await chat_service.get_chat_language(user_id, chat_id) or DEFAULT_LANGUAGE
     welcome_text = t("start.welcome", lang)
     await update.message.reply_text(welcome_text)
     await chat_service.save_static_response_to_history(user_id, chat_id, welcome_text)
@@ -1315,7 +1345,9 @@ async def handle_remember_command(
 
     chat_service = _get_chat_service(context)
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
-    _remember_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+    _remember_lang = (
+        await chat_service.get_chat_language(user_id, chat_id) or DEFAULT_LANGUAGE
+    )
 
     if reply_msg and reply_msg.text:
         # Reply to bot message: save bot response
@@ -1410,7 +1442,9 @@ async def handle_memory_command(
     args: list[str] = context.args or []
 
     chat_service = _get_chat_service(context)
-    _mem_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+    _mem_lang = (
+        await chat_service.get_chat_language(user_id, chat_id) or DEFAULT_LANGUAGE
+    )
 
     # /memory search <query>
     if len(args) >= 2 and args[0].lower() == "search":
@@ -1479,7 +1513,9 @@ async def handle_forget_command(
     args: list[str] = context.args or []
 
     chat_service = _get_chat_service(context)
-    _forget_lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+    _forget_lang = (
+        await chat_service.get_chat_language(user_id, chat_id) or DEFAULT_LANGUAGE
+    )
 
     if not args:
         await update.message.reply_text(t("forget.usage", _forget_lang))
@@ -1589,7 +1625,9 @@ async def handle_setlimit_command(
     args: list[str] = context.args or []
 
     chat_service = _get_chat_service(context)
-    _sl_lang = await chat_service.get_chat_language(user_id, chat_id) or "en"
+    _sl_lang = (
+        await chat_service.get_chat_language(user_id, chat_id) or DEFAULT_LANGUAGE
+    )
 
     if not args:
         current = rate_limiter.get_user_profile(user_id)
@@ -1695,7 +1733,7 @@ async def handle_setmodel_command(
     user_id: int = user.id if user else 0
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
-    lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+    lang = await chat_service.get_chat_language(user_id, chat_id) or DEFAULT_LANGUAGE
     slot_names = ", ".join(TaskSlot.all_names())
 
     args: list[str] = context.args or []
@@ -1852,7 +1890,7 @@ async def handle_resetmodel_command(
     user_id: int = user.id if user else 0
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
-    lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+    lang = await chat_service.get_chat_language(user_id, chat_id) or DEFAULT_LANGUAGE
 
     deleted = model_service.reset_user_model(user_id)
     default_display = model_service.get_model_display_name(DEFAULT_MODEL)
@@ -1889,7 +1927,7 @@ async def handle_models_command(
     user_id: int = user.id if user else 0
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
-    lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+    lang = await chat_service.get_chat_language(user_id, chat_id) or DEFAULT_LANGUAGE
 
     # Get TaskRouter for slot defaults
     task_router = context.application.bot_data.get("task_router")
@@ -1970,7 +2008,7 @@ async def handle_settings_command(
     user_id: int = user.id if user else 0
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
-    lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+    lang = await chat_service.get_chat_language(user_id, chat_id) or DEFAULT_LANGUAGE
 
     from presentation.settings_callbacks import build_main_menu_keyboard
 
@@ -2171,7 +2209,9 @@ async def handle_debate_command(
 
     # Language for early messages
     chat_service = _get_chat_service(context)
-    _deb_lang = await chat_service.get_chat_language(user_id, chat_id) or "en"
+    _deb_lang = (
+        await chat_service.get_chat_language(user_id, chat_id) or DEFAULT_LANGUAGE
+    )
 
     # Extract question from command arguments
     args: list[str] = context.args or []

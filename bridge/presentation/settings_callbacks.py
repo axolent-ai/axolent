@@ -21,6 +21,7 @@ from telegram.ext import ContextTypes
 
 from application.audit_service import log_command_audit
 from application.model_service import DEFAULT_MODEL, ModelService, resolve_alias
+from domain.language import DEFAULT_LANGUAGE
 from domain.task_slot import TaskSlot
 from i18n.domain.i18n import t
 from presentation.decorators import require_private_chat, require_whitelist
@@ -372,9 +373,11 @@ async def handle_settings_callback(
         return
 
     chat_service = _get_chat_service(context)
-    lang = "de"
+    lang = DEFAULT_LANGUAGE
     if chat_service is not None and hasattr(chat_service, "get_chat_language"):
-        lang = await chat_service.get_chat_language(user_id, chat_id) or "de"
+        lang = (
+            await chat_service.get_chat_language(user_id, chat_id) or DEFAULT_LANGUAGE
+        )
 
     # --- Route by callback data ---
 

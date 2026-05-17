@@ -1348,7 +1348,10 @@ class TestHandleDebateCommand:
         update.message.reply_text.assert_called_once()
         reply_text = update.message.reply_text.call_args[0][0]
         assert "/debate" in reply_text
-        assert "question" in reply_text
+        # Help text contains usage example (language-independent check)
+        assert (
+            "Bitcoin" in reply_text or "question" in reply_text or "Frage" in reply_text
+        )
 
     @patch("presentation.handlers.write_raw_audit")
     async def test_debate_with_question_calls_orchestrator(
@@ -1818,7 +1821,9 @@ class TestResetCancelsActiveStream:
         await handle_setlimit_command(update, context)
 
         reply_text = update.message.reply_text.call_args[0][0]
-        assert "Unknown profile" in reply_text
+        # The invalid profile name must appear in the error message (language-independent)
+        assert "megapower" in reply_text
+        assert "Unknown profile" in reply_text or "Unbekanntes Profil" in reply_text
 
     async def test_setlimit_no_args_shows_current(self) -> None:
         """/setlimit without arguments shows current profile."""
@@ -1833,5 +1838,6 @@ class TestResetCancelsActiveStream:
         await handle_setlimit_command(update, context)
 
         reply_text = update.message.reply_text.call_args[0][0]
-        assert "Current profile" in reply_text
+        # Must show current profile name and available profiles (language-independent)
+        assert "Current profile" in reply_text or "Aktuelles Profil" in reply_text
         assert "Normal" in reply_text

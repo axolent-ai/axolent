@@ -19,6 +19,11 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
+# Central fallback language constant.
+# Used by ALL handlers and services when no sticky language is available.
+# Do NOT use hardcoded "de" or "en" in handler fallbacks — always reference this.
+DEFAULT_LANGUAGE: str = "de"
+
 # --- Unicode script patterns for non-Latin detection ---
 
 _SCRIPT_PATTERNS: dict[str, re.Pattern] = {

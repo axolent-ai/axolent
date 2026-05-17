@@ -46,39 +46,40 @@ class TestPersonalityConfig:
 
 
 class TestBuildEffectivePrompt:
-    """build_effective_prompt mit optionalem Language-Override."""
+    """build_effective_prompt mit LANGUAGE LOCK fuer alle Sprachen."""
 
-    def test_no_language_override_for_german(self) -> None:
-        """Bei 'de' wird kein Language-Override, aber DIACRITIC RULE angehängt."""
+    def test_language_lock_for_german(self) -> None:
+        """Bei 'de' wird LANGUAGE LOCK angehaengt (symmetrisch wie alle Sprachen)."""
         result = build_effective_prompt("Base prompt.", "de")
-        assert "LANGUAGE OVERRIDE" not in result
+        assert "[LANGUAGE LOCK]" in result
+        assert "'de'" in result
         assert result.startswith("Base prompt.")
         assert "[DIACRITIC RULE]" in result
 
-    def test_language_override_for_english(self) -> None:
-        """Bei 'en' wird ein Language-Override-Block angehängt."""
+    def test_language_lock_for_english(self) -> None:
+        """Bei 'en' wird ein LANGUAGE LOCK Block angehaengt."""
         result = build_effective_prompt("Base prompt.", "en")
-        assert "LANGUAGE OVERRIDE" in result
+        assert "[LANGUAGE LOCK]" in result
         assert "'en'" in result
 
-    def test_language_override_for_spanish(self) -> None:
-        """Beliebige Nicht-de-Sprache löst Override und DIACRITIC RULE aus."""
+    def test_language_lock_for_spanish(self) -> None:
+        """Beliebige Sprache loest LANGUAGE LOCK und DIACRITIC RULE aus."""
         result = build_effective_prompt("Base.", "es")
-        assert "LANGUAGE OVERRIDE" in result
+        assert "[LANGUAGE LOCK]" in result
         assert "'es'" in result
         assert "[DIACRITIC RULE]" in result
 
-    def test_empty_language_hint_no_override(self) -> None:
-        """Leerer Language-Hint fügt keinen Override an, aber DE DIACRITIC RULE."""
+    def test_empty_language_hint_no_lock(self) -> None:
+        """Leerer Language-Hint fuegt keinen LANGUAGE LOCK an, aber DE DIACRITIC RULE."""
         result = build_effective_prompt("Base.", "")
-        assert "LANGUAGE OVERRIDE" not in result
+        assert "[LANGUAGE LOCK]" not in result
         assert result.startswith("Base.")
         assert "[DIACRITIC RULE]" in result
 
     def test_empty_base_prompt_with_language(self) -> None:
-        """Auch ohne Base-Prompt wird Language-Override gesetzt."""
+        """Auch ohne Base-Prompt wird LANGUAGE LOCK gesetzt."""
         result = build_effective_prompt("", "fr")
-        assert "LANGUAGE OVERRIDE" in result
+        assert "[LANGUAGE LOCK]" in result
         assert "'fr'" in result
         assert "[DIACRITIC RULE]" in result
 
