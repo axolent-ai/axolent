@@ -394,6 +394,25 @@ def main() -> None:
 
     proactive_trigger_svc = ProactiveTriggerService()
 
+    # Initialize StyleAdaptionService (P3: adaptive communication style)
+    from application.style_adaption_service import StyleAdaptionService
+
+    style_adaption_svc = StyleAdaptionService()
+
+    # Initialize FallbackResolver (provider failover for non-streaming)
+    from application.fallback_resolver import (
+        FallbackResolver,
+        load_fallback_config_from_env,
+    )
+
+    fallback_config = load_fallback_config_from_env()
+    fallback_resolver = FallbackResolver(
+        provider_router=router,
+        fallback_chains=fallback_config["fallback_chains"],
+        timeout_seconds=fallback_config["timeout_seconds"],
+        user_notice_threshold=fallback_config["user_notice_threshold"],
+    )
+
     # Create ChatService with constructor injection
     chat_service = ChatService(
         provider_router=router,
@@ -402,6 +421,8 @@ def main() -> None:
         task_router=task_router,
         self_awareness_service=self_awareness_svc,
         proactive_trigger_service=proactive_trigger_svc,
+        style_adaption_service=style_adaption_svc,
+        fallback_resolver=fallback_resolver,
     )
 
     log.info("Trinity memory system initialized (auto-loading active)")

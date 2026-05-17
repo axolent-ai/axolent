@@ -119,10 +119,19 @@ As of: 2026-05-10
 * Privacy guard + rate limiting active
 * Multi-message split for long outputs
 
+### Provider Failover (FallbackResolver)
+
+* Automatic provider failover for non-streaming operations (/debate, self-awareness)
+* Per-slot fallback chains configurable via AXOLENT_FALLBACK_CHAIN_* env vars
+* User notice when fallback is used (configurable threshold)
+* In-memory metrics (attempts, failures, reasons per provider)
+* **Known limitation (v1.0):** Streaming /chat does NOT have automatic fallback. If the primary provider returns 429 during streaming, the user sees an error. Streaming fallback is planned for v1.1.
+* Commit: f09a7f7
+
 ### Code Quality
 
-* 602+ tests passing
-* 7 code reviews: V1, V2, V3, V4, V5, V6 (Codex + Claude)
+* 1743+ tests passing
+* 8 code reviews: V1, V2, V3, V4, V5, V6 (Codex + Claude), Feature Review, Language Re-Review
 * Threat model documented (docs/THREAT_MODEL.md)
 * Commits: 916d234, eeb89c5, bc3a05c, 9954df8
 

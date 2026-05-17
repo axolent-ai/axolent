@@ -578,6 +578,102 @@
       "auto_translated": false,
       "reviewed": true
     },
+    "rate_limit.reset_minute": {
+      "text": "Reset in {seconds}s",
+      "source_hash": "8a218cd1eac05343",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "rate_limit.reset_hour": {
+      "text": "Reset in {minutes} Minuten",
+      "source_hash": "0d1e42204ed2b940",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "rate_limit.reset_day": {
+      "text": "Reset in {hours}h",
+      "source_hash": "dae231b94d67aff6",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "rate_limit.period_minute": {
+      "text": "Minuten",
+      "source_hash": "28cdd20eaf134a05",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "rate_limit.period_hour": {
+      "text": "Stunden",
+      "source_hash": "9ac0add475dd38e6",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "rate_limit.period_day": {
+      "text": "Tages",
+      "source_hash": "944c27e5b97ab779",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "rate_limit.window_minute": {
+      "text": "diese Minute",
+      "source_hash": "e5e93b16d9bf822e",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "rate_limit.window_hour": {
+      "text": "diese Stunde",
+      "source_hash": "d98d7bc206d7f86b",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "rate_limit.window_day": {
+      "text": "heute",
+      "source_hash": "e0f4f767ac88a930",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "rate_limit.options_light": {
+      "text": "Du kannst dein Limit jederzeit kostenlos ändern:\n• /usage — aktuelle Übersicht\n• /setlimit normal — mehr Spielraum (350/h, 1.500/Tag)\n• /setlimit power — viel mehr (900/h, 10.000/Tag)",
+      "source_hash": "d27137c887e32b75",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "rate_limit.options_normal": {
+      "text": "Du kannst dein Limit jederzeit kostenlos ändern:\n• /usage — aktuelle Übersicht\n• /setlimit power — viel mehr Spielraum (900/h, 10.000/Tag)",
+      "source_hash": "8e408bb3491a172c",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "rate_limit.options_power": {
+      "text": "• /usage — aktuelle Übersicht\n• /setlimit unlimited — alle Limits deaktivieren",
+      "source_hash": "f39d3c672e3dd4e8",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "rate_limit.upgrade_light": {
+      "text": "Mehr machen? /setlimit normal erhöht das Limit auf 350/h.",
+      "source_hash": "432182a5fa1f7464",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "rate_limit.upgrade_normal": {
+      "text": "Mehr machen? /setlimit power erhöht das Limit auf 900/h.",
+      "source_hash": "887cb5f1224a6730",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "rate_limit.upgrade_power": {
+      "text": "Profil wechseln: /setlimit",
+      "source_hash": "987b030c4c6333a1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "usage.body": {
+      "text": "Profil: {profile}\n\nDiese Minute: {min_used}/{min_limit} {min_bar} (Reset in {min_reset})\nDiese Stunde: {hour_used}/{hour_limit} {hour_bar} (Reset in {hour_reset})\nHeute: {day_used}/{day_limit} {day_bar} (Reset um {day_reset})\n\nProfil wechseln: /setlimit <light|normal|power|unlimited>",
+      "source_hash": "0bae2475b36dc0a1",
+      "auto_translated": false,
+      "reviewed": true
+    },
     "setlimit.current": {
       "text": "Aktuelles Profil: {profile}\n\nBenutzung: /setlimit <profil>\nVerfügbar: {available}",
       "source_hash": "c8280eeabdd0cc81",

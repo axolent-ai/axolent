@@ -361,49 +361,47 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if not result.allowed:
             from datetime import datetime, timezone
 
-            # Human-readable error message with actionable solution
-            period_labels = {"minute": "minute", "hour": "hour", "day": "day"}
-            period_label = period_labels.get(result.period or "", "")
+            _rl_lang = (
+                await chat_service.get_chat_language(user_id, chat_id)
+                or DEFAULT_LANGUAGE
+            )
+
+            # Period label and reset info via i18n
             retry_display = int(result.retry_after) if result.retry_after else 0
+            period_key = f"rate_limit.period_{result.period or 'minute'}"
+            period_label = t(period_key, _rl_lang)
 
             if result.period == "minute":
-                reset_info = f"Reset in {retry_display}s"
+                reset_info = t(
+                    "rate_limit.reset_minute", _rl_lang, seconds=retry_display
+                )
             elif result.period == "hour":
-                reset_info = f"Reset in {retry_display // 60} minutes"
-            else:
-                reset_info = f"Reset in {retry_display // 3600}h"
-
-            # Profile-specific upgrade options
-            if result.profile == "light":
-                options = (
-                    "You can change your limit anytime for free:\n"
-                    "• /usage — current overview\n"
-                    "• /setlimit normal — more headroom "
-                    "(350/h, 1,500/day)\n"
-                    "• /setlimit power — much more "
-                    "(900/h, 10,000/day)"
-                )
-            elif result.profile == "normal":
-                options = (
-                    "You can change your limit anytime for free:\n"
-                    "• /usage — current overview\n"
-                    "• /setlimit power — much more headroom "
-                    "(900/h, 10,000/day)"
+                reset_info = t(
+                    "rate_limit.reset_hour", _rl_lang, minutes=retry_display // 60
                 )
             else:
-                options = (
-                    "• /usage — current overview\n"
-                    "• /setlimit unlimited — disable all limits"
+                reset_info = t(
+                    "rate_limit.reset_day", _rl_lang, hours=retry_display // 3600
                 )
 
-            limit_msg = (
-                f"You have reached your "
-                f"{period_label} limit "
-                f"({result.current_count}/{result.limit_value} "
-                f"{'this ' + period_label if result.period != 'day' else 'today'}"
-                f", {result.profile.capitalize()} profile).\n\n"
-                f"{reset_info}.\n\n"
-                f"{options}"
+            # Profile-specific options via i18n
+            options_key = f"rate_limit.options_{result.profile}"
+            options = t(options_key, _rl_lang)
+
+            # Window display via i18n
+            window_key = f"rate_limit.window_{result.period or 'minute'}"
+            window = t(window_key, _rl_lang)
+
+            limit_msg = t(
+                "rate_limit.exceeded",
+                _rl_lang,
+                period=period_label,
+                current=result.current_count,
+                limit=result.limit_value,
+                window=f"{window}, {result.profile.capitalize()}",
+                profile=result.profile.capitalize(),
+                reset_info=reset_info,
+                options=options,
             )
             await update.message.reply_text(limit_msg)
 
@@ -432,53 +430,62 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         # 70% warning (once per window)
         if result.warning_70 and result.warning_period:
+            _warn_lang = (
+                await chat_service.get_chat_language(user_id, chat_id)
+                or DEFAULT_LANGUAGE
+            )
             usage = rate_limiter.get_usage(user_id)
             if result.warning_period == "minute":
                 warn_used = usage.minute_used
                 warn_limit = usage.minute_limit
-                warn_reset = f"Reset in {int(usage.minute_reset_seconds)}s"
-                warn_period_label = "minute"
+                warn_reset = t(
+                    "rate_limit.reset_minute",
+                    _warn_lang,
+                    seconds=int(usage.minute_reset_seconds),
+                )
             elif result.warning_period == "hour":
                 warn_used = usage.hour_used
                 warn_limit = usage.hour_limit
-                warn_reset = f"Reset in {int(usage.hour_reset_seconds) // 60} minutes"
-                warn_period_label = "hour"
+                warn_reset = t(
+                    "rate_limit.reset_hour",
+                    _warn_lang,
+                    minutes=int(usage.hour_reset_seconds) // 60,
+                )
             else:
                 warn_used = usage.day_used
                 warn_limit = usage.day_limit
-                warn_reset = f"Reset in {int(usage.day_reset_seconds) // 3600}h"
-                warn_period_label = "day"
-
-            # Next higher profile as upgrade suggestion
-            user_profile = result.profile
-            if user_profile == "light":
-                upgrade_hint = (
-                    "Want to do more? /setlimit normal raises the limit to 350/h."
+                warn_reset = t(
+                    "rate_limit.reset_day",
+                    _warn_lang,
+                    hours=int(usage.day_reset_seconds) // 3600,
                 )
-            elif user_profile == "normal":
-                upgrade_hint = (
-                    "Want to do more? /setlimit power raises the limit to 900/h."
-                )
-            else:
-                upgrade_hint = "Change profile: /setlimit"
 
-            warn_msg = (
-                f"\U0001f4a1 You are using Axolent actively, "
-                f"already {warn_used}/{warn_limit} requests "
-                f"this {warn_period_label}.\n"
-                f"{warn_reset}.\n\n"
-                f"{upgrade_hint}"
+            warn_period_label = t(
+                f"rate_limit.period_{result.warning_period}", _warn_lang
+            )
+
+            # Upgrade hint via i18n
+            upgrade_key = f"rate_limit.upgrade_{result.profile}"
+            upgrade_hint = t(upgrade_key, _warn_lang)
+
+            warn_msg = t(
+                "rate_limit.warning_70",
+                _warn_lang,
+                used=warn_used,
+                limit=warn_limit,
+                period=warn_period_label,
+                reset_info=warn_reset,
+                upgrade_hint=upgrade_hint,
             )
             await update.message.reply_text(warn_msg)
 
         # Unlimited reminder
         if result.unlimited_reminder:
-            reminder_msg = (
-                "\U0001f513 Note: You are in unlimited mode. "
-                "No limits active.\n"
-                "If you want more structure: "
-                "/setlimit normal"
+            _remind_lang = (
+                await chat_service.get_chat_language(user_id, chat_id)
+                or DEFAULT_LANGUAGE
             )
+            reminder_msg = t("rate_limit.unlimited_reminder", _remind_lang)
             await update.message.reply_text(reminder_msg)
             # Audit for unlimited reminder
             from datetime import datetime, timezone
@@ -600,23 +607,13 @@ async def _handle_message_streaming(
         with _active_sessions_lock:
             _active_streaming_sessions[session_key] = session
 
-        # Resolve language ONCE before StatusSession (fixes race: NEU-08)
-        # This performs the same logic as ChatService smart-detection,
-        # so StatusSession starts with the correct language from the first update.
-        from domain.language import detect_language_with_confidence
+        # Resolve language ONCE before StatusSession via LanguageResolver
+        # (Phase 3: replaces inline detection logic, fixes race NEU-08)
+        from application.language_resolver import LanguageResolver
 
-        sticky_lang = await chat_service.get_chat_language(user_id, chat_id)
-        detected_lang, confidence = detect_language_with_confidence(text)
-
-        if sticky_lang:
-            if confidence > 0.7 and detected_lang != sticky_lang:
-                chat_lang = detected_lang
-                await chat_service.set_chat_language(user_id, chat_id, chat_lang)
-            else:
-                chat_lang = sticky_lang
-        else:
-            chat_lang = detected_lang if confidence > 0 else DEFAULT_LANGUAGE
-            await chat_service.set_chat_language(user_id, chat_id, chat_lang)
+        _lang_resolver = LanguageResolver()
+        _lang_ctx = await _lang_resolver.resolve(user_id, chat_id, text)
+        chat_lang = _lang_ctx.code
 
         # Text Guard: streaming diacritic filter
         from application.text_guard_service import TextGuardService
@@ -742,6 +739,18 @@ async def _handle_message_streaming(
                 pass
 
         duration = time.monotonic() - t_start
+
+        # T25: If cancelled, treat as terminal — no fallback finalize, no save.
+        # This prevents /reset from storing partial responses into history.
+        if session.is_cancelled:
+            log.info(
+                "Stream cancelled (terminal): user=%d chat=%d, "
+                "discarding %d accumulated chars",
+                user_id,
+                chat_id,
+                len(session.accumulated_text or ""),
+            )
+            final_text = ""  # explicitly discard
 
         # Fallback: no final text but accumulated text available
         if not final_text and session.accumulated_text and not had_error:
@@ -909,14 +918,21 @@ async def handle_reset_command(
     user_id: int = user.id if user else 0
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
-    # T25: Cancel active streaming session before reset
+    # T25: Cancel active streaming session before reset.
+    # The stream handler checks is_cancelled as a terminal state and will
+    # never finalize/save after cancel. We still wait briefly to give the
+    # event loop a chance to process the cancellation before clearing state.
     session_key = (user_id, chat_id)
     with _active_sessions_lock:
         active_session = _active_streaming_sessions.get(session_key)
     if active_session is not None:
         active_session.cancel()
-        # Brief delay to let the stream loop break
-        await asyncio.sleep(0.2)
+        # Wait up to 500ms in 100ms increments for stream loop to acknowledge
+        for _ in range(5):
+            await asyncio.sleep(0.1)
+            with _active_sessions_lock:
+                if _active_streaming_sessions.get(session_key) is None:
+                    break
         log.info("Reset: cancelled active stream for user=%d chat=%d", user_id, chat_id)
 
     # Read language BEFORE reset (reset clears sticky language)
@@ -1555,21 +1571,29 @@ async def handle_usage_command(
 
     user = update.effective_user
     user_id: int = user.id if user else 0
+    chat_id: int = update.effective_chat.id if update.effective_chat else 0
+    chat_service = _get_chat_service(context)
+    _usage_lang = (
+        await chat_service.get_chat_language(user_id, chat_id) or DEFAULT_LANGUAGE
+    )
 
     usage = rate_limiter.get_usage(user_id)
 
     if usage.profile == "unlimited":
-        msg = f"{t('usage.header', 'en')}\n\n{t('usage.profile_unlimited', 'en')}"  # i18n: ok
+        msg = (
+            f"{t('usage.header', _usage_lang)}\n\n"
+            f"{t('usage.profile_unlimited', _usage_lang)}"
+        )
     else:
         profile_display = usage.profile.capitalize()
 
-        # Reset-Zeiten formatieren
+        # Reset times
         min_reset = f"{int(usage.minute_reset_seconds)}s"
         hour_reset_min = int(usage.hour_reset_seconds) // 60
         hour_reset = f"{hour_reset_min} Min"
         day_reset = "00:00"
 
-        # Progress-Bars (10 Zeichen breit)
+        # Progress bars (10 chars wide)
         def _bar(used: int, limit: int) -> str:
             if limit == 0:
                 return "[██████████]"
@@ -1583,22 +1607,15 @@ async def handle_usage_command(
         day_bar = _bar(usage.day_used, usage.day_limit)
 
         msg = (
-            f"\U0001f4ca Your usage & profile:\n\n"
-            f"Profile: {profile_display}\n\n"
-            f"This minute: {usage.minute_used}/{usage.minute_limit} "
-            f"{min_bar} (Reset in {min_reset})\n"
-            f"This hour: {usage.hour_used}/{usage.hour_limit} "
-            f"{hour_bar} (Reset in {hour_reset})\n"
-            f"Today: {usage.day_used}/{usage.day_limit} "
-            f"{day_bar} (Reset at {day_reset})\n\n"
-            f"Change profile: /setlimit <light|normal|power|unlimited>"
+            f"{t('usage.header', _usage_lang)}\n\n"
+            f"{t('usage.body', _usage_lang, profile=profile_display, min_used=usage.minute_used, min_limit=usage.minute_limit, min_bar=min_bar, min_reset=min_reset, hour_used=usage.hour_used, hour_limit=usage.hour_limit, hour_bar=hour_bar, hour_reset=hour_reset, day_used=usage.day_used, day_limit=usage.day_limit, day_bar=day_bar, day_reset=day_reset)}"
         )
 
-    await update.message.reply_text(msg)  # i18n: ok
+    await update.message.reply_text(msg)
     log_command_audit(
         action="usage",
         user_id=user_id,
-        chat_id=update.effective_chat.id if update.effective_chat else 0,
+        chat_id=chat_id,
         username=user.username if user else None,
         details=f"profile={usage.profile}",
     )

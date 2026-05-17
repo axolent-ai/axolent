@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import uuid
 from typing import TYPE_CHECKING, Any, Optional
 
 from domain.language import detect_language
@@ -27,8 +29,9 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# In-memory cache: (entry_id, target_lang) -> translated_text
-_translation_cache: dict[tuple[str, str], str] = {}
+# In-memory cache: (entry_id, target_lang, user_id) -> translated_text
+# user_id included for multi-user isolation (future-safe)
+_translation_cache: dict[tuple[str, str, int], str] = {}
 
 # Maximum cache size to prevent unbounded growth
 _MAX_CACHE_SIZE = 500
@@ -36,8 +39,29 @@ _MAX_CACHE_SIZE = 500
 # Max entries per single LLM batch call
 BATCH_SIZE = 10
 
-# Break marker for batch translation parsing
-_BREAK_MARKER = "---NOTE-BREAK---"
+# Default break marker (used as base; actual marker is per-call with UUID)
+_BREAK_MARKER_BASE = "---NOTE-BREAK---"
+
+
+def _generate_safe_marker(contents: list[str]) -> str:
+    """Generate a break marker that does not collide with any content.
+
+    Uses a UUID suffix. If by extreme coincidence the marker appears in
+    content, re-rolls with a new UUID (max 5 attempts).
+
+    Args:
+        contents: List of content strings to check against.
+
+    Returns:
+        A marker string guaranteed not to appear in any content.
+    """
+    for _ in range(5):
+        marker = f"---NOTE-BREAK-{uuid.uuid4().hex[:12]}---"
+        if not any(marker in c for c in contents):
+            return marker
+    # Ultimate fallback (astronomically unlikely to reach here)
+    return f"---NOTE-BREAK-{uuid.uuid4().hex}---"
+
 
 # Translation prompt template (minimal, fast, no hallucination) - single entry
 _TRANSLATION_PROMPT = (
@@ -104,25 +128,31 @@ async def translate_entry(
     if source_lang == target_lang:
         return content
 
-    # Check cache
-    cache_key = (entry_id, target_lang)
+    # Check cache (user_id included for multi-user isolation)
+    _uid = user_id or 0
+    cache_key = (entry_id, target_lang, _uid)
     cached = _translation_cache.get(cache_key)
     if cached is not None:
         return cached
 
+    # Check if translation is disabled via env
+    if os.environ.get("AXOLENT_MEMORY_TRANSLATION", "").lower() == "false":
+        return content
+
     log.info(
-        "translate_entry: source_lang=%s, target_lang=%s, content_preview=%s",
+        "translate_entry: source_lang=%s, target_lang=%s, content_len=%d",
         source_lang,
         target_lang,
-        content[:30],
+        len(content),
     )
 
-    # Translate via LLM
+    # Translate via LLM with strict delimiters to prevent prompt injection
     try:
-        prompt = _TRANSLATION_PROMPT.format(
-            source_lang=source_lang,
-            target_lang=target_lang,
-            text=content,
+        prompt = (
+            f"Translate the following note from {source_lang} to {target_lang}. "
+            f"Keep meaning, keep tone, no additions, no explanations, no commentary. "
+            f"Return ONLY the translated text, nothing else.\n\n"
+            f"<<<USER_CONTENT_BEGIN>>>\n{content}\n<<<USER_CONTENT_END>>>"
         )
 
         result = await provider_router.route(
@@ -212,18 +242,20 @@ async def _batch_translate(
         )
         return {entry_id: translated}
 
-    notes_text = _BREAK_MARKER.join(
-        [entry.get("content", "") for entry, _ in entries_with_source]
-    )
+    # Generate collision-safe marker for this batch
+    contents = [entry.get("content", "") for entry, _ in entries_with_source]
+    marker = _generate_safe_marker(contents)
+
+    notes_text = marker.join(contents)
 
     prompt = (
         f"Translate the following {len(entries_with_source)} notes to {target_lang}. "
-        f"Return the translations in the EXACT SAME ORDER, separated by '{_BREAK_MARKER}'. "
+        f"Return the translations in the EXACT SAME ORDER, separated by '{marker}'. "
         f"Keep meaning, keep tone, no additions, no commentary. "
         f"Keep proper nouns (brand names, product names like 'Flat White', 'Python', "
         f"personal names) in their original form. "
         f"Return ONLY the translations, separated by the break marker.\n\n"
-        f"{notes_text}"
+        f"<<<BATCH_BEGIN>>>\n{notes_text}\n<<<BATCH_END>>>"
     )
 
     try:
@@ -243,7 +275,7 @@ async def _batch_translate(
                 for entry, _ in entries_with_source
             }
 
-        translations = result.text.strip().split(_BREAK_MARKER)
+        translations = result.text.strip().split(marker)
 
         if len(translations) != len(entries_with_source):
             log.warning(
@@ -300,6 +332,12 @@ async def translate_entries(
     if not entries:
         return entries
 
+    # Check if translation is disabled via env
+    if os.environ.get("AXOLENT_MEMORY_TRANSLATION", "").lower() == "false":
+        return entries
+
+    _uid = user_id or 0
+
     # Phase 1: Separate cache hits, same-language, and entries needing translation
     cache_hits: dict[str, str] = {}
     to_translate: list[tuple[dict[str, Any], str]] = []
@@ -313,8 +351,8 @@ async def translate_entries(
             passthrough_ids.add(entry_id)
             continue
 
-        # Check cache first
-        cache_key = (entry_id, target_lang)
+        # Check cache first (user_id included for multi-user isolation)
+        cache_key = (entry_id, target_lang, _uid)
         cached = _translation_cache.get(cache_key)
         if cached is not None:
             cache_hits[entry_id] = cached
@@ -337,7 +375,7 @@ async def translate_entries(
                 to_translate, target_lang, provider_router, model, user_id, chat_id
             )
         else:
-            # Split into chunks and run in parallel
+            # Split into chunks and run in parallel (with return_exceptions for resilience)
             chunks = [
                 to_translate[i : i + BATCH_SIZE]
                 for i in range(0, len(to_translate), BATCH_SIZE)
@@ -348,14 +386,28 @@ async def translate_entries(
                         chunk, target_lang, provider_router, model, user_id, chat_id
                     )
                     for chunk in chunks
-                ]
+                ],
+                return_exceptions=True,
             )
-            for r in results:
-                translated.update(r)
+            for i, r in enumerate(results):
+                if isinstance(r, Exception):
+                    # Partial failure: use originals for this chunk
+                    log.warning(
+                        "Batch translation chunk %d/%d failed: %s",
+                        i + 1,
+                        len(chunks),
+                        r,
+                    )
+                    for entry, _ in chunks[i]:
+                        translated[entry.get("id", "unknown")] = entry.get(
+                            "content", ""
+                        )
+                else:
+                    translated.update(r)
 
     # Phase 3: Cache newly translated entries
     for entry_id, text in translated.items():
-        _translation_cache[(entry_id, target_lang)] = text
+        _translation_cache[(entry_id, target_lang, _uid)] = text
         _evict_oldest_if_needed()
 
     # Phase 4: Reassemble result in original order

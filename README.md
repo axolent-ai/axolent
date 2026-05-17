@@ -122,6 +122,14 @@ Issues and pull requests are welcome.
 
 Code style: Python with type hints everywhere, Black-formatted, hexagonal architecture rules enforced. See `bridge/README.md` for architecture details.
 
+## Known Limitations (v1.0)
+
+1. **Streaming fallback:** The normal /chat path uses streaming and does NOT have automatic provider failover. If the primary provider returns a rate limit error during streaming, the user sees an error message. Automatic fallback is only active for non-streaming operations (e.g., /debate). Streaming fallback is planned for v1.1.
+
+2. **Memory translation:** When /memory is accessed in a language different from stored entries, content is sent to the LLM provider for translation. This runs via your own Mode B subscription, but memory content does leave the local process. Disable with `AXOLENT_MEMORY_TRANSLATION=false`.
+
+3. **Translations:** Non-English UI strings are LLM-generated and not yet reviewed by native speakers. Community corrections welcome via PR.
+
 ## Status
 
 Phase 1 is under active development. The Telegram bridge works, Claude responds, bookmarks and conversation history are functional. Not production-ready yet for public deployment.

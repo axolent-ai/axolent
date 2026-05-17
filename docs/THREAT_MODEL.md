@@ -109,6 +109,22 @@ server, no hosting, no shared infrastructure.
 **Rationale:** Whitelist restricts to trusted users. No abuse scenario where counter reset is a problem. Profiles (light/normal/power/unlimited) survive restarts.
 **Planned mitigation:** Phase 1+: SQLite-based rate limiting with persistent counters.
 
+### R-7: Memory Translation Sends Content to LLM Provider
+
+**Status:** Documented and accepted (Phase 2)
+**Risk:** When a user retrieves memory entries via /memory in a language different from the
+stored entry, the memory content is sent to the LLM provider (Claude Haiku) for translation.
+This means user memory content leaves the local process and is seen by the LLM provider.
+**Mitigation:** The call runs in Mode B (user's own Anthropic subscription via CLI subprocess).
+No separate API key is used. The content is processed transiently by the provider and subject
+to Anthropic's data retention policy (which does not train on API inputs).
+**User control:** Set `AXOLENT_MEMORY_TRANSLATION=false` in environment to disable translation
+entirely. Memory entries will then always be shown in their original stored language.
+**Privacy note:** Translation requests do not include the user's Telegram ID or username in
+the prompt. Only the memory text content and target language are sent.
+**Multi-user consideration:** Cache keys include (entry_id, target_lang, user_id) to prevent
+cross-user cache hits in future multi-user scenarios.
+
 ## 4. Out of Scope
 
 | Area | Rationale |

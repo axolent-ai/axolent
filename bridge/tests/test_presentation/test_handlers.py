@@ -1163,6 +1163,7 @@ class TestHandleMessageRateLimit:
         """Whitelist bypass for handler tests."""
         self._patches = [
             patch("presentation.decorators.ALLOW_ALL_USERS", True),
+            patch("presentation.handlers.DEFAULT_LANGUAGE", "en"),
         ]
         for p in self._patches:
             p.start()
@@ -1267,8 +1268,11 @@ class TestHandleUsageCommand:
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
-        """Whitelist bypass."""
-        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+        """Whitelist bypass + force English for assertion stability."""
+        with (
+            patch("presentation.decorators.ALLOW_ALL_USERS", True),
+            patch("presentation.handlers.DEFAULT_LANGUAGE", "en"),
+        ):
             yield  # type: ignore[misc]
 
     async def test_usage_shows_profile_and_limits(self) -> None:

@@ -829,6 +829,102 @@
       "source_hash": "ec930171cc8bfce5",
       "auto_translated": true,
       "reviewed": false
+    },
+    "rate_limit.reset_minute": {
+      "text": "Reset in {seconds}s",
+      "source_hash": "8a218cd1eac05343",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.reset_hour": {
+      "text": "Reset in {minutes} minutes",
+      "source_hash": "0d1e42204ed2b940",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.reset_day": {
+      "text": "Reset in {hours}h",
+      "source_hash": "dae231b94d67aff6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.period_minute": {
+      "text": "minute",
+      "source_hash": "28cdd20eaf134a05",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.period_hour": {
+      "text": "hour",
+      "source_hash": "9ac0add475dd38e6",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.period_day": {
+      "text": "day",
+      "source_hash": "944c27e5b97ab779",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.window_minute": {
+      "text": "this minute",
+      "source_hash": "e5e93b16d9bf822e",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.window_hour": {
+      "text": "this hour",
+      "source_hash": "d98d7bc206d7f86b",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.window_day": {
+      "text": "today",
+      "source_hash": "e0f4f767ac88a930",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.options_light": {
+      "text": "You can change your limit anytime for free:\n• /usage — current overview\n• /setlimit normal — more headroom (350/h, 1,500/day)",
+      "source_hash": "d27137c887e32b75",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.options_normal": {
+      "text": "You can change your limit anytime for free:\n• /usage — current overview\n• /setlimit power — much more headroom (900/h, 10,000/day)",
+      "source_hash": "8e408bb3491a172c",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.options_power": {
+      "text": "• /usage — current overview\n• /setlimit unlimited — disable all limits",
+      "source_hash": "f39d3c672e3dd4e8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.upgrade_light": {
+      "text": "Want to do more? /setlimit normal raises the limit to 350/h.",
+      "source_hash": "432182a5fa1f7464",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.upgrade_normal": {
+      "text": "Want to do more? /setlimit power raises the limit to 900/h.",
+      "source_hash": "887cb5f1224a6730",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "rate_limit.upgrade_power": {
+      "text": "Change profile: /setlimit",
+      "source_hash": "987b030c4c6333a1",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "usage.body": {
+      "text": "Profile: {profile}\n\nThis minute: {min_used}/{min_limit} {min_bar} (Reset in {min_reset})\nThis hour: {hour_used}/{hour_limit} {hour_bar} (Reset in {hour_reset})\nToday: {day_used}/{day_limit} {day_bar} (Reset at {day_reset})\n\nChange profile: /setlimit <light|normal|power|unlimited>",
+      "source_hash": "0bae2475b36dc0a1",
+      "auto_translated": true,
+      "reviewed": false
     }
   }
 }

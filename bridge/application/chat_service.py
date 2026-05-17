@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any, AsyncIterator, Optional
 
 from application.leakage_filter import check_for_system_prompt_leakage
 from domain.conversation import ConversationTurn, build_context_block
-from domain.language import DEFAULT_LANGUAGE, detect_language_with_confidence
+from domain.language import DEFAULT_LANGUAGE
 from domain.personality import build_effective_prompt
 from infrastructure.audit_log import write_audit_log
 from infrastructure.claude_process_pool import StreamEvent
@@ -457,33 +457,17 @@ class ChatService:
                 enriched_text = text
             context_prompt = build_context_block(history, enriched_text)
 
-            # Language: smart detection on every message.
-            # Sticky is overwritten when detection is clear enough (Variant 1).
-            if language_override:
-                lang = language_override
-            else:
-                sticky_lang = await get_language(uid, cid)
-                detected_lang, confidence = detect_language_with_confidence(text)
+            # Language: resolve via central LanguageResolver (Phase 3)
+            from application.language_resolver import LanguageResolver
 
-                if not sticky_lang:
-                    # First turn: detect and set sticky
-                    lang = detected_lang if confidence > 0 else DEFAULT_LANGUAGE
-                    await set_language(uid, cid, lang)
-                elif confidence > 0.7 and detected_lang != sticky_lang:
-                    # User implicitly switched language
-                    lang = detected_lang
-                    await set_language(uid, cid, lang)
-                    log.info(
-                        "Smart language switch: %s -> %s (confidence=%.2f)",
-                        sticky_lang,
-                        lang,
-                        confidence,
-                    )
-                else:
-                    lang = sticky_lang
+            _resolver = LanguageResolver()
+            _lang_ctx = await _resolver.resolve(
+                uid, cid, text, override=language_override
+            )
+            lang = _lang_ctx.code
 
             if lang != DEFAULT_LANGUAGE:
-                log.info("Language for chat: '%s' (sticky)", lang)
+                log.info("Language for chat: '%s' (source=%s)", lang, _lang_ctx.source)
 
             # Build effective prompt with language override
             effective_prompt = build_effective_prompt(system_prompt, lang)
@@ -812,31 +796,14 @@ class ChatService:
             enriched_text = text
         context_prompt = build_context_block(history, enriched_text)
 
-        # Language: smart detection on every message (Variant 1).
-        if language_override:
-            lang = language_override
-        else:
-            sticky_lang = await get_language(uid, cid)
-            detected_lang, confidence = detect_language_with_confidence(text)
+        # Language: resolve via central LanguageResolver (Phase 3)
+        from application.language_resolver import LanguageResolver
 
-            if not sticky_lang:
-                lang = detected_lang if confidence > 0 else DEFAULT_LANGUAGE
-                await set_language(uid, cid, lang)
-            elif confidence > 0.7 and detected_lang != sticky_lang:
-                # User implicitly switched language
-                lang = detected_lang
-                await set_language(uid, cid, lang)
-                log.info(
-                    "Smart language switch (streaming): %s -> %s (confidence=%.2f)",
-                    sticky_lang,
-                    lang,
-                    confidence,
-                )
-            else:
-                lang = sticky_lang
+        _resolver = LanguageResolver()
+        _lang_ctx = await _resolver.resolve(uid, cid, text, override=language_override)
+        lang = _lang_ctx.code
 
-        # Update StatusSession language (bug fix: sticky language
-        # is only determined here, but StatusSession was created earlier)
+        # Update StatusSession language (resolved here, StatusSession created earlier)
         if status_session is not None:
             status_session.set_language(lang)
 
@@ -852,6 +819,7 @@ class ChatService:
                 effective_prompt = f"{effective_prompt}\n\n{style_block}"
 
         # P1/P5: Proactive triggers (record activity + time context) [streaming path]
+        # Symmetric with non-streaming: check_triggers + reactive_trigger
         if self.proactive_trigger_service is not None:
             self.proactive_trigger_service.record_activity(uid)
             time_block = self.proactive_trigger_service.get_time_context_block(
@@ -859,6 +827,27 @@ class ChatService:
             )
             if time_block:
                 effective_prompt = f"{effective_prompt}\n\n{time_block}"
+            # Check proactive triggers (symmetric with non-streaming path)
+            trigger_result = self.proactive_trigger_service.check_triggers(
+                uid, cid, text, memory_entries=[]
+            )
+            if trigger_result.should_fire and trigger_result.nudge_text:
+                effective_prompt = (
+                    f"{effective_prompt}\n\n"
+                    f"[PROACTIVE NUDGE] {trigger_result.nudge_text}"
+                )
+            # Check reactive triggers (memory-based)
+            if memory_context and self.memory_service is not None:
+                entries = self.memory_service.list_recent(uid, "episodic", limit=5)
+                reactive = self.proactive_trigger_service.check_reactive_trigger(
+                    uid, cid, text, entries
+                )
+                if reactive.should_fire and reactive.nudge_text:
+                    if not trigger_result.should_fire:
+                        effective_prompt = (
+                            f"{effective_prompt}\n\n"
+                            f"[PROACTIVE NUDGE] {reactive.nudge_text}"
+                        )
 
         # Phase 2a: TaskRouter classification + model resolution
         user_model: str | None = None

@@ -21,7 +21,6 @@ import pytest
 
 from application.memory_translation_service import (
     BATCH_SIZE,
-    _BREAK_MARKER,
     _MAX_CACHE_SIZE,
     _translation_cache,
     cache_size,
@@ -49,6 +48,36 @@ def _make_router(response_text: str = "translated", error: str = "") -> MagicMoc
             error=error,
         )
     )
+    return router
+
+
+def _make_batch_router(translations: list[str], error: str = "") -> MagicMock:
+    """Create a mock router that returns batch translations joined by the marker from the prompt.
+
+    The UUID-based marker is generated at runtime, so this mock extracts it from
+    the prompt and uses it to join the translations in the response.
+    """
+    import re
+
+    async def _side_effect(**kwargs):
+        prompt = kwargs.get("prompt", "")
+        # Extract the dynamic marker from the prompt: "separated by '---NOTE-BREAK-<hex>---'"
+        m = re.search(r"separated by '(---NOTE-BREAK-[a-f0-9]+---)'", prompt)
+        if m:
+            marker = m.group(1)
+            text = marker.join(translations)
+        else:
+            # Single-entry fallback (no marker in prompt)
+            text = translations[0] if translations else ""
+        return ProviderResponse(
+            text=text,
+            duration_seconds=0.5,
+            provider_name="claude",
+            error=error,
+        )
+
+    router = MagicMock()
+    router.route = AsyncMock(side_effect=_side_effect)
     return router
 
 
@@ -179,9 +208,7 @@ class TestTranslateEntries:
     @pytest.mark.asyncio
     async def test_batch_translates_all_entries(self) -> None:
         """All entries in a batch are translated."""
-        # Build response with break markers for batch mode
-        batch_response = _BREAK_MARKER.join(["I like cats", "I like dogs"])
-        router = _make_router(response_text=batch_response)
+        router = _make_batch_router(["I like cats", "I like dogs"])
         entries = [
             {"id": "ep_a", "content": "Ich mag Katzen"},
             {"id": "ep_b", "content": "Ich mag Hunde"},
@@ -234,15 +261,9 @@ class TestBatchTranslation:
     @pytest.mark.asyncio
     async def test_batch_translates_multiple_entries_in_one_call(self) -> None:
         """Multiple entries (<=BATCH_SIZE) result in exactly one LLM call."""
-        batch_response = _BREAK_MARKER.join(
-            [
-                "I like cats",
-                "I like dogs",
-                "I like fish",
-                "I like birds",
-            ]
+        router = _make_batch_router(
+            ["I like cats", "I like dogs", "I like fish", "I like birds"]
         )
-        router = _make_router(response_text=batch_response)
 
         entries = [
             {"id": "ep_b1", "content": "Ich mag Katzen"},
@@ -265,8 +286,7 @@ class TestBatchTranslation:
     async def test_batch_parses_break_marker_correctly(self) -> None:
         """Break marker parsing correctly splits and trims translations."""
         # Include extra whitespace around translations
-        batch_response = f" First translation \n{_BREAK_MARKER}  Second translation  "
-        router = _make_router(response_text=batch_response)
+        router = _make_batch_router([" First translation \n", "  Second translation  "])
 
         entries = [
             {"id": "ep_p1", "content": "Das ist der erste deutsche Satz"},
@@ -281,9 +301,8 @@ class TestBatchTranslation:
     @pytest.mark.asyncio
     async def test_batch_falls_back_on_parse_error(self) -> None:
         """When LLM returns wrong number of segments, originals are returned."""
-        # Return only 2 translations for 3 entries
-        batch_response = _BREAK_MARKER.join(["Translation 1", "Translation 2"])
-        router = _make_router(response_text=batch_response)
+        # Return only 2 translations for 3 entries (mismatch triggers fallback)
+        router = _make_batch_router(["Translation 1", "Translation 2"])
 
         entries = [
             {"id": "ep_f1", "content": "Erster deutscher Satz"},
@@ -301,26 +320,26 @@ class TestBatchTranslation:
     @pytest.mark.asyncio
     async def test_parallel_batches_for_large_lists(self) -> None:
         """Lists larger than BATCH_SIZE are split into parallel batches."""
+        import re
+
         num_entries = 25
         call_count = 0
 
         async def _batch_side_effect(**kwargs):
             nonlocal call_count
             call_count += 1
-            # Parse how many notes are in this batch from the prompt header.
-            # The prompt starts with "Translate the following N notes to ..."
-            # and the instruction text itself mentions the break marker once
-            # as a literal example in quotes. The actual notes follow after
-            # the instruction block, separated by the break marker.
             prompt_text = kwargs.get("prompt", "")
-            import re
-
+            # Extract dynamic marker from prompt
+            marker_match = re.search(
+                r"separated by '(---NOTE-BREAK-[a-f0-9]+---)'", prompt_text
+            )
+            marker = marker_match.group(1) if marker_match else "---FALLBACK---"
+            # Parse how many notes are in this batch
             m = re.search(r"Translate the following (\d+) notes", prompt_text)
             num_in_batch = int(m.group(1)) if m else 1
-            # Return correct number of translations
             translations = [f"Translated note {i}" for i in range(num_in_batch)]
             return ProviderResponse(
-                text=_BREAK_MARKER.join(translations),
+                text=marker.join(translations),
                 duration_seconds=0.5,
                 provider_name="claude",
             )
@@ -357,10 +376,10 @@ class TestBatchTranslation:
             {"id": "ep_ch3", "content": "Ich mag Fische"},
         ]
 
-        # Pre-populate cache
-        _translation_cache[("ep_ch1", "en")] = "I like cats"
-        _translation_cache[("ep_ch2", "en")] = "I like dogs"
-        _translation_cache[("ep_ch3", "en")] = "I like fish"
+        # Pre-populate cache (3-tuple: entry_id, target_lang, user_id)
+        _translation_cache[("ep_ch1", "en", 0)] = "I like cats"
+        _translation_cache[("ep_ch2", "en", 0)] = "I like dogs"
+        _translation_cache[("ep_ch3", "en", 0)] = "I like fish"
 
         result = await translate_entries(entries, "en", router)
 
@@ -373,19 +392,13 @@ class TestBatchTranslation:
     @pytest.mark.asyncio
     async def test_partial_cache_hits_only_translate_remainder(self) -> None:
         """When some entries are cached, only uncached ones go to LLM."""
-        # 3 entries cached, 2 need translation
-        _translation_cache[("ep_pc1", "en")] = "Cached translation 1"
-        _translation_cache[("ep_pc2", "en")] = "Cached translation 2"
-        _translation_cache[("ep_pc3", "en")] = "Cached translation 3"
+        # 3 entries cached (3-tuple: entry_id, target_lang, user_id)
+        _translation_cache[("ep_pc1", "en", 0)] = "Cached translation 1"
+        _translation_cache[("ep_pc2", "en", 0)] = "Cached translation 2"
+        _translation_cache[("ep_pc3", "en", 0)] = "Cached translation 3"
 
-        # Batch response for the 2 uncached entries
-        batch_response = _BREAK_MARKER.join(
-            [
-                "Fresh translation 4",
-                "Fresh translation 5",
-            ]
-        )
-        router = _make_router(response_text=batch_response)
+        # Router that dynamically builds response with the UUID marker from prompt
+        router = _make_batch_router(["Fresh translation 4", "Fresh translation 5"])
 
         entries = [
             {"id": "ep_pc1", "content": "Ich habe einen deutschen Text hier"},
@@ -405,9 +418,9 @@ class TestBatchTranslation:
         assert result[3]["content"] == "Fresh translation 4"
         assert result[4]["content"] == "Fresh translation 5"
 
-        # Newly translated entries should now be cached
-        assert _translation_cache[("ep_pc4", "en")] == "Fresh translation 4"
-        assert _translation_cache[("ep_pc5", "en")] == "Fresh translation 5"
+        # Newly translated entries should now be cached (3-tuple key)
+        assert _translation_cache[("ep_pc4", "en", 0)] == "Fresh translation 4"
+        assert _translation_cache[("ep_pc5", "en", 0)] == "Fresh translation 5"
 
 
 class TestCacheManagement:
@@ -418,10 +431,9 @@ class TestCacheManagement:
         """Cache evicts oldest entries when exceeding max size."""
         router = _make_router(response_text="translated")
 
-        # Fill cache beyond max
+        # Fill cache beyond max (3-tuple: entry_id, target_lang, user_id)
         for i in range(_MAX_CACHE_SIZE + 10):
-            # Force different source/target to bypass same-language check
-            _translation_cache[(f"ep_{i}", "xx")] = f"cached_{i}"
+            _translation_cache[(f"ep_{i}", "xx", 0)] = f"cached_{i}"
 
         # Trigger eviction by translating one more
         await translate_entry(
@@ -435,7 +447,7 @@ class TestCacheManagement:
 
     def test_clear_cache(self) -> None:
         """clear_cache() empties the cache."""
-        _translation_cache[("ep_x", "en")] = "cached"
+        _translation_cache[("ep_x", "en", 0)] = "cached"
         assert cache_size() == 1
         clear_cache()
         assert cache_size() == 0

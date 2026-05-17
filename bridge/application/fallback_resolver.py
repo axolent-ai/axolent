@@ -19,6 +19,7 @@ import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional
 
+from domain.language import DEFAULT_LANGUAGE
 from i18n.domain.i18n import t
 from infrastructure.providers.base import (
     ProviderError,
@@ -192,7 +193,7 @@ class FallbackResolver:
         system_prompt: str = "",
         user_id: int | None = None,
         chat_id: int | None = None,
-        user_lang: str = "en",
+        user_lang: str = DEFAULT_LANGUAGE,
         model: str | None = None,
     ) -> ResolveResult:
         """Try primary provider, fall back to alternatives on failure.

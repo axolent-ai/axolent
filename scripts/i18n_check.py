@@ -4,8 +4,9 @@
 Checks:
   1. All locale files have exactly the same keys as en.json (no missing, no extra)
   2. All source_hash fields are not "PENDING" (must run bootstrap first)
-  3. All placeholders in translated texts match the EN source
-  4. No empty text fields
+  3. source_hash matches current EN text (detects stale translations)
+  4. All placeholders in translated texts match the EN source
+  5. No empty text fields
 
 Exit code 0 = pass, 1 = fail (blocks commit).
 
@@ -15,6 +16,7 @@ Usage:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sys
@@ -32,8 +34,17 @@ def get_placeholders(text: str) -> set[str]:
     return set(PLACEHOLDER_RE.findall(text))
 
 
+def compute_source_hash(text: str) -> str:
+    """Compute sha256 of EN source text, return first 16 hex chars.
+
+    Must match the algorithm in i18n_bootstrap_hashes.py.
+    """
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
 def main() -> int:
     errors: list[str] = []
+    warnings: list[str] = []
 
     if not EN_FILE.exists():
         print("ERROR: en.json not found")
@@ -93,6 +104,27 @@ def main() -> int:
                     f"{lang_code}/{key}: source_hash is PENDING (run bootstrap)"
                 )
 
+            # Staleness check: verify hash matches current EN text
+            # (skip for en.json itself and for PENDING hashes already reported)
+            # Staleness is a warning by default, error with --strict
+            if (
+                lang_code != "en"
+                and source_hash
+                and source_hash != "PENDING"
+                and key in en_keys
+            ):
+                en_text = en_data["keys"][key].get("text", "")
+                expected_hash = compute_source_hash(en_text)
+                if source_hash != expected_hash:
+                    stale_msg = (
+                        f"{lang_code}/{key}: STALE translation "
+                        f"(source_hash={source_hash[:8]}... != current EN hash={expected_hash[:8]}...)"
+                    )
+                    if "--strict" in sys.argv:
+                        errors.append(stale_msg)
+                    else:
+                        warnings.append(stale_msg)
+
             # Placeholder mismatch (only for keys that exist in EN)
             if key in en_keys:
                 en_text = en_data["keys"][key].get("text", "")
@@ -104,6 +136,14 @@ def main() -> int:
                         f"{lang_code}/{key}: placeholder mismatch "
                         f"EN={en_placeholders} LOCALE={locale_placeholders}"
                     )
+
+    if warnings:
+        print(f"i18n check WARNINGS ({len(warnings)} stale translations):")
+        for w in warnings[:10]:
+            print(f"  [WARN] {w}")
+        if len(warnings) > 10:
+            print(f"  ... and {len(warnings) - 10} more")
+        print("  Run 'python scripts/i18n_bootstrap_hashes.py' to fix.\n")
 
     if errors:
         print(f"i18n check FAILED ({len(errors)} errors):\n")
