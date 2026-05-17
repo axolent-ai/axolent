@@ -14,9 +14,12 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from i18n.domain.i18n import get_status_text  # noqa: F401 (re-export)
+
+if TYPE_CHECKING:
+    from application.execution.context import ExecutionContext
 
 log = logging.getLogger(__name__)
 
@@ -56,6 +59,8 @@ class StatusSession:
     Attributes:
         callback: Async callable that sends the status text to the user.
         language: Active language for this session.
+        context: Optional ExecutionContext. If provided, language is
+            derived from context.language.code (Phase 0 Commit 5).
         enabled: Whether status updates are active.
         last_update_time: Timestamp of last status update (monotonic).
         stream_started: True when the token stream has begun.
@@ -64,10 +69,16 @@ class StatusSession:
 
     callback: StatusCallback
     language: str = "en"
+    context: "ExecutionContext | None" = field(default=None, repr=False)
     enabled: bool = field(default_factory=lambda: SHOW_STATUS_UPDATES)
     last_update_time: float = 0.0
     stream_started: bool = False
     _last_key: str = field(default="", repr=False)
+
+    def __post_init__(self) -> None:
+        """Derive language from context if provided."""
+        if self.context is not None:
+            self.language = self.context.language.code
 
     async def update(self, key: str, **kwargs: Any) -> None:
         """Send a status update (rate-limited, phase-change bypass).

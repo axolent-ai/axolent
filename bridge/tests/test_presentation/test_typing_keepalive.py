@@ -20,6 +20,33 @@ from presentation.handlers import (
 )
 
 
+def _make_mock_context_kernel():
+    """Create a mock ContextKernel for typing keepalive tests."""
+    from application.execution.context import ExecutionContext
+    from application.execution.kernel import ContextKernel
+    from application.language_resolver import LanguageContext
+
+    kernel = AsyncMock(spec=ContextKernel)
+
+    async def _build(envelope, language_override=None):
+        return ExecutionContext(
+            request_id=envelope.request_id,
+            user_id=envelope.user_id,
+            chat_id=envelope.chat_id,
+            channel="telegram",
+            language=LanguageContext(
+                code="de",
+                source="default",
+                confidence=1.0,
+                switched_from=None,
+                request_id=envelope.request_id,
+            ),
+        )
+
+    kernel.build = AsyncMock(side_effect=_build)
+    return kernel
+
+
 class TestTypingKeepaliveFunction:
     """Unit-Tests für die _typing_keepalive Coroutine."""
 
@@ -176,6 +203,7 @@ class TestTypingKeepaliveIntegration:
             "chat_service": svc,
             "system_prompt": "Test prompt.",
             "memory_service": None,
+            "context_kernel": _make_mock_context_kernel(),
         }
 
         # Keepalive mit kurzem Intervall patchen damit Test schnell läuft
@@ -229,6 +257,7 @@ class TestTypingKeepaliveIntegration:
             "chat_service": svc,
             "system_prompt": "Test prompt.",
             "memory_service": None,
+            "context_kernel": _make_mock_context_kernel(),
         }
 
         with patch("presentation.handlers.TYPING_KEEPALIVE_INTERVAL_SECONDS", 0.02):

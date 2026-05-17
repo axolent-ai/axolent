@@ -667,20 +667,19 @@ async def _handle_message_streaming(
         # (replaces inline LanguageResolver instantiation)
         _kernel = _get_context_kernel(context)
         _exec_ctx = await _kernel.build(envelope)
-        chat_lang = _exec_ctx.language.code
 
         # Phase 0 Commit 3: Create ExecutionPlan before ChatService call
         _planner = _get_execution_planner(context)
         _exec_plan = _planner.plan_chat(_exec_ctx)
 
-        # Text Guard: streaming diacritic filter
+        # Text Guard: streaming diacritic filter (uses exec_ctx.language.code)
         from application.text_guard_service import TextGuardService
 
         _tg_service = TextGuardService()
-        _stream_guard = _tg_service.get_streaming_guard(chat_lang)
-        _text_guard = _tg_service.get_guard(chat_lang, mode="fix")
+        _stream_guard = _tg_service.get_streaming_guard(_exec_ctx.language.code)
+        _text_guard = _tg_service.get_guard(_exec_ctx.language.code, mode="fix")
 
-        # Create status session (R02-B)
+        # Create status session (R02-B, Phase 0 Commit 5: context-based)
         from application.status_manager import SHOW_STATUS_UPDATES, StatusSession
 
         status_session: StatusSession | None = None
@@ -695,7 +694,7 @@ async def _handle_message_streaming(
 
             status_session = StatusSession(
                 callback=_status_callback,
-                language=chat_lang,
+                context=_exec_ctx,
             )
 
         # Typing keepalive parallel to stream
@@ -718,7 +717,6 @@ async def _handle_message_streaming(
                 username=username,
                 system_prompt=_get_system_prompt(context),
                 persistent_provider=persistent_provider,
-                language_override=chat_lang,
                 reply_to_text=reply_to_text,
                 status_session=status_session,
                 context=_exec_ctx,
@@ -914,7 +912,24 @@ async def _handle_message_legacy(
     text: str,
     reply_to_text: str | None,
 ) -> None:
-    """Legacy message handler (pre-R04, non-streaming fallback)."""
+    """Legacy message handler (pre-R04, non-streaming fallback).
+
+    Phase 0 Commit 5: uses ExecutionContext for language, TextGuard,
+    and ChatService call (no separate language resolution).
+    """
+    # Build ExecutionContext via Kernel (same as streaming path)
+    envelope = RequestEnvelope.from_telegram(
+        user_id=user_id,
+        chat_id=chat_id,
+        text=text,
+        username=username,
+        reply_to_text=reply_to_text,
+    )
+    _kernel = _get_context_kernel(context)
+    _exec_ctx = await _kernel.build(envelope)
+    _planner = _get_execution_planner(context)
+    _exec_plan = _planner.plan_chat(_exec_ctx)
+
     keepalive = asyncio.create_task(
         _typing_keepalive(
             update.effective_chat,
@@ -929,6 +944,8 @@ async def _handle_message_legacy(
             username=username,
             system_prompt=_get_system_prompt(context),
             reply_to_text=reply_to_text,
+            context=_exec_ctx,
+            plan=_exec_plan,
         )
     finally:
         keepalive.cancel()
@@ -941,14 +958,11 @@ async def _handle_message_legacy(
         await update.message.reply_text(result.error_message)
         return
 
-    # Text Guard: fix diacritics in legacy (non-streaming) responses
+    # Text Guard: fix diacritics (uses exec_ctx.language.code)
     from application.text_guard_service import TextGuardService
 
     _legacy_tg = TextGuardService()
-    _legacy_lang = (
-        await chat_service.get_chat_language(user_id, chat_id) or DEFAULT_LANGUAGE
-    )
-    _legacy_guard = _legacy_tg.get_guard(_legacy_lang, mode="fix")
+    _legacy_guard = _legacy_tg.get_guard(_exec_ctx.language.code, mode="fix")
     _response = result.response
     if _legacy_guard is not None:
         _response = _legacy_guard.fix(_response)

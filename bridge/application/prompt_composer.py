@@ -1,9 +1,11 @@
-"""PromptComposer: single source for system prompt construction.
+"""PromptComposer: legacy prompt construction facade.
 
-Unifies the prompt building that was previously scattered across
-ChatService, DebateOrchestrator, and various handlers. All paths
-now use this composer to ensure consistent block ordering and
-language handling.
+.. deprecated:: Phase 0 Commit 5
+    Use :class:`application.execution.instruction_compiler.InstructionCompiler`
+    instead. InstructionCompiler accepts ``ExecutionContext + ExecutionPlan``
+    and is the canonical prompt path. PromptComposer remains only for
+    backward compatibility with the legacy ChatService/DebateOrchestrator
+    code paths (when no ExecutionContext is available).
 
 Blocks (in order of injection):
     1. Language Lock (always, including for "de")
@@ -49,11 +51,15 @@ _ANTI_REPETITION_PREFIX = "\n\n[STYLE RULE] "
 
 
 class PromptComposer:
-    """Single source for system prompt construction.
+    """Legacy prompt construction facade.
 
-    All paths (chat, debate, status) use this to build their
-    effective system prompt. Ensures consistent block ordering
-    and language handling.
+    .. deprecated:: Phase 0 Commit 5
+        Use ``InstructionCompiler`` from
+        ``application.execution.instruction_compiler`` instead.
+
+    Retained for backward compatibility with code paths that do
+    not yet have an ExecutionContext available. New code should
+    always go through InstructionCompiler.
     """
 
     def __init__(
