@@ -57,6 +57,32 @@ def _make_update(user_id: int = 1, chat_id: int = 10, text: str = "") -> MagicMo
     return update
 
 
+def _make_mock_context_kernel():
+    """Create a mock ContextKernel that returns a default ExecutionContext."""
+    from application.execution import ContextKernel, ExecutionContext
+    from application.language_resolver import LanguageContext
+
+    kernel = AsyncMock(spec=ContextKernel)
+
+    async def _build(envelope, language_override=None):
+        return ExecutionContext(
+            request_id=envelope.request_id,
+            user_id=envelope.user_id,
+            chat_id=envelope.chat_id,
+            channel="telegram",
+            language=LanguageContext(
+                code="de",
+                source="default",
+                confidence=1.0,
+                switched_from=None,
+                request_id=envelope.request_id,
+            ),
+        )
+
+    kernel.build = AsyncMock(side_effect=_build)
+    return kernel
+
+
 def _make_context(
     args: list[str] | None = None,
     chat_service: ChatService | None = None,
@@ -66,6 +92,7 @@ def _make_context(
     process_pool: object | None = None,
     rate_limiter: object | None = None,
     bookmark_service: object | None = None,
+    context_kernel: object | None = None,
 ) -> MagicMock:
     """Create a mocked Telegram context with bot_data."""
     context = MagicMock()
@@ -83,6 +110,7 @@ def _make_context(
         "process_pool": process_pool,
         "rate_limiter": rate_limiter,
         "bookmark_service": bookmark_service,
+        "context_kernel": context_kernel or _make_mock_context_kernel(),
     }
     return context
 
@@ -1845,3 +1873,127 @@ class TestResetCancelsActiveStream:
         # Must show current profile name and available profiles (language-independent)
         assert "Current profile" in reply_text or "Aktuelles Profil" in reply_text
         assert "Normal" in reply_text
+
+
+class TestContextKernelIntegrationInHandler:
+    """Phase 0 Commit 2: ContextKernel is used in _handle_message_streaming."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        """Whitelist bypass."""
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    @patch("presentation.handlers.write_raw_audit")
+    async def test_streaming_handler_calls_kernel_build(
+        self, mock_audit: MagicMock
+    ) -> None:
+        """_handle_message_streaming calls ContextKernel.build with correct envelope."""
+        from infrastructure.claude_process_pool import StreamEvent
+        from presentation.handlers import _handle_message_streaming
+
+        mock_provider = MagicMock()
+        mock_svc = _make_mock_chat_service()
+
+        async def _events():
+            yield StreamEvent(event_type="init", was_cold=False, subprocess_pid=111)
+            yield StreamEvent(event_type="content_delta", text="Hi")
+            yield StreamEvent(event_type="result", full_text="Hi", is_final=True)
+
+        async def mock_stream(**kwargs):
+            return _events(), 0, {}
+
+        mock_svc.process_user_message_streaming = mock_stream
+        mock_svc.save_streaming_result = AsyncMock(return_value="Hi")
+
+        # Custom mock kernel that tracks calls
+        mock_kernel = _make_mock_context_kernel()
+
+        update = _make_update(user_id=7, chat_id=77, text="Bonjour")
+        context = _make_context(
+            chat_service=mock_svc,
+            persistent_provider=mock_provider,
+            context_kernel=mock_kernel,
+        )
+
+        mock_msg = AsyncMock()
+        mock_msg.edit_text = AsyncMock()
+        mock_msg.chat = MagicMock()
+
+        with patch(
+            "presentation.handlers.create_streaming_message",
+            return_value=mock_msg,
+        ):
+            await _handle_message_streaming(
+                update=update,
+                context=context,
+                chat_service=mock_svc,
+                persistent_provider=mock_provider,
+                user_id=7,
+                chat_id=77,
+                username="testuser",
+                text="Bonjour",
+                reply_to_text=None,
+            )
+
+        # Kernel.build was called exactly once
+        mock_kernel.build.assert_called_once()
+        # Envelope passed to kernel has correct user/chat ids
+        call_args = mock_kernel.build.call_args
+        envelope = call_args[0][0]
+        assert envelope.user_id == 7
+        assert envelope.chat_id == 77
+        assert envelope.raw_text == "Bonjour"
+
+    @patch("presentation.handlers.write_raw_audit")
+    async def test_streaming_audit_includes_request_id(
+        self, mock_audit: MagicMock
+    ) -> None:
+        """Audit 'stream_started' event includes request_id from envelope."""
+        from infrastructure.claude_process_pool import StreamEvent
+        from presentation.handlers import _handle_message_streaming
+
+        mock_provider = MagicMock()
+        mock_svc = _make_mock_chat_service()
+
+        async def _events():
+            yield StreamEvent(event_type="init", was_cold=False, subprocess_pid=222)
+            yield StreamEvent(event_type="result", full_text="OK", is_final=True)
+
+        async def mock_stream(**kwargs):
+            return _events(), 0, {}
+
+        mock_svc.process_user_message_streaming = mock_stream
+        mock_svc.save_streaming_result = AsyncMock(return_value="OK")
+
+        update = _make_update(user_id=8, chat_id=88, text="Test")
+        context = _make_context(
+            chat_service=mock_svc,
+            persistent_provider=mock_provider,
+        )
+
+        mock_msg = AsyncMock()
+        mock_msg.edit_text = AsyncMock()
+        mock_msg.chat = MagicMock()
+
+        with patch(
+            "presentation.handlers.create_streaming_message",
+            return_value=mock_msg,
+        ):
+            await _handle_message_streaming(
+                update=update,
+                context=context,
+                chat_service=mock_svc,
+                persistent_provider=mock_provider,
+                user_id=8,
+                chat_id=88,
+                username="testuser",
+                text="Test",
+                reply_to_text=None,
+            )
+
+        # First audit call must be stream_started with request_id
+        first_entry = mock_audit.call_args_list[0][0][0]
+        assert first_entry["event_type"] == "stream_started"
+        assert "request_id" in first_entry
+        assert len(first_entry["request_id"]) == 12

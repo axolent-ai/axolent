@@ -450,6 +450,15 @@ def main() -> None:
     # Load personality
     system_prompt = build_combined_prompt()
 
+    # Phase 0, Commit 2: Initialize Execution Kernel (ContextKernel)
+    from application.execution import ContextKernel
+    from application.language_resolver import LanguageResolver
+
+    context_kernel = ContextKernel.create_default(
+        language_resolver=LanguageResolver(),
+    )
+    log.info("Phase 0: ContextKernel initialized (Language + Time + Channel resolvers)")
+
     # Build application
     app = Application.builder().token(token).build()
 
@@ -461,6 +470,7 @@ def main() -> None:
     app.bot_data["process_pool"] = process_pool
     app.bot_data["persistent_provider"] = router.providers.get("claude_persistent")
     app.bot_data["rate_limiter"] = rate_limiter
+    app.bot_data["context_kernel"] = context_kernel
     if model_svc is not None:
         app.bot_data["model_service"] = model_svc
     app.bot_data["task_router"] = task_router

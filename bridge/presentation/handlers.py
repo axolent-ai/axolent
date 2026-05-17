@@ -42,6 +42,8 @@ from presentation.render import (
     split_message,
 )
 
+from application.execution import ContextKernel, RequestEnvelope
+
 if TYPE_CHECKING:
     from application.memory_service import MemoryService
 
@@ -220,6 +222,26 @@ def _get_rate_limiter(
         RateLimiter instance or None.
     """
     return context.application.bot_data.get("rate_limiter")
+
+
+def _get_context_kernel(context: ContextTypes.DEFAULT_TYPE) -> ContextKernel:
+    """Gets the ContextKernel from bot_data.
+
+    Args:
+        context: Telegram handler context.
+
+    Returns:
+        ContextKernel instance.
+
+    Raises:
+        RuntimeError: If ContextKernel is not in bot_data.
+    """
+    kernel = context.application.bot_data.get("context_kernel")
+    if kernel is None:
+        raise RuntimeError(
+            "context_kernel not in bot_data. main.py must initialize ContextKernel."
+        )
+    return kernel
 
 
 def build_bookmarks_keyboard(
@@ -576,10 +598,20 @@ async def _handle_message_streaming(
     memory_entries_loaded = 0
     task_meta: dict[str, Any] = {}
 
+    # Phase 0 Commit 2: Build RequestEnvelope once (carries request_id)
+    envelope = RequestEnvelope.from_telegram(
+        user_id=user_id,
+        chat_id=chat_id,
+        text=text,
+        username=username,
+        reply_to_text=reply_to_text,
+    )
+
     # Audit "started" entry
     audit_started: dict[str, Any] = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "event_type": "stream_started",
+        "request_id": envelope.request_id,
         "user_id": user_id,
         "chat_id": chat_id,
         "username": username,
@@ -607,13 +639,11 @@ async def _handle_message_streaming(
         with _active_sessions_lock:
             _active_streaming_sessions[session_key] = session
 
-        # Resolve language ONCE before StatusSession via LanguageResolver
-        # (Phase 3: replaces inline detection logic, fixes race NEU-08)
-        from application.language_resolver import LanguageResolver
-
-        _lang_resolver = LanguageResolver()
-        _lang_ctx = await _lang_resolver.resolve(user_id, chat_id, text)
-        chat_lang = _lang_ctx.code
+        # Phase 0 Commit 2: Resolve context via Execution Kernel
+        # (replaces inline LanguageResolver instantiation)
+        _kernel = _get_context_kernel(context)
+        _exec_ctx = await _kernel.build(envelope)
+        chat_lang = _exec_ctx.language.code
 
         # Text Guard: streaming diacritic filter
         from application.text_guard_service import TextGuardService
