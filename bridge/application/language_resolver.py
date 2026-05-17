@@ -197,6 +197,85 @@ class LanguageResolver:
             request_id=request_id,
         )
 
+    async def resolve_readonly(
+        self,
+        user_id: int,
+        chat_id: int,
+        text: str,
+        override: Optional[str] = None,
+    ) -> LanguageContext:
+        """Read-only language resolution. Safe for preflight/reject UI.
+
+        Same logic as resolve() but NEVER writes to storage. Use this
+        before rate-limit or policy decisions where rejected requests
+        must not mutate user state.
+
+        Args:
+            user_id: Telegram user ID.
+            chat_id: Telegram chat ID.
+            text: User message text (for detection).
+            override: Explicit language override (e.g. from /lang).
+
+        Returns:
+            Frozen LanguageContext (no side-effects).
+        """
+        from infrastructure.conversation_storage import get_language
+
+        request_id = uuid.uuid4().hex[:12]
+
+        # Priority 1: Explicit override
+        if override:
+            return LanguageContext(
+                code=override,
+                source="override",
+                confidence=1.0,
+                switched_from=None,
+                request_id=request_id,
+            )
+
+        # Read sticky language (read-only, no set_language call)
+        sticky = await get_language(user_id, chat_id)
+
+        # Detect from text
+        detected, confidence = detect_language_with_confidence(text)
+
+        # No sticky: use detection or default (but do NOT persist)
+        if not sticky:
+            if confidence > _FIRST_TIME_THRESHOLD:
+                return LanguageContext(
+                    code=detected,
+                    source="detected",
+                    confidence=confidence,
+                    switched_from=None,
+                    request_id=request_id,
+                )
+            return LanguageContext(
+                code=self._default,
+                source="default",
+                confidence=confidence,
+                switched_from=None,
+                request_id=request_id,
+            )
+
+        # Sticky exists: check if smart-switch WOULD trigger (but don't persist)
+        if confidence > _SMART_SWITCH_THRESHOLD and detected != sticky:
+            return LanguageContext(
+                code=detected,
+                source="detected",
+                confidence=confidence,
+                switched_from=sticky,
+                request_id=request_id,
+            )
+
+        # Use sticky (no switch)
+        return LanguageContext(
+            code=sticky,
+            source="sticky",
+            confidence=1.0,
+            switched_from=None,
+            request_id=request_id,
+        )
+
     @staticmethod
     def from_code(code: str, source: str = "override") -> LanguageContext:
         """Create a LanguageContext directly from a language code.

@@ -1205,7 +1205,7 @@ class TestDebateKernelIntegration:
             request_id="test-kernel-001",
             task_type="debate",
             language=lang,
-            provider_chain=["claude_persistent"],
+            provider_chain=("claude_persistent",),
         )
 
     def _make_envelope(self, question: str = "Test?"):

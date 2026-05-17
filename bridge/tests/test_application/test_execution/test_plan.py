@@ -33,7 +33,7 @@ class TestExecutionPlan:
         plan = ExecutionPlan()
         assert plan.task_type == "answer_chat"
         assert plan.language == "de"
-        assert plan.provider_chain == []
+        assert plan.provider_chain == ()
         assert plan.audit_required is True
 
     def test_frozen(self) -> None:
@@ -43,13 +43,13 @@ class TestExecutionPlan:
             plan.request_id = "y"  # type: ignore[misc]
 
     def test_to_audit_dict(self) -> None:
-        """to_audit_dict returns all fields."""
+        """to_audit_dict returns all fields as JSON-friendly lists."""
         plan = ExecutionPlan(
             request_id="req1",
             task_type="debate",
             language="en",
-            provider_chain=["claude_persistent", "ollama"],
-            memory_used=["mem_1", "mem_2"],
+            provider_chain=("claude_persistent", "ollama"),
+            memory_used=("mem_1", "mem_2"),
             verifier_profile="strict",
         )
         d = plan.to_audit_dict()
@@ -93,7 +93,7 @@ class TestExecutionPlanner:
         ctx = _make_context()
         plan = planner.plan_chat(ctx, memory_ids=["ep_1", "sem_2"])
 
-        assert plan.memory_used == ["ep_1", "sem_2"]
+        assert plan.memory_used == ("ep_1", "sem_2")
 
     def test_plan_debate(self) -> None:
         """plan_debate creates debate plan."""
@@ -104,7 +104,7 @@ class TestExecutionPlanner:
         assert plan.request_id == "r2"
         assert plan.task_type == "debate"
         assert plan.language == "it"
-        assert plan.memory_used == []
+        assert plan.memory_used == ()
 
     def test_custom_provider_chain(self) -> None:
         """Planner uses configured default provider chain."""
@@ -114,7 +114,7 @@ class TestExecutionPlanner:
         ctx = _make_context()
         plan = planner.plan_chat(ctx)
 
-        assert plan.provider_chain == ["ollama_local", "claude_persistent"]
+        assert plan.provider_chain == ("ollama_local", "claude_persistent")
 
     def test_plan_uses_context_language(self) -> None:
         """Plan language comes from context, not hardcoded."""
@@ -129,3 +129,33 @@ class TestExecutionPlanner:
         ctx = _make_context(lang="ja")
         plan = planner.plan_debate(ctx)
         assert plan.language == "ja"
+
+
+class TestPlanImmutability:
+    """EK-06: Verify plan tuples cannot be mutated after creation."""
+
+    def test_provider_chain_is_tuple(self) -> None:
+        """provider_chain is a tuple, not a list."""
+        planner = ExecutionPlanner()
+        ctx = _make_context()
+        plan = planner.plan_chat(ctx)
+        assert isinstance(plan.provider_chain, tuple)
+
+    def test_memory_used_is_tuple(self) -> None:
+        """memory_used is a tuple, not a list."""
+        planner = ExecutionPlanner()
+        ctx = _make_context()
+        plan = planner.plan_chat(ctx, memory_ids=["m1"])
+        assert isinstance(plan.memory_used, tuple)
+
+    def test_provider_chain_mutation_raises(self) -> None:
+        """Attempting to append to provider_chain raises AttributeError."""
+        plan = ExecutionPlan(provider_chain=("claude_persistent",))
+        with pytest.raises(AttributeError):
+            plan.provider_chain.append("x")  # type: ignore[attr-error]
+
+    def test_memory_used_mutation_raises(self) -> None:
+        """Attempting to append to memory_used raises AttributeError."""
+        plan = ExecutionPlan(memory_used=("m1",))
+        with pytest.raises(AttributeError):
+            plan.memory_used.append("x")  # type: ignore[attr-error]

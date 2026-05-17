@@ -31,8 +31,18 @@ class BaseResolver(abc.ABC):
     """Abstract base for all context resolvers.
 
     Each resolver takes a PartialExecutionContext, enriches it,
-    and returns it. Resolvers must not perform I/O that modifies
-    external state (read-only from storage is acceptable).
+    and returns it.
+
+    ARCHITECTURE RULE: Resolvers MUST NOT perform state-mutating I/O.
+    Reading from storage is acceptable, but writing (e.g. persisting
+    sticky language) violates resolver purity. If a resolver needs to
+    persist state, that persistence must happen AFTER the request has
+    been allowed through preflight policies (rate-limit, auth, etc.).
+
+    The LanguageResolverAdapter delegates to LanguageResolver.resolve()
+    which DOES persist. This is acceptable because the resolver pipeline
+    only runs AFTER the rate-limit check. For pre-rate-limit UI, use
+    LanguageResolver.resolve_readonly() instead.
     """
 
     @abc.abstractmethod

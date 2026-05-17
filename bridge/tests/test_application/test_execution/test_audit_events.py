@@ -92,7 +92,7 @@ class TestExecutionPlanAuditEventChat:
         assert event["language"] == "en"
         assert event["language_source"] == "detected"
         assert event["language_confidence"] == 0.92
-        assert event["provider_chain"] == ["claude_persistent"]
+        assert list(event["provider_chain"]) == ["claude_persistent"]
         assert event["memory_refs"] == ["mem_01", "mem_02"]
         assert event["verifier_profile"] == "standard"
         assert event["audit_required"] is True
@@ -137,7 +137,7 @@ class TestExecutionPlanAuditEventDebate:
         assert event["request_id"] == "req-debate-001"
         assert event["task_type"] == "debate"
         assert event["language"] == "fr"
-        assert event["provider_chain"] == ["claude_persistent", "openai"]
+        assert list(event["provider_chain"]) == ["claude_persistent", "openai"]
         assert event["memory_refs"] == []
 
 

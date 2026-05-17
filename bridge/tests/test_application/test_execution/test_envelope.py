@@ -37,7 +37,7 @@ class TestEnvelopeCreation:
         assert env.raw_text == "Hello world"
         assert env.channel == "telegram"
         assert env.command is None
-        assert env.args == []
+        assert env.args == ()
         assert env.username == "testuser"
 
     def test_from_telegram_with_command(self) -> None:
@@ -50,7 +50,7 @@ class TestEnvelopeCreation:
             args=["en"],
         )
         assert env.command == "lang"
-        assert env.args == ["en"]
+        assert env.args == ("en",)
 
     def test_from_debate_command(self) -> None:
         """from_debate_command creates debate-specific envelope."""
@@ -62,7 +62,7 @@ class TestEnvelopeCreation:
         )
         assert env.command == "debate"
         assert env.raw_text == "Is water wet?"
-        assert env.args == ["Is water wet?"]
+        assert env.args == ("Is water wet?",)
         assert env.username == "debater"
 
     def test_envelope_is_frozen(self) -> None:
@@ -85,3 +85,30 @@ class TestEnvelopeCreation:
             reply_to_text="original message",
         )
         assert env.reply_to_text == "original message"
+
+
+class TestEnvelopeImmutability:
+    """EK-06: Verify args tuple cannot be mutated after creation."""
+
+    def test_args_is_tuple(self) -> None:
+        """args field is a tuple, not a list."""
+        env = RequestEnvelope.from_telegram(
+            user_id=1, chat_id=2, text="hi", args=["a", "b"]
+        )
+        assert isinstance(env.args, tuple)
+        assert env.args == ("a", "b")
+
+    def test_args_mutation_raises(self) -> None:
+        """Attempting to append to args raises TypeError."""
+        env = RequestEnvelope.from_telegram(user_id=1, chat_id=2, text="hi", args=["x"])
+        with pytest.raises(AttributeError):
+            env.args.append("y")  # type: ignore[attr-error]
+
+    def test_args_source_list_not_shared(self) -> None:
+        """Mutating the source list does not affect the envelope."""
+        source = ["a", "b"]
+        env = RequestEnvelope.from_telegram(
+            user_id=1, chat_id=2, text="hi", args=source
+        )
+        source.append("c")
+        assert env.args == ("a", "b")

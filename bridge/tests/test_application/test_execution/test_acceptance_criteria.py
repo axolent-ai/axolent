@@ -250,7 +250,7 @@ class TestCommit3ChatServiceAcceptance:
             request_id="test-no-reresolution",
             task_type="answer_chat",
             language="fr",
-            provider_chain=["claude_persistent"],
+            provider_chain=("claude_persistent",),
         )
 
         # Patch LanguageResolver to track if it gets called
@@ -307,7 +307,7 @@ class TestCommit3ChatServiceAcceptance:
             request_id="test-compiler",
             task_type="answer_chat",
             language="it",
-            provider_chain=["claude_persistent"],
+            provider_chain=("claude_persistent",),
         )
 
         await svc.process_user_message(
@@ -361,8 +361,8 @@ class TestCommit3ChatServiceAcceptance:
             request_id="test-audit-plan",
             task_type="answer_chat",
             language="en",
-            provider_chain=["claude_persistent", "ollama_local"],
-            memory_used=["mem_001", "mem_002"],
+            provider_chain=("claude_persistent", "ollama_local"),
+            memory_used=("mem_001", "mem_002"),
         )
 
         # Capture audit log
@@ -419,7 +419,7 @@ class TestCommit3ChatServiceAcceptance:
             request_id="test-stream-ctx",
             task_type="answer_chat",
             language="pt",
-            provider_chain=["claude_persistent"],
+            provider_chain=("claude_persistent",),
         )
 
         with patch(

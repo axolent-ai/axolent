@@ -38,7 +38,7 @@ class RequestEnvelope:
     channel: Literal["telegram", "desktop", "mini_app", "cli", "webhook"] = "telegram"
     raw_text: str = ""
     command: Optional[str] = None
-    args: list[str] = field(default_factory=list)
+    args: tuple[str, ...] = field(default_factory=tuple)
     timestamp_utc: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     username: Optional[str] = None
     reply_to_text: Optional[str] = None
@@ -74,7 +74,7 @@ class RequestEnvelope:
             channel="telegram",
             raw_text=text,
             command=command,
-            args=args or [],
+            args=tuple(args) if args else (),
             username=username,
             reply_to_text=reply_to_text,
         )
@@ -104,6 +104,6 @@ class RequestEnvelope:
             channel="telegram",
             raw_text=question,
             command="debate",
-            args=[question],
+            args=(question,),
             username=username,
         )

@@ -378,12 +378,38 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if update.message.reply_to_message and update.message.reply_to_message.text:
         reply_to_text = update.message.reply_to_message.text
 
+    # EK-01: Build RequestEnvelope BEFORE rate-limit check so that all
+    # audit events (including rejections) carry a stable request_id.
+    from datetime import datetime, timezone
+
+    _msg_envelope = RequestEnvelope.from_telegram(
+        user_id=user_id,
+        chat_id=chat_id,
+        text=text,
+        username=username,
+        reply_to_text=reply_to_text,
+    )
+
+    # Universal audit anchor: request_received
+    write_raw_audit(
+        {
+            "timestamp": _msg_envelope.timestamp_utc.isoformat(),
+            "event_type": "request_received",
+            "request_id": _msg_envelope.request_id,
+            "user_id": user_id,
+            "chat_id": chat_id,
+            "channel": _msg_envelope.channel,
+            "command": _msg_envelope.command,
+        }
+    )
+
     log.info(
-        "Incoming message from %s (%s): %d chars%s",
+        "Incoming message from %s (%s): %d chars%s [req=%s]",
         username,
         user_id,
         len(text),
         " (reply-to)" if reply_to_text else "",
+        _msg_envelope.request_id,
     )
 
     # Onboarding hint: if user skipped wizard, show hint after 3rd message
@@ -455,6 +481,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 {
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "event_type": "rate_limit_exceeded",
+                    "request_id": _msg_envelope.request_id,
                     "user_id": user_id,
                     "chat_id": chat_id,
                     "username": username,
@@ -540,6 +567,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 {
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "event_type": "unlimited_mode_warning",
+                    "request_id": _msg_envelope.request_id,
                     "user_id": user_id,
                     "chat_id": chat_id,
                     "username": username,
@@ -572,6 +600,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     username=username,
                     text=text,
                     reply_to_text=reply_to_text,
+                    envelope=_msg_envelope,
                 )
             else:
                 # Legacy-Fallback: non-streaming
@@ -584,6 +613,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     username=username,
                     text=text,
                     reply_to_text=reply_to_text,
+                    envelope=_msg_envelope,
                 )
 
 
@@ -597,6 +627,8 @@ async def _handle_message_streaming(
     username: str | None,
     text: str,
     reply_to_text: str | None,
+    *,
+    envelope: RequestEnvelope,
 ) -> None:
     """Streaming message handler (R04).
 
@@ -622,14 +654,7 @@ async def _handle_message_streaming(
     memory_entries_loaded = 0
     task_meta: dict[str, Any] = {}
 
-    # Phase 0 Commit 2: Build RequestEnvelope once (carries request_id)
-    envelope = RequestEnvelope.from_telegram(
-        user_id=user_id,
-        chat_id=chat_id,
-        text=text,
-        username=username,
-        reply_to_text=reply_to_text,
-    )
+    # EK-01: envelope is now passed in from handle_message (built before rate-limit)
 
     # Audit "started" entry (plan details added after plan creation below)
     audit_started: dict[str, Any] = {
@@ -818,7 +843,7 @@ async def _handle_message_streaming(
 
         duration = time.monotonic() - t_start
 
-        # T25: If cancelled, treat as terminal — no fallback finalize, no save.
+        # EK-03: If cancelled, hard return. No fallback finalize, no save.
         # This prevents /reset from storing partial responses into history.
         if session.is_cancelled:
             log.info(
@@ -828,7 +853,20 @@ async def _handle_message_streaming(
                 chat_id,
                 len(session.accumulated_text or ""),
             )
-            final_text = ""  # explicitly discard
+            # Audit the cancellation, then exit completely
+            write_raw_audit(
+                {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "event_type": "stream_cancelled",
+                    "request_id": envelope.request_id,
+                    "user_id": user_id,
+                    "chat_id": chat_id,
+                    "streaming_chunks": streaming_chunks,
+                    "accumulated_chars": len(session.accumulated_text or ""),
+                    "duration_seconds": round(duration, 2),
+                }
+            )
+            return  # hard exit: no fallback, no save, no finalize
 
         # Fallback: no final text but accumulated text available
         if not final_text and session.accumulated_text and not had_error:
@@ -934,20 +972,15 @@ async def _handle_message_legacy(
     username: str | None,
     text: str,
     reply_to_text: str | None,
+    *,
+    envelope: RequestEnvelope,
 ) -> None:
     """Legacy message handler (pre-R04, non-streaming fallback).
 
     Phase 0 Commit 5: uses ExecutionContext for language, TextGuard,
     and ChatService call (no separate language resolution).
     """
-    # Build ExecutionContext via Kernel (same as streaming path)
-    envelope = RequestEnvelope.from_telegram(
-        user_id=user_id,
-        chat_id=chat_id,
-        text=text,
-        username=username,
-        reply_to_text=reply_to_text,
-    )
+    # EK-01: envelope passed in from handle_message (built before rate-limit)
     _kernel = _get_context_kernel(context)
     _exec_ctx = await _kernel.build(envelope)
     _planner = _get_execution_planner(context)
@@ -2348,6 +2381,19 @@ async def handle_debate_command(
         chat_id=chat_id,
         question=question,
         username=username,
+    )
+
+    # EK-01: Universal audit anchor for debate path
+    write_raw_audit(
+        {
+            "timestamp": envelope.timestamp_utc.isoformat(),
+            "event_type": "request_received",
+            "request_id": envelope.request_id,
+            "user_id": user_id,
+            "chat_id": chat_id,
+            "channel": envelope.channel,
+            "command": envelope.command,
+        }
     )
 
     # Resolve ExecutionContext: language comes from the question text

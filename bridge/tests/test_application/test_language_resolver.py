@@ -192,3 +192,65 @@ class TestLanguageContext:
         assert ctx.source == "override"
         assert ctx.confidence == 1.0
         assert ctx.request_id  # non-empty
+
+
+class TestLanguageResolverReadonly:
+    """EK-02: Tests for resolve_readonly (no side-effects)."""
+
+    async def test_readonly_no_sticky_detected(self) -> None:
+        """Readonly resolves from text without persisting."""
+        from infrastructure.conversation_storage import get_language
+
+        resolver = LanguageResolver(default_lang="de")
+        ctx = await resolver.resolve_readonly(
+            user_id=99, chat_id=99, text="What is the weather like today?"
+        )
+
+        assert ctx.code == "en"
+        assert ctx.source == "detected"
+        # Must NOT have persisted: get_language should return None
+        stored = await get_language(99, 99)
+        assert stored is None
+
+    async def test_readonly_smart_switch_not_persisted(self) -> None:
+        """Readonly detects smart-switch but does NOT write it."""
+        from infrastructure.conversation_storage import get_language, set_language
+
+        await set_language(50, 50, "de")
+
+        resolver = LanguageResolver(default_lang="de")
+        ctx = await resolver.resolve_readonly(
+            user_id=50,
+            chat_id=50,
+            text="Can you please help me with this problem? I would really appreciate your assistance.",
+        )
+
+        assert ctx.code == "en"
+        assert ctx.switched_from == "de"
+        # Sticky must remain "de" (not switched to "en")
+        stored = await get_language(50, 50)
+        assert stored == "de"
+
+    async def test_readonly_override(self) -> None:
+        """Readonly with override returns override without persisting."""
+        resolver = LanguageResolver(default_lang="de")
+        ctx = await resolver.resolve_readonly(
+            user_id=77, chat_id=77, text="anything", override="fr"
+        )
+        assert ctx.code == "fr"
+        assert ctx.source == "override"
+
+    async def test_readonly_uses_existing_sticky(self) -> None:
+        """Readonly reads sticky but never modifies it."""
+        from infrastructure.conversation_storage import get_language, set_language
+
+        await set_language(60, 60, "it")
+
+        resolver = LanguageResolver(default_lang="de")
+        ctx = await resolver.resolve_readonly(user_id=60, chat_id=60, text="ciao")
+
+        assert ctx.code == "it"
+        assert ctx.source == "sticky"
+        # Verify not touched
+        stored = await get_language(60, 60)
+        assert stored == "it"

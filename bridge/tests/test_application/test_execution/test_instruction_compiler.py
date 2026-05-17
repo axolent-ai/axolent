@@ -37,7 +37,7 @@ def _make_plan(lang: str = "de", task_type: str = "answer_chat") -> ExecutionPla
         request_id="test-req",
         task_type=task_type,
         language=lang,
-        provider_chain=["claude_persistent"],
+        provider_chain=("claude_persistent",),
     )
 
 
@@ -126,7 +126,7 @@ class TestInstructionCompilerBlockOrder:
         assert "[STYLE RULE]" in result.system_prompt
 
     def test_time_service_integrated(self) -> None:
-        """Time service block is included when available."""
+        """Time service block is included when available (EK-04: uses ctx.time)."""
         mock_time_service = MagicMock()
         mock_time_service.get_time_context_block.return_value = "[TIME] Monday, morning"
 
@@ -136,7 +136,10 @@ class TestInstructionCompilerBlockOrder:
 
         result = compiler.compile_chat(ctx, plan, base_prompt="Base.")
         assert "[TIME] Monday, morning" in result.system_prompt
-        mock_time_service.get_time_context_block.assert_called_once_with(42, lang="en")
+        # EK-04: now= must be passed from ctx.time.now_local
+        mock_time_service.get_time_context_block.assert_called_once_with(
+            42, now=ctx.time.now_local, lang="en"
+        )
 
     def test_style_service_integrated(self) -> None:
         """Style adaption block is included when available."""

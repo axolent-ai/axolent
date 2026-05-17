@@ -130,10 +130,11 @@ class InstructionCompiler:
         blocks_included.append("language_lock")
         blocks_included.append("task_objective")
 
-        # Block 5: Time context
+        # Block 5: Time context (EK-04: use ctx.time.now_local to ensure
+        # audit time and prompt time are from the same snapshot)
         if self._time_service is not None:
             time_block = self._time_service.get_time_context_block(
-                ctx.user_id, lang=lang
+                ctx.user_id, now=ctx.time.now_local, lang=lang
             )
             if time_block:
                 result = f"{result}\n\n{time_block}"

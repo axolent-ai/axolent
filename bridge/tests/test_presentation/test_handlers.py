@@ -13,6 +13,7 @@ import pytest
 from filelock import FileLock
 
 from application.chat_service import ChatService
+from application.execution.envelope import RequestEnvelope
 from infrastructure.conversation_storage import _reset_all_for_tests
 from infrastructure.providers.base import ProviderResponse
 
@@ -828,6 +829,12 @@ class TestStreamingErrorRedaction:
                 username="testuser",
                 text="Test",
                 reply_to_text=None,
+                envelope=RequestEnvelope.from_telegram(
+                    user_id=42,
+                    chat_id=99,
+                    text="Test",
+                    username="testuser",
+                ),
             )
 
         # Der User-facing Text darf KEINEN Pfad/Stacktrace enthalten
@@ -891,6 +898,12 @@ class TestStreamingErrorRedaction:
                 username="testuser",
                 text="Test",
                 reply_to_text=None,
+                envelope=RequestEnvelope.from_telegram(
+                    user_id=42,
+                    chat_id=99,
+                    text="Test",
+                    username="testuser",
+                ),
             )
 
         # Letzter Edit-Text darf keinen Pfad enthalten
@@ -968,6 +981,12 @@ class TestStreamingAuditEntries:
                 username="testuser",
                 text="Frage",
                 reply_to_text=None,
+                envelope=RequestEnvelope.from_telegram(
+                    user_id=42,
+                    chat_id=99,
+                    text="Frage",
+                    username="testuser",
+                ),
             )
 
         # At least 1 audit entry (stream_started)
@@ -1038,6 +1057,12 @@ class TestStreamingAuditEntries:
                 username="testuser",
                 text="Crash",
                 reply_to_text=None,
+                envelope=RequestEnvelope.from_telegram(
+                    user_id=42,
+                    chat_id=99,
+                    text="Crash",
+                    username="testuser",
+                ),
             )
 
         # At least 2 audit entries: stream_started + stream_error
@@ -1112,6 +1137,12 @@ class TestStreamingAuditEntries:
                 username="testuser",
                 text="Crash meta test",
                 reply_to_text=None,
+                envelope=RequestEnvelope.from_telegram(
+                    user_id=42,
+                    chat_id=99,
+                    text="Crash meta test",
+                    username="testuser",
+                ),
             )
 
         # Find stream_error entries
@@ -1170,6 +1201,12 @@ class TestOuterExceptionCoverage:
                 username="testuser",
                 text="Test",
                 reply_to_text=None,
+                envelope=RequestEnvelope.from_telegram(
+                    user_id=42,
+                    chat_id=99,
+                    text="Test",
+                    username="testuser",
+                ),
             )
 
         # User muss eine Nachricht bekommen
@@ -1934,6 +1971,12 @@ class TestContextKernelIntegrationInHandler:
                 username="testuser",
                 text="Bonjour",
                 reply_to_text=None,
+                envelope=RequestEnvelope.from_telegram(
+                    user_id=7,
+                    chat_id=77,
+                    text="Bonjour",
+                    username="testuser",
+                ),
             )
 
         # Kernel.build was called exactly once
@@ -1990,6 +2033,12 @@ class TestContextKernelIntegrationInHandler:
                 username="testuser",
                 text="Test",
                 reply_to_text=None,
+                envelope=RequestEnvelope.from_telegram(
+                    user_id=8,
+                    chat_id=88,
+                    text="Test",
+                    username="testuser",
+                ),
             )
 
         # First audit call must be stream_started with request_id

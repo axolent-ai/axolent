@@ -43,8 +43,8 @@ class ExecutionPlan:
         "scheduled_task",
     ] = "answer_chat"
     language: str = "de"
-    provider_chain: list[str] = field(default_factory=list)
-    memory_used: list[str] = field(default_factory=list)
+    provider_chain: tuple[str, ...] = field(default_factory=tuple)
+    memory_used: tuple[str, ...] = field(default_factory=tuple)
     verifier_profile: str = "standard"
     audit_required: bool = True
 
@@ -52,7 +52,7 @@ class ExecutionPlan:
         """Convert plan to a dict suitable for audit logging.
 
         Returns:
-            Dictionary with all plan fields.
+            Dictionary with all plan fields (tuples as lists for JSON).
         """
         return {
             "request_id": self.request_id,
@@ -95,7 +95,7 @@ class ExecutionPlanner:
 
     def __init__(
         self,
-        default_provider_chain: list[str] | None = None,
+        default_provider_chain: list[str] | tuple[str, ...] | None = None,
         policy_engine: PolicyEngine | None = None,
     ) -> None:
         """Initialize the planner.
@@ -104,13 +104,17 @@ class ExecutionPlanner:
             default_provider_chain: Default providers to try in order.
             policy_engine: PolicyEngine instance (stub in Phase 0).
         """
-        self._default_chain = default_provider_chain or ["claude_persistent"]
+        self._default_chain = (
+            tuple(default_provider_chain)
+            if default_provider_chain
+            else ("claude_persistent",)
+        )
         self._policy = policy_engine or PolicyEngine()
 
     def plan_chat(
         self,
         ctx: ExecutionContext,
-        memory_ids: list[str] | None = None,
+        memory_ids: list[str] | tuple[str, ...] | None = None,
     ) -> ExecutionPlan:
         """Create an execution plan for a chat request.
 
@@ -125,8 +129,8 @@ class ExecutionPlanner:
             request_id=ctx.request_id,
             task_type="answer_chat",
             language=ctx.language.code,
-            provider_chain=list(self._default_chain),
-            memory_used=memory_ids or [],
+            provider_chain=self._default_chain,
+            memory_used=tuple(memory_ids) if memory_ids else (),
             verifier_profile="standard",
             audit_required=True,
         )
@@ -147,8 +151,8 @@ class ExecutionPlanner:
             request_id=ctx.request_id,
             task_type="debate",
             language=ctx.language.code,
-            provider_chain=list(self._default_chain),
-            memory_used=[],
+            provider_chain=self._default_chain,
+            memory_used=(),
             verifier_profile="standard",
             audit_required=True,
         )
