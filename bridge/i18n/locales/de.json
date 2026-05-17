@@ -746,6 +746,36 @@
       "auto_translated": false,
       "reviewed": true
     },
+    "self_awareness.label_model": {
+      "text": "Modell",
+      "source_hash": "60ff4d68f33effcb",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "self_awareness.slot_heading": {
+      "text": "[Slot-Belegung im System]",
+      "source_hash": "fdec2223489b88b8",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "self_awareness.text_precise": {
+      "text": "Antworte präzise mit diesen Werten wenn nach Slot-Belegungen gefragt wird.",
+      "source_hash": "c5389ca901c08659",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "self_awareness.text_self_id": {
+      "text": "Wenn der User fragt welches Modell du nutzt, antworte mit diesen Werten. Spekuliere nicht aus Trainingsdaten.",
+      "source_hash": "995308b5578d07e8",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "self_awareness.text_no_slots": {
+      "text": "Wenn du nach anderen Slots gefragt wirst und diese Slot-Liste nicht hast, antworte ehrlich: 'Ich habe nur Information zu meinem aktiven Slot.' Spekuliere nicht.",
+      "source_hash": "64c8d3836c40b17f",
+      "auto_translated": false,
+      "reviewed": true
+    },
     "time_context.header": {
       "text": "[ZEITKONTEXT]",
       "source_hash": "9149c0e49b101be6",
@@ -793,6 +823,12 @@
       "source_hash": "9a882b4725098fd7",
       "auto_translated": false,
       "reviewed": true
+    },
+    "style.no_repetition_rule": {
+      "text": "Vermeide Wortwiederholungen, insbesondere von Satzanfängen und Füllwörtern wie Gerne, Sicher, Natürlich, Selbstverständlich. Variiere deine Ausdrücke oder lasse Füllwörter komplett weg. Beginne Antworten NICHT mit Gerne oder ähnlichen Floskeln.",
+      "source_hash": "ec930171cc8bfce5",
+      "auto_translated": true,
+      "reviewed": false
     }
   }
 }

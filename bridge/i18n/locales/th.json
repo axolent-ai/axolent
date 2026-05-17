@@ -746,6 +746,36 @@
       "auto_translated": true,
       "reviewed": false
     },
+    "self_awareness.label_model": {
+      "text": "โมเดลปัจจุบัน",
+      "source_hash": "60ff4d68f33effcb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.slot_heading": {
+      "text": "[การครอบครองสล็อต]",
+      "source_hash": "fdec2223489b88b8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_precise": {
+      "text": "เมื่อถูกถามเกี่ยวกับการครอบครองสล็อต ตอบอย่างแม่นยำด้วยค่าเหล่านี้",
+      "source_hash": "c5389ca901c08659",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_self_id": {
+      "text": "เมื่อผู้ใช้ถามว่าคุณใช้โมเดลอะไร ตอบด้วยค่าเหล่านี้ อย่าคาดเดาจากข้อมูลการฝึก",
+      "source_hash": "995308b5578d07e8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_no_slots": {
+      "text": "หากถูกถามเกี่ยวกับสล็อตอื่นและไม่มีรายการนี้ ตอบตามตรง: 'ฉันมีข้อมูลเกี่ยวกับสล็อตที่ใช้งานอยู่เท่านั้น' อย่าคาดเดา",
+      "source_hash": "64c8d3836c40b17f",
+      "auto_translated": true,
+      "reviewed": false
+    },
     "time_context.header": {
       "text": "[TIME CONTEXT]",
       "source_hash": "9149c0e49b101be6",
@@ -791,6 +821,12 @@
     "time_context.capability": {
       "text": "You HAVE access to the current local time and date shown above. When the user asks about time or date, answer with these values. NEVER claim you have no access to current time or real-time data.",
       "source_hash": "9a882b4725098fd7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "style.no_repetition_rule": {
+      "text": "หลีกเลี่ยงการซ้ำคำ โดยเฉพาะการเริ่มประโยคซ้ำและคำเติมอย่าง แน่นอน, ได้เลย, เป็นอย่างยิ่ง ใช้สำนวนที่หลากหลายหรือตัดคำเติมออกไปเลย อย่าเริ่มคำตอบด้วย แน่นอน หรือวลีสุภาพที่คล้ายกัน",
+      "source_hash": "ec930171cc8bfce5",
       "auto_translated": true,
       "reviewed": false
     }

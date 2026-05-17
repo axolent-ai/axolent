@@ -746,6 +746,36 @@
       "auto_translated": false,
       "reviewed": true
     },
+    "self_awareness.label_model": {
+      "text": "Current model",
+      "source_hash": "60ff4d68f33effcb",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "self_awareness.slot_heading": {
+      "text": "[Slot occupancy]",
+      "source_hash": "fdec2223489b88b8",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "self_awareness.text_precise": {
+      "text": "Answer precisely with these values when asked about slot occupancy.",
+      "source_hash": "c5389ca901c08659",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "self_awareness.text_self_id": {
+      "text": "When the user asks which model you are using, answer with these values. Do not speculate from training data.",
+      "source_hash": "995308b5578d07e8",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "self_awareness.text_no_slots": {
+      "text": "If asked about other slots and you do not have this slot list, answer honestly: 'I only have information about my active slot.' Do not speculate.",
+      "source_hash": "64c8d3836c40b17f",
+      "auto_translated": false,
+      "reviewed": true
+    },
     "time_context.header": {
       "text": "[TIME CONTEXT]",
       "source_hash": "9149c0e49b101be6",
@@ -791,6 +821,12 @@
     "time_context.capability": {
       "text": "You HAVE access to the current local time and date shown above. When the user asks about time or date, answer with these values. NEVER claim you have no access to current time or real-time data.",
       "source_hash": "9a882b4725098fd7",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "style.no_repetition_rule": {
+      "text": "Avoid word repetitions, especially repeated sentence starters and filler words like Sure, Certainly, Of course, Absolutely. Vary your expressions or omit filler words entirely. Do NOT start responses with Sure or similar pleasantries.",
+      "source_hash": "ec930171cc8bfce5",
       "auto_translated": false,
       "reviewed": true
     }

@@ -746,6 +746,36 @@
       "auto_translated": true,
       "reviewed": false
     },
+    "self_awareness.label_model": {
+      "text": "Modello attuale",
+      "source_hash": "60ff4d68f33effcb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.slot_heading": {
+      "text": "[Occupazione slot]",
+      "source_hash": "fdec2223489b88b8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_precise": {
+      "text": "Rispondi con precisione con questi valori quando ti chiedono dell'occupazione degli slot.",
+      "source_hash": "c5389ca901c08659",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_self_id": {
+      "text": "Quando l'utente chiede quale modello stai usando, rispondi con questi valori. Non speculare dai dati di addestramento.",
+      "source_hash": "995308b5578d07e8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_no_slots": {
+      "text": "Se ti chiedono di altri slot e non hai questa lista, rispondi onestamente: 'Ho solo informazioni sul mio slot attivo.' Non speculare.",
+      "source_hash": "64c8d3836c40b17f",
+      "auto_translated": true,
+      "reviewed": false
+    },
     "time_context.header": {
       "text": "[TIME CONTEXT]",
       "source_hash": "9149c0e49b101be6",
@@ -791,6 +821,12 @@
     "time_context.capability": {
       "text": "You HAVE access to the current local time and date shown above. When the user asks about time or date, answer with these values. NEVER claim you have no access to current time or real-time data.",
       "source_hash": "9a882b4725098fd7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "style.no_repetition_rule": {
+      "text": "Evita ripetizioni di parole, specialmente inizi di frase ripetuti e parole riempitive come Certo, Certamente, Naturalmente. Varia le tue espressioni o ometti completamente le parole riempitive. NON iniziare le risposte con Certo o formalità simili.",
+      "source_hash": "ec930171cc8bfce5",
       "auto_translated": true,
       "reviewed": false
     }

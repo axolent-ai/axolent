@@ -134,12 +134,13 @@ class TestI18n:
         result = sa_service.build(user_id=1, lang="en")
         assert "Current model:" in result
 
-    def test_build_unknown_language_falls_back_to_english(
+    def test_build_japanese_uses_native_text(
         self, sa_service: SelfAwarenessService
     ) -> None:
-        """Unbekannte Sprache faellt auf Englisch zurueck."""
+        """Japanese uses native i18n text (not English fallback)."""
         result = sa_service.build(user_id=1, lang="ja")
-        assert "Current model:" in result
+        # Since Phase 2: all 20 languages have native text
+        assert "現在のモデル:" in result
 
 
 # ---------------------------------------------------------------

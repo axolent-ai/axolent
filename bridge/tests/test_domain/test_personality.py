@@ -267,14 +267,14 @@ class TestBuildSelfAwarenessBlock:
         assert "Modell: Opus 4.7" in block
         assert "Spekuliere nicht" in block
 
-    def test_non_de_falls_back_to_en(self) -> None:
-        """Nicht-DE-Sprachen fallen auf EN zurück."""
-        block_fr = build_self_awareness_block(
+    def test_non_de_non_en_uses_native_language(self) -> None:
+        """Non-DE/EN languages produce native content (not EN fallback)."""
+        block_it = build_self_awareness_block(
             model_display_name="Opus 4.7",
             model_id="claude-opus-4-7",
             task_slot="code",
             provider="anthropic",
-            lang="fr",
+            lang="it",
         )
         block_en = build_self_awareness_block(
             model_display_name="Opus 4.7",
@@ -283,4 +283,8 @@ class TestBuildSelfAwarenessBlock:
             provider="anthropic",
             lang="en",
         )
-        assert block_fr == block_en
+        # IT must NOT be identical to EN (native i18n content)
+        assert block_it != block_en
+        # IT block must contain Italian text from i18n
+        assert "Modello attuale" in block_it
+        assert "[SELF-AWARENESS]" in block_it

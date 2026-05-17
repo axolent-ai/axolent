@@ -746,6 +746,36 @@
       "auto_translated": true,
       "reviewed": false
     },
+    "self_awareness.label_model": {
+      "text": "Текущая модель",
+      "source_hash": "60ff4d68f33effcb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.slot_heading": {
+      "text": "[Занятость слотов]",
+      "source_hash": "fdec2223489b88b8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_precise": {
+      "text": "Отвечай точно этими значениями, когда спрашивают о занятости слотов.",
+      "source_hash": "c5389ca901c08659",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_self_id": {
+      "text": "Когда пользователь спрашивает, какую модель ты используешь, отвечай этими значениями. Не спекулируй на основе тренировочных данных.",
+      "source_hash": "995308b5578d07e8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_no_slots": {
+      "text": "Если спрашивают о других слотах, а у тебя нет этого списка, отвечай честно: 'У меня есть информация только о моём активном слоте.' Не спекулируй.",
+      "source_hash": "64c8d3836c40b17f",
+      "auto_translated": true,
+      "reviewed": false
+    },
     "time_context.header": {
       "text": "[TIME CONTEXT]",
       "source_hash": "9149c0e49b101be6",
@@ -791,6 +821,12 @@
     "time_context.capability": {
       "text": "You HAVE access to the current local time and date shown above. When the user asks about time or date, answer with these values. NEVER claim you have no access to current time or real-time data.",
       "source_hash": "9a882b4725098fd7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "style.no_repetition_rule": {
+      "text": "Избегай повторений слов, особенно повторяющихся начал предложений и слов-паразитов вроде Конечно, Безусловно, Разумеется. Разнообразь выражения или полностью опускай слова-паразиты. НЕ начинай ответы с Конечно или подобных формальностей.",
+      "source_hash": "ec930171cc8bfce5",
       "auto_translated": true,
       "reviewed": false
     }

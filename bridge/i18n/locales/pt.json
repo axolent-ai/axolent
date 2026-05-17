@@ -746,6 +746,36 @@
       "auto_translated": true,
       "reviewed": false
     },
+    "self_awareness.label_model": {
+      "text": "Modelo atual",
+      "source_hash": "60ff4d68f33effcb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.slot_heading": {
+      "text": "[Ocupação de slots]",
+      "source_hash": "fdec2223489b88b8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_precise": {
+      "text": "Responda com precisão com estes valores quando perguntarem sobre a ocupação de slots.",
+      "source_hash": "c5389ca901c08659",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_self_id": {
+      "text": "Quando o usuário perguntar qual modelo você usa, responda com estes valores. Não especule com dados de treinamento.",
+      "source_hash": "995308b5578d07e8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_no_slots": {
+      "text": "Se perguntarem sobre outros slots e você não tiver esta lista, responda honestamente: 'Só tenho informações sobre meu slot ativo.' Não especule.",
+      "source_hash": "64c8d3836c40b17f",
+      "auto_translated": true,
+      "reviewed": false
+    },
     "time_context.header": {
       "text": "[TIME CONTEXT]",
       "source_hash": "9149c0e49b101be6",
@@ -791,6 +821,12 @@
     "time_context.capability": {
       "text": "You HAVE access to the current local time and date shown above. When the user asks about time or date, answer with these values. NEVER claim you have no access to current time or real-time data.",
       "source_hash": "9a882b4725098fd7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "style.no_repetition_rule": {
+      "text": "Evite repetições de palavras, especialmente inícios de frase repetidos e palavras de preenchimento como Claro, Certamente, Com certeza. Varie suas expressões ou omita palavras de preenchimento completamente. NÃO comece respostas com Claro ou formalidades semelhantes.",
+      "source_hash": "ec930171cc8bfce5",
       "auto_translated": true,
       "reviewed": false
     }

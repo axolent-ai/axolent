@@ -746,6 +746,36 @@
       "auto_translated": true,
       "reviewed": false
     },
+    "self_awareness.label_model": {
+      "text": "النموذج الحالي",
+      "source_hash": "60ff4d68f33effcb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.slot_heading": {
+      "text": "[إشغال الفتحات]",
+      "source_hash": "fdec2223489b88b8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_precise": {
+      "text": "أجب بدقة بهذه القيم عند السؤال عن إشغال الفتحات.",
+      "source_hash": "c5389ca901c08659",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_self_id": {
+      "text": "عندما يسأل المستخدم عن النموذج الذي تستخدمه، أجب بهذه القيم. لا تتكهن من بيانات التدريب.",
+      "source_hash": "995308b5578d07e8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_no_slots": {
+      "text": "إذا سُئلت عن فتحات أخرى وليس لديك هذه القائمة، أجب بصدق: 'لدي معلومات فقط عن فتحتي النشطة.' لا تتكهن.",
+      "source_hash": "64c8d3836c40b17f",
+      "auto_translated": true,
+      "reviewed": false
+    },
     "time_context.header": {
       "text": "[TIME CONTEXT]",
       "source_hash": "9149c0e49b101be6",
@@ -791,6 +821,12 @@
     "time_context.capability": {
       "text": "You HAVE access to the current local time and date shown above. When the user asks about time or date, answer with these values. NEVER claim you have no access to current time or real-time data.",
       "source_hash": "9a882b4725098fd7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "style.no_repetition_rule": {
+      "text": "تجنب تكرار الكلمات، خاصة بدايات الجمل المتكررة والكلمات الحشوية مثل بالطبع، بالتأكيد، طبعاً. نوّع تعبيراتك أو احذف الكلمات الحشوية تماماً. لا تبدأ الإجابات بـ بالطبع أو عبارات مجاملة مشابهة.",
+      "source_hash": "ec930171cc8bfce5",
       "auto_translated": true,
       "reviewed": false
     }

@@ -746,6 +746,36 @@
       "auto_translated": true,
       "reviewed": false
     },
+    "self_awareness.label_model": {
+      "text": "Mevcut model",
+      "source_hash": "60ff4d68f33effcb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.slot_heading": {
+      "text": "[Slot doluluk durumu]",
+      "source_hash": "fdec2223489b88b8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_precise": {
+      "text": "Slot doluluk durumu sorulduğunda bu değerlerle kesin yanıt ver.",
+      "source_hash": "c5389ca901c08659",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_self_id": {
+      "text": "Kullanıcı hangi modeli kullandığını sorduğunda bu değerlerle yanıt ver. Eğitim verilerinden spekülasyon yapma.",
+      "source_hash": "995308b5578d07e8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_no_slots": {
+      "text": "Başka slotlar hakkında sorulursa ve bu listen yoksa dürüstçe yanıt ver: 'Sadece aktif slotum hakkında bilgim var.' Spekülasyon yapma.",
+      "source_hash": "64c8d3836c40b17f",
+      "auto_translated": true,
+      "reviewed": false
+    },
     "time_context.header": {
       "text": "[TIME CONTEXT]",
       "source_hash": "9149c0e49b101be6",
@@ -791,6 +821,12 @@
     "time_context.capability": {
       "text": "You HAVE access to the current local time and date shown above. When the user asks about time or date, answer with these values. NEVER claim you have no access to current time or real-time data.",
       "source_hash": "9a882b4725098fd7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "style.no_repetition_rule": {
+      "text": "Kelime tekrarlarından kaçın, özellikle tekrarlanan cümle başlangıçları ve Elbette, Kesinlikle, Tabii ki gibi dolgu kelimelerden. İfadelerini çeşitlendir veya dolgu kelimeleri tamamen atla. Yanıtları Elbette veya benzer nezaket ifadeleriyle başlatMA.",
+      "source_hash": "ec930171cc8bfce5",
       "auto_translated": true,
       "reviewed": false
     }

@@ -2,10 +2,15 @@
 
 Defines the structure for system prompt and user constitution.
 Pure data structure and combination logic, no I/O.
+
+Since Phase 2: self-awareness block uses i18n t() for all 20 languages
+instead of hardcoded DE/EN branches.
 """
 
 import logging
 from dataclasses import dataclass
+
+from i18n import t
 
 log = logging.getLogger(__name__)
 
@@ -74,7 +79,8 @@ def build_self_awareness_block(
 
     Gives the model factual information about itself so it does not
     hallucinate when the user asks which model is running.
-    Supports DE and EN (all other languages fall back to EN).
+    Since Phase 2: supports all 20 languages via i18n t() system.
+    No more hardcoded DE/EN branches.
 
     Args:
         model_display_name: Human-readable model name (e.g. "Opus 4.7").
@@ -82,43 +88,16 @@ def build_self_awareness_block(
         task_slot: Active task slot (e.g. "chat", "code").
         provider: Provider name (e.g. "anthropic").
         all_slots: Optional list of all 6 slot occupancies in the user context.
-        lang: Language code (default: "de"). Non-DE falls back to EN.
+        lang: Language code (default: "de"). All 20 languages supported.
 
     Returns:
         Self-awareness block as string.
     """
-    use_de = lang == "de"
-
-    if use_de:
-        label_model = "Modell"
-        label_slot_heading = "[Slot-Belegung im System]"
-        text_precise = (
-            "Antworte präzise mit diesen Werten wenn nach Slot-Belegungen gefragt wird."
-        )
-        text_self_id = (
-            "Wenn der User fragt welches Modell du nutzt, antworte mit diesen Werten. "
-            "Spekuliere nicht aus Trainingsdaten."
-        )
-        text_no_slots = (
-            "Wenn du nach anderen Slots gefragt wirst und diese Slot-Liste "
-            "nicht hast, antworte ehrlich: 'Ich habe nur Information zu meinem "
-            "aktiven Slot.' Spekuliere nicht."
-        )
-    else:
-        label_model = "Current model"
-        label_slot_heading = "[Slot occupancy]"
-        text_precise = (
-            "Answer precisely with these values when asked about slot occupancy."
-        )
-        text_self_id = (
-            "When the user asks which model you are using, answer with these values. "
-            "Do not speculate from training data."
-        )
-        text_no_slots = (
-            "If asked about other slots and you do not have this slot list, "
-            "answer honestly: 'I only have information about my active slot.' "
-            "Do not speculate."
-        )
+    label_model = t("self_awareness.label_model", lang)
+    label_slot_heading = t("self_awareness.slot_heading", lang)
+    text_precise = t("self_awareness.text_precise", lang)
+    text_self_id = t("self_awareness.text_self_id", lang)
+    text_no_slots = t("self_awareness.text_no_slots", lang)
 
     lines = [
         "[SELF-AWARENESS]",

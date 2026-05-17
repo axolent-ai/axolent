@@ -746,6 +746,36 @@
       "auto_translated": true,
       "reviewed": false
     },
+    "self_awareness.label_model": {
+      "text": "현재 모델",
+      "source_hash": "60ff4d68f33effcb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.slot_heading": {
+      "text": "[슬롯 점유 현황]",
+      "source_hash": "fdec2223489b88b8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_precise": {
+      "text": "슬롯 점유에 대해 물어보면 이 값으로 정확하게 답변하세요.",
+      "source_hash": "c5389ca901c08659",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_self_id": {
+      "text": "사용자가 어떤 모델을 사용하는지 물으면 이 값으로 답변하세요. 학습 데이터로 추측하지 마세요.",
+      "source_hash": "995308b5578d07e8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_no_slots": {
+      "text": "다른 슬롯에 대해 물어보고 이 목록이 없으면 정직하게 답변하세요: '활성 슬롯에 대한 정보만 있습니다.' 추측하지 마세요.",
+      "source_hash": "64c8d3836c40b17f",
+      "auto_translated": true,
+      "reviewed": false
+    },
     "time_context.header": {
       "text": "[TIME CONTEXT]",
       "source_hash": "9149c0e49b101be6",
@@ -791,6 +821,12 @@
     "time_context.capability": {
       "text": "You HAVE access to the current local time and date shown above. When the user asks about time or date, answer with these values. NEVER claim you have no access to current time or real-time data.",
       "source_hash": "9a882b4725098fd7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "style.no_repetition_rule": {
+      "text": "단어 반복을 피하세요. 특히 반복되는 문장 시작과 물론, 당연히, 확실히 같은 채움말을 피하세요. 표현을 다양하게 하거나 채움말을 완전히 생략하세요. 물론이나 유사한 인사말로 응답을 시작하지 마세요.",
+      "source_hash": "ec930171cc8bfce5",
       "auto_translated": true,
       "reviewed": false
     }

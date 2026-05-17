@@ -317,19 +317,13 @@ class ChatService:
                 user_id, secondary_query, layer="procedural", limit=2
             )
 
-        # Fallback: if keyword search yields nothing, load recent episodic entries
-        # so the LLM can use them as context (covers cases where user asks about
-        # stored facts without using matching keywords, e.g. "welche Tiere mag ich"
-        # when stored entry is "Ich mag Delfine").
+        # NEU-02 fix: Do NOT fall back to random recent entries when keywords
+        # were extracted but yielded no matches. This prevents "phantom knowledge"
+        # where the bot appears to know things unrelated to the question.
+        # Only use recent fallback when NO keywords could be extracted at all
+        # (already handled above in the `if not keywords:` branch).
         if not (episodic or semantic or procedural):
-            episodic = self.memory_service.list_recent(
-                user_id, layer="episodic", limit=5
-            )
-            semantic = self.memory_service.list_recent(
-                user_id, layer="semantic", limit=3
-            )
-            if not (episodic or semantic):
-                return "", 0
+            return "", 0
 
         return self._format_memory_context(
             episodic, semantic, procedural, provider_name

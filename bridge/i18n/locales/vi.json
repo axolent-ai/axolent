@@ -746,6 +746,36 @@
       "auto_translated": true,
       "reviewed": false
     },
+    "self_awareness.label_model": {
+      "text": "Mô hình hiện tại",
+      "source_hash": "60ff4d68f33effcb",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.slot_heading": {
+      "text": "[Tình trạng slot]",
+      "source_hash": "fdec2223489b88b8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_precise": {
+      "text": "Khi được hỏi về tình trạng slot, trả lời chính xác với các giá trị này.",
+      "source_hash": "c5389ca901c08659",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_self_id": {
+      "text": "Khi người dùng hỏi bạn đang sử dụng mô hình nào, trả lời với các giá trị này. Không suy đoán từ dữ liệu huấn luyện.",
+      "source_hash": "995308b5578d07e8",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "self_awareness.text_no_slots": {
+      "text": "Nếu được hỏi về các slot khác và bạn không có danh sách này, hãy trả lời thành thật: 'Tôi chỉ có thông tin về slot đang hoạt động của mình.' Không suy đoán.",
+      "source_hash": "64c8d3836c40b17f",
+      "auto_translated": true,
+      "reviewed": false
+    },
     "time_context.header": {
       "text": "[TIME CONTEXT]",
       "source_hash": "9149c0e49b101be6",
@@ -791,6 +821,12 @@
     "time_context.capability": {
       "text": "You HAVE access to the current local time and date shown above. When the user asks about time or date, answer with these values. NEVER claim you have no access to current time or real-time data.",
       "source_hash": "9a882b4725098fd7",
+      "auto_translated": true,
+      "reviewed": false
+    },
+    "style.no_repetition_rule": {
+      "text": "Tránh lặp lại từ, đặc biệt là các đầu câu lặp lại và từ đệm như Tất nhiên, Chắc chắn, Dĩ nhiên. Đa dạng hóa cách diễn đạt hoặc bỏ hoàn toàn từ đệm. KHÔNG bắt đầu câu trả lời bằng Tất nhiên hoặc những lời xã giao tương tự.",
+      "source_hash": "ec930171cc8bfce5",
       "auto_translated": true,
       "reviewed": false
     }

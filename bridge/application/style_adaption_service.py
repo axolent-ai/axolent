@@ -147,7 +147,30 @@ class StyleAdaptionService:
 
     In-memory storage (profiles reset on bot restart). Future versions
     can persist to SQLite for cross-session learning.
+
+    Since Phase 2: includes anti-repetition awareness. The prompt block
+    now includes a rule to avoid filler word repetition (e.g. "Gerne").
     """
+
+    # Filler words that the bot tends to overuse (per language)
+    REPETITION_FILLERS: dict[str, list[str]] = {
+        "de": [
+            "Gerne",
+            "Sicher",
+            "Natürlich",
+            "Selbstverständlich",
+            "Klar",
+            "Absolut",
+        ],
+        "en": [
+            "Sure",
+            "Certainly",
+            "Of course",
+            "Absolutely",
+            "Great question",
+            "Happy to help",
+        ],
+    }
 
     def __init__(self) -> None:
         self._profiles: dict[int, StyleProfile] = {}
@@ -201,17 +224,83 @@ class StyleAdaptionService:
     def get_prompt_block(self, user_id: int, lang: str = "de") -> str:
         """Get the style profile as a system prompt block.
 
+        Includes anti-repetition rule for all users (even before
+        profile is mature), since filler word overuse is a systemic issue.
+
         Args:
             user_id: Telegram user ID.
             lang: Language code.
 
         Returns:
-            Prompt block string (empty if no mature profile).
+            Prompt block string (may contain only anti-repetition rule
+            if profile is not yet mature).
         """
+        parts: list[str] = []
+
         profile = self._profiles.get(user_id)
-        if profile is None:
-            return ""
-        return profile.to_prompt_block(lang)
+        if profile is not None:
+            profile_block = profile.to_prompt_block(lang)
+            if profile_block:
+                parts.append(profile_block)
+
+        # Anti-repetition rule (always active, regardless of profile maturity)
+        anti_rep = self._get_anti_repetition_block(lang)
+        if anti_rep:
+            parts.append(anti_rep)
+
+        return "\n\n".join(parts)
+
+    def _get_anti_repetition_block(self, lang: str = "de") -> str:
+        """Build the anti-repetition prompt block.
+
+        Args:
+            lang: Language code.
+
+        Returns:
+            Anti-repetition instruction block.
+        """
+        fillers = self.REPETITION_FILLERS.get(lang, self.REPETITION_FILLERS["en"])
+        filler_str = ", ".join(f"'{w}'" for w in fillers[:4])
+
+        if lang == "de":
+            return (
+                "[ANTI-REPETITION]\n"
+                f"Vermeide repetitive Satzanfaenge und Fuellwoerter wie {filler_str}. "
+                "Variiere bewusst. Beginne Antworten NICHT mit Floskeln. "
+                "Komme direkt zum Inhalt."
+            )
+        return (
+            "[ANTI-REPETITION]\n"
+            f"Avoid repetitive sentence starters and filler words like {filler_str}. "
+            "Vary your openings consciously. Do NOT start responses with pleasantries. "
+            "Get straight to the content."
+        )
+
+    def check_repetition_warning(self, response: str, lang: str = "de") -> str | None:
+        """Check a response for filler word overuse.
+
+        Post-response check that can be used by callers to flag
+        quality issues. Does NOT modify the response.
+
+        Args:
+            response: The LLM response text.
+            lang: Language code.
+
+        Returns:
+            Warning message if repetition detected, None otherwise.
+        """
+        fillers = self.REPETITION_FILLERS.get(lang, self.REPETITION_FILLERS["en"])
+        response_lower = response.lower()
+
+        hits: list[str] = []
+        for filler in fillers:
+            count = response_lower.count(filler.lower())
+            if count >= 2:
+                hits.append(f"{filler} (x{count})")
+
+        if hits:
+            return f"Repetition detected: {', '.join(hits)}"
+        return None
 
     def _analyze_message(self, text: str) -> dict:
         """Analyze a single message for style signals.
