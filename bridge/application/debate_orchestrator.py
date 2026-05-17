@@ -25,13 +25,21 @@ import os
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from application.language_resolver import LanguageResolver
 from application.prompt_composer import PromptComposer
 from application.provider_router import ProviderRouter
 from domain.language import DEFAULT_LANGUAGE
 from i18n import t
+
+if TYPE_CHECKING:
+    from application.execution import (
+        ExecutionContext,
+        ExecutionPlan,
+        InstructionCompiler,
+        RequestEnvelope,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -185,10 +193,12 @@ class DebateOrchestrator:
         self,
         provider_router: ProviderRouter,
         timeout_seconds: int = DEBATE_TIMEOUT_SECONDS,
+        instruction_compiler: "InstructionCompiler | None" = None,
     ) -> None:
         self.provider_router = provider_router
         self.timeout_seconds = timeout_seconds
         self._composer = PromptComposer()
+        self._instruction_compiler = instruction_compiler
 
     def _select_providers(self) -> list[str]:
         """Determine which providers to use for the debate.
@@ -225,6 +235,7 @@ class DebateOrchestrator:
         user_id: int,
         chat_id: int,
         user_lang: str = DEFAULT_LANGUAGE,
+        system_prompt_override: str | None = None,
     ) -> tuple[str, str | None, str | None, str | None]:
         """Query a single provider with timeout.
 
@@ -234,13 +245,18 @@ class DebateOrchestrator:
             user_id: Telegram user ID.
             chat_id: Telegram chat ID.
             user_lang: User language code (for response language instruction).
+            system_prompt_override: If provided, use this prompt instead of
+                building one from PromptComposer (new kernel path).
 
         Returns:
             Tuple: (provider_name, response_text_or_None, error_or_None, model_id_or_None)
         """
-        # Build language-aware system prompt via PromptComposer
-        _ctx = LanguageResolver.from_code(user_lang, "debate")
-        system_prompt = self._composer.compose_for_debate_provider(_ctx)
+        if system_prompt_override is not None:
+            system_prompt = system_prompt_override
+        else:
+            # Legacy path: build language-aware system prompt via PromptComposer
+            _ctx = LanguageResolver.from_code(user_lang, "debate")
+            system_prompt = self._composer.compose_for_debate_provider(_ctx)
 
         try:
             response = await asyncio.wait_for(
@@ -537,6 +553,9 @@ class DebateOrchestrator:
         user_id: int,
         chat_id: int,
         user_lang: str = DEFAULT_LANGUAGE,
+        *,
+        exec_context: "ExecutionContext | None" = None,
+        exec_plan: "ExecutionPlan | None" = None,
     ) -> FinalVerdict | None:
         """Run the LLM-as-Judge final review.
 
@@ -547,12 +566,19 @@ class DebateOrchestrator:
 
         Bias mitigation: provider names are anonymized in the judge prompt.
 
+        New kernel path (Phase 0 Commit 4):
+            If exec_context and exec_plan are provided and an InstructionCompiler
+            is available, the judge system prompt is compiled via the kernel path.
+            This ensures the judge uses the same resolved language as the providers.
+
         Args:
             question: The original question.
             responses: Provider name -> response text (at least 2 entries).
             user_id: Telegram user ID.
             chat_id: Telegram chat ID.
             user_lang: User language code for synthesis/recommendation content.
+            exec_context: Optional ExecutionContext (kernel path).
+            exec_plan: Optional ExecutionPlan (kernel path).
 
         Returns:
             FinalVerdict or None if judge fails completely.
@@ -565,9 +591,24 @@ class DebateOrchestrator:
             question, responses, user_lang=user_lang
         )
 
-        # Build judge system prompt via PromptComposer
-        _judge_ctx = LanguageResolver.from_code(user_lang, "debate_judge")
-        judge_system_prompt = self._composer.compose_for_debate_judge(_judge_ctx)
+        # Build judge system prompt: prefer InstructionCompiler if available
+        if (
+            exec_context is not None
+            and exec_plan is not None
+            and self._instruction_compiler is not None
+        ):
+            compiled = self._instruction_compiler.compile_debate(
+                ctx=exec_context, plan=exec_plan, role="judge"
+            )
+            judge_system_prompt = compiled.system_prompt
+            log.debug(
+                "Final review: judge prompt via InstructionCompiler (lang=%s)",
+                exec_context.language.code,
+            )
+        else:
+            # Legacy path: build judge system prompt via PromptComposer
+            _judge_ctx = LanguageResolver.from_code(user_lang, "debate_judge")
+            judge_system_prompt = self._composer.compose_for_debate_judge(_judge_ctx)
 
         # Judge provider selection: claude_persistent > claude > ollama_local
         judge_candidates = ["claude_persistent", "claude", "ollama_local"]
@@ -661,6 +702,10 @@ class DebateOrchestrator:
         user_id: int,
         chat_id: int,
         user_lang: str = DEFAULT_LANGUAGE,
+        *,
+        envelope: "RequestEnvelope | None" = None,
+        context: "ExecutionContext | None" = None,
+        plan: "ExecutionPlan | None" = None,
     ) -> DebateResult:
         """Run a multi-AI debate.
 
@@ -669,16 +714,48 @@ class DebateOrchestrator:
         3. Collect responses + errors
         4. Create consensus analysis
 
+        New kernel path (Phase 0 Commit 4):
+            If envelope, context, and plan are provided, uses the
+            InstructionCompiler for provider/judge prompts and resolves
+            language from the actual question text via ExecutionContext.
+            Legacy callers without these parameters still work unchanged.
+
         Args:
             question: The user question.
             user_id: Telegram user ID.
             chat_id: Telegram chat ID.
             user_lang: User language code (providers respond in this language).
+            envelope: Optional RequestEnvelope (kernel path).
+            context: Optional ExecutionContext (kernel path).
+            plan: Optional ExecutionPlan (kernel path).
 
         Returns:
             DebateResult with all responses, errors, and analysis.
         """
         t_start = time.monotonic()
+
+        # Determine effective language: kernel path takes precedence
+        effective_lang = user_lang
+        if context is not None:
+            effective_lang = context.language.code
+
+        # Build provider system prompt via InstructionCompiler if available
+        provider_system_prompt: str | None = None
+        if (
+            context is not None
+            and plan is not None
+            and self._instruction_compiler is not None
+        ):
+            compiled = self._instruction_compiler.compile_debate(
+                ctx=context, plan=plan, role="provider"
+            )
+            provider_system_prompt = compiled.system_prompt
+            log.debug(
+                "Debate: using InstructionCompiler for provider prompt "
+                "(lang=%s, request_id=%s)",
+                effective_lang,
+                context.request_id,
+            )
 
         providers = self._select_providers()
         if not providers:
@@ -701,7 +778,14 @@ class DebateOrchestrator:
         # Phase 1: query all providers in parallel
         t_providers_start = time.monotonic()
         tasks = [
-            self._query_provider(name, question, user_id, chat_id, user_lang)
+            self._query_provider(
+                name,
+                question,
+                user_id,
+                chat_id,
+                effective_lang,
+                system_prompt_override=provider_system_prompt,
+            )
             for name in providers
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -733,7 +817,7 @@ class DebateOrchestrator:
         # Consensus analysis
         consensus: str | None = None
         if responses:
-            consensus = self._analyze_consensus(responses, user_lang=user_lang)
+            consensus = self._analyze_consensus(responses, user_lang=effective_lang)
 
         # Phase 2: final review (LLM-as-Judge)
         verdict: FinalVerdict | None = None
@@ -745,7 +829,9 @@ class DebateOrchestrator:
                 responses=responses,
                 user_id=user_id,
                 chat_id=chat_id,
-                user_lang=user_lang,
+                user_lang=effective_lang,
+                exec_context=context,
+                exec_plan=plan,
             )
             t_judge_elapsed = time.monotonic() - t_judge_start
             log.info(

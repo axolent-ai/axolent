@@ -2273,37 +2273,63 @@ async def handle_debate_command(
 ) -> None:
     """Handles /debate <question>. Multi-AI debate feature (R10).
 
+    Phase 0 Commit 4: migrated to Execution Kernel.
+    Language is resolved from the actual question text via ContextKernel,
+    not just from sticky/default. Provider and judge prompts come from
+    the InstructionCompiler for consistent language handling.
+
     Queries multiple providers in parallel and shows answers side-by-side.
     """
     from datetime import datetime, timezone
 
     from application.debate_orchestrator import DebateOrchestrator
+    from application.execution import InstructionCompiler
 
     user = update.effective_user
     user_id: int = user.id if user else 0
     username: str | None = user.username if user else None
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
-    # Language for early messages
+    # Extract question from command arguments (needed early for usage check)
+    args: list[str] = context.args or []
+
+    # For the usage-hint fallback, get sticky language (fast, no detection)
     chat_service = _get_chat_service(context)
-    _deb_lang = (
+    _fallback_lang = (
         await chat_service.get_chat_language(user_id, chat_id) or DEFAULT_LANGUAGE
     )
 
-    # Extract question from command arguments
-    args: list[str] = context.args or []
     if not args:
-        await update.message.reply_text(t("debate.usage", _deb_lang))
+        await update.message.reply_text(t("debate.usage", _fallback_lang))
         return
 
     question = " ".join(args)
+
+    # Build RequestEnvelope from the debate question (not from /debate command text)
+    envelope = RequestEnvelope.from_debate_command(
+        user_id=user_id,
+        chat_id=chat_id,
+        question=question,
+        username=username,
+    )
+
+    # Resolve ExecutionContext: language comes from the question text
+    context_kernel = _get_context_kernel(context)
+    exec_ctx = await context_kernel.build(envelope)
+
+    # Build ExecutionPlan for debate
+    execution_planner = _get_execution_planner(context)
+    exec_plan = execution_planner.plan_debate(exec_ctx)
+
+    # Effective language from the resolved context
+    resolved_lang = exec_ctx.language.code
 
     # Check rate limit (same logic as handle_message)
     rate_limiter = _get_rate_limiter(context)
     if rate_limiter is not None:
         result_rl: RateLimitResult = rate_limiter.check_and_consume(user_id)
         if not result_rl.allowed:
-            await update.message.reply_text(t("debate.rate_limit_short", _deb_lang))
+            await update.message.reply_text(t("debate.rate_limit_short", resolved_lang))
             write_raw_audit(
                 {
                     "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -2318,9 +2344,9 @@ async def handle_debate_command(
             )
             return
 
-    # Send status message
+    # Send status message with resolved language
     status_msg = await update.message.reply_text(
-        f"\U0001f3af {t('debate.querying', _deb_lang)}"
+        f"\U0001f3af {t('debate.querying', resolved_lang)}"
     )
 
     # Typing keepalive during debate
@@ -2332,16 +2358,23 @@ async def handle_debate_command(
     )
 
     try:
-        # Get or create DebateOrchestrator
+        # Create InstructionCompiler for the orchestrator
+        instruction_compiler = InstructionCompiler()
+
+        # Get or create DebateOrchestrator with InstructionCompiler
         orchestrator = DebateOrchestrator(
             provider_router=chat_service.provider_router,
+            instruction_compiler=instruction_compiler,
         )
 
         debate_result = await orchestrator.debate(
             question=question,
             user_id=user_id,
             chat_id=chat_id,
-            user_lang=_deb_lang,
+            user_lang=resolved_lang,
+            envelope=envelope,
+            context=exec_ctx,
+            plan=exec_plan,
         )
     finally:
         keepalive.cancel()
@@ -2356,14 +2389,14 @@ async def handle_debate_command(
     except Exception:  # nosec B110
         pass
 
-    # Format and send result (use same language as debate providers)
-    formatted = _format_debate_result(debate_result, lang=_deb_lang)
+    # Format and send result (use resolved language)
+    formatted = _format_debate_result(debate_result, lang=resolved_lang)
 
     # Text Guard: fix diacritics in debate output before sending
     from application.text_guard_service import TextGuardService
 
     _debate_tg = TextGuardService()
-    _debate_guard = _debate_tg.get_guard(_deb_lang, mode="fix")
+    _debate_guard = _debate_tg.get_guard(resolved_lang, mode="fix")
     if _debate_guard is not None:
         formatted = _debate_guard.fix(formatted)
 
@@ -2371,25 +2404,31 @@ async def handle_debate_command(
     for chunk in chunks:
         await update.message.reply_text(chunk)
 
-    # Audit log
+    # Audit log (enriched with kernel data)
     write_raw_audit(
         {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "event_type": "debate",
+            "request_id": exec_ctx.request_id,
             "user_id": user_id,
             "chat_id": chat_id,
             "username": username,
             "question_length": len(question),
+            "language": resolved_lang,
+            "language_source": exec_ctx.language.source,
             "providers_queried": debate_result.providers_queried,
             "providers_responded": list(debate_result.responses.keys()),
             "providers_errored": list(debate_result.errors.keys()),
             "duration_seconds": round(debate_result.duration_seconds, 2),
+            "plan": exec_plan.to_audit_dict(),
         }
     )
 
     log.info(
-        "Debate completed for user %s: %d providers, %.1fs",
+        "Debate completed for user %s: %d providers, %.1fs (lang=%s, source=%s)",
         username,
         len(debate_result.responses),
         debate_result.duration_seconds,
+        resolved_lang,
+        exec_ctx.language.source,
     )

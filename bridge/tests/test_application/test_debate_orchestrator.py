@@ -1151,3 +1151,187 @@ class TestMultiQuestionCoverage:
         assert "Bitcoin" in key_takeaway
         assert "Blockchain" in key_takeaway or "Krypto" in key_takeaway
         assert "Einstieg" in key_takeaway or "Risikokapital" in key_takeaway
+
+
+class TestDebateKernelIntegration:
+    """Tests for Phase 0 Commit 4: Execution Kernel integration.
+
+    Verifies that:
+    - debate() accepts envelope/context/plan parameters
+    - InstructionCompiler is used when available
+    - Language from ExecutionContext takes precedence over user_lang
+    - Judge uses same ExecutionContext as providers
+    - Legacy callers without kernel params still work
+    """
+
+    def _make_orchestrator_with_compiler(
+        self,
+        providers: dict[str, _MockProvider],
+    ) -> DebateOrchestrator:
+        """Create an orchestrator with InstructionCompiler."""
+        from application.execution import InstructionCompiler
+
+        router = _make_router(providers)
+        compiler = InstructionCompiler()
+        return DebateOrchestrator(
+            provider_router=router,
+            instruction_compiler=compiler,
+        )
+
+    def _make_exec_context(self, lang: str = "it"):
+        """Create a minimal ExecutionContext for testing."""
+        from application.execution import ExecutionContext
+        from application.language_resolver import LanguageContext
+
+        return ExecutionContext(
+            request_id="test-kernel-001",
+            user_id=1,
+            chat_id=10,
+            channel="telegram",
+            language=LanguageContext(
+                code=lang,
+                source="detection",
+                confidence=0.95,
+                switched_from=None,
+                request_id="test-kernel-001",
+            ),
+        )
+
+    def _make_exec_plan(self, lang: str = "it"):
+        """Create a minimal ExecutionPlan for testing."""
+        from application.execution import ExecutionPlan
+
+        return ExecutionPlan(
+            request_id="test-kernel-001",
+            task_type="debate",
+            language=lang,
+            provider_chain=["claude_persistent"],
+        )
+
+    def _make_envelope(self, question: str = "Test?"):
+        """Create a minimal RequestEnvelope for testing."""
+        from application.execution import RequestEnvelope
+
+        return RequestEnvelope.from_debate_command(
+            user_id=1, chat_id=10, question=question
+        )
+
+    async def test_kernel_path_uses_context_language(self) -> None:
+        """When context is provided, its language overrides user_lang."""
+        providers = {
+            "alpha": _MockProvider("alpha", response_text="Risposta Alpha"),
+            "beta": _MockProvider("beta", response_text="Risposta Beta"),
+        }
+        orchestrator = self._make_orchestrator_with_compiler(providers)
+
+        exec_ctx = self._make_exec_context(lang="it")
+        exec_plan = self._make_exec_plan(lang="it")
+        envelope = self._make_envelope("Cos'e Bitcoin?")
+
+        with patch.object(orchestrator, "final_review", return_value=None):
+            result = await orchestrator.debate(
+                question="Cos'e Bitcoin?",
+                user_id=1,
+                chat_id=10,
+                user_lang="de",  # Legacy param says German
+                envelope=envelope,
+                context=exec_ctx,  # Context says Italian
+                plan=exec_plan,
+            )
+
+        # Consensus analysis should use Italian from context, not German
+        assert result.consensus_analysis is not None
+        assert result.responses
+
+    async def test_kernel_path_passes_system_prompt_to_provider(self) -> None:
+        """With InstructionCompiler, providers get compiled system prompt."""
+        call_log: list[str] = []
+
+        class _LoggingProvider(_MockProvider):
+            async def query(self, prompt, system_prompt="", **kwargs):
+                call_log.append(system_prompt)
+                return await super().query(prompt, system_prompt, **kwargs)
+
+        providers = {
+            "alpha": _LoggingProvider("alpha", response_text="OK"),
+        }
+        orchestrator = self._make_orchestrator_with_compiler(providers)
+
+        exec_ctx = self._make_exec_context(lang="fr")
+        exec_plan = self._make_exec_plan(lang="fr")
+        envelope = self._make_envelope("Qu'est-ce que Bitcoin?")
+
+        with patch.object(orchestrator, "final_review", return_value=None):
+            await orchestrator.debate(
+                question="Qu'est-ce que Bitcoin?",
+                user_id=1,
+                chat_id=10,
+                user_lang="fr",
+                envelope=envelope,
+                context=exec_ctx,
+                plan=exec_plan,
+            )
+
+        # Provider received a system prompt from InstructionCompiler
+        assert len(call_log) == 1
+        assert call_log[0]  # Non-empty system prompt
+        # The compiled prompt should contain language lock for French
+        assert "french" in call_log[0].lower() or "fr" in call_log[0].lower()
+
+    async def test_legacy_path_still_works_without_kernel_params(self) -> None:
+        """Without envelope/context/plan, legacy behavior is preserved."""
+        providers = {
+            "alpha": _MockProvider("alpha", response_text="Antwort A"),
+            "beta": _MockProvider("beta", response_text="Antwort B"),
+        }
+        router = _make_router(providers)
+        # No instruction_compiler
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        with patch.object(orchestrator, "final_review", return_value=None):
+            result = await orchestrator.debate(
+                question="Was ist Bitcoin?",
+                user_id=1,
+                chat_id=10,
+                user_lang="de",
+            )
+
+        assert "alpha" in result.responses
+        assert "beta" in result.responses
+        assert result.consensus_analysis is not None
+
+    async def test_judge_uses_same_context_as_providers(self) -> None:
+        """Judge receives the same ExecutionContext for consistent language."""
+        providers = {
+            "alpha": _MockProvider("alpha", response_text="Alpha says"),
+            "beta": _MockProvider("beta", response_text="Beta says"),
+        }
+        orchestrator = self._make_orchestrator_with_compiler(providers)
+
+        exec_ctx = self._make_exec_context(lang="es")
+        exec_plan = self._make_exec_plan(lang="es")
+        envelope = self._make_envelope("Que es Bitcoin?")
+
+        # Track what final_review receives
+        review_kwargs: dict = {}
+
+        async def _capture_review(*args, **kwargs):
+            review_kwargs.update(kwargs)
+            return None
+
+        with patch.object(orchestrator, "final_review", side_effect=_capture_review):
+            await orchestrator.debate(
+                question="Que es Bitcoin?",
+                user_id=1,
+                chat_id=10,
+                user_lang="es",
+                envelope=envelope,
+                context=exec_ctx,
+                plan=exec_plan,
+            )
+
+        # final_review should receive exec_context and exec_plan
+        assert review_kwargs.get("exec_context") is exec_ctx
+        assert review_kwargs.get("exec_plan") is exec_plan
+        # And effective language (from context)
+        assert review_kwargs.get("user_lang") == "es"

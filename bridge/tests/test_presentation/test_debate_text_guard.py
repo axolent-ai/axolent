@@ -38,6 +38,26 @@ def _make_context(args: list[str] | None = None) -> MagicMock:
 
     svc = ChatService(provider_router=mock_router, memory_service=None)
 
+    # Mock ContextKernel that returns a minimal ExecutionContext
+    from application.execution import ContextKernel, ExecutionContext, ExecutionPlanner
+    from application.language_resolver import LanguageContext
+
+    mock_kernel = MagicMock(spec=ContextKernel)
+    mock_exec_ctx = ExecutionContext(
+        request_id="test-debate-001",
+        user_id=1,
+        chat_id=10,
+        channel="telegram",
+        language=LanguageContext(
+            code="de",
+            source="detection",
+            confidence=0.9,
+            switched_from=None,
+            request_id="test-debate-001",
+        ),
+    )
+    mock_kernel.build = AsyncMock(return_value=mock_exec_ctx)
+
     context = MagicMock()
     context.args = args or []
     context.bot = MagicMock()
@@ -51,6 +71,8 @@ def _make_context(args: list[str] | None = None) -> MagicMock:
         "process_pool": None,
         "rate_limiter": None,
         "bookmark_service": None,
+        "context_kernel": mock_kernel,
+        "execution_planner": ExecutionPlanner(),
     }
     return context
 
