@@ -12,6 +12,10 @@ and injects them into the system prompt before the LLM call.
 Since R04: streaming-capable via ClaudePersistentProvider.
 process_user_message_streaming() yields an AsyncIterator of StreamEvents
 for real-time Telegram edits.
+
+Since Phase 0 Commit 3: accepts ExecutionContext + ExecutionPlan as
+first-class parameters. When provided, language is NOT re-resolved.
+InstructionCompiler is the single path for prompt assembly.
 """
 
 from __future__ import annotations
@@ -22,6 +26,9 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, AsyncIterator, Optional
 
+from application.execution.context import ExecutionContext
+from application.execution.instruction_compiler import InstructionCompiler
+from application.execution.plan import ExecutionPlan
 from application.leakage_filter import check_for_system_prompt_leakage
 from application.prompt_composer import PromptComposer
 from domain.conversation import ConversationTurn, build_context_block
@@ -235,6 +242,13 @@ class ChatService:
             self_awareness_service=self_awareness_service,
         )
 
+        # Phase 0 Commit 3: InstructionCompiler (the canonical prompt path)
+        self._instruction_compiler = InstructionCompiler(
+            proactive_trigger_service=proactive_trigger_service,
+            style_adaption_service=style_adaption_service,
+            self_awareness_service=self_awareness_service,
+        )
+
     def _get_memory_budget(self, provider_name: str | None = None) -> int:
         """Read the memory budget from ProviderCapabilities.
 
@@ -415,6 +429,9 @@ class ChatService:
         language_override: Optional[str] = None,
         provider_name: Optional[str] = None,
         reply_to_text: Optional[str] = None,
+        *,
+        context: Optional[ExecutionContext] = None,
+        plan: Optional[ExecutionPlan] = None,
     ) -> ChatResult:
         """Process a user message: load history, detect language, call provider, write audit log.
 
@@ -425,8 +442,13 @@ class ChatService:
             username: Telegram username.
             system_prompt: Base system prompt (from PersonalityLoader).
             language_override: If set, use this language instead of detecting.
+                Legacy parameter; ignored when context is provided.
             provider_name: Optional provider name (None = default from router).
             reply_to_text: Text of the message the user replied to (Telegram reply-to).
+            context: Pre-resolved ExecutionContext (Phase 0 Commit 3).
+                When provided, language is NOT re-resolved.
+            plan: Pre-built ExecutionPlan (Phase 0 Commit 3).
+                When provided, audit includes plan metadata.
 
         Returns:
             ChatResult with success/error details.
@@ -441,6 +463,11 @@ class ChatService:
             "username": username,
             "prompt_length": len(text),
         }
+        # Phase 0 Commit 3: attach plan metadata to audit when available
+        if plan is not None:
+            audit["plan_type"] = plan.task_type
+            audit["plan_provider_chain"] = list(plan.provider_chain)
+            audit["plan_memory_ids"] = list(plan.memory_used)
 
         try:
             # Load conversation history
@@ -464,14 +491,19 @@ class ChatService:
                 enriched_text = text
             context_prompt = build_context_block(history, enriched_text)
 
-            # Language: resolve via central LanguageResolver (Phase 3)
-            from application.language_resolver import LanguageResolver
+            # Language resolution: use ExecutionContext if provided (no re-resolve)
+            if context is not None:
+                lang = context.language.code
+                _lang_ctx = context.language
+            else:
+                # Legacy path: resolve via LanguageResolver
+                from application.language_resolver import LanguageResolver
 
-            _resolver = LanguageResolver()
-            _lang_ctx = await _resolver.resolve(
-                uid, cid, text, override=language_override
-            )
-            lang = _lang_ctx.code
+                _resolver = LanguageResolver()
+                _lang_ctx = await _resolver.resolve(
+                    uid, cid, text, override=language_override
+                )
+                lang = _lang_ctx.code
 
             if lang != DEFAULT_LANGUAGE:
                 log.info("Language for chat: '%s' (source=%s)", lang, _lang_ctx.source)
@@ -518,15 +550,28 @@ class ChatService:
                 # Fallback: Phase 1 behavior (global override only)
                 user_model = self.model_service.get_user_model(uid)
 
-            # Central prompt composition via PromptComposer (Phase 2)
-            effective_prompt = self._composer.compose_for_chat(
-                base_prompt=system_prompt,
-                ctx=_lang_ctx,
-                user_id=uid,
-                user_model=user_model,
-                task_slot_name=task_slot_name,
-                memory_block=memory_context,
-            )
+            # Prompt composition: InstructionCompiler (when context+plan)
+            # or legacy PromptComposer (backward compat)
+            if context is not None and plan is not None:
+                compiled = self._instruction_compiler.compile_chat(
+                    ctx=context,
+                    plan=plan,
+                    base_prompt=system_prompt,
+                    memory_block=memory_context,
+                    user_prompt=context_prompt,
+                    user_model=user_model,
+                    task_slot_name=task_slot_name,
+                )
+                effective_prompt = compiled.system_prompt
+            else:
+                effective_prompt = self._composer.compose_for_chat(
+                    base_prompt=system_prompt,
+                    ctx=_lang_ctx,
+                    user_id=uid,
+                    user_model=user_model,
+                    task_slot_name=task_slot_name,
+                    memory_block=memory_context,
+                )
 
             # Provider call: use FallbackResolver if available, else direct route
             fallback_notice = ""
@@ -729,6 +774,9 @@ class ChatService:
         language_override: Optional[str] = None,
         reply_to_text: Optional[str] = None,
         status_session: Optional[Any] = None,
+        *,
+        context: Optional[ExecutionContext] = None,
+        plan: Optional[ExecutionPlan] = None,
     ) -> tuple[AsyncIterator[StreamEvent], int, dict[str, Any]]:
         """Streaming variant of process_user_message.
 
@@ -744,8 +792,13 @@ class ChatService:
             system_prompt: Base system prompt.
             persistent_provider: The streaming-capable provider.
             language_override: Optional language override.
+                Legacy parameter; ignored when context is provided.
             reply_to_text: Reply-to context.
             status_session: Optional StatusSession for status updates.
+            context: Pre-resolved ExecutionContext (Phase 0 Commit 3).
+                When provided, language is NOT re-resolved.
+            plan: Pre-built ExecutionPlan (Phase 0 Commit 3).
+                When provided, InstructionCompiler is used for prompt.
 
         Returns:
             Tuple of (StreamEvent AsyncIterator, memory_entries_loaded, task_meta).
@@ -785,12 +838,19 @@ class ChatService:
             enriched_text = text
         context_prompt = build_context_block(history, enriched_text)
 
-        # Language: resolve via central LanguageResolver (Phase 3)
-        from application.language_resolver import LanguageResolver
+        # Language resolution: use ExecutionContext if provided (no re-resolve)
+        if context is not None:
+            lang = context.language.code
+            _lang_ctx = context.language
+        else:
+            # Legacy path: resolve via LanguageResolver
+            from application.language_resolver import LanguageResolver
 
-        _resolver = LanguageResolver()
-        _lang_ctx = await _resolver.resolve(uid, cid, text, override=language_override)
-        lang = _lang_ctx.code
+            _resolver = LanguageResolver()
+            _lang_ctx = await _resolver.resolve(
+                uid, cid, text, override=language_override
+            )
+            lang = _lang_ctx.code
 
         # Update StatusSession language (resolved here, StatusSession created earlier)
         if status_session is not None:
@@ -847,15 +907,28 @@ class ChatService:
             if user_model:
                 task_meta["resolved_model"] = user_model
 
-        # Central prompt composition via PromptComposer (Phase 2)
-        effective_prompt = self._composer.compose_for_chat(
-            base_prompt=system_prompt,
-            ctx=_lang_ctx,
-            user_id=uid,
-            user_model=user_model,
-            task_slot_name=task_slot_name,
-            memory_block=memory_context,
-        )
+        # Prompt composition: InstructionCompiler (when context+plan)
+        # or legacy PromptComposer (backward compat)
+        if context is not None and plan is not None:
+            compiled = self._instruction_compiler.compile_chat(
+                ctx=context,
+                plan=plan,
+                base_prompt=system_prompt,
+                memory_block=memory_context,
+                user_prompt=context_prompt,
+                user_model=user_model,
+                task_slot_name=task_slot_name,
+            )
+            effective_prompt = compiled.system_prompt
+        else:
+            effective_prompt = self._composer.compose_for_chat(
+                base_prompt=system_prompt,
+                ctx=_lang_ctx,
+                user_id=uid,
+                user_model=user_model,
+                task_slot_name=task_slot_name,
+                memory_block=memory_context,
+            )
 
         # Proactive nudge: appended after composition (not part of standard blocks)
         if proactive_nudge_text:

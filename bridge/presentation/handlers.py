@@ -42,7 +42,11 @@ from presentation.render import (
     split_message,
 )
 
-from application.execution import ContextKernel, RequestEnvelope
+from application.execution import (
+    ContextKernel,
+    ExecutionPlanner,
+    RequestEnvelope,
+)
 
 if TYPE_CHECKING:
     from application.memory_service import MemoryService
@@ -242,6 +246,26 @@ def _get_context_kernel(context: ContextTypes.DEFAULT_TYPE) -> ContextKernel:
             "context_kernel not in bot_data. main.py must initialize ContextKernel."
         )
     return kernel
+
+
+def _get_execution_planner(context: ContextTypes.DEFAULT_TYPE) -> ExecutionPlanner:
+    """Gets the ExecutionPlanner from bot_data.
+
+    If not explicitly registered, creates a default instance.
+    Phase 0 Commit 3: the planner is a lightweight object,
+    safe to create on demand.
+
+    Args:
+        context: Telegram handler context.
+
+    Returns:
+        ExecutionPlanner instance.
+    """
+    planner = context.application.bot_data.get("execution_planner")
+    if planner is None:
+        planner = ExecutionPlanner()
+        context.application.bot_data["execution_planner"] = planner
+    return planner
 
 
 def build_bookmarks_keyboard(
@@ -607,7 +631,7 @@ async def _handle_message_streaming(
         reply_to_text=reply_to_text,
     )
 
-    # Audit "started" entry
+    # Audit "started" entry (plan details added after plan creation below)
     audit_started: dict[str, Any] = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "event_type": "stream_started",
@@ -644,6 +668,10 @@ async def _handle_message_streaming(
         _kernel = _get_context_kernel(context)
         _exec_ctx = await _kernel.build(envelope)
         chat_lang = _exec_ctx.language.code
+
+        # Phase 0 Commit 3: Create ExecutionPlan before ChatService call
+        _planner = _get_execution_planner(context)
+        _exec_plan = _planner.plan_chat(_exec_ctx)
 
         # Text Guard: streaming diacritic filter
         from application.text_guard_service import TextGuardService
@@ -693,6 +721,8 @@ async def _handle_message_streaming(
                 language_override=chat_lang,
                 reply_to_text=reply_to_text,
                 status_session=status_session,
+                context=_exec_ctx,
+                plan=_exec_plan,
             )
             async for event in stream_iter:
                 # T25: Check cancellation before processing each event
