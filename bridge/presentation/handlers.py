@@ -672,6 +672,26 @@ async def _handle_message_streaming(
         _planner = _get_execution_planner(context)
         _exec_plan = _planner.plan_chat(_exec_ctx)
 
+        # Phase 0 Commit 6: Structured audit event for execution plan
+        write_raw_audit(
+            {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "event_type": "execution_plan_created",
+                "request_id": envelope.request_id,
+                "user_id": user_id,
+                "chat_id": chat_id,
+                "channel": envelope.channel,
+                "task_type": _exec_plan.task_type,
+                "language": _exec_ctx.language.code,
+                "language_source": _exec_ctx.language.source,
+                "language_confidence": _exec_ctx.language.confidence,
+                "provider_chain": _exec_plan.provider_chain,
+                "memory_refs": list(_exec_plan.memory_used),
+                "verifier_profile": _exec_plan.verifier_profile,
+                "audit_required": _exec_plan.audit_required,
+            }
+        )
+
         # Text Guard: streaming diacritic filter (uses exec_ctx.language.code)
         from application.text_guard_service import TextGuardService
 
@@ -832,6 +852,7 @@ async def _handle_message_streaming(
                 memory_entries_loaded=memory_entries_loaded,
                 system_prompt=_get_system_prompt(context),
                 task_meta=task_meta,
+                request_id=envelope.request_id,
             )
             # C-3: If leakage detected, final edit with refusal
             if checked_text != final_text:
@@ -848,6 +869,7 @@ async def _handle_message_streaming(
             audit_error: dict[str, Any] = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "event_type": "stream_error",
+                "request_id": envelope.request_id,
                 "user_id": user_id,
                 "chat_id": chat_id,
                 "username": username,
@@ -874,6 +896,7 @@ async def _handle_message_streaming(
         audit_crash: dict[str, Any] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "event_type": "stream_error",
+            "request_id": envelope.request_id,
             "user_id": user_id,
             "chat_id": chat_id,
             "username": username,
@@ -2335,6 +2358,26 @@ async def handle_debate_command(
     execution_planner = _get_execution_planner(context)
     exec_plan = execution_planner.plan_debate(exec_ctx)
 
+    # Phase 0 Commit 6: Structured audit event for execution plan
+    write_raw_audit(
+        {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "event_type": "execution_plan_created",
+            "request_id": envelope.request_id,
+            "user_id": user_id,
+            "chat_id": chat_id,
+            "channel": envelope.channel,
+            "task_type": exec_plan.task_type,
+            "language": exec_ctx.language.code,
+            "language_source": exec_ctx.language.source,
+            "language_confidence": exec_ctx.language.confidence,
+            "provider_chain": exec_plan.provider_chain,
+            "memory_refs": list(exec_plan.memory_used),
+            "verifier_profile": exec_plan.verifier_profile,
+            "audit_required": exec_plan.audit_required,
+        }
+    )
+
     # Effective language from the resolved context
     resolved_lang = exec_ctx.language.code
 
@@ -2348,6 +2391,7 @@ async def handle_debate_command(
                 {
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "event_type": "rate_limit_exceeded",
+                    "request_id": envelope.request_id,
                     "user_id": user_id,
                     "chat_id": chat_id,
                     "username": username,

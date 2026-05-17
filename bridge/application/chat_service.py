@@ -973,6 +973,7 @@ class ChatService:
         memory_entries_loaded: int = 0,
         system_prompt: str = "",
         task_meta: dict[str, Any] | None = None,
+        request_id: str = "",
     ) -> str:
         """Save the result of a streaming session to history + audit.
 
@@ -995,6 +996,7 @@ class ChatService:
             task_meta: TaskRouter classification data for audit
                 (task_slot, task_score, task_matched_patterns,
                 task_matched_keywords, resolved_model). Optional.
+            request_id: Correlation ID for audit trail (Phase 0 Commit 6).
 
         Returns:
             The (potentially sanitized) response text. Caller must check whether
@@ -1027,6 +1029,7 @@ class ChatService:
         audit: dict[str, Any] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "event_type": "stream_completed",
+            "request_id": request_id,
             "user_id": user_id,
             "chat_id": chat_id,
             "username": username,
