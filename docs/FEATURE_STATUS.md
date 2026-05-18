@@ -58,4 +58,5 @@ For the full R01-R18 roadmap with descriptions, see [FEATURES.md](FEATURES.md).
 
 * [FEATURES.md](FEATURES.md): Detailed feature descriptions
 * [ARCHITECTURE.md](ARCHITECTURE.md): System structure
+* [PUBLIC_PRIVATE_BOUNDARY.md](PUBLIC_PRIVATE_BOUNDARY.md): Public vs private boundary
 * [README.md](../README.md): Project overview and roadmap table

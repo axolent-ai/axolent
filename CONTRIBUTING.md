@@ -100,6 +100,10 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full system overview an
 [docs/adr/0002-hexagonal-architecture.md](docs/adr/0002-hexagonal-architecture.md) for
 the decision rationale.
 
+**Public vs Private:** This repository is fully open source under AGPL-3.0. Optional
+proprietary modules may exist separately in the future but are never required. See
+[docs/PUBLIC_PRIVATE_BOUNDARY.md](docs/PUBLIC_PRIVATE_BOUNDARY.md) for details.
+
 ## Branch Naming
 
 ```

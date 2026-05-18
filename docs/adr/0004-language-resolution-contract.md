@@ -48,8 +48,8 @@ In `domain/language.py`, the `detect_language_with_confidence()` function:
    frequency.
 3. Applies the marker-precedence rule: the language with the highest
    word-marker score wins, regardless of character-level hints.
-4. Returns a `DetectionResult` with the language code and a confidence
-   score (0.0 to 1.0).
+4. Returns a `tuple[str, float]` of (language code, confidence score),
+   where confidence is in the range 0.0 to 1.0.
 
 ### Smart-Switch Threshold
 

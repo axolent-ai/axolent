@@ -13,7 +13,7 @@ As of: 2026-05-10
 * import-linter with 3/3 layer contracts
 * Pre-commit hooks (17 hooks: ruff, ruff-format, trailing-whitespace, end-of-file-fixer, check-yaml, check-added-large-files, check-merge-conflict, mixed-line-ending, bandit, import-linter, pytest, pip-audit, semgrep, i18n-check, i18n-scan, en-only-production, no-fake-umlauts) — see [TESTING.md](TESTING.md) for details
 * Mode B: local CLI wrapper for claude, no token hijacking
-* UTF-8 enforced across all components (helper in bridge/utils/encoding.py)
+* UTF-8 enforced across all components (helper in bridge/infrastructure/encoding.py)
 * Audit logging with rotation
 * Commits: 821aaba (Initial scaffold) .. f613961 (Mode B Bot)
 

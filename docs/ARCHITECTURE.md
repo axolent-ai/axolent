@@ -154,7 +154,7 @@ A typical `/chat` message follows this path:
      c. TimeResolver             (localized time context)
    * Produces frozen ExecutionContext
 
-4. application/execution/instruction_compiler.py::InstructionCompiler.compile()
+4. application/execution/instruction_compiler.py::InstructionCompiler.compile_chat()
    * Assembles system prompt in fixed block order:
      [1] Security / Non-disclosure
      [2] Privacy / Tool restrictions
@@ -256,7 +256,7 @@ ContextKernel.build()
 ExecutionContext (frozen dataclass, single source of truth)
   |
   v
-InstructionCompiler.compile()
+InstructionCompiler.compile_chat()
   |
   | Reads: ExecutionContext + ExecutionPlan
   | Produces: CompiledPrompt
@@ -371,6 +371,13 @@ LLM call, and response delivery.
 | `style_adaption_service.py` | Response style adaptation |
 | `task_router.py` | Task classification for provider routing |
 | `text_guard_service.py` | Text guard coordination |
+| `consolidator.py` | Memory consolidation hook (episodic dedup, semantic promotion, aging/decay) |
+| `leakage_filter.py` | Checks LLM responses for system prompt leakage (C-3 countermeasure) |
+| `memory_translation_service.py` | On-the-fly translation of memory entries for /memory display |
+| `model_registry.py` | Static model registry: loads model metadata from YAML config |
+| `ollama_service.py` | Ollama auto-start: detects and starts local Ollama at bot startup |
+| `proactive_trigger_service.py` | Proactive memory nudges and time-based triggers (P1, P5 personality) |
+| `self_awareness_service.py` | Builds self-awareness block for system prompt (model identity, slot occupancy) |
 
 ### Infrastructure Layer (I/O)
 
@@ -413,4 +420,5 @@ LLM call, and response delivery.
 * [docs/I18N.md](I18N.md): Internationalization system
 * [docs/THREAT_MODEL.md](THREAT_MODEL.md): Security threat model
 * [docs/FEATURE_STATUS.md](FEATURE_STATUS.md): Feature status and roadmap
+* [docs/PUBLIC_PRIVATE_BOUNDARY.md](PUBLIC_PRIVATE_BOUNDARY.md): Public vs private boundary
 * [docs/adr/](adr/): Architecture Decision Records
