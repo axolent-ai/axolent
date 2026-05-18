@@ -23,6 +23,7 @@ Cargo.lock
 .env
 .env.local
 .env.*.local
+.envrc
 *.secret
 
 # Runtime data & logs
@@ -43,12 +44,19 @@ Desktop.ini
 # Test / Cache artefacts
 .pytest_cache/
 .ruff_cache/
+.import_linter_cache/
+bridge/.import_linter_cache/
 pytest_tmp_*/
 bridge/pytest_tmp_*/
 bridge/data/pytest-basetemp/
 bridge/.codex-test-temp-*/
 bridge/.tmp/
 bridge/.hypothesis/
+
+# SQLite WAL/journal artefacts (global catch-all on top of bridge/data/)
+*.sqlite3-journal
+*.sqlite-journal
+*.db-journal
 
 # Personalized runtime config (user overrides, not committed)
 bridge/config/system_prompt.md

@@ -160,13 +160,13 @@ Configuration: `bridge/.coveragerc` (excludes .venv and tests).
 
 ## Architecture Rules (non-negotiable)
 
-| Layer | May import from |
-|-------|-----------------|
-| `domain/` | Nothing (pure, no external deps) |
-| `infrastructure/` | `domain/` |
-| `application/` | `domain/`, `infrastructure/` |
-| `presentation/` | `domain/`, `application/` |
-| `main.py` | Everything (Composition Root) |
+| Layer | May import from | Must not import from |
+|-------|-----------------|----------------------|
+| `domain/` | Nothing (pure, no external deps) | `application/`, `infrastructure/`, `presentation/` |
+| `application/` | `domain/` | `presentation/` (infrastructure via DI only) |
+| `infrastructure/` | `domain/`, `application/` | `presentation/` |
+| `presentation/` | `domain/`, `application/` | `infrastructure/` (directly) |
+| `main.py` | Everything (Composition Root) | N/A |
 
 **Golden Rule:** domain/ NEVER imports from infrastructure/ or presentation/. If you break this rule, the tests break.
 

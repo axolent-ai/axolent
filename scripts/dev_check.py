@@ -181,6 +181,15 @@ def _print_result(passed: bool, output: str, verbose: bool, step: Step) -> None:
     """
     if passed:
         print(f"  OK  {step.label}")
+    elif not passed and step.optional:
+        print(f"  SKIP  {step.label}  (optional, not installed)")
+        if not verbose and output:
+            print()
+            print("  --- Output ---")
+            for line in output.splitlines():
+                print(f"  {line}")
+            print()
+        print(f"  Hint: {step.description}")
     else:
         print(f"  FAIL  {step.label}")
         if not verbose and output:
@@ -189,13 +198,7 @@ def _print_result(passed: bool, output: str, verbose: bool, step: Step) -> None:
             for line in output.splitlines():
                 print(f"  {line}")
             print()
-        if step.optional:
-            print("  Hint: This is an optional step. To install: see step description.")
-            print(f"        {step.description}")
-        else:
-            print(
-                "  Hint: Fix the above errors then re-run: python scripts/dev_check.py"
-            )
+        print("  Hint: Fix the above errors then re-run: python scripts/dev_check.py")
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +244,7 @@ def main() -> None:
         passed, output = _run_step(step, verbose=args.verbose)
         _print_result(passed, output, verbose=args.verbose, step=step)
 
-        if not passed:
+        if not passed and not step.optional:
             failures.append((i, step.label))
 
     # Final summary
