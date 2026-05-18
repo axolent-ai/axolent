@@ -52,6 +52,13 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
 addopts = "-v --tb=short"
+markers = [
+    "unit: pure unit tests, no external dependencies",
+    "integration: tests that touch storage, subprocesses, or external services",
+    "i18n: tests for language detection, translation, and locale handling",
+    "streaming: tests for streaming handler, throttle, multi-message rollover",
+    "security: tests for whitelisting, rate-limit, privacy guard, audit-log",
+]
 filterwarnings = [
     "ignore:coroutine.*was never awaited:RuntimeWarning",
     "ignore:coroutine.*was never awaited:pytest.PytestUnraisableExceptionWarning",

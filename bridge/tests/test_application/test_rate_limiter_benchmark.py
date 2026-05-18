@@ -35,6 +35,7 @@ except ImportError:
 
 
 @pytest.mark.skipif(not HAS_SQLITE_STORAGE, reason="SQLite storage not available")
+@pytest.mark.security
 class TestRateLimiterBenchmark:
     """Performance benchmark for rate limiter with SQLite persistence."""
 

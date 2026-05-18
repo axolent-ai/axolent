@@ -108,6 +108,8 @@ def _make_context(
 # ──────────────────────────────────────────────────────────────
 
 
+@pytest.mark.i18n
+@pytest.mark.integration
 class TestStartRespectsStickyLanguage:
     """After wizard with lang=X, /start shows text in language X."""
 
@@ -192,6 +194,7 @@ def _get_wizard_done_expected() -> dict[str, str]:
 _WIZARD_DONE_EXPECTED: dict[str, str] = _get_wizard_done_expected()
 
 
+@pytest.mark.i18n
 class TestWizardDoneI18n:
     """wizard_done shows completion text in chosen language."""
 
@@ -304,6 +307,7 @@ class TestHelpRespectsStickyLanguage:
 # ──────────────────────────────────────────────────────────────
 
 
+@pytest.mark.i18n
 class TestWizardCompletionAllLanguages:
     """Step 2 completion screen is fully translated for all 20 languages."""
 
@@ -409,6 +413,7 @@ class TestWizardDoneTextDomain:
 # ──────────────────────────────────────────────────────────────
 
 
+@pytest.mark.i18n
 class TestDERegressionGuard:
     """Ensure German output is not accidentally broken by i18n changes."""
 

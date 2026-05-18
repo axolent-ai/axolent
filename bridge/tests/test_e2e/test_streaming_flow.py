@@ -168,6 +168,8 @@ def _clear_conversation_storage() -> None:
 # ---------------------------------------------------------------
 
 
+@pytest.mark.streaming
+@pytest.mark.integration
 class TestE1NormalStreamFlow:
     """E1: Normal chat question traverses the full streaming path."""
 
@@ -248,6 +250,7 @@ class TestE1NormalStreamFlow:
 # ---------------------------------------------------------------
 
 
+@pytest.mark.streaming
 class TestE2MultiMessageSplit:
     """E2: Long response (>5000 chars) triggers multi-message split."""
 
@@ -290,6 +293,7 @@ class TestE2MultiMessageSplit:
 # ---------------------------------------------------------------
 
 
+@pytest.mark.streaming
 class TestE3MidStreamCrash:
     """E3: Mid-stream error is correctly captured."""
 

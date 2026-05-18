@@ -49,6 +49,7 @@ def _make_mock_process(alive: bool = True, pid: int = 12345) -> AsyncMock:
     return proc
 
 
+@pytest.mark.integration
 class TestProcessPoolSpawnAndReuse:
     """Tests für Process-Spawn und Wiederverwendung."""
 
@@ -360,6 +361,7 @@ class TestProcessPoolRaceCondition:
         await pool.shutdown()
 
 
+@pytest.mark.integration
 class TestProcessPoolCrashRecovery:
     """Tests für Crash-Recovery."""
 
@@ -451,6 +453,7 @@ class TestProcessPoolTimeout:
         await pool.shutdown()
 
 
+@pytest.mark.integration
 class TestProcessPoolShutdown:
     """Tests für Graceful Shutdown."""
 

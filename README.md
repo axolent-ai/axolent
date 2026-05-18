@@ -7,7 +7,7 @@
 ![Phase](https://img.shields.io/badge/phase-1%20(active)-blue)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-green)
 ![Python](https://img.shields.io/badge/python-3.11%2B-yellow)
-![Tests](https://img.shields.io/badge/tests-1636%2B%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-1900%2B%20passing-brightgreen)
 
 ## TL;DR
 
@@ -84,7 +84,7 @@ axolent/
     infrastructure/   I/O adapters (CLI, storage, audit)
     presentation/     Telegram-specific handlers & rendering
     config/           System prompt, user constitution
-    tests/            1636+ pytest tests
+    tests/            1900+ pytest tests
     main.py           Entry point
   mini-app/           Telegram Mini App (planned, Phase 1+)
   desktop/            Desktop App via Tauri (planned, Phase 1+)
@@ -117,7 +117,7 @@ Issues and pull requests are welcome.
 
 1. Fork the repo
 2. Create a feature branch
-3. Write tests (we have 1636+ and counting)
+3. Write tests (we have 1900+ and counting)
 4. Submit a PR with a clear description
 
 Code style: Python with type hints everywhere, Black-formatted, hexagonal architecture rules enforced. See `bridge/README.md` for architecture details.

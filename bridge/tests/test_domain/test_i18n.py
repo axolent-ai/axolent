@@ -55,6 +55,8 @@ _FLAT_DICTS: list[tuple[str, dict[str, str]]] = [
 ]
 
 
+@pytest.mark.unit
+@pytest.mark.i18n
 class TestI18nCoverage:
     """Every flat i18n dict must have all 20 language keys."""
 
@@ -69,6 +71,8 @@ class TestI18nCoverage:
             assert text.strip(), f"{name}[{lang}] is empty"
 
 
+@pytest.mark.unit
+@pytest.mark.i18n
 class TestStatusTexts:
     """STATUS_TEXTS (nested dict) must cover all 20 languages per key."""
 
@@ -78,6 +82,8 @@ class TestStatusTexts:
             assert not missing, f"STATUS_TEXTS[{key}] missing languages: {missing}"
 
 
+@pytest.mark.unit
+@pytest.mark.i18n
 class TestGetText:
     """get_text() helper function."""
 
@@ -99,6 +105,8 @@ class TestGetText:
             assert "test_id" in result, f"Format failed for lang={lang}"
 
 
+@pytest.mark.unit
+@pytest.mark.i18n
 class TestGetStatusText:
     """get_status_text() helper function."""
 

@@ -2141,6 +2141,7 @@ class TestStreamingSessionCancelPropagation:
         assert session.is_cancelled
 
 
+@pytest.mark.streaming
 class TestT25BackgroundStreamingTask:
     """T25: Verify that streaming runs as a background task so /reset
     can be processed in parallel."""

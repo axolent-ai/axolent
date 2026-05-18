@@ -130,7 +130,7 @@ As of: 2026-05-10
 
 ### Code Quality
 
-* 1743+ tests passing
+* 1900+ tests passing
 * 8 code reviews: V1, V2, V3, V4, V5, V6 (Codex + Claude), Feature Review, Language Re-Review
 * Threat model documented (docs/THREAT_MODEL.md)
 * Commits: 916d234, eeb89c5, bc3a05c, 9954df8

@@ -14,6 +14,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 
 # Import des Scripts (kein Package, daher exec-basiert)
 _SCRIPT_PATH = (
@@ -29,6 +31,7 @@ _spec.loader.exec_module(_mod)
 check_file = _mod.check_file
 
 
+@pytest.mark.security
 class TestFakeUmlautDetection:
     """Tests für die Erkennung von ASCII-Umlaut-Umschreibungen."""
 

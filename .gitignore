@@ -46,6 +46,9 @@ Desktop.ini
 pytest_tmp_*/
 bridge/pytest_tmp_*/
 bridge/data/pytest-basetemp/
+bridge/.codex-test-temp-*/
+bridge/.tmp/
+bridge/.hypothesis/
 
 # Personalized runtime config (user overrides, not committed)
 bridge/config/system_prompt.md
@@ -54,4 +57,6 @@ bridge/config/user_constitution.md
 # IDE
 .vscode/
 .idea/
+*.iml
 *.swp
+*.swo

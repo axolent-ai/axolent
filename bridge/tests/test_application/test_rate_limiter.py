@@ -20,6 +20,8 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from application.rate_limiter import (
     DEFAULT_PROFILE,
     PROFILES,
@@ -29,6 +31,8 @@ from application.rate_limiter import (
 )
 
 
+@pytest.mark.unit
+@pytest.mark.security
 class TestTokenBucket:
     """Direkte Tests für den TokenBucket-Algorithmus."""
 
@@ -102,6 +106,7 @@ class TestTokenBucket:
         assert 0.19 <= fraction <= 0.21  # 2/10 = 0.2
 
 
+@pytest.mark.security
 class TestRateLimiterProfiles:
     """Tests für das Profil-System."""
 
@@ -176,6 +181,7 @@ class TestRateLimiterProfiles:
             assert limiter2.get_user_profile(20) == "normal"
 
 
+@pytest.mark.security
 class TestRateLimiterLimits:
     """Tests für die Limit-Prüfung pro Profil."""
 

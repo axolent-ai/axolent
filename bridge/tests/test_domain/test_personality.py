@@ -3,6 +3,8 @@
 Tests build_combined_prompt and build_effective_prompt with language override.
 """
 
+import pytest
+
 from domain.personality import (
     PersonalityConfig,
     SlotInfo,
@@ -11,6 +13,7 @@ from domain.personality import (
 )
 
 
+@pytest.mark.unit
 class TestPersonalityConfig:
     """PersonalityConfig Kombinations-Logik."""
 
@@ -45,6 +48,7 @@ class TestPersonalityConfig:
         assert result == ""
 
 
+@pytest.mark.unit
 class TestBuildEffectivePrompt:
     """build_effective_prompt mit LANGUAGE LOCK fuer alle Sprachen."""
 
@@ -84,6 +88,7 @@ class TestBuildEffectivePrompt:
         assert "[DIACRITIC RULE]" in result
 
 
+@pytest.mark.unit
 class TestBuildSelfAwarenessBlock:
     """build_self_awareness_block: Modell-Info fuer System-Prompt."""
 

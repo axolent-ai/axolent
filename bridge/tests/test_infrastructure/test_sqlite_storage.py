@@ -70,6 +70,7 @@ def data_dir(tmp_path: Path) -> Path:
 # ──────────────────────────────────────────────────────────────
 
 
+@pytest.mark.integration
 class TestSqliteBookmarkStorage:
     """Bookmark CRUD-Operationen mit SQLite."""
 
@@ -241,6 +242,7 @@ class TestSqliteBookmarkStorage:
 # ──────────────────────────────────────────────────────────────
 
 
+@pytest.mark.integration
 class TestSqliteMemoryStorageAppend:
     """Tests für append-Operationen."""
 
@@ -664,6 +666,7 @@ class TestSqliteMemoryStorageGetById:
         assert result is None
 
 
+@pytest.mark.integration
 class TestSqliteMemoryStorageConcurrency:
     """Tests für concurrent writes."""
 

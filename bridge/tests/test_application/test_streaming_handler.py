@@ -80,6 +80,7 @@ def _make_session(started_offset: float = 0.0) -> StreamingSession:
     )
 
 
+@pytest.mark.streaming
 class TestStreamingEdit:
     """Tests für process_streaming_edit()."""
 
@@ -918,6 +919,7 @@ class TestFloodControlFinalEdit:
         session.message.edit_text.assert_called_once()
 
 
+@pytest.mark.streaming
 class TestFloodControlMultiMessage:
     """Tests für Flood-Control bei Multi-Message-Split."""
 
@@ -1092,6 +1094,7 @@ class TestStreamingCancellation:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.streaming
 class TestBurstModeCurve:
     """Tests for the graduated throttle curve (_compute_base_throttle)."""
 
@@ -1312,6 +1315,7 @@ class TestLocalMode:
         assert session.message.edit_text.call_count == 5
 
 
+@pytest.mark.streaming
 class TestLiveMultiMessageRollover:
     """T23: Live multi-message rollover during streaming.
 

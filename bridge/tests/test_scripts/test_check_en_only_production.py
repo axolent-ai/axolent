@@ -9,6 +9,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 
 # Add scripts dir to path so we can import the hook
 _SCRIPTS_DIR = Path(__file__).resolve().parents[3] / "scripts"
@@ -23,6 +25,7 @@ from check_en_only_production import (  # noqa: E402
 )
 
 
+@pytest.mark.security
 class TestGermanDetectionPositive:
     """Verify that German text IS detected (5 positive cases)."""
 
@@ -64,6 +67,7 @@ class TestGermanDetectionPositive:
         assert any("ß" in token for _, token, _ in hits)
 
 
+@pytest.mark.security
 class TestGermanDetectionNegative:
     """Verify that clean English text is NOT flagged (5 negative cases)."""
 
@@ -111,6 +115,7 @@ class TestGermanDetectionNegative:
         assert len(hits) == 0
 
 
+@pytest.mark.security
 class TestWhitelist:
     """Verify whitelisting logic (3 whitelist tests)."""
 

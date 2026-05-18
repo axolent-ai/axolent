@@ -44,6 +44,8 @@ def _get_all_locale_codes() -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.unit
+@pytest.mark.i18n
 class TestI18nKeyParity:
     """All locales must have exactly the same keys as en.json."""
 
@@ -73,6 +75,8 @@ class TestI18nKeyParity:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.unit
+@pytest.mark.i18n
 class TestI18nPlaceholderParity:
     """All locales must have the same placeholder names per key as en.json."""
 
@@ -102,6 +106,8 @@ class TestI18nPlaceholderParity:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.unit
+@pytest.mark.i18n
 class TestI18nTFunction:
     """Tests for the main t() translation function."""
 
@@ -156,6 +162,8 @@ class TestI18nTFunction:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.unit
+@pytest.mark.i18n
 class TestI18nSmokeCommands:
     """Smoke tests: commands return correctly formatted strings."""
 

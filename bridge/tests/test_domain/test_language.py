@@ -5,9 +5,13 @@ as well as edge cases (short messages, emojis, mixed scripts).
 Since R02-B: also detect_language_with_confidence().
 """
 
+import pytest
+
 from domain.language import detect_language, detect_language_with_confidence
 
 
+@pytest.mark.unit
+@pytest.mark.i18n
 class TestDetectLanguage:
     """Detection smoke tests for all 20 languages."""
 
@@ -238,6 +242,8 @@ class TestDetectLanguageWithConfidence:
             assert simple == with_conf, f"Mismatch for: {text}"
 
 
+@pytest.mark.unit
+@pytest.mark.i18n
 class TestCharHintDisambiguation:
     """Regression tests for shared diacritics disambiguation (2026-05-18).
 
