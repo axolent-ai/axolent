@@ -1,4 +1,4 @@
-# ADR-0004: Execution Kernel Architecture
+# ADR-0003: Execution Kernel Architecture
 
 **Status:** Accepted (Phase 0 complete)
 **Date:** 2026-05-10

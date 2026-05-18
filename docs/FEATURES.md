@@ -11,7 +11,7 @@ As of: 2026-05-10
 
 * Hexagonal Architecture (Variant A): Domain / Application / Infrastructure / Presentation
 * import-linter with 3/3 layer contracts
-* Pre-commit hooks (13 hooks: ruff, ruff-format, trailing-whitespace, end-of-file-fixer, check-yaml, check-added-large-files, check-merge-conflict, mixed-line-ending, bandit, import-linter, pytest, pip-audit, semgrep)
+* Pre-commit hooks (17 hooks: ruff, ruff-format, trailing-whitespace, end-of-file-fixer, check-yaml, check-added-large-files, check-merge-conflict, mixed-line-ending, bandit, import-linter, pytest, pip-audit, semgrep, i18n-check, i18n-scan, en-only-production, no-fake-umlauts) — see [TESTING.md](TESTING.md) for details
 * Mode B: local CLI wrapper for claude, no token hijacking
 * UTF-8 enforced across all components (helper in bridge/utils/encoding.py)
 * Audit logging with rotation
@@ -199,11 +199,9 @@ Phase 2 (planned): TaskRouter with 6 slots (chat, code, etc.).
 * `_creation_locks` map grows unbounded (irrelevant for <10 users)
 * `_reset_all_for_tests` technically reachable in production (low risk: module function)
 
-## Statistics (as of 2026-05-10)
+## Statistics (as of 2026-05-18)
 
-* Tests: 602+ passing
-* Production code: ~9,700 LOC
-* Test code: ~10,300 LOC
-* Layer contracts: 3/3 kept
-* Pre-commit hooks: 13/13 passing
-* Local commits since Tier 1: 15
+* Tests: 1900+ passing
+* Layer contracts: 3/3 kept (enforced by import-linter)
+* Pre-commit hooks: 17/17 passing (see [TESTING.md](TESTING.md))
+* See [FEATURE_STATUS.md](FEATURE_STATUS.md) for the active/planned matrix

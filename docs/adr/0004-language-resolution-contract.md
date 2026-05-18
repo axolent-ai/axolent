@@ -1,4 +1,4 @@
-# ADR-0005: Language Resolution Contract
+# ADR-0004: Language Resolution Contract
 
 **Status:** Accepted
 **Date:** 2026-05-12
