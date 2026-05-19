@@ -24,7 +24,7 @@ class TestSelfAwarenessI18n:
             lang="de",
         )
 
-        assert "[SELF-AWARENESS]" in result
+        assert "About your current configuration:" in result
         assert "Modell: Opus 4.7" in result
         assert "Spekuliere nicht" in result
 
@@ -38,7 +38,7 @@ class TestSelfAwarenessI18n:
             lang="en",
         )
 
-        assert "[SELF-AWARENESS]" in result
+        assert "About your current configuration:" in result
         assert "Current model: Opus 4.7" in result
         assert "Do not speculate" in result
 
@@ -55,7 +55,7 @@ class TestSelfAwarenessI18n:
             lang="it",
         )
 
-        assert "[SELF-AWARENESS]" in result
+        assert "About your current configuration:" in result
         # Should have Italian text, not English
         assert "Modello attuale: Opus 4.7" in result
         assert "Non speculare" in result
@@ -70,7 +70,7 @@ class TestSelfAwarenessI18n:
             lang="fr",
         )
 
-        assert "[SELF-AWARENESS]" in result
+        assert "About your current configuration:" in result
         assert "Modèle actuel: Sonnet 4" in result
 
     def test_self_awareness_block_with_slots(self) -> None:
@@ -105,6 +105,6 @@ class TestSelfAwarenessI18n:
             lang="ja",
         )
 
-        assert "[SELF-AWARENESS]" in result
+        assert "About your current configuration:" in result
         # Japanese model label
         assert "現在のモデル: Haiku 3.5" in result

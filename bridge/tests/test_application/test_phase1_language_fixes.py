@@ -22,25 +22,25 @@ class TestLanguageLockSymmetry:
     def test_language_lock_present_for_de(self) -> None:
         """German must get LANGUAGE LOCK (fixes T33)."""
         result = build_effective_prompt("Base.", "de")
-        assert "[LANGUAGE LOCK]" in result
+        assert "IMPORTANT: Respond only in the language" in result
         assert "'de'" in result
 
     def test_language_lock_present_for_it(self) -> None:
         """Italian must get LANGUAGE LOCK."""
         result = build_effective_prompt("Base.", "it")
-        assert "[LANGUAGE LOCK]" in result
+        assert "IMPORTANT: Respond only in the language" in result
         assert "'it'" in result
 
     def test_language_lock_present_for_tr(self) -> None:
         """Turkish must get LANGUAGE LOCK."""
         result = build_effective_prompt("Base.", "tr")
-        assert "[LANGUAGE LOCK]" in result
+        assert "IMPORTANT: Respond only in the language" in result
         assert "'tr'" in result
 
     def test_language_lock_not_present_when_empty(self) -> None:
         """No LANGUAGE LOCK when hint is empty (fresh state, no detection)."""
         result = build_effective_prompt("Base.", "")
-        assert "[LANGUAGE LOCK]" not in result
+        assert "IMPORTANT: Respond only in the language" not in result
 
     def test_language_lock_contains_no_switch_instruction(self) -> None:
         """LANGUAGE LOCK instructs not to switch mid-response."""

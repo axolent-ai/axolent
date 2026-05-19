@@ -220,3 +220,89 @@ class TestProviderRouterUserChatId:
 
         call_kwargs = mock_claude.query.call_args[1]
         assert call_kwargs["model"] == "claude-opus-4-7"
+
+
+class TestProviderRouterModelCompatibility:
+    """T32: model-by-provider compatibility filter.
+
+    When /setmodel sets a Claude model and a debate queries Ollama,
+    the Claude model ID must NOT be forwarded to Ollama (HTTP 404).
+    Instead, model=None so the provider uses its own default.
+    """
+
+    @pytest.mark.asyncio
+    async def test_compatible_model_passed_through(self) -> None:
+        """Claude model is passed to Claude provider (compatible)."""
+        mock_claude = _make_mock_provider("claude", with_async_query=True)
+        providers = {"claude": mock_claude}
+        router = ProviderRouter(providers=providers, default="claude")
+
+        await router.route("Hallo", model="claude-opus-4-7")
+
+        call_kwargs = mock_claude.query.call_args[1]
+        assert call_kwargs["model"] == "claude-opus-4-7"
+
+    @pytest.mark.asyncio
+    async def test_incompatible_model_dropped_for_ollama(self) -> None:
+        """Claude model sent to Ollama provider is dropped (None = default)."""
+        mock_ollama = _make_mock_provider("ollama_local", with_async_query=True)
+        mock_claude = _make_mock_provider("claude", with_async_query=True)
+        providers = {"claude": mock_claude, "ollama_local": mock_ollama}
+        router = ProviderRouter(providers=providers, default="claude")
+
+        await router.route(
+            "Hallo", provider_name="ollama_local", model="claude-opus-4-7"
+        )
+
+        call_kwargs = mock_ollama.query.call_args[1]
+        assert "model" not in call_kwargs, (
+            "Incompatible model should be dropped, not passed to provider"
+        )
+
+    @pytest.mark.asyncio
+    async def test_debate_user_model_only_to_compatible_providers(self) -> None:
+        """/setmodel opus -> Debate -> Claude gets Opus, Ollama gets None."""
+        mock_claude = _make_mock_provider("claude_persistent", with_async_query=True)
+        mock_ollama = _make_mock_provider("ollama_local", with_async_query=True)
+        providers = {
+            "claude_persistent": mock_claude,
+            "ollama_local": mock_ollama,
+        }
+        router = ProviderRouter(providers=providers, default="claude_persistent")
+
+        # Route to Claude with model
+        await router.route(
+            "Test",
+            provider_name="claude_persistent",
+            model="claude-opus-4-7",
+            user_id=1,
+            chat_id=10,
+        )
+        claude_kwargs = mock_claude.query.call_args[1]
+        assert claude_kwargs["model"] == "claude-opus-4-7"
+
+        # Route to Ollama with same model
+        await router.route(
+            "Test",
+            provider_name="ollama_local",
+            model="claude-opus-4-7",
+            user_id=1,
+            chat_id=10,
+        )
+        ollama_kwargs = mock_ollama.query.call_args[1]
+        assert "model" not in ollama_kwargs
+
+    @pytest.mark.asyncio
+    async def test_none_model_stays_none(self) -> None:
+        """model=None is never modified (no compatibility check needed)."""
+        mock_ollama = _make_mock_provider("ollama_local", with_async_query=True)
+        providers = {
+            "claude": _make_mock_provider("claude"),
+            "ollama_local": mock_ollama,
+        }
+        router = ProviderRouter(providers=providers, default="claude")
+
+        await router.route("Hallo", provider_name="ollama_local", model=None)
+
+        call_kwargs = mock_ollama.query.call_args[1]
+        assert "model" not in call_kwargs

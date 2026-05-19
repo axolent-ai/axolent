@@ -21,7 +21,7 @@ class TestPromptComposer:
     """Tests for PromptComposer.compose()."""
 
     def test_compose_language_block_included(self) -> None:
-        """Language block should inject [LANGUAGE LOCK] into prompt."""
+        """Language block should inject IMPORTANT: Respond only in the language into prompt."""
         composer = PromptComposer()
         ctx = _make_ctx("en")
 
@@ -32,7 +32,7 @@ class TestPromptComposer:
             blocks=["language"],
         )
 
-        assert "[LANGUAGE LOCK]" in result
+        assert "IMPORTANT: Respond only in the language" in result
         assert "'en'" in result
         assert "You are helpful." in result
 
@@ -48,7 +48,7 @@ class TestPromptComposer:
             blocks=["language"],
         )
 
-        assert "[LANGUAGE LOCK]" in result
+        assert "IMPORTANT: Respond only in the language" in result
         assert "'de'" in result
 
     def test_compose_anti_repetition_block(self) -> None:
@@ -63,8 +63,8 @@ class TestPromptComposer:
             blocks=["anti_repetition"],
         )
 
-        assert "[STYLE RULE]" in result
         assert "Gerne" in result
+        assert "Vermeide" in result
 
     def test_compose_anti_repetition_english(self) -> None:
         """English anti-repetition rule uses English fillers."""
@@ -170,7 +170,9 @@ class TestPromptComposer:
     def test_compose_self_awareness_block(self) -> None:
         """Self-awareness block is included when service provides one."""
         mock_awareness = MagicMock()
-        mock_awareness.build.return_value = "[SELF-AWARENESS]\nModel: Opus 4.7"
+        mock_awareness.build.return_value = (
+            "About your current configuration:\nModel: Opus 4.7"
+        )
 
         composer = PromptComposer(self_awareness_service=mock_awareness)
         ctx = _make_ctx("de")
@@ -185,7 +187,7 @@ class TestPromptComposer:
             task_slot_name="chat",
         )
 
-        assert "[SELF-AWARENESS]" in result
+        assert "About your current configuration:" in result
         mock_awareness.build.assert_called_once_with(
             user_id=42,
             user_model="claude-opus-4-7",
@@ -216,12 +218,12 @@ class TestPromptComposer:
             memory_block="[MEMORY]",
         )
 
-        assert "[LANGUAGE LOCK]" in result
+        assert "IMPORTANT: Respond only in the language" in result
         assert "[TIME]" in result
         assert "[STYLE]" in result
         assert "[AWARENESS]" in result
         assert "[MEMORY]" in result
-        assert "[STYLE RULE]" in result  # anti_repetition
+        assert "Sure" in result  # anti_repetition (EN)
 
     def test_compose_for_debate_provider(self) -> None:
         """compose_for_debate_provider uses minimal blocks."""
@@ -230,7 +232,7 @@ class TestPromptComposer:
 
         result = composer.compose_for_debate_provider(ctx)
 
-        assert "[LANGUAGE LOCK]" in result
+        assert "IMPORTANT: Respond only in the language" in result
         assert "'it'" in result
         assert "concisely" in result
 
@@ -241,7 +243,7 @@ class TestPromptComposer:
 
         result = composer.compose_for_debate_judge(ctx)
 
-        assert "[LANGUAGE LOCK]" in result
+        assert "IMPORTANT: Respond only in the language" in result
         assert "'fr'" in result
         assert "neutral arbiter" in result
 

@@ -83,9 +83,9 @@ class TestBuildBasics:
     def test_build_contains_self_awareness_marker(
         self, sa_service: SelfAwarenessService
     ) -> None:
-        """Block enthaelt [SELF-AWARENESS] Marker."""
+        """Block enthaelt About your current configuration: Marker."""
         result = sa_service.build(user_id=1)
-        assert "[SELF-AWARENESS]" in result
+        assert "About your current configuration:" in result
 
     def test_build_contains_model_info(self, sa_service: SelfAwarenessService) -> None:
         """Block enthaelt Modell-Info (Display-Name und ID)."""
@@ -228,7 +228,7 @@ class TestGracefulDegradation:
     def test_build_without_user_id(self, sa_service: SelfAwarenessService) -> None:
         """Ohne user_id wird kein Slot-Liste gebaut, Block ist trotzdem da."""
         result = sa_service.build(user_id=None)
-        assert "[SELF-AWARENESS]" in result
+        assert "About your current configuration:" in result
         # Keine Slot-Liste da user_id=None
         assert "CHAT:" not in result
 
@@ -240,14 +240,14 @@ class TestGracefulDegradation:
             model_registry=registry,
         )
         result = sa_svc.build(user_id=1)
-        assert "[SELF-AWARENESS]" in result
+        assert "About your current configuration:" in result
 
     def test_build_with_unknown_model_id(
         self, sa_service: SelfAwarenessService
     ) -> None:
         """Unbekannte Modell-ID wird als Fallback direkt angezeigt."""
         result = sa_service.build(user_id=1, user_model="totally-unknown-model-xyz")
-        assert "[SELF-AWARENESS]" in result
+        assert "About your current configuration:" in result
         assert "totally-unknown-model-xyz" in result
         assert "Provider: unknown" in result
 
@@ -268,7 +268,7 @@ class TestGracefulDegradation:
         )
         # Soll nicht crashen, Slot-Liste wird uebersprungen
         result = sa_svc.build(user_id=1)
-        assert "[SELF-AWARENESS]" in result
+        assert "About your current configuration:" in result
 
 
 # ---------------------------------------------------------------

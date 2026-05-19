@@ -55,37 +55,37 @@ class TestBuildEffectivePrompt:
     def test_language_lock_for_german(self) -> None:
         """Bei 'de' wird LANGUAGE LOCK angehaengt (symmetrisch wie alle Sprachen)."""
         result = build_effective_prompt("Base prompt.", "de")
-        assert "[LANGUAGE LOCK]" in result
+        assert "IMPORTANT: Respond only in the language" in result
         assert "'de'" in result
         assert result.startswith("Base prompt.")
-        assert "[DIACRITIC RULE]" in result
+        assert "When responding in" in result
 
     def test_language_lock_for_english(self) -> None:
         """Bei 'en' wird ein LANGUAGE LOCK Block angehaengt."""
         result = build_effective_prompt("Base prompt.", "en")
-        assert "[LANGUAGE LOCK]" in result
+        assert "IMPORTANT: Respond only in the language" in result
         assert "'en'" in result
 
     def test_language_lock_for_spanish(self) -> None:
         """Beliebige Sprache loest LANGUAGE LOCK und DIACRITIC RULE aus."""
         result = build_effective_prompt("Base.", "es")
-        assert "[LANGUAGE LOCK]" in result
+        assert "IMPORTANT: Respond only in the language" in result
         assert "'es'" in result
-        assert "[DIACRITIC RULE]" in result
+        assert "When responding in" in result
 
     def test_empty_language_hint_no_lock(self) -> None:
         """Leerer Language-Hint fuegt keinen LANGUAGE LOCK an, aber DE DIACRITIC RULE."""
         result = build_effective_prompt("Base.", "")
-        assert "[LANGUAGE LOCK]" not in result
+        assert "IMPORTANT: Respond only in the language" not in result
         assert result.startswith("Base.")
-        assert "[DIACRITIC RULE]" in result
+        assert "When responding in" in result
 
     def test_empty_base_prompt_with_language(self) -> None:
         """Auch ohne Base-Prompt wird LANGUAGE LOCK gesetzt."""
         result = build_effective_prompt("", "fr")
-        assert "[LANGUAGE LOCK]" in result
+        assert "IMPORTANT: Respond only in the language" in result
         assert "'fr'" in result
-        assert "[DIACRITIC RULE]" in result
+        assert "When responding in" in result
 
 
 @pytest.mark.unit
@@ -100,7 +100,7 @@ class TestBuildSelfAwarenessBlock:
             task_slot="code",
             provider="anthropic",
         )
-        assert "[SELF-AWARENESS]" in block
+        assert "About your current configuration:" in block
         assert "Opus 4.7" in block
         assert "claude-opus-4-7" in block
         assert "code" in block
@@ -220,7 +220,7 @@ class TestBuildSelfAwarenessBlock:
             provider="anthropic",
             lang="en",
         )
-        assert "[SELF-AWARENESS]" in block
+        assert "About your current configuration:" in block
         assert "Current model: Opus 4.7" in block
         assert "Do not speculate from training data" in block
         # Deutsche Texte duerfen NICHT drin sein
@@ -292,4 +292,4 @@ class TestBuildSelfAwarenessBlock:
         assert block_it != block_en
         # IT block must contain Italian text from i18n
         assert "Modello attuale" in block_it
-        assert "[SELF-AWARENESS]" in block_it
+        assert "About your current configuration:" in block_it

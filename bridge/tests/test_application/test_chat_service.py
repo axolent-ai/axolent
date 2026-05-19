@@ -850,7 +850,7 @@ class TestSelfAwareness:
 
         call_args = mock_router.route.call_args
         system_sent = call_args.kwargs.get("system_prompt", "")
-        assert "[SELF-AWARENESS]" in system_sent
+        assert "About your current configuration:" in system_sent
         assert "Modell:" in system_sent
         assert "Slot:" in system_sent
         assert "Provider:" in system_sent
@@ -998,4 +998,4 @@ class TestSelfAwareness:
         assert result.success is True
         call_args = mock_router.route.call_args
         system_sent = call_args.kwargs.get("system_prompt", "")
-        assert "[SELF-AWARENESS]" not in system_sent
+        assert "About your current configuration:" not in system_sent

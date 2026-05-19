@@ -52,7 +52,7 @@ class TestInstructionCompilerBlockOrder:
 
         result = compiler.compile_chat(ctx, plan, base_prompt="Base prompt.")
 
-        assert "[LANGUAGE LOCK]" in result.system_prompt
+        assert "IMPORTANT: Respond only in the language" in result.system_prompt
         assert "'fr'" in result.system_prompt
 
     def test_language_lock_for_german(self) -> None:
@@ -63,7 +63,7 @@ class TestInstructionCompilerBlockOrder:
 
         result = compiler.compile_chat(ctx, plan, base_prompt="Basis.")
 
-        assert "[LANGUAGE LOCK]" in result.system_prompt
+        assert "IMPORTANT: Respond only in the language" in result.system_prompt
         assert "'de'" in result.system_prompt
 
     def test_block_order_security_before_language(self) -> None:
@@ -80,7 +80,7 @@ class TestInstructionCompilerBlockOrder:
         # Task is at the beginning
         assert result.system_prompt.startswith("TASK_START")
         # Language lock follows
-        lang_pos = result.system_prompt.find("[LANGUAGE LOCK]")
+        lang_pos = result.system_prompt.find("IMPORTANT: Respond only in the language")
         assert lang_pos > 0
 
     def test_memory_block_included(self) -> None:
@@ -112,7 +112,7 @@ class TestInstructionCompilerBlockOrder:
             memory_block="[STORED NOTES]\nSome memory.",
         )
 
-        lang_pos = result.system_prompt.find("[LANGUAGE LOCK]")
+        lang_pos = result.system_prompt.find("IMPORTANT: Respond only in the language")
         mem_pos = result.system_prompt.find("[STORED NOTES]")
         assert lang_pos < mem_pos
 
@@ -123,7 +123,7 @@ class TestInstructionCompilerBlockOrder:
         plan = _make_plan(lang="en")
 
         result = compiler.compile_chat(ctx, plan, base_prompt="Base.")
-        assert "[STYLE RULE]" in result.system_prompt
+        assert "anti_repetition" in result.get_metadata("blocks_included")
 
     def test_time_service_integrated(self) -> None:
         """Time service block is included when available (EK-04: uses ctx.time)."""
@@ -193,7 +193,7 @@ class TestInstructionCompilerDebate:
 
         result = compiler.compile_debate(ctx, plan, role="provider")
 
-        assert "[LANGUAGE LOCK]" in result.system_prompt
+        assert "IMPORTANT: Respond only in the language" in result.system_prompt
         assert "'it'" in result.system_prompt
         assert "concisely" in result.system_prompt
 
@@ -207,7 +207,7 @@ class TestInstructionCompilerDebate:
 
         assert "neutral arbiter" in result.system_prompt
         assert "JSON" in result.system_prompt
-        assert "[LANGUAGE LOCK]" in result.system_prompt
+        assert "IMPORTANT: Respond only in the language" in result.system_prompt
 
     def test_debate_metadata(self) -> None:
         """Debate metadata includes role info."""

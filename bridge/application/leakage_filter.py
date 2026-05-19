@@ -1,12 +1,21 @@
 """Leakage filter: checks LLM responses for system prompt leakage (C-3).
 
-Naive heuristic: searches for significant substrings of the system prompt
-(>= MIN_SUBSTRING_LENGTH chars) in the LLM response. If found,
-a sanitized response is returned.
+Two-layer defense:
+
+Layer 1 (original, C-3): Naive heuristic fingerprint matching.
+    Searches for significant substrings of the system prompt
+    (>= MIN_SUBSTRING_LENGTH chars) in the LLM response.
+
+Layer 2 (T42/NEU-04 fix): Forbidden-pattern matching.
+    Checks the LLM response for known internal marker strings,
+    project names, and configuration references that must never
+    appear in user-facing output. This catches cases where the
+    model paraphrases or comments on the system prompt rather
+    than reproducing it verbatim.
 
 Design principles:
     * Conservative: prefer no false positive over being too strict
-    * No regex bombs: simple substring match
+    * No regex bombs: simple substring/lower match
     * Fast: O(n*m) worst case, but with short chunks
     * Application layer: business rule, no Telegram code
 """
@@ -37,6 +46,46 @@ REFUSAL_RESPONSE: str = (
     "I cannot share my internal instructions. What else can I help you with?"
 )
 
+# ---------------------------------------------------------------------------
+# Layer 2: Forbidden patterns (T42 / NEU-04)
+# ---------------------------------------------------------------------------
+# All patterns are matched case-insensitively against the normalized response.
+# Each entry is a tuple: (pattern, category) for logging context.
+
+_FORBIDDEN_PATTERNS: list[tuple[str, str]] = [
+    # System prompt block markers (old bracket style, kept for safety)
+    ("language lock", "marker"),
+    ("diacritic rule", "marker"),
+    ("style rule", "marker"),
+    ("format contract", "marker"),
+    ("privacy rule", "marker"),
+    ("security block", "marker"),
+    ("self-awareness", "marker"),
+    # Project internals
+    ("claude.md", "project_ref"),
+    ("axolent ai project", "project_ref"),
+    ("axolent project", "project_ref"),
+    ("the project we're working on", "project_ref"),
+    ("the project we are working on", "project_ref"),
+    # Development tooling references
+    ("import-linter", "dev_tooling"),
+    ("pre-commit hooks", "dev_tooling"),
+    ("according to project conventions", "dev_tooling"),
+    ("as per claude.md", "dev_tooling"),
+    ("in this project we", "dev_tooling"),
+    ("production code conventions", "dev_tooling"),
+    ("english-only policy", "dev_tooling"),
+    # Meta-commentary about injected instructions
+    ("injected system-level", "meta_commentary"),
+    ("prompt-injection-muster", "meta_commentary"),
+    ("prompt-injection pattern", "meta_commentary"),
+    ("prompt injection pattern", "meta_commentary"),
+    ("injizierte system-level-befehle", "meta_commentary"),
+    ("injected system-level commands", "meta_commentary"),
+    ("authoritative systembefehle", "meta_commentary"),
+    ("authoritative system commands", "meta_commentary"),
+]
+
 
 def _extract_fingerprints(system_prompt: str) -> list[str]:
     """Extract overlapping substrings from the system prompt.
@@ -61,11 +110,44 @@ def _extract_fingerprints(system_prompt: str) -> list[str]:
     return fingerprints
 
 
+def check_for_forbidden_patterns(response: str) -> Optional[str]:
+    """Check whether the LLM response contains forbidden internal patterns.
+
+    Layer 2 defense (T42/NEU-04): catches cases where the model
+    paraphrases, comments on, or meta-references internal system
+    prompt structures rather than reproducing them verbatim.
+
+    Args:
+        response: The LLM response to check.
+
+    Returns:
+        None if no forbidden pattern was detected.
+        REFUSAL_RESPONSE if a forbidden pattern was detected.
+    """
+    if not response:
+        return None
+
+    normalized = " ".join(response.lower().split())
+
+    for pattern, category in _FORBIDDEN_PATTERNS:
+        if pattern in normalized:
+            log.warning(
+                "Forbidden pattern leakage detected: category=%s, "
+                "pattern=%r. Response replaced with refusal.",
+                category,
+                pattern,
+            )
+            return REFUSAL_RESPONSE
+
+    return None
+
+
 def check_for_system_prompt_leakage(response: str, system_prompt: str) -> Optional[str]:
     """Check whether the LLM response contains parts of the system prompt.
 
-    Compares normalized substrings of the system prompt against the
-    normalized response. On match, the refusal response is returned.
+    Two-layer check:
+    1. Forbidden-pattern matching (fast, catches paraphrasing/meta-commentary)
+    2. Fingerprint matching (catches verbatim reproduction)
 
     Args:
         response: The LLM response to check.
@@ -75,7 +157,16 @@ def check_for_system_prompt_leakage(response: str, system_prompt: str) -> Option
         None if no leak was detected.
         REFUSAL_RESPONSE if a leak was detected.
     """
-    if not response or not system_prompt:
+    if not response:
+        return None
+
+    # Layer 2: forbidden patterns (checked first, faster)
+    forbidden_result = check_for_forbidden_patterns(response)
+    if forbidden_result is not None:
+        return forbidden_result
+
+    # Layer 1: fingerprint matching (original C-3 logic)
+    if not system_prompt:
         return None
 
     fingerprints = _extract_fingerprints(system_prompt)

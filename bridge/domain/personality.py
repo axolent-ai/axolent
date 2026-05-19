@@ -100,7 +100,7 @@ def build_self_awareness_block(
     text_no_slots = t("self_awareness.text_no_slots", lang)
 
     lines = [
-        "[SELF-AWARENESS]",
+        "About your current configuration:",
         f"{label_model}: {model_display_name} ({model_id})",
         f"Slot: {task_slot}",
         f"Provider: {provider}",
@@ -129,7 +129,7 @@ def build_self_awareness_block(
 def build_effective_prompt(base_prompt: str, language_hint: str = "") -> str:
     """Build the effective system prompt including language lock.
 
-    Always injects a [LANGUAGE LOCK] block for ALL languages (including "de")
+    Always injects a language lock instruction for ALL languages (including "de")
     to ensure the LLM never defaults to training-bias language.
 
     Args:
@@ -143,7 +143,7 @@ def build_effective_prompt(base_prompt: str, language_hint: str = "") -> str:
 
     if language_hint:
         lang_instruction = (
-            f"\n\n[LANGUAGE LOCK] You MUST reply in '{language_hint}'. "
+            f"\n\nIMPORTANT: Respond only in the language '{language_hint}'. "
             f"This overrides any default language behavior. "
             f"Do not switch languages mid-response."
         )
@@ -161,30 +161,30 @@ def build_effective_prompt(base_prompt: str, language_hint: str = "") -> str:
 # so the LLM is primed to use correct characters from the start.
 _DIACRITIC_HINTS: dict[str, str] = {
     "de": (
-        "\n\n[DIACRITIC RULE] When responding in German, ALWAYS use real "
+        "\n\nWhen responding in German, ALWAYS use real "
         "umlauts and eszett: ä, ö, ü, Ä, Ö, Ü, ß. "
         "NEVER use ASCII substitutes (ae, oe, ue, ss). "
         "Examples: 'für' not 'fuer', 'über' not 'ueber', 'größer' not 'groesser'."
     ),
     "fr": (
-        "\n\n[DIACRITIC RULE] When responding in French, ALWAYS use real "
+        "\n\nWhen responding in French, ALWAYS use real "
         "accents and cedilla: é, è, ê, ë, à, â, ç, ô, û, î, ï, ù. "
         "NEVER omit them. "
         "Examples: 'être' not 'etre', 'français' not 'francais'."
     ),
     "es": (
-        "\n\n[DIACRITIC RULE] When responding in Spanish, ALWAYS use ñ "
+        "\n\nWhen responding in Spanish, ALWAYS use ñ "
         "and accent marks: á, é, í, ó, ú, ñ. NEVER substitute with "
         "plain ASCII. "
         "Examples: 'español' not 'espanol', 'también' not 'tambien'."
     ),
     "it": (
-        "\n\n[DIACRITIC RULE] When responding in Italian, ALWAYS use "
+        "\n\nWhen responding in Italian, ALWAYS use "
         "proper accented vowels: à, è, é, ì, ò, ù. "
         "Examples: 'città' not 'citta', 'perché' not 'perche'."
     ),
     "pt": (
-        "\n\n[DIACRITIC RULE] When responding in Portuguese, ALWAYS use "
+        "\n\nWhen responding in Portuguese, ALWAYS use "
         "tildes, cedilla, and accents: ã, õ, ç, á, é, í, ó, ú, â, ê, ô. "
         "Examples: 'não' not 'nao', 'você' not 'voce'."
     ),

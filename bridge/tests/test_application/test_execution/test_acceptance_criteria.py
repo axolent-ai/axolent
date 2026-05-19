@@ -145,7 +145,7 @@ class TestAcceptanceCriteria:
         result = compiler.compile_chat(ctx, plan, base_prompt="System prompt.")
 
         # Prompt is a single compiled string with all required blocks
-        assert "[LANGUAGE LOCK]" in result.system_prompt
+        assert "IMPORTANT: Respond only in the language" in result.system_prompt
         assert "System prompt." in result.system_prompt
         assert result.get_metadata("request_id") == "r5"
 
@@ -323,7 +323,7 @@ class TestCommit3ChatServiceAcceptance:
         # Verify the system_prompt passed to the router contains language lock
         call_kwargs = mock_router.route.call_args.kwargs
         system_prompt_sent = call_kwargs.get("system_prompt", "")
-        assert "[LANGUAGE LOCK]" in system_prompt_sent
+        assert "IMPORTANT: Respond only in the language" in system_prompt_sent
         assert (
             "Italian" in system_prompt_sent or "italiano" in system_prompt_sent.lower()
         )

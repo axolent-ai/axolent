@@ -190,7 +190,7 @@ class InstructionCompiler:
         # Block 7c: Anti-repetition
         rule_text = t("style.no_repetition_rule", lang)
         if rule_text:
-            result = f"{result}\n\n[STYLE RULE] {rule_text}"
+            result = f"{result}\n\n{rule_text}"
             blocks_included.append("anti_repetition")
 
         # Block 8: Format contract (Phase 0: no-op)
@@ -246,7 +246,7 @@ class InstructionCompiler:
         if role == "provider":
             rule_text = t("style.no_repetition_rule", lang)
             if rule_text:
-                result = f"{result}\n\n[STYLE RULE] {rule_text}"
+                result = f"{result}\n\n{rule_text}"
 
         metadata = (
             ("request_id", ctx.request_id),

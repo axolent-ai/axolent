@@ -47,7 +47,7 @@ BlockType = Literal[
 ]
 
 # Anti-repetition rule prefix (the translated text is appended after this)
-_ANTI_REPETITION_PREFIX = "\n\n[STYLE RULE] "
+_ANTI_REPETITION_PREFIX = "\n\n"
 
 
 class PromptComposer:
