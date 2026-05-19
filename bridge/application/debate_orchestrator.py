@@ -51,6 +51,12 @@ _DEBATE_PROVIDERS_RAW: str = os.getenv("DEBATE_PROVIDERS", "")
 # so the judge does not have the debate response in its context.
 _JUDGE_CHAT_ID_OFFSET: int = 900_000_000
 
+# Sentinel chat ID for debate provider calls: separate conversation
+# context so providers do not see the user's /chat history.
+# Must not collide with _JUDGE_CHAT_ID_OFFSET (900M) or realistic
+# Telegram chat IDs (typically < 2 billion positive, negative for groups).
+_DEBATE_PROVIDER_CHAT_ID_OFFSET: int = 800_000_000
+
 # Provider groups: providers that use the same backend model.
 # Per group only the first available provider is used in the debate.
 # Order = priority (first entry preferred).
@@ -236,17 +242,22 @@ class DebateOrchestrator:
         chat_id: int,
         user_lang: str = DEFAULT_LANGUAGE,
         system_prompt_override: str | None = None,
+        model: str | None = None,
     ) -> tuple[str, str | None, str | None, str | None]:
         """Query a single provider with timeout.
+
+        Uses an offset chat_id so the debate provider call gets its own
+        subprocess, isolated from the user's /chat conversation history.
 
         Args:
             provider_name: Provider to query.
             question: The user question.
             user_id: Telegram user ID.
-            chat_id: Telegram chat ID.
+            chat_id: Telegram chat ID (will be offset internally).
             user_lang: User language code (for response language instruction).
             system_prompt_override: If provided, use this prompt instead of
                 building one from PromptComposer (new kernel path).
+            model: Optional model ID (from user's /setmodel preference).
 
         Returns:
             Tuple: (provider_name, response_text_or_None, error_or_None, model_id_or_None)
@@ -258,6 +269,11 @@ class DebateOrchestrator:
             _ctx = LanguageResolver.from_code(user_lang, "debate")
             system_prompt = self._composer.compose_for_debate_provider(_ctx)
 
+        # Offset chat_id to isolate debate subprocess from /chat history.
+        # Without this, the debate reuses the same warm subprocess that has
+        # the full chat conversation context, causing cross-contamination.
+        debate_chat_id = chat_id + _DEBATE_PROVIDER_CHAT_ID_OFFSET
+
         try:
             response = await asyncio.wait_for(
                 self.provider_router.route(
@@ -266,7 +282,8 @@ class DebateOrchestrator:
                     provider_name=provider_name,
                     timeout_seconds=self.timeout_seconds,
                     user_id=user_id,
-                    chat_id=chat_id,
+                    chat_id=debate_chat_id,
+                    model=model,
                 ),
                 timeout=self.timeout_seconds + 5,
             )
@@ -278,6 +295,62 @@ class DebateOrchestrator:
             return (provider_name, None, f"Timeout after {self.timeout_seconds}s", None)
         except Exception as exc:
             return (provider_name, None, str(exc), None)
+
+    async def _cleanup_debate_subprocesses(
+        self,
+        user_id: int,
+        chat_id: int,
+        providers_used: list[str],
+    ) -> None:
+        """Terminate debate-specific subprocesses after a debate completes.
+
+        Debate provider calls use an offset chat_id to isolate them from
+        the user's /chat history. After the debate, these subprocesses are
+        single-use and should be terminated to free resources (~150-300 MB
+        RAM per subprocess).
+
+        Only targets providers that support subprocess termination
+        (currently: claude_persistent). Stateless providers (e.g. ollama)
+        are unaffected.
+
+        Args:
+            user_id: Telegram user ID.
+            chat_id: Original chat ID (offset is applied internally).
+            providers_used: List of provider names used in this debate.
+        """
+        debate_chat_id = chat_id + _DEBATE_PROVIDER_CHAT_ID_OFFSET
+
+        for provider_name in providers_used:
+            provider = self.provider_router.providers.get(provider_name)
+            if provider is None:
+                continue
+
+            # Duck-type check: only providers with a process pool need cleanup.
+            pool = getattr(provider, "_pool", None)
+            if pool is None:
+                continue
+
+            terminate_fn = getattr(pool, "terminate_session", None)
+            if terminate_fn is None:
+                continue
+
+            try:
+                terminated = await terminate_fn(user_id, debate_chat_id)
+                if terminated:
+                    log.debug(
+                        "Debate cleanup: terminated subprocess for "
+                        "provider=%s, user=%d, debate_chat_id=%d",
+                        provider_name,
+                        user_id,
+                        debate_chat_id,
+                    )
+            except Exception as exc:
+                # Cleanup is best-effort; never let it crash the debate result
+                log.warning(
+                    "Debate cleanup failed for provider=%s: %s",
+                    provider_name,
+                    exc,
+                )
 
     def _analyze_consensus(
         self, responses: dict[str, str], user_lang: str = DEFAULT_LANGUAGE
@@ -706,6 +779,7 @@ class DebateOrchestrator:
         envelope: "RequestEnvelope | None" = None,
         context: "ExecutionContext | None" = None,
         plan: "ExecutionPlan | None" = None,
+        model: str | None = None,
     ) -> DebateResult:
         """Run a multi-AI debate.
 
@@ -713,6 +787,7 @@ class DebateOrchestrator:
         2. Query all in parallel (asyncio.gather)
         3. Collect responses + errors
         4. Create consensus analysis
+        5. Cleanup: terminate debate subprocesses (no stale pool entries)
 
         New kernel path (Phase 0 Commit 4):
             If envelope, context, and plan are provided, uses the
@@ -728,6 +803,7 @@ class DebateOrchestrator:
             envelope: Optional RequestEnvelope (kernel path).
             context: Optional ExecutionContext (kernel path).
             plan: Optional ExecutionPlan (kernel path).
+            model: Optional model ID from user's /setmodel preference.
 
         Returns:
             DebateResult with all responses, errors, and analysis.
@@ -785,6 +861,7 @@ class DebateOrchestrator:
                 chat_id,
                 effective_lang,
                 system_prompt_override=provider_system_prompt,
+                model=model,
             )
             for name in providers
         ]
@@ -839,6 +916,12 @@ class DebateOrchestrator:
                 t_judge_elapsed,
                 verdict.winner if verdict else "failed",
             )
+
+        # Phase 3: cleanup debate subprocesses.
+        # Debate provider calls spawn isolated subprocesses via the offset
+        # chat_id. These are single-use and must not linger in the pool
+        # (they would never be reused and waste ~150-300 MB RAM each).
+        await self._cleanup_debate_subprocesses(user_id, chat_id, providers)
 
         duration = time.monotonic() - t_start
 

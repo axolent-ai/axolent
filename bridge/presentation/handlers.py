@@ -2552,6 +2552,11 @@ async def handle_debate_command(
             instruction_compiler=instruction_compiler,
         )
 
+        # Resolve user model: debate should respect /setmodel preference
+        user_model: str | None = None
+        if chat_service.model_service is not None:
+            user_model = chat_service.model_service.get_user_model(user_id)
+
         debate_result = await orchestrator.debate(
             question=question,
             user_id=user_id,
@@ -2560,6 +2565,7 @@ async def handle_debate_command(
             envelope=envelope,
             context=exec_ctx,
             plan=exec_plan,
+            model=user_model,
         )
     finally:
         keepalive.cancel()

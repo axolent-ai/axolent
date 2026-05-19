@@ -12,16 +12,21 @@ Tests:
 * Final Review: JSON parse error -> graceful fallback
 * Final Review: Provider names anonymized in judge prompt (bias mitigation)
 * Final Review: Integration in debate flow
+* Debate provider uses offset chat_id (history isolation)
+* Debate provider chat_id offset isolates from /chat
+* Debate provider respects user model (/setmodel)
+* Debate subprocess terminated after call (pool cleanup)
 """
 
 from __future__ import annotations
 
 import json
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from application.debate_orchestrator import (
     DebateOrchestrator,
     DebateResult,
+    _DEBATE_PROVIDER_CHAT_ID_OFFSET,
     deduplicate_providers,
 )
 from application.provider_router import ProviderRouter
@@ -1335,3 +1340,205 @@ class TestDebateKernelIntegration:
         assert review_kwargs.get("exec_plan") is exec_plan
         # And effective language (from context)
         assert review_kwargs.get("user_lang") == "es"
+
+
+class TestDebateProviderChatIdIsolation:
+    """Regression tests for debate subprocess isolation (RCA 2026-05-19).
+
+    Bug: debate provider calls reused the same warm subprocess as /chat
+    because _query_provider did not offset chat_id. The subprocess had
+    the full chat conversation history, causing cross-contamination.
+
+    Fix: debate provider calls use chat_id + _DEBATE_PROVIDER_CHAT_ID_OFFSET
+    so they get their own isolated subprocess.
+    """
+
+    async def test_debate_provider_uses_offset_chat_id(self) -> None:
+        """Provider route() is called with offset chat_id, not the original."""
+        providers = {
+            "alpha": _MockProvider("alpha", response_text="Alpha response"),
+            "beta": _MockProvider("beta", response_text="Beta response"),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        original_chat_id = 123
+        expected_debate_chat_id = original_chat_id + _DEBATE_PROVIDER_CHAT_ID_OFFSET
+
+        route_calls: list[dict] = []
+        original_route = router.route
+
+        async def _spy_route(**kwargs):
+            route_calls.append(kwargs)
+            return await original_route(**kwargs)
+
+        with (
+            patch.object(router, "route", side_effect=_spy_route),
+            patch.object(orchestrator, "final_review", return_value=None),
+        ):
+            await orchestrator.debate(
+                question="What is water?",
+                user_id=1,
+                chat_id=original_chat_id,
+            )
+
+        # All provider calls must use the offset chat_id
+        assert len(route_calls) >= 2
+        for call in route_calls:
+            assert call["chat_id"] == expected_debate_chat_id, (
+                f"Expected debate chat_id={expected_debate_chat_id}, "
+                f"got {call['chat_id']}"
+            )
+
+    async def test_debate_provider_chat_id_offset_isolates_from_chat(self) -> None:
+        """Debate and /chat use different pool keys (no history leak).
+
+        Simulates the scenario: /chat with chat_id=100, then /debate
+        with chat_id=100. The debate must use a different chat_id so
+        it does not reuse the /chat subprocess with its history.
+        """
+        providers = {
+            "alpha": _MockProvider("alpha", response_text="Debate answer"),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        chat_id = 100
+        user_id = 42
+
+        # Simulate /chat call: would use chat_id=100 directly
+        chat_route_chat_id = chat_id
+
+        # Capture debate route calls
+        debate_route_calls: list[dict] = []
+        original_route = router.route
+
+        async def _spy_route(**kwargs):
+            debate_route_calls.append(kwargs)
+            return await original_route(**kwargs)
+
+        with (
+            patch.object(router, "route", side_effect=_spy_route),
+            patch.object(orchestrator, "final_review", return_value=None),
+        ):
+            await orchestrator.debate(
+                question="What is water?",
+                user_id=user_id,
+                chat_id=chat_id,
+            )
+
+        # Debate chat_id must differ from /chat chat_id
+        assert len(debate_route_calls) >= 1
+        debate_chat_id = debate_route_calls[0]["chat_id"]
+        assert debate_chat_id != chat_route_chat_id, (
+            "Debate must use a different chat_id than /chat to avoid "
+            "subprocess reuse and history contamination"
+        )
+        assert debate_chat_id == chat_id + _DEBATE_PROVIDER_CHAT_ID_OFFSET
+
+    async def test_debate_provider_respects_user_model(self) -> None:
+        """When user_model is set (via /setmodel), debate passes it to route()."""
+        providers = {
+            "alpha": _MockProvider("alpha", response_text="Opus response"),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        route_calls: list[dict] = []
+        original_route = router.route
+
+        async def _spy_route(**kwargs):
+            route_calls.append(kwargs)
+            return await original_route(**kwargs)
+
+        with (
+            patch.object(router, "route", side_effect=_spy_route),
+            patch.object(orchestrator, "final_review", return_value=None),
+        ):
+            await orchestrator.debate(
+                question="What is AI?",
+                user_id=1,
+                chat_id=10,
+                model="claude-opus-4-5",
+            )
+
+        # The route call must contain model="claude-opus-4-5"
+        assert len(route_calls) >= 1
+        for call in route_calls:
+            assert call.get("model") == "claude-opus-4-5", (
+                f"Expected model='claude-opus-4-5', got {call.get('model')!r}"
+            )
+
+    async def test_debate_provider_model_none_by_default(self) -> None:
+        """Without explicit model, debate passes model=None to route()."""
+        providers = {
+            "alpha": _MockProvider("alpha", response_text="Default response"),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        route_calls: list[dict] = []
+        original_route = router.route
+
+        async def _spy_route(**kwargs):
+            route_calls.append(kwargs)
+            return await original_route(**kwargs)
+
+        with (
+            patch.object(router, "route", side_effect=_spy_route),
+            patch.object(orchestrator, "final_review", return_value=None),
+        ):
+            await orchestrator.debate(
+                question="What is water?",
+                user_id=1,
+                chat_id=10,
+                # No model= parameter
+            )
+
+        assert len(route_calls) >= 1
+        for call in route_calls:
+            assert call.get("model") is None
+
+    async def test_debate_subprocess_terminated_after_call(self) -> None:
+        """After debate completes, cleanup terminates debate subprocesses.
+
+        Verifies that _cleanup_debate_subprocesses is called and that
+        providers with a _pool attribute have terminate_session invoked.
+        """
+
+        class _PoolMockProvider(_MockProvider):
+            """Mock provider with a fake process pool for cleanup testing."""
+
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self._pool = type(
+                    "FakePool",
+                    (),
+                    {
+                        "terminate_session": AsyncMock(return_value=True),
+                    },
+                )()
+
+        providers = {
+            "pooled": _PoolMockProvider("pooled", response_text="Pooled response"),
+            "stateless": _MockProvider("stateless", response_text="Stateless response"),
+        }
+        router = _make_router(providers)
+        orchestrator = DebateOrchestrator(provider_router=router)
+
+        chat_id = 50
+        expected_debate_chat_id = chat_id + _DEBATE_PROVIDER_CHAT_ID_OFFSET
+
+        with patch.object(orchestrator, "final_review", return_value=None):
+            await orchestrator.debate(
+                question="Test cleanup?",
+                user_id=7,
+                chat_id=chat_id,
+            )
+
+        # The pooled provider's terminate_session must have been called
+        pool = providers["pooled"]._pool
+        pool.terminate_session.assert_called_once_with(7, expected_debate_chat_id)
+
+        # The stateless provider has no _pool, so no terminate_session call
+        assert not hasattr(providers["stateless"], "_pool")
