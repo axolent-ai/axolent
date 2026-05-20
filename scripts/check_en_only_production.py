@@ -91,6 +91,8 @@ WHITELIST_PATHS = {
     "bridge/domain/i18n.py",
     # i18n: German word markers for language detection heuristic (feature data).
     "bridge/domain/language.py",
+    # i18n: LanguageRegistry marker_words per language (feature data, not prose).
+    "bridge/application/language/registry.py",
     # i18n: self-awareness block has DE + EN branches (lang="de" / lang="en").
     "bridge/domain/personality.py",
     # i18n: HELP_TEXT_DE, _RESET_TEXTS, _MODEL_STRINGS, /lang names (DE + EN).
