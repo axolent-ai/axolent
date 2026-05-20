@@ -948,7 +948,7 @@ async def _handle_message_streaming(
                 final_text = _text_guard.fix(final_text)
             await finalize_streaming(session, final_text)
 
-        # Save history + audit (+ C-3 leakage check)
+        # Save history + audit (+ C-3 leakage check + LCP enforcement)
         if final_text and not had_error:
             checked_text = await chat_service.save_streaming_result(
                 user_id=user_id,
@@ -964,6 +964,10 @@ async def _handle_message_streaming(
                 system_prompt=_get_system_prompt(context),
                 task_meta=task_meta,
                 request_id=envelope.request_id,
+                language_code=task_meta.get("_language_code"),
+                language_ctx=task_meta.get("_language_ctx"),
+                user_model=task_meta.get("_user_model"),
+                provider_name=task_meta.get("resolved_model"),
             )
             # C-3: If leakage detected, final edit with refusal
             if checked_text != final_text:
@@ -2546,10 +2550,12 @@ async def handle_debate_command(
         # Create InstructionCompiler for the orchestrator
         instruction_compiler = InstructionCompiler()
 
-        # Get or create DebateOrchestrator with InstructionCompiler
+        # Get or create DebateOrchestrator with InstructionCompiler + LCP enforcement
+        _debate_enforcement = context.bot_data.get("language_enforcement")
         orchestrator = DebateOrchestrator(
             provider_router=chat_service.provider_router,
             instruction_compiler=instruction_compiler,
+            language_enforcement=_debate_enforcement,
         )
 
         # Resolve user model: debate should respect /setmodel preference

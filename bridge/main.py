@@ -413,6 +413,12 @@ def main() -> None:
         user_notice_threshold=fallback_config["user_notice_threshold"],
     )
 
+    # LCP: Initialize LanguageEnforcement (verify + repair pipeline)
+    from application.language.enforcement import LanguageEnforcement
+
+    language_enforcement = LanguageEnforcement(provider_router=router)
+    log.info("LCP: LanguageEnforcement initialized (Verifier + RepairService)")
+
     # Create ChatService with constructor injection
     chat_service = ChatService(
         provider_router=router,
@@ -423,6 +429,7 @@ def main() -> None:
         proactive_trigger_service=proactive_trigger_svc,
         style_adaption_service=style_adaption_svc,
         fallback_resolver=fallback_resolver,
+        language_enforcement=language_enforcement,
     )
 
     log.info("Trinity memory system initialized (auto-loading active)")
@@ -452,12 +459,15 @@ def main() -> None:
 
     # Phase 0, Commit 2: Initialize Execution Kernel (ContextKernel)
     from application.execution import ContextKernel
+    from application.language.audit import DetectionAuditLogger
     from application.language_resolver import LanguageResolver
 
+    detection_audit_logger = DetectionAuditLogger()
     context_kernel = ContextKernel.create_default(
-        language_resolver=LanguageResolver(),
+        language_resolver=LanguageResolver(audit_logger=detection_audit_logger),
     )
     log.info("Phase 0: ContextKernel initialized (Language + Time + Channel resolvers)")
+    log.info("LCP: DetectionAuditLogger active (structured language audit events)")
 
     # Build application
     app = Application.builder().token(token).build()
@@ -471,6 +481,7 @@ def main() -> None:
     app.bot_data["persistent_provider"] = router.providers.get("claude_persistent")
     app.bot_data["rate_limiter"] = rate_limiter
     app.bot_data["context_kernel"] = context_kernel
+    app.bot_data["language_enforcement"] = language_enforcement
     if model_svc is not None:
         app.bot_data["model_service"] = model_svc
     app.bot_data["task_router"] = task_router

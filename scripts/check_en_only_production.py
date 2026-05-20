@@ -114,6 +114,9 @@ WHITELIST_PATHS = {
     # Feature data: _UMLAUT_REPLACEMENTS, _SS_TO_ESZETT_WORDS for German input
     # normalization. Umlauts in code ARE the feature.
     "bridge/application/task_router.py",
+    # Feature data: German keyword patterns for intent/domain/correction classification.
+    # The German words in regex patterns ARE the feature (multilingual NLU heuristics).
+    "bridge/application/skill_compression/event_normalizer.py",
     # i18n: _STATUS_TEXTS dict with DE + EN status messages (memory, thinking).
     "bridge/application/status_manager.py",
     # one-shot i18n add-script: contains DE translation strings as data literals.

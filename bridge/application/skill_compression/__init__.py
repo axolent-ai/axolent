@@ -1,0 +1,13 @@
+"""Skill-Compression Engine: Pattern recognition from user interactions.
+
+Architecture follows the 7-Layer model:
+  Layer 1: Event Normalizer (structured events from chat)
+  Layer 2: Algorithmic Candidate Layer (pattern detection)
+  Layer 3: Evidence Ledger (proof tracking)
+  Layer 4: Pattern Judge (lifecycle management)
+  Layer 5: SkillMatcher (application)
+  Layer 6: UI / Explainer
+  Layer 7: Privacy Safeguards
+
+Step 1 implements: Event Normalizer + Fingerprint Similarity + Storage Schema.
+"""
