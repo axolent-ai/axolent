@@ -30,6 +30,10 @@ import logging
 import uuid
 from typing import Optional
 
+from application.language.audit import (
+    DetectionAuditLogger,
+    build_audit_event,
+)
 from application.language.context import LanguageContext
 from application.language.orchestrator import (
     DetectionOrchestrator,
@@ -147,6 +151,7 @@ class LanguageResolver:
         self,
         default_lang: str = _DEFAULT_LANGUAGE,
         orchestrator: DetectionOrchestrator | None = None,
+        audit_logger: DetectionAuditLogger | None = None,
     ) -> None:
         """Initialize the resolver.
 
@@ -156,15 +161,44 @@ class LanguageResolver:
                 the default production orchestrator is built lazily on
                 first detection to avoid importing langdetect at
                 module-load time.
+            audit_logger: Optional DetectionAuditLogger. When provided,
+                every resolve() and resolve_readonly() call emits a
+                structured audit event. When None (default), no audit
+                logging is performed (HC-D3: backward compatible).
         """
         self._default = default_lang
         self._orchestrator: DetectionOrchestrator | None = orchestrator
+        self._audit_logger = audit_logger
 
     def _get_orchestrator(self) -> DetectionOrchestrator:
         """Return the orchestrator, building the default lazily if needed."""
         if self._orchestrator is None:
             self._orchestrator = _build_default_orchestrator()
         return self._orchestrator
+
+    def _emit_audit(
+        self,
+        context: LanguageContext,
+        detection: OrchestratedDetection | None,
+        user_id: int,
+        input_text_length: int,
+    ) -> None:
+        """Emit a detection audit event if an audit logger is configured.
+
+        HC-D3: No-op when self._audit_logger is None (backward compat).
+        HC-C7: Exceptions are caught inside DetectionAuditLogger.log(),
+        so this never raises.
+        """
+        if self._audit_logger is None:
+            return
+        event = build_audit_event(
+            context=context,
+            detection=detection,
+            request_id=context.request_id,
+            user_id=user_id,
+            input_text_length=input_text_length,
+        )
+        self._audit_logger.log(event)
 
     async def resolve(
         self,
@@ -192,6 +226,10 @@ class LanguageResolver:
 
         request_id = uuid.uuid4().hex[:12]
 
+        # Track detection for audit (may remain None for override path).
+        detection: OrchestratedDetection | None = None
+        text_len = len(text)
+
         # Priority 1: Explicit override
         if override:
             log.debug(
@@ -199,13 +237,15 @@ class LanguageResolver:
                 override,
                 request_id,
             )
-            return LanguageContext(
+            ctx = LanguageContext(
                 code=override,
                 source="override",
                 confidence=1.0,
                 switched_from=None,
                 request_id=request_id,
             )
+            self._emit_audit(ctx, detection, user_id, text_len)
+            return ctx
 
         # Read sticky language
         sticky = await get_language(user_id, chat_id)
@@ -231,11 +271,13 @@ class LanguageResolver:
                 confidence,
                 request_id,
             )
-            return _detection_to_context(
+            ctx = _detection_to_context(
                 detection=detection,
                 request_id=request_id,
                 source=source,
             )
+            self._emit_audit(ctx, detection, user_id, text_len)
+            return ctx
 
         # Priority 2: Sticky exists, check for smart-switch.
         # Two veto gates (B-2 Add-on 1 regression fix):
@@ -258,21 +300,25 @@ class LanguageResolver:
                 confidence,
                 request_id,
             )
-            return _detection_to_context(
+            ctx = _detection_to_context(
                 detection=detection,
                 request_id=request_id,
                 source="detected",
                 switched_from=sticky,
             )
+            self._emit_audit(ctx, detection, user_id, text_len)
+            return ctx
 
         # Priority 2: Use sticky (no switch needed)
-        return LanguageContext(
+        ctx = LanguageContext(
             code=sticky,
             source="sticky",
             confidence=1.0,
             switched_from=None,
             request_id=request_id,
         )
+        self._emit_audit(ctx, detection, user_id, text_len)
+        return ctx
 
     async def resolve_readonly(
         self,
@@ -300,15 +346,21 @@ class LanguageResolver:
 
         request_id = uuid.uuid4().hex[:12]
 
+        # Track detection for audit (may remain None for override path).
+        detection: OrchestratedDetection | None = None
+        text_len = len(text)
+
         # Priority 1: Explicit override
         if override:
-            return LanguageContext(
+            ctx = LanguageContext(
                 code=override,
                 source="override",
                 confidence=1.0,
                 switched_from=None,
                 request_id=request_id,
             )
+            self._emit_audit(ctx, detection, user_id, text_len)
+            return ctx
 
         # Read sticky language (read-only, no set_language call)
         sticky = await get_language(user_id, chat_id)
@@ -321,18 +373,22 @@ class LanguageResolver:
         # No sticky: use detection or default (but do NOT persist)
         if not sticky:
             if confidence > _FIRST_TIME_THRESHOLD:
-                return _detection_to_context(
+                ctx = _detection_to_context(
                     detection=detection,
                     request_id=request_id,
                     source="detected",
                 )
-            return LanguageContext(
+                self._emit_audit(ctx, detection, user_id, text_len)
+                return ctx
+            ctx = LanguageContext(
                 code=self._default,
                 source="default",
                 confidence=confidence,
                 switched_from=None,
                 request_id=request_id,
             )
+            self._emit_audit(ctx, detection, user_id, text_len)
+            return ctx
 
         # Sticky exists: check if smart-switch WOULD trigger (but don't persist)
         # Same veto gates as resolve(): min_chars_met + registry check.
@@ -343,21 +399,25 @@ class LanguageResolver:
             and detection.min_chars_met
             and _registry.is_supported(detected)
         ):
-            return _detection_to_context(
+            ctx = _detection_to_context(
                 detection=detection,
                 request_id=request_id,
                 source="detected",
                 switched_from=sticky,
             )
+            self._emit_audit(ctx, detection, user_id, text_len)
+            return ctx
 
         # Use sticky (no switch)
-        return LanguageContext(
+        ctx = LanguageContext(
             code=sticky,
             source="sticky",
             confidence=1.0,
             switched_from=None,
             request_id=request_id,
         )
+        self._emit_audit(ctx, detection, user_id, text_len)
+        return ctx
 
     @staticmethod
     def from_code(code: str, source: str = "override") -> LanguageContext:

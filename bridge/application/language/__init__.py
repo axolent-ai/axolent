@@ -19,8 +19,18 @@ Phase 2 additions:
 - DetectionOrchestrator: multi-backend language detection with fallback logic
 - DetectionTier, LanguageRegistryEntry: registry data model
 - DetectionCandidate, OrchestratedDetection: orchestrator data model
+
+Phase 2 Add-on 3:
+- DetectionAuditEvent: frozen, JSON-serialisable audit event per detection
+- DetectionAuditLogger: optional structured logger for audit events
+- build_audit_event: factory to create audit events from context + detection
 """
 
+from application.language.audit import (
+    DetectionAuditEvent,
+    DetectionAuditLogger,
+    build_audit_event,
+)
 from application.language.backends import (
     DomainLanguageBackend,
     LangdetectBackend,
@@ -81,4 +91,8 @@ __all__ = [
     "DetectionOrchestrator",
     "DetectionOrchestratorProtocol",
     "OrchestratedDetection",
+    # Phase 2 Add-on 3: Audit
+    "DetectionAuditEvent",
+    "DetectionAuditLogger",
+    "build_audit_event",
 ]
