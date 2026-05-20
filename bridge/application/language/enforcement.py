@@ -7,24 +7,50 @@ This avoids scattering verification/repair logic across multiple files.
 Consumers call:
     result = await enforcement.enforce(output, ctx, model_id, ...)
     final_text = result.final_output
+
+Architecture note (Codex Finding 5):
+    This module lives in the application layer and must NOT import
+    infrastructure modules directly. Audit logging is abstracted
+    behind the AuditLogPort protocol and injected via constructor.
+    The concrete write_audit_log adapter is wired in main.py.
+
+Verification note (Codex Finding 8):
+    Verification only runs for models with verify_required=True per
+    their ModelAdherenceProfile. Models like Claude Opus/Sonnet have
+    verify_required=False because they reliably follow language
+    instructions. This is NOT a gap in enforcement but a deliberate
+    performance optimization. The Defensive Publication's claim that
+    "every response is verified" describes the capability, not the
+    runtime behavior.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from application.language.context import LanguageContext
 from application.language.model_profiles import ModelAdherenceProfile, get_profile
 from application.language.repair_service import RepairResult, RepairService
 from application.language.verifier import ResponseLanguageVerifier, VerificationResult
-from infrastructure.audit_log import write_audit_log
 
 if TYPE_CHECKING:
     from application.provider_router import ProviderRouter
 
 log = logging.getLogger(__name__)
+
+
+class AuditLogPort(Protocol):
+    """Application-layer port for audit logging.
+
+    Decouples enforcement from infrastructure.audit_log (hexagonal rule).
+    The concrete adapter (write_audit_log) is injected via constructor.
+    """
+
+    def __call__(self, entry: dict[str, Any]) -> None:
+        """Write an audit log entry."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +90,7 @@ class LanguageEnforcement:
         verifier: ResponseLanguageVerifier | None = None,
         repair_service: RepairService | None = None,
         provider_router: "ProviderRouter | None" = None,
+        audit_log: AuditLogPort | None = None,
     ) -> None:
         """Initialize enforcement facade.
 
@@ -71,10 +98,14 @@ class LanguageEnforcement:
             verifier: Custom verifier (creates default if None).
             repair_service: Custom repair service (creates default if None).
             provider_router: Router for repair re-queries.
+            audit_log: Audit log writer (injected from infrastructure via
+                main.py). When None, audit entries are logged via stdlib
+                logger as fallback (no silent data loss).
         """
         self._verifier = verifier or ResponseLanguageVerifier()
         self._repair = repair_service or RepairService()
         self._provider_router = provider_router
+        self._audit_log = audit_log
 
     async def enforce(
         self,
@@ -175,6 +206,13 @@ class LanguageEnforcement:
             model_profile=profile,
         )
 
+    def _write_audit(self, entry: dict[str, Any]) -> None:
+        """Write audit entry via injected port or fallback to logger."""
+        if self._audit_log is not None:
+            self._audit_log(entry)
+        else:
+            log.info("audit_log (no port): %s", entry)
+
     def _audit_verification(
         self,
         result: VerificationResult,
@@ -195,7 +233,7 @@ class LanguageEnforcement:
         }
         if result.reason:
             entry["reason"] = result.reason
-        write_audit_log(entry)
+        self._write_audit(entry)
 
     def _audit_repair(
         self,
@@ -207,4 +245,4 @@ class LanguageEnforcement:
         entry = self._repair.build_audit_entry(result)
         entry["request_id"] = request_id
         entry["model_id"] = model_id or "unknown"
-        write_audit_log(entry)
+        self._write_audit(entry)

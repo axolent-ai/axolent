@@ -22,7 +22,7 @@ from application.execution.context import (
     PartialExecutionContext,
     TimeContext,
 )
-from application.language_resolver import LanguageContext, LanguageResolver
+from application.language_resolver import LanguageResolver
 
 log = logging.getLogger(__name__)
 
@@ -104,16 +104,11 @@ class LanguageResolverAdapter(BaseResolver):
             override=partial.language_override,
         )
 
-        # Adopt the LanguageResolver's request_id or use ours
+        # Adopt the LanguageResolver's request_id or use ours.
+        # Uses with_request_id() to preserve ALL fields including Phase 2
+        # metadata (detection_distribution, reliability_score, etc.).
         if lang_ctx.request_id != partial.request_id:
-            # Re-wrap with our request_id for consistent correlation
-            lang_ctx = LanguageContext(
-                code=lang_ctx.code,
-                source=lang_ctx.source,
-                confidence=lang_ctx.confidence,
-                switched_from=lang_ctx.switched_from,
-                request_id=partial.request_id,
-            )
+            lang_ctx = lang_ctx.with_request_id(partial.request_id)
 
         partial.language = lang_ctx
         return partial

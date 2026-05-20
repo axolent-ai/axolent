@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 
 from application.language.context import LanguageContext
@@ -126,12 +126,16 @@ class TestEnforcementStrictWithVerifyProfile:
 
 
 class TestEnforcementAudit:
-    """Tests for audit event emission."""
+    """Tests for audit event emission via AuditLogPort (Codex Finding 5)."""
 
-    @patch("application.language.enforcement.write_audit_log")
-    async def test_audit_emitted_on_verification(self, mock_audit: MagicMock) -> None:
-        """Audit event is written when verification runs."""
-        enforcement = LanguageEnforcement()
+    async def test_audit_emitted_on_verification(self) -> None:
+        """Audit event is written when verification runs via injected port."""
+        audit_calls: list[dict] = []
+
+        def mock_audit(entry: dict) -> None:
+            audit_calls.append(entry)
+
+        enforcement = LanguageEnforcement(audit_log=mock_audit)
         ctx = _make_ctx("de")
 
         german_text = (
@@ -149,7 +153,6 @@ class TestEnforcementAudit:
         )
 
         # At least one audit call for verification
-        assert mock_audit.called
-        call_args = mock_audit.call_args_list[0][0][0]
-        assert call_args["event_type"] == "language_verification_performed"
-        assert call_args["request_id"] == "audit-test-123"
+        assert len(audit_calls) > 0
+        assert audit_calls[0]["event_type"] == "language_verification_performed"
+        assert audit_calls[0]["request_id"] == "audit-test-123"

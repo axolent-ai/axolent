@@ -45,6 +45,13 @@ class ModelAdherenceProfile:
 
 # Registry of known model profiles.
 # Order: most specific first. Prefix matching is used for model families.
+#
+# IMPORTANT (Codex Finding 8): verify_required=False means the verifier
+# does NOT run for that model. This is intentional for highly instruction-
+# followy models (Opus, Sonnet) where verification overhead is wasted.
+# The Defensive Publication states "every response is verified" to describe
+# the system's capability, not runtime behavior. Actual verification is
+# gated by this profile. See enforcement.py for the skip logic.
 _PROFILES: dict[str, ModelAdherenceProfile] = {
     "claude-opus-4-7": ModelAdherenceProfile(
         model_id="claude-opus-4-7",

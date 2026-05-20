@@ -24,6 +24,7 @@ Implementation choices (IC-C* from Spec):
 
 from __future__ import annotations
 
+import types
 from dataclasses import dataclass, field
 from typing import FrozenSet, Literal, Optional, Tuple
 
@@ -78,12 +79,28 @@ class LanguageContext:
     request_id: str
 
     # -- Phase 2 additions (all with defaults, HC-C2) ----------------------
-    detection_distribution: dict[str, float] = field(default_factory=dict)
+    # Claude Issue 2: detection_distribution wrapped in MappingProxyType
+    # for true immutability (frozen dataclass + read-only dict).
+    detection_distribution: types.MappingProxyType[str, float] = field(
+        default_factory=lambda: types.MappingProxyType({})
+    )
     reliability_score: float = 0.0
     confidence_history: Tuple[Tuple[str, float], ...] = ()
     detection_tier: Optional[str] = None
     text_length_bucket: Optional[str] = None
     backends_consulted: FrozenSet[str] = frozenset()
+
+    def __post_init__(self) -> None:
+        """Ensure detection_distribution is always a MappingProxyType.
+
+        Callers may pass a plain dict for convenience. This converts it
+        to a read-only MappingProxyType to enforce full immutability.
+        """
+        dd = self.detection_distribution
+        if isinstance(dd, dict) and not isinstance(dd, types.MappingProxyType):
+            object.__setattr__(
+                self, "detection_distribution", types.MappingProxyType(dd)
+            )
 
     def effective_lang(self) -> str:
         """Return the effective language code.
@@ -129,6 +146,34 @@ class LanguageContext:
             key=lambda x: (-x[1], x[0]),
         )
         return sorted_langs[1][0]
+
+    def with_request_id(self, new_request_id: str) -> "LanguageContext":
+        """Return a copy with a different request_id, preserving all fields.
+
+        Used by the Execution Kernel to synchronize request_ids without
+        losing Phase 2 detection metadata (detection_distribution,
+        reliability_score, confidence_history, detection_tier,
+        text_length_bucket, backends_consulted).
+
+        Args:
+            new_request_id: The new request_id to assign.
+
+        Returns:
+            A new LanguageContext identical to this one except for request_id.
+        """
+        return LanguageContext(
+            code=self.code,
+            source=self.source,
+            confidence=self.confidence,
+            switched_from=self.switched_from,
+            request_id=new_request_id,
+            detection_distribution=self.detection_distribution,
+            reliability_score=self.reliability_score,
+            confidence_history=self.confidence_history,
+            detection_tier=self.detection_tier,
+            text_length_bucket=self.text_length_bucket,
+            backends_consulted=self.backends_consulted,
+        )
 
     @staticmethod
     def classify_text_length(word_count: int) -> str:

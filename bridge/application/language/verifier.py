@@ -4,6 +4,12 @@ Checks whether the LLM response is actually in the requested language.
 Uses the LanguageDetectorBackend protocol (default: LangdetectBackend)
 to keep the detection library as an implementation detail.
 
+IMPORTANT (Codex Finding 8): This verifier only runs for models whose
+ModelAdherenceProfile has verify_required=True. Models with strong
+instruction-following (e.g. Claude Opus/Sonnet) skip verification
+entirely for performance. The enforcement gate is in
+LanguageEnforcement.enforce(), not here.
+
 Design decisions:
 - Backend abstraction: verifier speaks to LanguageDetectorBackend Protocol,
   never to langdetect or domain.language directly. This allows swapping

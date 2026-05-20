@@ -684,6 +684,108 @@ class HypothesisStorage:
             ),
         )
 
+    # ── Elo Rating Updates ──────────────────────────────────
+
+    def update_hypothesis_elo(
+        self,
+        hypothesis_id: str,
+        new_elo_rating: float,
+        increment_games: int = 1,
+    ) -> None:
+        """Update the Elo rating and games_played for a hypothesis.
+
+        Called after each Elo match (pattern application success/failure).
+        Updates elo_rating and increments elo_games_played atomically.
+
+        Args:
+            hypothesis_id: The hypothesis to update.
+            new_elo_rating: The new Elo rating after the match.
+            increment_games: Number of games to add (default 1).
+        """
+        self._conn.execute(
+            "UPDATE hypotheses SET elo_rating = ?, "
+            "elo_games_played = elo_games_played + ? "
+            "WHERE hypothesis_id = ?",
+            (new_elo_rating, increment_games, hypothesis_id),
+        )
+
+    def update_hypothesis_status(
+        self,
+        hypothesis_id: str,
+        status: str,
+    ) -> None:
+        """Update the lifecycle status of a hypothesis.
+
+        Args:
+            hypothesis_id: The hypothesis to update.
+            status: New status value.
+        """
+        self._conn.execute(
+            "UPDATE hypotheses SET status = ? WHERE hypothesis_id = ?",
+            (status, hypothesis_id),
+        )
+
+    def update_hypothesis_support(
+        self,
+        hypothesis_id: str,
+        increment_support: int = 0,
+        increment_contradict: int = 0,
+        last_seen: Optional[str] = None,
+        last_contradiction_at: Optional[str] = None,
+    ) -> None:
+        """Update support/contradict counts and timestamps.
+
+        Args:
+            hypothesis_id: The hypothesis to update.
+            increment_support: Number to add to support_count.
+            increment_contradict: Number to add to contradict_count.
+            last_seen: Update last_seen timestamp (if provided).
+            last_contradiction_at: Update contradiction timestamp (if provided).
+        """
+        parts: list[str] = []
+        params: list[object] = []
+
+        if increment_support:
+            parts.append("support_count = support_count + ?")
+            params.append(increment_support)
+
+        if increment_contradict:
+            parts.append("contradict_count = contradict_count + ?")
+            params.append(increment_contradict)
+
+        if last_seen is not None:
+            parts.append("last_seen = ?")
+            params.append(last_seen)
+
+        if last_contradiction_at is not None:
+            parts.append("last_contradiction_at = ?")
+            params.append(last_contradiction_at)
+
+        if not parts:
+            return
+
+        params.append(hypothesis_id)
+        # Column fragments in `parts` come from an internal whitelist
+        # (column = ?), never user-controlled. Values are parameterized.
+        sql = f"UPDATE hypotheses SET {', '.join(parts)} WHERE hypothesis_id = ?"  # nosec B608
+        self._conn.execute(sql, tuple(params))  # nosec B608  # nosemgrep
+
+    def update_hypothesis_last_applied(
+        self,
+        hypothesis_id: str,
+        last_applied: str,
+    ) -> None:
+        """Update the last_applied timestamp for a hypothesis.
+
+        Args:
+            hypothesis_id: The hypothesis to update.
+            last_applied: ISO-8601 timestamp.
+        """
+        self._conn.execute(
+            "UPDATE hypotheses SET last_applied = ? WHERE hypothesis_id = ?",
+            (last_applied, hypothesis_id),
+        )
+
     # ── Internal helpers ─────────────────────────────────────
 
     @staticmethod

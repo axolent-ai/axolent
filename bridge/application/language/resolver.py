@@ -43,6 +43,12 @@ from application.language.registry import InMemoryLanguageRegistry
 
 log = logging.getLogger(__name__)
 
+# Module-level registry singleton (Claude Fix 1): avoids per-call
+# re-instantiation. InMemoryLanguageRegistry is stateless and read-only,
+# so sharing a single instance is safe and avoids building 23 entries
+# on every resolve() / resolve_readonly() call.
+_registry = InMemoryLanguageRegistry()
+
 # Smart-switch threshold: only switch sticky language when detection
 # confidence exceeds this value AND the detected language differs.
 _SMART_SWITCH_THRESHOLD: float = 0.7
@@ -113,8 +119,11 @@ def _detection_to_context(
         confidence_history=tuple(
             (c.backend_name, c.top_confidence) for c in detection.candidates
         ),
-        detection_tier=detection.text_length_bucket
-        and _get_detection_tier(detection.code),
+        detection_tier=(
+            _get_detection_tier(detection.code)
+            if detection.text_length_bucket
+            else None
+        ),
         text_length_bucket=detection.text_length_bucket,
         backends_consulted=frozenset(c.backend_name for c in detection.candidates),
     )
@@ -125,8 +134,7 @@ def _get_detection_tier(code: str) -> Optional[str]:
 
     Returns None if the code is not in the registry.
     """
-    registry = InMemoryLanguageRegistry()
-    entry = registry.get_or_none(code)
+    entry = _registry.get_or_none(code)
     if entry is not None:
         return entry.detection_tier.value
     return None
@@ -284,7 +292,6 @@ class LanguageResolver:
         #   1. min_chars_met=False -> detection unreliable for short text
         #   2. detected language not in registry -> unsupported code
         #      (e.g. langdetect returns "sk" for "ok"), never switch to it
-        _registry = InMemoryLanguageRegistry()
         if (
             confidence > _SMART_SWITCH_THRESHOLD
             and detected != sticky
@@ -392,7 +399,6 @@ class LanguageResolver:
 
         # Sticky exists: check if smart-switch WOULD trigger (but don't persist)
         # Same veto gates as resolve(): min_chars_met + registry check.
-        _registry = InMemoryLanguageRegistry()
         if (
             confidence > _SMART_SWITCH_THRESHOLD
             and detected != sticky

@@ -15,7 +15,6 @@ CRITICAL DESIGN NOTES (from Codex review):
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass
 
 from application.language.backends import (
@@ -130,7 +129,6 @@ class StreamGuard:
         self._enabled = enabled
         self._backend = backend or LangdetectBackend()
         self._state = StreamGuardState()
-        self._check_time: float | None = None
 
     @property
     def state(self) -> StreamGuardState:
@@ -172,7 +170,6 @@ class StreamGuard:
         # Check window: between 200-400 chars, perform the single check
         if text_len >= _MIN_CHARS_FOR_CHECK:
             self._state.check_performed = True
-            self._check_time = time.perf_counter()
 
             # Detect language on the partial text via backend
             distribution = self._backend.detect_distribution(partial_stream)

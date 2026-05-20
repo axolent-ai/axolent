@@ -414,9 +414,13 @@ def main() -> None:
     )
 
     # LCP: Initialize LanguageEnforcement (verify + repair pipeline)
+    # Codex Finding 5: audit_log injected as adapter (hexagonal rule).
     from application.language.enforcement import LanguageEnforcement
 
-    language_enforcement = LanguageEnforcement(provider_router=router)
+    language_enforcement = LanguageEnforcement(
+        provider_router=router,
+        audit_log=write_audit_log,
+    )
     log.info("LCP: LanguageEnforcement initialized (Verifier + RepairService)")
 
     # Create ChatService with constructor injection

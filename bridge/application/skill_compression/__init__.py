@@ -10,4 +10,5 @@ Architecture follows the 7-Layer model:
   Layer 7: Privacy Safeguards
 
 Step 1 implements: Event Normalizer + Fingerprint Similarity + Storage Schema.
+Step 2 implements: N-Gram Extractor + Markov Chain + Elo Rating.
 """

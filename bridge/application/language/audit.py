@@ -42,7 +42,7 @@ import json
 import logging
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Mapping, Optional
 
 from application.language.context import LanguageContext
 from application.language.orchestrator import OrchestratedDetection
@@ -121,7 +121,7 @@ class DetectionAuditEvent:
 
 
 def _truncate_distribution(
-    distribution: dict[str, float],
+    distribution: Mapping[str, float],
     top_n: int = _TOP_N_DISTRIBUTION,
     precision: int = _DISTRIBUTION_PRECISION,
 ) -> list[dict[str, object]]:

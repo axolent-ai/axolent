@@ -1110,6 +1110,19 @@ class ChatService:
                 response_text = enforcement_result.final_output
                 language_enforced = True
 
+            # Codex Finding 7: wire StreamGuard self-calibration.
+            # After enforcement we know whether verification passed.
+            # Report this to StreamGuard so it can track false positives.
+            _stream_guard = (task_meta or {}).get("_stream_guard")
+            if _stream_guard is not None:
+                verification_passed = (
+                    enforcement_result.verification is None
+                    or enforcement_result.verification.passed
+                )
+                _stream_guard.report_final_outcome(
+                    verification_passed=verification_passed,
+                )
+
         # Save to history
         user_turn = ConversationTurn(role="user", content=user_text)
         assistant_turn = ConversationTurn(role="assistant", content=response_text)

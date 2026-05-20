@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import logging
 import time
+import types
 from dataclasses import dataclass
 from typing import Optional, Protocol, Tuple
 
@@ -91,11 +92,17 @@ class DetectionCandidate:
     """
 
     backend_name: str
-    distribution: dict[str, float]
+    distribution: types.MappingProxyType[str, float]
     top_lang: str
     top_confidence: float
     latency_ms: float
     error: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        """Ensure distribution is always a read-only MappingProxyType."""
+        dd = self.distribution
+        if isinstance(dd, dict) and not isinstance(dd, types.MappingProxyType):
+            object.__setattr__(self, "distribution", types.MappingProxyType(dd))
 
     @property
     def succeeded(self) -> bool:
@@ -124,12 +131,19 @@ class OrchestratedDetection:
 
     code: str
     confidence: float
-    distribution: dict[str, float]
+    distribution: types.MappingProxyType[str, float]
     reliability_score: float
     candidates: Tuple[DetectionCandidate, ...]
     decision_reason: str
     text_length_bucket: str
     min_chars_met: bool = True
+    had_dissent: bool = False
+
+    def __post_init__(self) -> None:
+        """Ensure distribution is always a read-only MappingProxyType."""
+        dd = self.distribution
+        if isinstance(dd, dict) and not isinstance(dd, types.MappingProxyType):
+            object.__setattr__(self, "distribution", types.MappingProxyType(dd))
 
 
 # ---------------------------------------------------------------------------
@@ -530,8 +544,12 @@ class DetectionOrchestrator:
                 f"confidence dampened]"
             )
 
-        # Merge distributions from all successful candidates
-        merged_dist = self._merge_distributions(candidates)
+        # Use winner's distribution as the authoritative distribution.
+        # Codex Finding 6: previously used _merge_distributions() which
+        # took the last successful candidate's distribution, causing
+        # code="de" but distribution showing "nl" as top in dissent cases.
+        # Now we always use the winner's distribution for consistency.
+        winner_dist = dict(winner.distribution) if winner.distribution else {}
 
         # Compute reliability score (IC-O4)
         reliability = self._compute_reliability(
@@ -545,12 +563,13 @@ class DetectionOrchestrator:
         return OrchestratedDetection(
             code=code,
             confidence=confidence,
-            distribution=merged_dist,
+            distribution=winner_dist,
             reliability_score=reliability,
             candidates=tuple(candidates),
             decision_reason=reason,
             text_length_bucket=bucket,
             min_chars_met=min_chars_met,
+            had_dissent=dissent,
         )
 
     def _make_default_result(
@@ -685,19 +704,6 @@ class DetectionOrchestrator:
 
         return adjusted, False
 
-    # -- Distribution merging -----------------------------------------------
-
-    @staticmethod
-    def _merge_distributions(
-        candidates: list[DetectionCandidate],
-    ) -> dict[str, float]:
-        """Merge probability distributions from all successful candidates.
-
-        Uses the distribution from the last successful candidate (the one
-        most likely to be the "winner" in the aggregation flow). If only
-        one succeeded, its distribution is used directly.
-        """
-        for candidate in reversed(candidates):
-            if candidate.succeeded and candidate.distribution:
-                return dict(candidate.distribution)
-        return {}
+    # _merge_distributions removed (Codex Finding 6): winner's distribution
+    # is now used directly in _build_result() to guarantee consistency
+    # between code and distribution, especially in dissent cases.
