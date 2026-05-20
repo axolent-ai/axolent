@@ -24,6 +24,87 @@ Built for people who want a powerful AI assistant without giving up control over
 5. Persistent memory, bookmarks, conversation history, personality system
 6. Your keys, your data, your machine
 
+## Why Language Handling Is Different
+
+Most AI assistants promise multi-lingual support and hope the model follows
+the instruction. AXOLENT treats language as a system-level constraint, not
+a suggestion. Every response is verified, and drift is repaired before
+the user sees it.
+
+### The Problem
+
+All major AI assistants (proprietary and open-source alike) handle language
+via prompt engineering: they inject "respond in German" into the system prompt
+and rely on the model's instruction-following. This works most of the time.
+But it breaks silently when the model encounters code, English-language
+documentation, long contexts, or context-window compaction. The user receives
+a wrong-language response with no warning and no correction.
+
+### AXOLENT's Language Control Plane
+
+AXOLENT implements language handling as an architecturally isolated subsystem
+(`bridge/application/language/`) with five distinct components that no other
+major AI assistant has at the time of writing:
+
+#### 1. Output Verifier
+
+Every model response is checked against the declared target language after
+generation. The verifier uses n-gram-profile-based detection (via a pluggable
+backend protocol) to produce a three-level verdict: **PASS**, **WARN**, or
+**FAIL**. Code blocks, URLs, and technical terms are stripped before
+detection to minimize false positives.
+
+Code: `bridge/application/language/verifier.py`
+
+#### 2. Repair Loop
+
+When the verifier returns FAIL, the system automatically re-queries the
+same provider with a reinforced language contract. One repair attempt,
+hard-capped. No infinite retry loops, no unbounded token waste. For
+outputs above 5000 characters, sample verification replaces full rewrite
+to protect latency.
+
+Code: `bridge/application/language/repair_service.py`
+
+#### 3. Stream Guard
+
+For streaming responses, language drift is detected early (between 200-400
+characters) instead of streaming an entire wrong-language response to the
+user. Uses a very high confidence threshold (0.85) and automatic
+self-calibration (disables after 3 consecutive false positives) to
+avoid destroying the streaming experience.
+
+Code: `bridge/application/language/stream_guard.py`
+
+#### 4. Immutable Language Context
+
+The target language is decided once per request (via a priority cascade:
+explicit override > sticky preference > detected > default) and frozen
+into a `LanguageContext` dataclass. This object is immutable (`frozen=True,
+slots=True`). No downstream component can mutate it. No mid-pipeline drift.
+No context-compaction reset.
+
+Code: `bridge/application/language/context.py`
+
+#### 5. Architecturally Isolated Subsystem
+
+The entire Language Control Plane lives in `bridge/application/language/`
+with strict boundaries:
+
+- Detection libraries (langdetect, Lingua, etc.) are confined to a single
+  backend module (`backends.py`) behind the `LanguageDetectorBackend` Protocol.
+- An architecture test (`tests/test_architecture/test_langdetect_isolation.py`)
+  scans the entire codebase on every CI run and fails if detection libraries
+  leak outside the backend module.
+- Domain-level language detection (`domain/language.py`, calibrated for short
+  user inputs) is architecturally separated from output verification
+  (calibrated for long LLM outputs). They never cross-import.
+
+This is not a multi-lingual promise. This is a language reliability layer.
+
+For a detailed comparison of how other AI assistants handle language at the
+time of writing, see [`docs/COMPETITION_LANGUAGE.md`](docs/COMPETITION_LANGUAGE.md).
+
 ## Mode B: What It Is (and What It Isn't)
 
 **What it is:** A local CLI wrapper that spawns `claude` as a subprocess on your machine. Your existing Claude Pro/Max subscription handles the inference. Axolent is just the interface layer.
@@ -81,6 +162,7 @@ axolent/
   bridge/             Backend service (Hexagonal Architecture, Python)
     domain/           Pure business logic (no I/O imports)
     application/      Use-case orchestration
+      language/       Language Control Plane (verifier, repair, stream guard)
     infrastructure/   I/O adapters (CLI, storage, audit)
     presentation/     Telegram-specific handlers & rendering
     config/           System prompt, user constitution
