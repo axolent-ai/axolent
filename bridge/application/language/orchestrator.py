@@ -22,6 +22,9 @@ Hard Constraints enforced here:
 - HC-O6: frozen=True, slots=True on data classes.
 - HC-O8: Registry consulted for detection_tier and min_chars_reliable.
 - HC-O9: decision_reason is human-readable audit string.
+- HC-A1: Confidence dampening lives here, NOT in resolver (B-2 Add-on 1).
+- HC-A2: min_chars_reliable from Registry, no local thresholds.
+- HC-A3: min_chars guard is backend-agnostic (no backend name checks).
 
 Implementation choices:
 - IC-O1: fallback_threshold = 0.6 (Spec recommendation, validated reasonable).
@@ -32,6 +35,7 @@ Implementation choices:
     tier_bonus: HIGH +0.05, MEDIUM +0.00, LOW -0.05
     length_bonus: micro -0.05, short +0.00, medium +0.03, long +0.05
     dissent_penalty: -0.20 when backends disagree
+    min_chars_penalty: -0.10 when text shorter than min_chars_reliable
     clamped to [0.0, 1.0]
 - IC-O5: latency measured via time.perf_counter (highest resolution).
 - IC-O6: Orchestrator is NOT a singleton; instantiated by LanguageResolver.
@@ -125,6 +129,7 @@ class OrchestratedDetection:
     candidates: Tuple[DetectionCandidate, ...]
     decision_reason: str
     text_length_bucket: str
+    min_chars_met: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +277,7 @@ class DetectionOrchestrator:
                         f"{_SHORT_TEXT_HEURISTIC_THRESHOLD}). "
                         f"No primary backend needed."
                     ),
+                    text=text,
                 )
 
         # Step 2: Heuristic not confident enough (or failed). Consult primary.
@@ -280,7 +286,7 @@ class DetectionOrchestrator:
             candidates.append(primary_candidate)
 
         # Aggregate: primary wins on conflict (it has better n-gram models)
-        return self._aggregate(candidates, bucket)
+        return self._aggregate(candidates, bucket, text=text)
 
     # -- Long text strategy -------------------------------------------------
 
@@ -309,6 +315,7 @@ class DetectionOrchestrator:
                         f"{primary_candidate.top_confidence:.2f}. "
                         f"No fallback needed."
                     ),
+                    text=text,
                 )
 
         # Step 2: Primary not confident or failed. Consult fallback.
@@ -321,7 +328,7 @@ class DetectionOrchestrator:
             if fallback_candidate is not None:
                 candidates.append(fallback_candidate)
 
-        return self._aggregate(candidates, bucket)
+        return self._aggregate(candidates, bucket, text=text)
 
     # -- Backend call wrapper -----------------------------------------------
 
@@ -406,6 +413,7 @@ class DetectionOrchestrator:
         self,
         candidates: list[DetectionCandidate],
         bucket: str,
+        text: str = "",
     ) -> OrchestratedDetection:
         """Aggregate one or more candidates into a final result.
 
@@ -439,6 +447,7 @@ class DetectionOrchestrator:
                     f"'{winner.top_lang}' with confidence "
                     f"{winner.top_confidence:.2f}."
                 ),
+                text=text,
             )
 
         # Two successful candidates: check consensus vs dissent
@@ -461,6 +470,7 @@ class DetectionOrchestrator:
                 dissent=False,
                 reason=reason,
                 override_confidence=merged_confidence,
+                text=text,
             )
         else:
             # Dissent: higher confidence wins, penalty applied
@@ -481,6 +491,7 @@ class DetectionOrchestrator:
                 bucket=bucket,
                 dissent=True,
                 reason=reason,
+                text=text,
             )
 
     # -- Result builders ----------------------------------------------------
@@ -493,6 +504,7 @@ class DetectionOrchestrator:
         dissent: bool,
         reason: str,
         override_confidence: float | None = None,
+        text: str = "",
     ) -> OrchestratedDetection:
         """Build the final OrchestratedDetection from a winning candidate."""
         code = winner.top_lang
@@ -501,6 +513,22 @@ class DetectionOrchestrator:
             if override_confidence is not None
             else winner.top_confidence
         )
+
+        # Apply min_chars_reliable guard (B-2 Add-on 1, IC-A2: after
+        # primary detection, before aggregation into final result).
+        confidence, min_chars_met = self._apply_min_chars_guard(
+            text=text,
+            detection_code=code,
+            raw_confidence=confidence,
+        )
+
+        # Append guard info to decision_reason when active (IC-A4).
+        if not min_chars_met:
+            reason = (
+                f"{reason} "
+                f"[min_chars_guard: text too short for '{code}', "
+                f"confidence dampened]"
+            )
 
         # Merge distributions from all successful candidates
         merged_dist = self._merge_distributions(candidates)
@@ -511,6 +539,7 @@ class DetectionOrchestrator:
             code=code,
             bucket=bucket,
             dissent=dissent,
+            min_chars_met=min_chars_met,
         )
 
         return OrchestratedDetection(
@@ -521,6 +550,7 @@ class DetectionOrchestrator:
             candidates=tuple(candidates),
             decision_reason=reason,
             text_length_bucket=bucket,
+            min_chars_met=min_chars_met,
         )
 
     def _make_default_result(
@@ -548,6 +578,7 @@ class DetectionOrchestrator:
         code: str,
         bucket: str,
         dissent: bool,
+        min_chars_met: bool = True,
     ) -> float:
         """Compute composite reliability score.
 
@@ -556,6 +587,7 @@ class DetectionOrchestrator:
             + tier_bonus  (HIGH: +0.05, MEDIUM: +0.00, LOW: -0.05)
             + length_bonus (micro: -0.05, short: +0.00, medium: +0.03, long: +0.05)
             - dissent_penalty (0.20 if backends disagreed)
+            - min_chars_penalty (0.10 if text shorter than min_chars_reliable, IC-A3)
             clamped to [0.0, 1.0]
 
         The tier_bonus and length_bonus reflect that script-detected
@@ -587,8 +619,71 @@ class DetectionOrchestrator:
         # Dissent penalty
         penalty = 0.20 if dissent else 0.0
 
+        # min_chars_reliable penalty (IC-A3: step penalty -0.10)
+        if not min_chars_met:
+            penalty += 0.10
+
         score = base + tier_bonus + length_bonus - penalty
         return max(0.0, min(1.0, score))
+
+    # -- min_chars_reliable guard (B-2 Add-on 1) -----------------------------
+
+    def _apply_min_chars_guard(
+        self,
+        text: str,
+        detection_code: str,
+        raw_confidence: float,
+    ) -> tuple[float, bool]:
+        """Dampen confidence when text is shorter than min_chars_reliable.
+
+        Consults the LanguageRegistry for the min_chars_reliable threshold
+        of the detected language. Backend-agnostic (HC-A3): works only
+        with text length and registry data, never inspects backend names.
+
+        Dampening formula (IC-A1: linear):
+            adjusted = raw_confidence * (char_count / min_chars_reliable)
+            clamped to [0.0, raw_confidence]
+
+        When the language is not in the registry, no dampening is applied
+        (graceful degradation for unknown codes).
+
+        Args:
+            text: The stripped input text.
+            detection_code: Canonical language code from detection.
+            raw_confidence: The undampened confidence value.
+
+        Returns:
+            Tuple of (adjusted_confidence, min_chars_met).
+        """
+        entry = self._registry.get_or_none(detection_code)
+        if entry is None:
+            # Language not in registry: no guard, pass through.
+            return raw_confidence, True
+
+        char_count = len(text)
+        min_chars = entry.min_chars_reliable
+
+        if char_count >= min_chars:
+            return raw_confidence, True
+
+        # Linear dampening: proportional to how far below threshold.
+        ratio = char_count / min_chars if min_chars > 0 else 1.0
+        adjusted = raw_confidence * ratio
+        # Clamp: never increase confidence, never go below 0.
+        adjusted = max(0.0, min(adjusted, raw_confidence))
+
+        log.info(
+            "min_chars_guard: '%s' detected with %d chars (min=%d). "
+            "Confidence dampened %.3f -> %.3f (ratio=%.2f).",
+            detection_code,
+            char_count,
+            min_chars,
+            raw_confidence,
+            adjusted,
+            ratio,
+        )
+
+        return adjusted, False
 
     # -- Distribution merging -----------------------------------------------
 

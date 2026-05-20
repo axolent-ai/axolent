@@ -88,40 +88,6 @@ def _build_default_orchestrator() -> DetectionOrchestrator:
     )
 
 
-def _effective_confidence(detection: OrchestratedDetection) -> float:
-    """Compute effective confidence for resolver decisions.
-
-    For smart-switch and first-time detection decisions, the raw backend
-    confidence can be misleading for very short texts. langdetect returns
-    high confidence for 1-2 word inputs even though detection is unreliable.
-
-    This function checks the DomainLanguageBackend candidate (the heuristic
-    backend) if it was consulted. If the heuristic returned confidence <= 0,
-    that means it could not reliably identify the language (text too short
-    or no marker words found). In that case we clamp to 0.0 to avoid
-    trusting langdetect's spurious high-confidence results on very short input.
-
-    This preserves backward compatibility with the pre-Phase-2 behavior
-    where domain.language.detect_language_with_confidence() returned
-    confidence=0.0 for texts too short to classify reliably.
-    """
-    if detection.confidence == 0.0:
-        return 0.0
-
-    # Check if the domain heuristic was consulted and could not identify
-    # the language. The heuristic returns confidence=0.0 for texts that
-    # are too short or have no recognizable marker words.
-    for candidate in detection.candidates:
-        if candidate.backend_name == "domain_heuristic" and candidate.succeeded:
-            if candidate.top_confidence <= 0.0:
-                # Heuristic says "too short to tell". Don't trust the
-                # primary backend's result for decision-making.
-                return 0.0
-            break
-
-    return detection.confidence
-
-
 def _detection_to_context(
     detection: OrchestratedDetection,
     request_id: str,
@@ -247,7 +213,7 @@ class LanguageResolver:
         # Detect from text via DetectionOrchestrator (HC-O7)
         detection = self._get_orchestrator().detect(text)
         detected = detection.code
-        confidence = _effective_confidence(detection)
+        confidence = detection.confidence
 
         # Priority 2/3: No sticky yet (first interaction)
         if not sticky:
@@ -271,8 +237,18 @@ class LanguageResolver:
                 source=source,
             )
 
-        # Priority 2: Sticky exists, check for smart-switch
-        if confidence > _SMART_SWITCH_THRESHOLD and detected != sticky:
+        # Priority 2: Sticky exists, check for smart-switch.
+        # Two veto gates (B-2 Add-on 1 regression fix):
+        #   1. min_chars_met=False -> detection unreliable for short text
+        #   2. detected language not in registry -> unsupported code
+        #      (e.g. langdetect returns "sk" for "ok"), never switch to it
+        _registry = InMemoryLanguageRegistry()
+        if (
+            confidence > _SMART_SWITCH_THRESHOLD
+            and detected != sticky
+            and detection.min_chars_met
+            and _registry.is_supported(detected)
+        ):
             # Smart-switch: user implicitly changed language
             await set_language(user_id, chat_id, detected)
             log.info(
@@ -340,7 +316,7 @@ class LanguageResolver:
         # Detect from text via DetectionOrchestrator (HC-O7)
         detection = self._get_orchestrator().detect(text)
         detected = detection.code
-        confidence = _effective_confidence(detection)
+        confidence = detection.confidence
 
         # No sticky: use detection or default (but do NOT persist)
         if not sticky:
@@ -359,7 +335,14 @@ class LanguageResolver:
             )
 
         # Sticky exists: check if smart-switch WOULD trigger (but don't persist)
-        if confidence > _SMART_SWITCH_THRESHOLD and detected != sticky:
+        # Same veto gates as resolve(): min_chars_met + registry check.
+        _registry = InMemoryLanguageRegistry()
+        if (
+            confidence > _SMART_SWITCH_THRESHOLD
+            and detected != sticky
+            and detection.min_chars_met
+            and _registry.is_supported(detected)
+        ):
             return _detection_to_context(
                 detection=detection,
                 request_id=request_id,
