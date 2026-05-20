@@ -12,6 +12,7 @@ dependencies = [
     "python-telegram-bot==21.7",
     "python-dotenv==1.2.2",
     "filelock>=3.13",
+    "langdetect>=1.0.9,<2",
 ]
 
 [project.optional-dependencies]
@@ -58,6 +59,7 @@ markers = [
     "i18n: tests for language detection, translation, and locale handling",
     "streaming: tests for streaming handler, throttle, multi-message rollover",
     "security: tests for whitelisting, rate-limit, privacy guard, audit-log",
+    "dialog_flow: multi-turn language consistency tests",
 ]
 filterwarnings = [
     "ignore:coroutine.*was never awaited:RuntimeWarning",
