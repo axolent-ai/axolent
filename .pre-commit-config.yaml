@@ -89,9 +89,14 @@ repos:
 
       # Security: pip-audit (dependency vulnerability scanner)
       # Uses scripts/run_with_venv.py for platform-portable venv access.
+      # --ignore-vuln PYSEC-2025-183: CVE-2025-45768 "weak encryption" in
+      #   pyjwt <=2.12.1. Disputed by maintainer (key length is app's choice).
+      #   Transitive dep only (mcp -> pyjwt); we never call pyjwt directly.
+      #   No fix release exists as of 2026-05-20. Remove once pyjwt ships a
+      #   patched version.
       - id: pip-audit
         name: pip-audit
-        entry: python scripts/run_with_venv.py pip_audit
+        entry: python scripts/run_with_venv.py pip_audit --ignore-vuln PYSEC-2025-183
         language: system
         pass_filenames: false
         stages: [pre-commit]
