@@ -32,6 +32,7 @@ from application.prompt_composer import PromptComposer
 from application.provider_router import ProviderRouter
 from domain.language import DEFAULT_LANGUAGE
 from i18n import t
+from infrastructure.audit_log import write_audit_log
 
 if TYPE_CHECKING:
     from application.execution import (
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
         InstructionCompiler,
         RequestEnvelope,
     )
+    from application.language.enforcement import LanguageEnforcement
 
 log = logging.getLogger(__name__)
 
@@ -200,11 +202,13 @@ class DebateOrchestrator:
         provider_router: ProviderRouter,
         timeout_seconds: int = DEBATE_TIMEOUT_SECONDS,
         instruction_compiler: "InstructionCompiler | None" = None,
+        language_enforcement: "LanguageEnforcement | None" = None,
     ) -> None:
         self.provider_router = provider_router
         self.timeout_seconds = timeout_seconds
         self._composer = PromptComposer()
         self._instruction_compiler = instruction_compiler
+        self._language_enforcement = language_enforcement
 
     def _select_providers(self) -> list[str]:
         """Determine which providers to use for the debate.
@@ -890,6 +894,64 @@ class DebateOrchestrator:
             len(responses),
             len(errors),
         )
+
+        # LCP v1: Language verification on provider responses
+        # Exclude providers whose output is in the wrong language
+        if (
+            self._language_enforcement is not None
+            and effective_lang != "auto"
+            and context is not None
+        ):
+            lang_excluded: list[str] = []
+            for provider_name, response_text in list(responses.items()):
+                enforcement_result = await self._language_enforcement.enforce(
+                    output=response_text,
+                    ctx=context.language,
+                    model_id=model,
+                    provider_name=provider_name,
+                    user_id=user_id,
+                    chat_id=chat_id,
+                    request_id=context.request_id,
+                )
+                if not enforcement_result.verification:
+                    continue
+                if not enforcement_result.verification.passed:
+                    # Only exclude if there are other valid providers remaining
+                    valid_remaining = len(responses) - len(lang_excluded) - 1
+                    if valid_remaining >= 1:
+                        lang_excluded.append(provider_name)
+                        write_audit_log(
+                            {
+                                "event_type": "debate_provider_lang_excluded",
+                                "request_id": context.request_id,
+                                "provider": provider_name,
+                                "expected_lang": effective_lang,
+                                "detected_lang": (
+                                    enforcement_result.verification.detected_lang
+                                ),
+                            }
+                        )
+                        log.info(
+                            "Debate: excluded provider %s due to language "
+                            "verification failure (expected=%s, detected=%s)",
+                            provider_name,
+                            effective_lang,
+                            enforcement_result.verification.detected_lang,
+                        )
+                    else:
+                        # Last provider standing: keep it even if language is wrong
+                        log.warning(
+                            "Debate: provider %s has wrong language but is the "
+                            "only valid provider remaining, keeping it",
+                            provider_name,
+                        )
+
+            for excluded in lang_excluded:
+                del responses[excluded]
+                errors[excluded] = (
+                    f"Excluded: language verification failed "
+                    f"(expected {effective_lang})"
+                )
 
         # Consensus analysis
         consensus: str | None = None

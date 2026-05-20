@@ -114,6 +114,10 @@ WHITELIST_PATHS = {
     "bridge/application/task_router.py",
     # i18n: _STATUS_TEXTS dict with DE + EN status messages (memory, thinking).
     "bridge/application/status_manager.py",
+    # one-shot i18n add-script: contains DE translation strings as data literals.
+    "scripts/i18n_add_settings_v2_keys.py",
+    # one-shot i18n translate-script: contains 18 non-EN languages as data literals.
+    "scripts/i18n_translate_settings_v2.py",
 }
 
 WHITELIST_DIR_PREFIXES = (

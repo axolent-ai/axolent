@@ -925,6 +925,168 @@
       "source_hash": "0bae2475b36dc0a1",
       "auto_translated": true,
       "reviewed": false
+    },
+    "settings.title": {
+      "text": "सेटिंग्स",
+      "source_hash": "74a883a037bc227f",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.btn_language": {
+      "text": "भाषा",
+      "source_hash": "a4fe65264ef7dbb3",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.btn_model": {
+      "text": "मॉडल",
+      "source_hash": "5e2c614c23f02239",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.btn_debate": {
+      "text": "बहस",
+      "source_hash": "b005ba15b986c2b2",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.btn_rate_limit": {
+      "text": "उपयोग सीमा",
+      "source_hash": "f493f0ce7a52a8aa",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.btn_personality": {
+      "text": "व्यक्तित्व",
+      "source_hash": "95a295627e54e34a",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.btn_timezone": {
+      "text": "समय क्षेत्र",
+      "source_hash": "4ceca1d52cede44d",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.btn_close": {
+      "text": "बंद करें",
+      "source_hash": "7d9eb7acb13e2462",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.btn_back": {
+      "text": "वापस",
+      "source_hash": "76900f1bfd16c8d4",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.btn_save": {
+      "text": "सहेजें",
+      "source_hash": "1509f561f2416598",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.model.title": {
+      "text": "मॉडल चयन (वर्तमान: {current})",
+      "source_hash": "7345f7d37a93af0d",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.debate.title": {
+      "text": "बहस प्रदाता (बहु-चयन)",
+      "source_hash": "f5b5fa4b80eab4de",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.debate.help_multi": {
+      "text": "/debate के लिए एक या अधिक प्रदाता चुनें",
+      "source_hash": "72b592dbd7e3afc2",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.debate.planned_toast": {
+      "text": "चरण 1 में उपलब्ध होगा",
+      "source_hash": "57782b60b8fd375a",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.personality.title": {
+      "text": "व्यक्तित्व सुविधाएँ",
+      "source_hash": "741a7e4e47094899",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.timezone.title": {
+      "text": "समय क्षेत्र (वर्तमान: {current})",
+      "source_hash": "31335a67099288b5",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.timezone.search": {
+      "text": "खोजें...",
+      "source_hash": "7f55382219f0202c",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.timezone.other": {
+      "text": "अन्य...",
+      "source_hash": "07449f0582036df6",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.toast_saved": {
+      "text": "सहेजा गया",
+      "source_hash": "b5c120b316c237a0",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.toast_provider_planned": {
+      "text": "यह प्रदाता चरण 1 में उपलब्ध होगा",
+      "source_hash": "8cb80fcae491d275",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.rate_limit.title": {
+      "text": "उपयोग सीमा प्रोफ़ाइल (वर्तमान: {current})",
+      "source_hash": "6a19cca20a3284cb",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.personality.p1_label": {
+      "text": "सक्रिय स्मृति",
+      "source_hash": "90bb9ec18148a9f7",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.personality.p2_label": {
+      "text": "कम AI शब्दजाल",
+      "source_hash": "b81ffbf2c2f9191f",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.personality.p3_label": {
+      "text": "शैली अनुकूलन",
+      "source_hash": "685568e17e618068",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.personality.p4_label": {
+      "text": "आत्मविश्वास संकेत",
+      "source_hash": "9569f2bfe826ede7",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.personality.p5_label": {
+      "text": "समय जागरूकता",
+      "source_hash": "04040d3a35c08693",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.personality.p6_label": {
+      "text": "सीमाएँ दिखाना",
+      "source_hash": "d171665344401dd9",
+      "auto_translated": false,
+      "reviewed": true
     }
   }
 }

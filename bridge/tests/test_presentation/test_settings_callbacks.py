@@ -126,7 +126,11 @@ def _make_context(
 
 
 class TestSettingsCommand:
-    """Tests für /settings Command (Ebene A)."""
+    """Tests für /settings Command — v2 Hauptmenü (6 Kategorien).
+
+    Seit v2 öffnet /settings das neue 6-Kategorien-Hauptmenü statt des alten
+    Slot-Menüs. Die Slot-Verwaltung ist über Modell > Slot-Untermenü erreichbar.
+    """
 
     @pytest.fixture(autouse=True)
     def _allow_all(self) -> None:
@@ -137,7 +141,7 @@ class TestSettingsCommand:
     async def test_settings_command_opens_main_menu(
         self, model_service: ModelService
     ) -> None:
-        """/settings sendet Nachricht mit Inline-Keyboard (6 Slots + Sprache + Reset)."""
+        """/settings sendet Nachricht mit v2 Inline-Keyboard (3x2 Kategorien + Schliessen)."""
         from presentation.handlers import handle_settings_command
 
         update = _make_command_update()
@@ -153,13 +157,16 @@ class TestSettingsCommand:
         # Keyboard muss vorhanden sein
         keyboard = call_args[1]["reply_markup"]
         assert keyboard is not None
-        # 6 Slots + 1 Sprache = 7 Rows (kein "Alle zurücksetzen" ohne Slot-Overrides)
-        assert len(keyboard.inline_keyboard) == 7
+        # v2: 3 Zeilen mit je 2 Kategorien-Buttons + 1 Zeile Schliessen = 4 Zeilen
+        assert len(keyboard.inline_keyboard) == 4
+        # Erste 3 Zeilen haben je 2 Buttons
+        for row in keyboard.inline_keyboard[:3]:
+            assert len(row) == 2
 
-    async def test_settings_main_menu_shows_defaults(
+    async def test_settings_main_menu_shows_v2_categories(
         self, model_service: ModelService
     ) -> None:
-        """Hauptmenü zeigt (Default) Suffix wenn kein Override gesetzt ist."""
+        """v2-Hauptmenü zeigt alle 6 Kategorien-Buttons."""
         from presentation.handlers import handle_settings_command
 
         update = _make_command_update()
@@ -168,19 +175,26 @@ class TestSettingsCommand:
         await handle_settings_command(update, context)
 
         keyboard = update.message.reply_text.call_args[1]["reply_markup"]
-        # Erster Button (CHAT) sollte Default zeigen
-        first_btn = keyboard.inline_keyboard[0][0]
-        assert "(Default)" in first_btn.text
-        assert "CHAT:" in first_btn.text
+        all_btns = [btn for row in keyboard.inline_keyboard for btn in row]
+        callback_ids = [btn.callback_data for btn in all_btns]
+        # Alle 6 Kategorien-Callbacks müssen vorhanden sein
+        for cat in (
+            "language",
+            "model",
+            "debate",
+            "rate_limit",
+            "personality",
+            "timezone",
+        ):
+            assert f"settings_v2_cat:{cat}" in callback_ids, (
+                f"Category '{cat}' missing from v2 main menu"
+            )
 
-    async def test_settings_main_menu_shows_override(
+    async def test_settings_main_menu_has_close_button(
         self, model_service: ModelService
     ) -> None:
-        """Hauptmenü zeigt Override-Modell ohne (Default) Suffix."""
+        """v2-Hauptmenü enthält Schliessen-Button."""
         from presentation.handlers import handle_settings_command
-
-        # Setze Override für CODE Slot
-        model_service.set_user_model(1, "haiku", slot="code")
 
         update = _make_command_update()
         context = _make_context(model_service=model_service)
@@ -188,11 +202,9 @@ class TestSettingsCommand:
         await handle_settings_command(update, context)
 
         keyboard = update.message.reply_text.call_args[1]["reply_markup"]
-        # CODE ist der zweite Slot (index 1)
-        code_btn = keyboard.inline_keyboard[1][0]
-        assert "CODE:" in code_btn.text
-        assert "Haiku" in code_btn.text
-        assert "(Default)" not in code_btn.text
+        all_btns = [btn for row in keyboard.inline_keyboard for btn in row]
+        close_btns = [b for b in all_btns if b.callback_data == "settings_v2_close"]
+        assert len(close_btns) == 1
 
 
 class TestSettingsSlotCallback:

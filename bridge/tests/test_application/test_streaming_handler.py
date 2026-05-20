@@ -1482,3 +1482,70 @@ class TestLiveMultiMessageRollover:
         assert session._full_accumulated_text == full_text
         # Also via the property
         assert session.full_text == full_text
+
+
+# ---------------------------------------------------------------------------
+# LCP v1: StreamGuard Integration Tests
+# ---------------------------------------------------------------------------
+
+
+class TestStreamGuardIntegration:
+    """LCP v1: Tests for StreamGuard early-abort on language drift."""
+
+    def _make_mock_backend(self, detected_lang: str, confidence: float):
+        """Create a mock LanguageDetectorBackend that returns fixed results."""
+
+        class _MockBackend:
+            def detect_distribution(self, text: str) -> dict[str, float]:
+                return {detected_lang: confidence}
+
+        return _MockBackend()
+
+    def test_stream_guard_aborts_on_high_drift(self) -> None:
+        """StreamGuard aborts when detecting high-confidence wrong language.
+
+        Uses a mock backend that reports English with 0.92 confidence
+        when expected language is German. Guard should signal abort.
+        """
+        from application.language.stream_guard import StreamGuard
+
+        # Mock backend: always returns "en" with 0.92 confidence
+        backend = self._make_mock_backend("en", 0.92)
+        guard = StreamGuard(expected_lang="de", enabled=True, backend=backend)
+
+        # Not enough text yet (< 200 chars)
+        short_text = "A" * 100
+        assert guard.check_early(short_text) is True
+        assert guard.state.check_performed is False
+
+        # Enough text: >200 chars triggers the check
+        long_text = "A" * 250
+        result = guard.check_early(long_text)
+
+        # Guard must have performed its check
+        assert guard.state.check_performed is True
+        # With 0.92 confidence for wrong language, should abort
+        assert result is False
+        assert guard.state.aborted is True
+        assert guard.state.detected_lang_at_abort == "en"
+
+    def test_stream_guard_no_abort_on_low_confidence(self) -> None:
+        """StreamGuard does NOT abort when confidence is below threshold.
+
+        Mock backend returns wrong language but with low confidence (0.6).
+        Guard should continue streaming (return True).
+        """
+        from application.language.stream_guard import StreamGuard
+
+        # Mock backend: returns "en" but with low confidence
+        backend = self._make_mock_backend("en", 0.6)
+        guard = StreamGuard(expected_lang="de", enabled=True, backend=backend)
+
+        # Enough text to trigger check
+        text = "B" * 250
+        result = guard.check_early(text)
+
+        # Guard performed check but did NOT abort (confidence too low)
+        assert guard.state.check_performed is True
+        assert result is True
+        assert guard.state.aborted is False

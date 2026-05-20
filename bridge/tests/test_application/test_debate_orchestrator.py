@@ -1542,3 +1542,228 @@ class TestDebateProviderChatIdIsolation:
 
         # The stateless provider has no _pool, so no terminate_session call
         assert not hasattr(providers["stateless"], "_pool")
+
+
+class TestDebateLanguageEnforcement:
+    """LCP v1: Tests for language enforcement in debate flow."""
+
+    def _make_exec_context(self, lang: str = "de"):
+        """Create a minimal ExecutionContext for testing."""
+        from application.execution import ExecutionContext
+        from application.language_resolver import LanguageContext
+
+        return ExecutionContext(
+            request_id="test-lcp-001",
+            user_id=1,
+            chat_id=10,
+            channel="telegram",
+            language=LanguageContext(
+                code=lang,
+                source="detection",
+                confidence=0.95,
+                switched_from=None,
+                request_id="test-lcp-001",
+            ),
+        )
+
+    def _make_exec_plan(self, lang: str = "de"):
+        """Create a minimal ExecutionPlan for testing."""
+        from application.execution import ExecutionPlan
+
+        return ExecutionPlan(
+            request_id="test-lcp-001",
+            task_type="debate",
+            language=lang,
+            provider_chain=("alpha", "beta"),
+        )
+
+    async def test_debate_excludes_provider_with_failed_verification(self) -> None:
+        """One of two providers delivers wrong-language response.
+
+        That provider is excluded from the debate responses.
+        """
+        from application.language.enforcement import (
+            EnforcementResult,
+            LanguageEnforcement,
+        )
+        from application.language.model_profiles import ModelAdherenceProfile
+        from application.language.verifier import (
+            VerificationResult,
+            VerificationStatus,
+        )
+
+        providers = {
+            "alpha": _MockProvider(
+                "alpha", response_text="Dies ist eine deutsche Antwort."
+            ),
+            "beta": _MockProvider(
+                "beta", response_text="This is English and should be German."
+            ),
+        }
+        router = _make_router(providers)
+
+        # Mock enforcement: alpha passes, beta fails
+        mock_enforcement = AsyncMock(spec=LanguageEnforcement)
+        profile = ModelAdherenceProfile(
+            model_id="default",
+            enforcement_level="strict",
+            verify_required=True,
+            repair_enabled=True,
+            stream_guard_enabled=False,
+            description="test",
+        )
+
+        async def _mock_enforce(output, ctx, **kwargs):
+            if "English" in output:
+                return EnforcementResult(
+                    final_output=output,
+                    verification=VerificationResult(
+                        expected_lang="de",
+                        detected_lang="en",
+                        confidence=0.95,
+                        foreign_share=0.9,
+                        target_language_ratio=0.1,
+                        status=VerificationStatus.FAIL,
+                        reason="Wrong language",
+                    ),
+                    repair=None,
+                    was_enforced=False,
+                    model_profile=profile,
+                )
+            return EnforcementResult(
+                final_output=output,
+                verification=VerificationResult(
+                    expected_lang="de",
+                    detected_lang="de",
+                    confidence=0.9,
+                    foreign_share=0.05,
+                    target_language_ratio=0.95,
+                    status=VerificationStatus.PASS,
+                    reason=None,
+                ),
+                repair=None,
+                was_enforced=False,
+                model_profile=profile,
+            )
+
+        mock_enforcement.enforce = AsyncMock(side_effect=_mock_enforce)
+
+        orchestrator = DebateOrchestrator(
+            provider_router=router,
+            language_enforcement=mock_enforcement,
+        )
+
+        exec_ctx = self._make_exec_context(lang="de")
+        exec_plan = self._make_exec_plan(lang="de")
+
+        with patch.object(orchestrator, "final_review", return_value=None):
+            result = await orchestrator.debate(
+                question="Was ist Bitcoin?",
+                user_id=1,
+                chat_id=10,
+                user_lang="de",
+                context=exec_ctx,
+                plan=exec_plan,
+            )
+
+        # Alpha should remain, beta should be excluded
+        assert "alpha" in result.responses
+        assert "beta" not in result.responses
+        assert "beta" in result.errors
+        assert "language verification failed" in result.errors["beta"]
+
+    async def test_debate_audit_event_on_provider_lang_fail(self) -> None:
+        """Audit log is written when a provider is excluded for language failure."""
+        from application.language.enforcement import (
+            EnforcementResult,
+            LanguageEnforcement,
+        )
+        from application.language.model_profiles import ModelAdherenceProfile
+        from application.language.verifier import (
+            VerificationResult,
+            VerificationStatus,
+        )
+
+        providers = {
+            "alpha": _MockProvider("alpha", response_text="Deutsche Antwort hier."),
+            "beta": _MockProvider("beta", response_text="English response here."),
+        }
+        router = _make_router(providers)
+
+        profile = ModelAdherenceProfile(
+            model_id="default",
+            enforcement_level="strict",
+            verify_required=True,
+            repair_enabled=True,
+            stream_guard_enabled=False,
+            description="test",
+        )
+
+        async def _mock_enforce(output, ctx, **kwargs):
+            if "English" in output:
+                return EnforcementResult(
+                    final_output=output,
+                    verification=VerificationResult(
+                        expected_lang="de",
+                        detected_lang="en",
+                        confidence=0.95,
+                        foreign_share=0.9,
+                        target_language_ratio=0.1,
+                        status=VerificationStatus.FAIL,
+                        reason="Wrong language",
+                    ),
+                    repair=None,
+                    was_enforced=False,
+                    model_profile=profile,
+                )
+            return EnforcementResult(
+                final_output=output,
+                verification=VerificationResult(
+                    expected_lang="de",
+                    detected_lang="de",
+                    confidence=0.9,
+                    foreign_share=0.05,
+                    target_language_ratio=0.95,
+                    status=VerificationStatus.PASS,
+                    reason=None,
+                ),
+                repair=None,
+                was_enforced=False,
+                model_profile=profile,
+            )
+
+        mock_enforcement = AsyncMock(spec=LanguageEnforcement)
+        mock_enforcement.enforce = AsyncMock(side_effect=_mock_enforce)
+
+        orchestrator = DebateOrchestrator(
+            provider_router=router,
+            language_enforcement=mock_enforcement,
+        )
+
+        exec_ctx = self._make_exec_context(lang="de")
+        exec_plan = self._make_exec_plan(lang="de")
+
+        with (
+            patch.object(orchestrator, "final_review", return_value=None),
+            patch("application.debate_orchestrator.write_audit_log") as mock_audit,
+        ):
+            await orchestrator.debate(
+                question="Was ist Bitcoin?",
+                user_id=1,
+                chat_id=10,
+                user_lang="de",
+                context=exec_ctx,
+                plan=exec_plan,
+            )
+
+            # Find the language exclusion audit event
+            audit_calls = mock_audit.call_args_list
+            lang_audit = [
+                c[0][0]
+                for c in audit_calls
+                if c[0][0].get("event_type") == "debate_provider_lang_excluded"
+            ]
+            assert len(lang_audit) == 1
+            assert lang_audit[0]["provider"] == "beta"
+            assert lang_audit[0]["expected_lang"] == "de"
+            assert lang_audit[0]["detected_lang"] == "en"

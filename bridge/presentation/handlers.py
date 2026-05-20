@@ -2216,16 +2216,16 @@ async def handle_models_command(
 async def handle_settings_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Handles /settings. Opens inline keyboard settings menu.
+    """Handles /settings. Opens the v2 hierarchical inline keyboard settings menu.
 
-    Shows level A: slot assignment, language, reset all.
-    All interactions are handled by callback handlers in settings_callbacks.py.
+    Shows the 6-category main menu (Language, Model, Debate, Rate-Limit,
+    Personality, Timezone). All interactions handled by
+    settings_callbacks.handle_settings_v2_callback and
+    settings_callbacks.handle_settings_callback.
+
+    Legacy power-user shortcuts (/setmodel, /lang, /setlimit, /resetmodel)
+    remain fully functional in parallel.
     """
-    model_service = _get_model_service(context)
-    if model_service is None or not isinstance(model_service, ModelService):
-        await update.message.reply_text(t("errors.model_not_initialized", "en"))
-        return
-
     chat_service = _get_chat_service(context)
     user = update.effective_user
     user_id: int = user.id if user else 0
@@ -2233,16 +2233,16 @@ async def handle_settings_command(
 
     lang = await chat_service.get_chat_language(user_id, chat_id) or DEFAULT_LANGUAGE
 
-    from presentation.settings_callbacks import build_main_menu_keyboard
+    from presentation.settings_callbacks import build_v2_main_menu
 
-    text, keyboard = build_main_menu_keyboard(user_id, model_service, context, lang)
+    text, keyboard = build_v2_main_menu(lang)
     await update.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
     log_command_audit(
-        action="settings",
+        action="settings_v2",
         user_id=user_id,
         chat_id=chat_id,
         username=user.username if user else None,
-        details="opened main menu",
+        details="opened v2 main menu",
     )
 
 

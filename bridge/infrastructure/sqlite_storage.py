@@ -96,6 +96,27 @@ CREATE TABLE IF NOT EXISTS user_rate_limit_state (
     PRIMARY KEY (user_id, profile, period)
 );
 
+-- User settings v2: hierarchical per-user configuration (settings menu).
+-- debate_providers: comma-separated provider IDs (multi-select).
+-- personality_p1..p6: feature toggles (0/1).
+-- rate_limit_profile: overrides user_profiles when set explicitly via settings menu.
+-- language and model: override sticky-language and model_service when set via settings menu.
+CREATE TABLE IF NOT EXISTS user_settings (
+    user_id INTEGER PRIMARY KEY,
+    language TEXT,
+    model TEXT,
+    debate_providers TEXT DEFAULT '',
+    rate_limit_profile TEXT DEFAULT 'normal',
+    personality_p1 INTEGER NOT NULL DEFAULT 1,
+    personality_p2 INTEGER NOT NULL DEFAULT 1,
+    personality_p3 INTEGER NOT NULL DEFAULT 1,
+    personality_p4 INTEGER NOT NULL DEFAULT 0,
+    personality_p5 INTEGER NOT NULL DEFAULT 1,
+    personality_p6 INTEGER NOT NULL DEFAULT 1,
+    timezone TEXT NOT NULL DEFAULT 'UTC',
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- FTS5 for full-text search
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
     content,
@@ -964,6 +985,167 @@ class SqliteRateLimitStorage:
     def _reset_all_for_tests(self) -> None:
         """Delete all rate limit state entries (test-only)."""
         self._conn.execute("DELETE FROM user_rate_limit_state", ())
+
+
+# ──────────────────────────────────────────────────────────────
+# Settings Storage v2 (SQLite)
+# ──────────────────────────────────────────────────────────────
+
+
+class SqliteSettingsStorage:
+    """SQLite adapter for user_settings v2 (hierarchical settings menu).
+
+    Stores per-user configuration for all 6 settings categories:
+    language, model, debate_providers, rate_limit_profile,
+    personality (p1-p6), timezone.
+
+    Uses INSERT OR REPLACE with partial updates via individual setters.
+    Reads return None for fields not explicitly set (caller uses defaults).
+    """
+
+    def __init__(self, conn: SqliteConnection) -> None:
+        self._conn = conn
+
+    def get_settings_row(self, user_id: int) -> Optional[dict]:
+        """Read the full settings row for a user.
+
+        Args:
+            user_id: Telegram user ID.
+
+        Returns:
+            Dict with all columns or None if no row exists yet.
+        """
+        row = self._conn.fetchone(
+            """SELECT user_id, language, model, debate_providers,
+                      rate_limit_profile, personality_p1, personality_p2,
+                      personality_p3, personality_p4, personality_p5,
+                      personality_p6, timezone, updated_at
+               FROM user_settings WHERE user_id = ?""",
+            (user_id,),
+        )
+        return dict(row) if row else None
+
+    def _upsert_field(self, user_id: int, field: str, value: object) -> None:
+        """Generic upsert for a single field.
+
+        Creates the row if not present (with defaults for all other fields),
+        then updates the specific field.
+
+        Args:
+            user_id: Telegram user ID.
+            field: Column name to update.
+            value: New value.
+        """
+        ts = datetime.now(timezone.utc).isoformat()
+        # Ensure row exists with all defaults
+        self._conn.execute(
+            """INSERT OR IGNORE INTO user_settings
+               (user_id, language, model, debate_providers, rate_limit_profile,
+                personality_p1, personality_p2, personality_p3, personality_p4,
+                personality_p5, personality_p6, timezone, updated_at)
+               VALUES (?, NULL, NULL, '', 'normal', 1, 1, 1, 0, 1, 1, 'UTC', ?)""",
+            (user_id, ts),
+        )
+        # Update the target field + updated_at.
+        # B608 is acceptable here: `field` is never user-controlled, it comes
+        # from an internal whitelist of column names enforced by the caller.
+        self._conn.execute(  # nosemgrep
+            f"UPDATE user_settings SET {field} = ?, updated_at = ? WHERE user_id = ?",  # nosec B608
+            (value, ts, user_id),
+        )
+        log.debug("Settings updated: user_id=%d field=%s", user_id, field)
+
+    def set_language(self, user_id: int, lang: Optional[str]) -> None:
+        """Set the language preference (None = use auto/sticky).
+
+        Args:
+            user_id: Telegram user ID.
+            lang: ISO 639-1 code or None to clear.
+        """
+        self._upsert_field(user_id, "language", lang)
+
+    def set_model(self, user_id: int, model: Optional[str]) -> None:
+        """Set the model preference (None = use system default).
+
+        Args:
+            user_id: Telegram user ID.
+            model: Full model ID or None to clear.
+        """
+        self._upsert_field(user_id, "model", model)
+
+    def set_debate_providers(self, user_id: int, providers: list[str]) -> None:
+        """Set the debate providers list (replaces entire list).
+
+        Args:
+            user_id: Telegram user ID.
+            providers: List of provider IDs (e.g. ['claude', 'llama']).
+        """
+        value = ",".join(p.strip() for p in providers if p.strip())
+        self._upsert_field(user_id, "debate_providers", value)
+
+    def toggle_debate_provider(self, user_id: int, provider: str) -> list[str]:
+        """Toggle a debate provider on/off and return the updated list.
+
+        Args:
+            user_id: Telegram user ID.
+            provider: Provider ID to toggle.
+
+        Returns:
+            Updated list of active provider IDs.
+        """
+        row = self.get_settings_row(user_id)
+        current_raw = (row or {}).get("debate_providers") or ""
+        current: list[str] = [p for p in current_raw.split(",") if p.strip()]
+        if provider in current:
+            current.remove(provider)
+        else:
+            current.append(provider)
+        self.set_debate_providers(user_id, current)
+        return current
+
+    def set_rate_limit_profile(self, user_id: int, profile: str) -> None:
+        """Set the rate limit profile.
+
+        Args:
+            user_id: Telegram user ID.
+            profile: Profile name (light, normal, power, unlimited).
+        """
+        self._upsert_field(user_id, "rate_limit_profile", profile)
+
+    def set_personality_flag(self, user_id: int, flag: str, value: bool) -> None:
+        """Set a single personality toggle.
+
+        Args:
+            user_id: Telegram user ID.
+            flag: Column name (personality_p1 .. personality_p6).
+            value: True = enabled, False = disabled.
+        """
+        valid_flags = {
+            "personality_p1",
+            "personality_p2",
+            "personality_p3",
+            "personality_p4",
+            "personality_p5",
+            "personality_p6",
+        }
+        if flag not in valid_flags:
+            raise ValueError(
+                f"Unknown personality flag: '{flag}'. Valid: {valid_flags}"
+            )
+        self._upsert_field(user_id, flag, 1 if value else 0)
+
+    def set_timezone(self, user_id: int, tz: str) -> None:
+        """Set the timezone (IANA format).
+
+        Args:
+            user_id: Telegram user ID.
+            tz: IANA timezone string (e.g. 'Europe/Vienna').
+        """
+        self._upsert_field(user_id, "timezone", tz)
+
+    def _reset_all_for_tests(self) -> None:
+        """Delete all settings rows (test-only)."""
+        self._conn.execute("DELETE FROM user_settings", ())
 
 
 # ──────────────────────────────────────────────────────────────

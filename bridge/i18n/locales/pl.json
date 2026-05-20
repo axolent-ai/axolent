@@ -925,6 +925,168 @@
       "source_hash": "0bae2475b36dc0a1",
       "auto_translated": true,
       "reviewed": false
+    },
+    "settings.title": {
+      "text": "Ustawienia",
+      "source_hash": "74a883a037bc227f",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.btn_language": {
+      "text": "Język",
+      "source_hash": "a4fe65264ef7dbb3",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.btn_model": {
+      "text": "Model",
+      "source_hash": "5e2c614c23f02239",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.btn_debate": {
+      "text": "Debata",
+      "source_hash": "b005ba15b986c2b2",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.btn_rate_limit": {
+      "text": "Limit użycia",
+      "source_hash": "f493f0ce7a52a8aa",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.btn_personality": {
+      "text": "Osobowość",
+      "source_hash": "95a295627e54e34a",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.btn_timezone": {
+      "text": "Strefa czasowa",
+      "source_hash": "4ceca1d52cede44d",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.btn_close": {
+      "text": "Zamknij",
+      "source_hash": "7d9eb7acb13e2462",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.btn_back": {
+      "text": "Wstecz",
+      "source_hash": "76900f1bfd16c8d4",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.btn_save": {
+      "text": "Zapisz",
+      "source_hash": "1509f561f2416598",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.model.title": {
+      "text": "Wybór modelu (aktualny: {current})",
+      "source_hash": "7345f7d37a93af0d",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.debate.title": {
+      "text": "Dostawcy Debate (wielokrotny wybór)",
+      "source_hash": "f5b5fa4b80eab4de",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.debate.help_multi": {
+      "text": "Wybierz jednego lub więcej dostawców dla /debate",
+      "source_hash": "72b592dbd7e3afc2",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.debate.planned_toast": {
+      "text": "Dostępne w Fazie 1",
+      "source_hash": "57782b60b8fd375a",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.personality.title": {
+      "text": "Funkcje osobowości",
+      "source_hash": "741a7e4e47094899",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.timezone.title": {
+      "text": "Strefa czasowa (aktualna: {current})",
+      "source_hash": "31335a67099288b5",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.timezone.search": {
+      "text": "Szukaj...",
+      "source_hash": "7f55382219f0202c",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.timezone.other": {
+      "text": "Inna...",
+      "source_hash": "07449f0582036df6",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.toast_saved": {
+      "text": "Zapisano",
+      "source_hash": "b5c120b316c237a0",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.toast_provider_planned": {
+      "text": "Ten dostawca pojawi się w Fazie 1",
+      "source_hash": "8cb80fcae491d275",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.rate_limit.title": {
+      "text": "Profil limitu użycia (aktualny: {current})",
+      "source_hash": "6a19cca20a3284cb",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.personality.p1_label": {
+      "text": "Proaktywna pamięć",
+      "source_hash": "90bb9ec18148a9f7",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.personality.p2_label": {
+      "text": "Mniej mowy AI",
+      "source_hash": "b81ffbf2c2f9191f",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.personality.p3_label": {
+      "text": "Adaptacja stylu",
+      "source_hash": "685568e17e618068",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.personality.p4_label": {
+      "text": "Sygnał pewności",
+      "source_hash": "9569f2bfe826ede7",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.personality.p5_label": {
+      "text": "Świadomość czasu",
+      "source_hash": "04040d3a35c08693",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "settings.personality.p6_label": {
+      "text": "Pokazywanie ograniczeń",
+      "source_hash": "d171665344401dd9",
+      "auto_translated": false,
+      "reviewed": true
     }
   }
 }

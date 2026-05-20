@@ -48,6 +48,7 @@ from infrastructure.providers.base import ProviderError
 
 if TYPE_CHECKING:
     from application.fallback_resolver import FallbackResolver
+    from application.language.enforcement import LanguageEnforcement
     from application.memory_service import MemoryService
     from application.model_service import ModelService
     from application.proactive_trigger_service import ProactiveTriggerService
@@ -225,6 +226,7 @@ class ChatService:
         style_adaption_service: "StyleAdaptionService | None" = None,
         proactive_trigger_service: "ProactiveTriggerService | None" = None,
         fallback_resolver: "FallbackResolver | None" = None,
+        language_enforcement: "LanguageEnforcement | None" = None,
     ) -> None:
         self.provider_router = provider_router
         self.memory_service = memory_service
@@ -234,6 +236,7 @@ class ChatService:
         self.style_adaption_service = style_adaption_service
         self.proactive_trigger_service = proactive_trigger_service
         self.fallback_resolver = fallback_resolver
+        self._language_enforcement = language_enforcement
 
         # Central prompt composer (Phase 2): single source for system prompt construction
         self._composer = PromptComposer(
@@ -672,6 +675,23 @@ class ChatService:
                 audit["leakage_attempt"] = True
                 response = leak_replacement
 
+            # LCP v1: Language enforcement (verify + repair)
+            # Only when enforcement is configured and language is not "auto"
+            if self._language_enforcement is not None and lang != "auto":
+                enforcement_result = await self._language_enforcement.enforce(
+                    output=response,
+                    ctx=_lang_ctx,
+                    model_id=user_model,
+                    provider_name=provider_name,
+                    user_id=uid,
+                    chat_id=cid,
+                    system_prompt_base=effective_prompt,
+                    request_id=audit.get("request_id", ""),
+                )
+                if enforcement_result.was_enforced:
+                    response = enforcement_result.final_output
+                    audit["language_enforced"] = True
+
             # Save both turns to history (user + assistant)
             user_turn = ConversationTurn(role="user", content=text)
             assistant_turn = ConversationTurn(role="assistant", content=response)
@@ -941,10 +961,21 @@ class ChatService:
         if status_session is not None:
             await status_session.update("thinking")
 
+        # LCP v1: Create StreamGuard for language drift detection
+        stream_guard = None
+        if self._language_enforcement is not None and lang != "auto":
+            from application.language.model_profiles import get_profile
+            from application.language.stream_guard import StreamGuard
+
+            profile = get_profile(user_model)
+            if profile.stream_guard_enabled:
+                stream_guard = StreamGuard(expected_lang=lang, enabled=True)
+
         # Streaming via persistent provider
         # T25: cancel_event is captured in closure and propagated to the pool.
         async def _stream() -> AsyncIterator[StreamEvent]:
             first_token = True
+            accumulated_for_guard = ""
             async for event in persistent_provider.query_streaming(
                 prompt=context_prompt,
                 system_prompt=effective_prompt,
@@ -958,7 +989,38 @@ class ChatService:
                     first_token = False
                     if status_session is not None:
                         status_session.mark_stream_started()
+
+                # LCP v1: StreamGuard early check on accumulated text
+                if (
+                    stream_guard is not None
+                    and event.event_type == "content_delta"
+                    and event.text
+                ):
+                    accumulated_for_guard += event.text
+                    should_continue = stream_guard.check_early(accumulated_for_guard)
+                    if not should_continue:
+                        log.warning(
+                            "StreamGuard abort: language drift detected "
+                            "at %d chars (user=%d, chat=%d)",
+                            len(accumulated_for_guard),
+                            uid,
+                            cid,
+                        )
+                        write_audit_log(stream_guard.build_audit_entry())
+                        # Signal cancellation for silent retry
+                        if cancel_event is not None:
+                            cancel_event.set()
+                        return
+
                 yield event
+
+        # Pack stream_guard into task_meta so the caller can access it
+        if stream_guard is not None:
+            task_meta["_stream_guard"] = stream_guard
+        # Pack language context for post-stream enforcement
+        task_meta["_language_code"] = lang
+        task_meta["_language_ctx"] = _lang_ctx
+        task_meta["_user_model"] = user_model
 
         return _stream(), memory_entries_loaded, task_meta
 
@@ -977,6 +1039,10 @@ class ChatService:
         system_prompt: str = "",
         task_meta: dict[str, Any] | None = None,
         request_id: str = "",
+        language_code: str | None = None,
+        language_ctx: Any | None = None,
+        user_model: str | None = None,
+        provider_name: str | None = None,
     ) -> str:
         """Save the result of a streaming session to history + audit.
 
@@ -1006,6 +1072,7 @@ class ChatService:
             the text changed for a final Telegram edit.
         """
         leakage_detected = False
+        language_enforced = False
 
         # C-3: leakage check on the final response
         if system_prompt:
@@ -1021,6 +1088,27 @@ class ChatService:
                 )
                 response_text = leak_replacement
                 leakage_detected = True
+
+        # LCP v1: Language enforcement on completed stream
+        if (
+            self._language_enforcement is not None
+            and language_ctx is not None
+            and language_code
+            and language_code != "auto"
+        ):
+            enforcement_result = await self._language_enforcement.enforce(
+                output=response_text,
+                ctx=language_ctx,
+                model_id=user_model,
+                provider_name=provider_name,
+                user_id=user_id,
+                chat_id=chat_id,
+                system_prompt_base=system_prompt,
+                request_id=request_id,
+            )
+            if enforcement_result.was_enforced:
+                response_text = enforcement_result.final_output
+                language_enforced = True
 
         # Save to history
         user_turn = ConversationTurn(role="user", content=user_text)
@@ -1048,6 +1136,8 @@ class ChatService:
         }
         if leakage_detected:
             audit["leakage_attempt"] = True
+        if language_enforced:
+            audit["language_enforced"] = True
         # TaskRouter metadata into audit (Phase 2a confidence logging)
         if task_meta:
             audit.update(task_meta)

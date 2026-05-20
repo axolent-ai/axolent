@@ -999,3 +999,197 @@ class TestSelfAwareness:
         call_args = mock_router.route.call_args
         system_sent = call_args.kwargs.get("system_prompt", "")
         assert "About your current configuration:" not in system_sent
+
+
+class TestLanguageEnforcementIntegration:
+    """LCP v1: Tests for language enforcement integration in ChatService."""
+
+    async def test_chat_service_verifies_language_after_response(self) -> None:
+        """Mock provider returns EN text when ctx.language=de.
+
+        Enforcement triggers repair and the repaired text is returned.
+        """
+        from application.language.enforcement import (
+            EnforcementResult,
+            LanguageEnforcement,
+        )
+        from application.language.model_profiles import ModelAdherenceProfile
+        from application.language.verifier import (
+            VerificationResult,
+            VerificationStatus,
+        )
+        from application.language.repair_service import RepairResult
+
+        # Provider returns English text
+        mock_router = MagicMock()
+        mock_router.route = AsyncMock(
+            return_value=ProviderResponse(
+                text="This is an English response that should be German.",
+                duration_seconds=1.0,
+                provider_name="claude",
+            )
+        )
+
+        # Mock enforcement that simulates a successful repair
+        mock_enforcement = AsyncMock(spec=LanguageEnforcement)
+        verification = VerificationResult(
+            expected_lang="de",
+            detected_lang="en",
+            confidence=0.95,
+            foreign_share=0.9,
+            target_language_ratio=0.1,
+            status=VerificationStatus.FAIL,
+            reason="Expected 'de' but detected 'en'",
+        )
+        repair = RepairResult(
+            original_output="This is an English response that should be German.",
+            repaired_output="Dies ist eine deutsche Antwort.",
+            was_repaired=True,
+            attempts_used=1,
+            verification_before=verification,
+            verification_after=VerificationResult(
+                expected_lang="de",
+                detected_lang="de",
+                confidence=0.9,
+                foreign_share=0.05,
+                target_language_ratio=0.95,
+                status=VerificationStatus.PASS,
+                reason=None,
+            ),
+            latency_ms=500.0,
+            repair_failed=False,
+        )
+        mock_enforcement.enforce = AsyncMock(
+            return_value=EnforcementResult(
+                final_output="Dies ist eine deutsche Antwort.",
+                verification=verification,
+                repair=repair,
+                was_enforced=True,
+                model_profile=ModelAdherenceProfile(
+                    model_id="default",
+                    enforcement_level="strict",
+                    verify_required=True,
+                    repair_enabled=True,
+                    stream_guard_enabled=False,
+                    description="test",
+                ),
+            )
+        )
+
+        svc = ChatService(
+            provider_router=mock_router,
+            language_enforcement=mock_enforcement,
+        )
+
+        result = await svc.process_user_message(
+            text="Erklaere mir das bitte auf Deutsch",
+            user_id=1,
+            chat_id=10,
+            username="test",
+            system_prompt="Du bist hilfreich.",
+        )
+
+        assert result.success is True
+        assert result.response == "Dies ist eine deutsche Antwort."
+        mock_enforcement.enforce.assert_called_once()
+
+    async def test_chat_service_skips_verification_for_auto_lang(self) -> None:
+        """When language is 'auto', enforcement is never called."""
+        from application.language.enforcement import LanguageEnforcement
+
+        mock_router = MagicMock()
+        mock_router.route = AsyncMock(
+            return_value=ProviderResponse(
+                text="Some response",
+                duration_seconds=0.5,
+                provider_name="claude",
+            )
+        )
+
+        mock_enforcement = AsyncMock(spec=LanguageEnforcement)
+
+        svc = ChatService(
+            provider_router=mock_router,
+            language_enforcement=mock_enforcement,
+        )
+
+        # Use language_override="auto" to set language to auto
+        result = await svc.process_user_message(
+            text="Test",
+            user_id=1,
+            chat_id=10,
+            username="test",
+            system_prompt="System.",
+            language_override="auto",
+        )
+
+        assert result.success is True
+        mock_enforcement.enforce.assert_not_called()
+
+    async def test_chat_service_audit_event_on_verification(self) -> None:
+        """Audit log contains language_enforced when enforcement triggers."""
+        from unittest.mock import patch as _patch
+        from application.language.enforcement import (
+            EnforcementResult,
+            LanguageEnforcement,
+        )
+        from application.language.model_profiles import ModelAdherenceProfile
+        from application.language.verifier import (
+            VerificationResult,
+            VerificationStatus,
+        )
+
+        mock_router = MagicMock()
+        mock_router.route = AsyncMock(
+            return_value=ProviderResponse(
+                text="English text here",
+                duration_seconds=1.0,
+                provider_name="claude",
+            )
+        )
+
+        verification = VerificationResult(
+            expected_lang="de",
+            detected_lang="en",
+            confidence=0.9,
+            foreign_share=0.8,
+            target_language_ratio=0.2,
+            status=VerificationStatus.FAIL,
+            reason="Wrong language",
+        )
+
+        mock_enforcement = AsyncMock(spec=LanguageEnforcement)
+        mock_enforcement.enforce = AsyncMock(
+            return_value=EnforcementResult(
+                final_output="Deutscher Text hier",
+                verification=verification,
+                repair=None,
+                was_enforced=True,
+                model_profile=ModelAdherenceProfile(
+                    model_id="default",
+                    enforcement_level="strict",
+                    verify_required=True,
+                    repair_enabled=True,
+                    stream_guard_enabled=False,
+                    description="test",
+                ),
+            )
+        )
+
+        svc = ChatService(
+            provider_router=mock_router,
+            language_enforcement=mock_enforcement,
+        )
+
+        with _patch("application.chat_service.write_audit_log") as mock_audit:
+            await svc.process_user_message(
+                text="Hallo wie geht es dir heute?",
+                user_id=1,
+                chat_id=10,
+                username="test",
+                system_prompt="System.",
+            )
+
+            mock_audit.assert_called()
+            audit_entry = mock_audit.call_args[0][0]
+            assert audit_entry.get("language_enforced") is True
