@@ -39,6 +39,10 @@ text-guard-office = [
 text-guard-watch = [
     "watchdog>=4.0",
 ]
+encryption = [
+    "keyring>=25.0",
+    "pysqlcipher3>=1.2.0",
+]
 
 [project.urls]
 Homepage = "https://axolent.ai"
@@ -60,6 +64,7 @@ markers = [
     "streaming: tests for streaming handler, throttle, multi-message rollover",
     "security: tests for whitelisting, rate-limit, privacy guard, audit-log",
     "dialog_flow: multi-turn language consistency tests",
+    "skill_compression: tests for the skill-compression engine (pattern recognition)",
 ]
 filterwarnings = [
     "ignore:coroutine.*was never awaited:RuntimeWarning",
