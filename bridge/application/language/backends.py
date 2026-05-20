@@ -17,11 +17,18 @@ Implementations:
 - LangdetectBackend: Phase 1 default, uses the langdetect library.
 - DomainLanguageBackend: Fallback for environments without langdetect installed,
   or as a comparison baseline. NOT the default in production.
+
+Phase 2 migration (Step 4/4):
+    HC-R4: LangdetectBackend._normalize() now delegates to
+    LanguageRegistry.resolve_backend_code(). No more hardcoded
+    mapping dict in this module.
 """
 
 from __future__ import annotations
 
 from typing import Protocol
+
+from application.language.registry import InMemoryLanguageRegistry
 
 
 class LanguageDetectorBackend(Protocol):
@@ -39,6 +46,11 @@ class LanguageDetectorBackend(Protocol):
         AXOLENT conventions (e.g. 'zh' not 'zh-cn', 'nb' not 'no').
         """
         ...
+
+
+# Module-level registry for code normalization (HC-R4).
+# Read-only and thread-safe. Used by LangdetectBackend._normalize().
+_registry = InMemoryLanguageRegistry()
 
 
 class LangdetectBackend:
@@ -73,14 +85,17 @@ class LangdetectBackend:
 
     @staticmethod
     def _normalize(lang_code: str) -> str:
-        """Normalize language codes to AXOLENT conventions.
+        """Normalize language codes to AXOLENT conventions (HC-R4).
 
-        Mappings:
+        Delegates to LanguageRegistry.resolve_backend_code() for
+        centralized backend-code normalization. No hardcoded mapping
+        dict in this module.
+
+        Mappings (defined in registry):
         - zh-cn, zh-tw -> zh (unified Chinese)
         - no -> nb (Norwegian Bokmal, ISO standard)
         """
-        mapping = {"zh-cn": "zh", "zh-tw": "zh", "no": "nb"}
-        return mapping.get(lang_code, lang_code)
+        return _registry.resolve_backend_code(lang_code)
 
 
 class DomainLanguageBackend:

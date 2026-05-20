@@ -3,6 +3,7 @@
 This package consolidates all language-related logic into a single
 coherent subsystem. Components:
 
+Phase 1:
 - LanguageContext: immutable per-request language decision
 - LanguageResolver: single-entry-point resolution
 - LanguageContract: dynamic natural-language contract builder
@@ -12,6 +13,12 @@ coherent subsystem. Components:
 - StreamGuard: early streaming abort on wrong-language output
 - LanguageDetectorBackend: protocol for pluggable detection backends
 - VerificationStatus: three-level verification outcome (PASS/WARN/FAIL)
+
+Phase 2 additions:
+- LanguageRegistry: central, read-only source of truth for language metadata
+- DetectionOrchestrator: multi-backend language detection with fallback logic
+- DetectionTier, LanguageRegistryEntry: registry data model
+- DetectionCandidate, OrchestratedDetection: orchestrator data model
 """
 
 from application.language.backends import (
@@ -26,6 +33,18 @@ from application.language.model_profiles import (
     ModelAdherenceProfile,
     get_profile,
 )
+from application.language.orchestrator import (
+    DetectionCandidate,
+    DetectionOrchestrator,
+    DetectionOrchestratorProtocol,
+    OrchestratedDetection,
+)
+from application.language.registry import (
+    DetectionTier,
+    InMemoryLanguageRegistry,
+    LanguageRegistryEntry,
+    LanguageRegistryProtocol,
+)
 from application.language.repair_service import RepairService
 from application.language.resolver import LanguageResolver
 from application.language.stream_guard import StreamGuard
@@ -36,6 +55,7 @@ from application.language.verifier import (
 )
 
 __all__ = [
+    # Phase 1
     "DomainLanguageBackend",
     "EnforcementResult",
     "LangdetectBackend",
@@ -51,4 +71,14 @@ __all__ = [
     "VerificationResult",
     "VerificationStatus",
     "get_profile",
+    # Phase 2: Registry
+    "DetectionTier",
+    "InMemoryLanguageRegistry",
+    "LanguageRegistryEntry",
+    "LanguageRegistryProtocol",
+    # Phase 2: Orchestrator
+    "DetectionCandidate",
+    "DetectionOrchestrator",
+    "DetectionOrchestratorProtocol",
+    "OrchestratedDetection",
 ]

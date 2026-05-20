@@ -7,6 +7,11 @@ varies by ModelAdherenceProfile enforcement level.
 
 The contract is THE authoritative language instruction in the prompt.
 No other component may inject language instructions independently.
+
+Phase 2 migration (Step 4/4):
+    HC-R7: _LANGUAGE_NAMES dict replaced by LanguageRegistry lookups.
+    All language metadata is now centralized in the Registry (single
+    source of truth). No more dual-maintenance of language names.
 """
 
 from __future__ import annotations
@@ -18,39 +23,18 @@ from application.language.model_profiles import (
     ModelAdherenceProfile,
     get_profile,
 )
+from application.language.registry import InMemoryLanguageRegistry
 
 log = logging.getLogger(__name__)
 
-# Language display names for natural-language contracts
-_LANGUAGE_NAMES: dict[str, str] = {
-    "de": "German",
-    "en": "English",
-    "fr": "French",
-    "es": "Spanish",
-    "it": "Italian",
-    "pt": "Portuguese",
-    "nl": "Dutch",
-    "sv": "Swedish",
-    "da": "Danish",
-    "nb": "Norwegian",
-    "fi": "Finnish",
-    "pl": "Polish",
-    "tr": "Turkish",
-    "ru": "Russian",
-    "uk": "Ukrainian",
-    "ar": "Arabic",
-    "zh": "Chinese",
-    "ja": "Japanese",
-    "ko": "Korean",
-    "hi": "Hindi",
-    "th": "Thai",
-    "id": "Indonesian",
-    "vi": "Vietnamese",
-}
+# Singleton registry instance for language name lookups (HC-R7).
+# The registry is read-only and thread-safe, so a module-level
+# instance is fine.
+_registry = InMemoryLanguageRegistry()
 
 
 def _get_language_name(code: str) -> str:
-    """Get human-readable language name for a code.
+    """Get human-readable language name for a code via Registry (HC-R7).
 
     Args:
         code: ISO-639-1 language code.
@@ -58,7 +42,10 @@ def _get_language_name(code: str) -> str:
     Returns:
         English name of the language, or the code itself if unknown.
     """
-    return _LANGUAGE_NAMES.get(code, code)
+    entry = _registry.get_or_none(code)
+    if entry is not None:
+        return entry.name
+    return code
 
 
 class LanguageContract:
