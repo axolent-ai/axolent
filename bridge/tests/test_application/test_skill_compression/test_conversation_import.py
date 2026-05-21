@@ -589,7 +589,7 @@ class TestImportOrchestrator:
         other_file.write_text("This is just a readme.", encoding="utf-8")
 
         storage = _setup_storage()
-        orchestrator = ImportOrchestrator(storage)
+        orchestrator = ImportOrchestrator(storage, import_root=tmp_path.parent)
 
         result = orchestrator.dry_run(tmp_path)
 
@@ -600,7 +600,7 @@ class TestImportOrchestrator:
     def test_dry_run_nonexistent_folder_raises(self, tmp_path):
         """dry_run should raise FileNotFoundError for missing folders."""
         storage = _setup_storage()
-        orchestrator = ImportOrchestrator(storage)
+        orchestrator = ImportOrchestrator(storage, import_root=tmp_path)
 
         with pytest.raises(FileNotFoundError):
             orchestrator.dry_run(tmp_path / "nonexistent")
@@ -608,7 +608,7 @@ class TestImportOrchestrator:
     def test_dry_run_file_not_directory_raises(self, tmp_path):
         """dry_run should raise NotADirectoryError for files."""
         storage = _setup_storage()
-        orchestrator = ImportOrchestrator(storage)
+        orchestrator = ImportOrchestrator(storage, import_root=tmp_path.parent)
 
         file_path = tmp_path / "not_a_dir.txt"
         file_path.write_text("content", encoding="utf-8")
@@ -627,7 +627,7 @@ class TestImportOrchestrator:
         )
 
         storage = _setup_storage()
-        orchestrator = ImportOrchestrator(storage)
+        orchestrator = ImportOrchestrator(storage, import_root=tmp_path.parent)
         orchestrator.init_schema()
 
         result = orchestrator.import_folder(tmp_path, user_id=42)
@@ -653,7 +653,7 @@ class TestImportOrchestrator:
         )
 
         storage = _setup_storage()
-        orchestrator = ImportOrchestrator(storage)
+        orchestrator = ImportOrchestrator(storage, import_root=tmp_path.parent)
         orchestrator.init_schema()
 
         orchestrator.import_folder(tmp_path, user_id=42)
@@ -673,7 +673,7 @@ class TestImportOrchestrator:
         txt_file.write_text("User: Hello\nAssistant: Hi!\n", encoding="utf-8")
 
         storage = _setup_storage()
-        orchestrator = ImportOrchestrator(storage)
+        orchestrator = ImportOrchestrator(storage, import_root=tmp_path.parent)
         orchestrator.init_schema()
 
         progress_calls: list[tuple[int, int, int]] = []
@@ -698,7 +698,7 @@ class TestImportOrchestrator:
         )
 
         storage = _setup_storage()
-        orchestrator = ImportOrchestrator(storage)
+        orchestrator = ImportOrchestrator(storage, import_root=tmp_path.parent)
         orchestrator.init_schema()
 
         result = orchestrator.import_folder(tmp_path, user_id=42)
@@ -733,7 +733,7 @@ class TestImportOrchestrator:
         )
 
         storage = _setup_storage()
-        orchestrator = ImportOrchestrator(storage)
+        orchestrator = ImportOrchestrator(storage, import_root=tmp_path.parent)
         orchestrator.init_schema()
 
         orchestrator.import_folder(tmp_path, user_id=42)

@@ -1,11 +1,15 @@
 """Secret Scanner: multi-layered No-Model-Secret enforcement (HC-SC-13).
 
 Prevents hypotheses from storing secrets, PII, or sensitive data.
-Three-layer detection approach:
+Two-layer detection approach:
 
-  Layer 1: Allowlist for permitted skill fields (whitelist, not blacklist)
-  Layer 2: Regex scanner for typical secret patterns
-  Layer 3: Heuristic filter for edge cases
+  Layer 1 (regex): 16 regex patterns for typical secret patterns
+  Layer 2 (heuristic): Heuristic filter for edge cases
+
+Note: ALLOWED_CLAIM_PATTERNS below is a declared allowlist for future
+Layer 0 (positive signal / whitelist). It is NOT consumed in production.
+The current implementation is conservative: anything that matches
+a secret or heuristic pattern is blocked.
 
 Consolidates and extends the 8 regex patterns from skill_commands.py
 (Step 5) into a structured, multi-layered scanner.
@@ -271,9 +275,11 @@ class SecretMatch:
 class SecretScanner:
     """Multi-layered secret/PII scanner for hypothesis claims (HC-SC-13).
 
-    Layer 1: Allowlist check (positive signal, not blocking)
-    Layer 2: Regex scanner for known secret patterns (16 patterns)
-    Layer 3: Heuristic filter for edge cases
+    Layer 1 (regex): Regex scanner for known secret patterns (16 patterns)
+    Layer 2 (heuristic): Heuristic filter for edge cases
+
+    Note: ALLOWED_CLAIM_PATTERNS is declared but not consumed.
+    See module docstring for rationale.
 
     Usage:
         scanner = SecretScanner()

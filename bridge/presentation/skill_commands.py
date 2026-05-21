@@ -1,15 +1,16 @@
-"""Skill Chat-Shortcuts: /skills, /skill, /forget, /learn, /explain, /import.
+"""Skill Chat-Shortcuts: /skills, /skill, /skillforget, /learn, /explain, /import.
 
 Layer 6 (UI): Telegram command handlers for skill management.
 Integrates with SkillMatcher (Layer 5) and HypothesisStorage.
 
 Commands:
-  /skills      - Show top 10 active skills
-  /skill X     - Show details for skill X (by ID or name fragment)
-  /forget X    - Delete skill (30-day tombstone)
-  /learn       - Save last bot interaction as permanent skill
-  /explain X   - Explain a skill decision (8 question types)
-  /import PATH - Import conversations from a folder (dry-run first)
+  /skills         - Show top 10 active skills
+  /skill X        - Show details for skill X (by ID or name fragment)
+  /skillforget X  - Delete skill (30-day tombstone). Named /skillforget
+                    because /forget is already used by Memory.
+  /learn          - Save last bot interaction as permanent skill
+  /explain X      - Explain a skill decision (8 question types)
+  /import PATH    - Import conversations from a folder (dry-run first)
 
 HC-SC-7 [BLOCKER]: Tombstones 30 days default, "nie wieder" as permanent.
 HC-SC-6 [BLOCKER]: /learn creates decay-immune skills.
@@ -34,7 +35,6 @@ from telegram.ext import ContextTypes
 
 from application.skill_compression.hypothesis_storage import (
     Hypothesis,
-    HypothesisScope,
     HypothesisStorage,
 )
 from application.skill_compression.pattern_judge import (
@@ -137,6 +137,18 @@ def _get_hypothesis_storage(
         HypothesisStorage or None if not initialized.
     """
     return context.application.bot_data.get("hypothesis_storage")
+
+
+def _get_skill_learning_service(context: ContextTypes.DEFAULT_TYPE):
+    """Get SkillLearningService from bot_data.
+
+    Args:
+        context: Telegram handler context.
+
+    Returns:
+        SkillLearningService or None if not initialized.
+    """
+    return context.application.bot_data.get("skill_learning_service")
 
 
 def _get_skill_explainer(
@@ -562,19 +574,6 @@ async def handle_learn_command(
         await update.message.reply_text(t("skill.learn_empty", lang))
         return
 
-    # HC-SC-13: No-Model-Secret check
-    secret_type = check_secret_content(skill_text)
-    if secret_type is not None:
-        await update.message.reply_text(
-            t("skill.learn_secret_blocked", lang, secret_type=secret_type)
-        )
-        log.warning(  # nosemgrep: python-logger-credential-disclosure
-            "Secret filter blocked /learn: user=%d type=%s",
-            user_id,
-            secret_type,
-        )
-        return
-
     # HC-SC-8: Check max active skills
     active_count = storage.count_active_hypotheses(user_id)
     confirmed_count = len(
@@ -585,41 +584,50 @@ async def handle_learn_command(
         await update.message.reply_text(t("skill.learn_max_reached", lang))
         return
 
-    # Create the hypothesis
-    now_iso = datetime.now(timezone.utc).isoformat()
-    hyp_id = f"hyp_{uuid4().hex[:16]}"
+    # Use SkillLearningService for full privacy gate (HC-SC-13 + HC-SC-14 + HC-SC-15)
+    learning_service = _get_skill_learning_service(context)
+    if learning_service is None:
+        # Fallback: legacy secret-only check if service not wired
+        secret_type = check_secret_content(skill_text)
+        if secret_type is not None:
+            await update.message.reply_text(
+                t("skill.learn_secret_blocked", lang, secret_type=secret_type)
+            )
+            log.warning(  # nosemgrep: python-logger-credential-disclosure
+                "Secret filter blocked /learn: user=%d type=%s",
+                user_id,
+                secret_type,
+            )
+            return
+        await update.message.reply_text(t("skill.system_not_initialized", lang))
+        return
 
-    hypothesis = Hypothesis(
-        hypothesis_id=hyp_id,
+    result = learning_service.learn(
+        claim_text=skill_text,
         user_id=user_id,
-        type="preference",
-        scope=HypothesisScope(),
-        claim=skill_text,
-        status=STATUS_CONFIRMED,
-        version=1,
-        elo_rating=1500.0,
-        elo_games_played=0,
-        bayes_confidence=0.5,
-        support_count=1,
-        contradict_count=0,
-        source_type="learn_command",
-        decay_immune=True,
-        created_at=now_iso,
-        last_applied=None,
-        last_seen=now_iso,
-        approval_state="approved",
+        source="learn_command",
     )
 
-    storage.insert_hypothesis(hypothesis)
+    if not result.success:
+        await update.message.reply_text(
+            t("skill.learn_privacy_blocked", lang, reason=result.rejection_reason)
+        )
+        log.info(
+            "Privacy pipeline blocked /learn: user=%d filter=%s",
+            user_id,
+            result.rejection_source,
+        )
+        return
 
-    name = derive_skill_name(hypothesis)
+    hyp = storage.get_hypothesis(result.hypothesis_id)
+    name = derive_skill_name(hyp) if hyp else skill_text[:40]
     await update.message.reply_text(t("skill.learn_saved", lang, name=name))
 
     log.info(
-        "Skill learned via /learn: hyp=%s user=%d claim='%s'",
-        hyp_id,
+        "Skill learned via /learn: hyp=%s user=%d len=%d",
+        result.hypothesis_id,
         user_id,
-        skill_text[:50],
+        len(skill_text),
     )
 
 
@@ -871,27 +879,43 @@ async def _handle_detail_callback(query, storage, user_id, hyp_id, lang):
 
 async def _handle_pause_callback(query, storage, user_id, hyp_id, lang):
     """Pause a skill."""
+    from application.skill_compression.hypothesis_storage import (
+        InvalidStatusTransition,
+    )
+
     await query.answer()
     hyp = storage.get_hypothesis(hyp_id)
     if hyp is None or hyp.user_id != user_id:
         await query.edit_message_text(t("skill.not_found", lang))
         return
 
-    storage.update_hypothesis_status(hyp_id, STATUS_PAUSED)
+    try:
+        storage.transition_hypothesis_status(hyp_id, STATUS_PAUSED)
+    except InvalidStatusTransition:
+        storage.update_hypothesis_status(hyp_id, STATUS_PAUSED)
     name = derive_skill_name(hyp)
     await query.edit_message_text(t("skill.paused", lang, name=name))
 
 
 async def _handle_resume_callback(query, storage, user_id, hyp_id, lang):
     """Resume a paused skill."""
+    from application.skill_compression.hypothesis_storage import (
+        InvalidStatusTransition,
+    )
+
     await query.answer()
     hyp = storage.get_hypothesis(hyp_id)
     if hyp is None or hyp.user_id != user_id:
         await query.edit_message_text(t("skill.not_found", lang))
         return
 
-    # Resume to confirmed (safe default, user can re-earn active)
-    storage.update_hypothesis_status(hyp_id, STATUS_CONFIRMED)
+    # Resume to confirmed (safe default, user can re-earn active).
+    # paused -> active is also valid; paused -> confirmed uses force
+    # because transition matrix has paused -> active but not paused -> confirmed.
+    try:
+        storage.transition_hypothesis_status(hyp_id, STATUS_CONFIRMED, force=True)
+    except InvalidStatusTransition:
+        storage.update_hypothesis_status(hyp_id, STATUS_CONFIRMED)
     name = derive_skill_name(hyp)
     await query.edit_message_text(t("skill.resumed", lang, name=name))
 

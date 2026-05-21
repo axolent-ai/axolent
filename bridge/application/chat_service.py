@@ -564,6 +564,17 @@ class ChatService:
                 # Fallback: Phase 1 behavior (global override only)
                 user_model = self.model_service.get_user_model(uid)
 
+            # Skill-Compression: match BEFORE prompt composition (SC-03 fix)
+            skill_block = ""
+            skill_match_result: "SkillMatch | None" = None
+            if self.skill_matcher is not None:
+                try:
+                    skill_block, skill_match_result = self._match_skills_for_prompt(
+                        uid, text, lang, task_slot_name
+                    )
+                except Exception:
+                    log.debug("Skill matching skipped due to error", exc_info=True)
+
             # Prompt composition: InstructionCompiler (when context+plan)
             # or legacy PromptComposer (backward compat)
             if context is not None and plan is not None:
@@ -586,6 +597,10 @@ class ChatService:
                     task_slot_name=task_slot_name,
                     memory_block=memory_context,
                 )
+
+            # Inject skill block into prompt (after composition)
+            if skill_block:
+                effective_prompt = f"{effective_prompt}\n\n{skill_block}"
 
             # Provider call: use FallbackResolver if available, else direct route
             fallback_notice = ""
@@ -703,61 +718,42 @@ class ChatService:
                     response = enforcement_result.final_output
                     audit["language_enforced"] = True
 
-            # Skill-Compression: match and apply skills (Step 5 integration)
-            skill_match_result: "SkillMatch | None" = None
-            if self.skill_matcher is not None:
+            # Skill-Compression: post-response evidence and indicator
+            if skill_match_result is not None:
                 try:
-                    from application.skill_compression.event_normalizer import (
-                        NormalizedEvent,
+                    from application.skill_compression.skill_matcher import (
+                        should_ask_user,
                     )
 
-                    event = NormalizedEvent(
-                        event_id=f"evt_{uuid.uuid4().hex[:12]}",
-                        user_id=uid,
-                        timestamp=datetime.now(timezone.utc).isoformat(),
-                        raw_text=text,
-                        intent=task_slot_name or "",
-                        domain="",
-                        format_type="",
-                        language=lang,
-                        fingerprint_hash="",
-                    )
-                    skill_match_result = self.skill_matcher.match(event)
+                    ask = should_ask_user(skill_match_result)
 
-                    if skill_match_result is not None:
-                        from application.skill_compression.skill_matcher import (
-                            should_ask_user,
+                    if not ask:
+                        # HC-UI-2: Auto-apply indicator (active status only)
+                        from application.skill_compression.skill_formatting import (
+                            format_skill_indicator,
                         )
 
-                        ask = should_ask_user(skill_match_result)
+                        response = format_skill_indicator(
+                            skill_match_result.hypothesis, response
+                        )
+                        audit["skill_applied"] = (
+                            skill_match_result.hypothesis.hypothesis_id
+                        )
+                        audit["skill_confidence"] = skill_match_result.confidence
+                        log.info(
+                            "Skill applied: hyp=%s confidence=%.3f",
+                            skill_match_result.hypothesis.hypothesis_id,
+                            skill_match_result.confidence,
+                        )
+                    else:
+                        audit["skill_matched_ask_before"] = (
+                            skill_match_result.hypothesis.hypothesis_id
+                        )
 
-                        if not ask:
-                            # HC-UI-2: Auto-apply with indicator (active status only)
-                            from application.skill_compression.skill_formatting import (
-                                format_skill_indicator,
-                            )
-
-                            response = format_skill_indicator(
-                                skill_match_result.hypothesis, response
-                            )
-
-                            # Log no_correction evidence after auto-apply
-                            audit["skill_applied"] = (
-                                skill_match_result.hypothesis.hypothesis_id
-                            )
-                            audit["skill_confidence"] = skill_match_result.confidence
-                            log.info(
-                                "Skill auto-applied: hyp=%s confidence=%.3f",
-                                skill_match_result.hypothesis.hypothesis_id,
-                                skill_match_result.confidence,
-                            )
-                        else:
-                            # HC-SC-10: Ask Before Applying (confirmed status)
-                            audit["skill_matched_ask_before"] = (
-                                skill_match_result.hypothesis.hypothesis_id
-                            )
+                    # Write no_correction evidence for successful application
+                    self._write_skill_evidence(skill_match_result)
                 except Exception:
-                    log.debug("Skill matching skipped due to error", exc_info=True)
+                    log.debug("Skill post-response handling error", exc_info=True)
 
             # Save both turns to history (user + assistant)
             user_turn = ConversationTurn(role="user", content=text)
@@ -995,6 +991,19 @@ class ChatService:
             if user_model:
                 task_meta["resolved_model"] = user_model
 
+        # Skill-Compression: match BEFORE prompt composition (SC-03 fix, streaming)
+        skill_block_streaming = ""
+        skill_match_streaming: "SkillMatch | None" = None
+        if self.skill_matcher is not None:
+            try:
+                skill_block_streaming, skill_match_streaming = (
+                    self._match_skills_for_prompt(uid, text, lang, task_slot_name)
+                )
+            except Exception:
+                log.debug(
+                    "Skill matching skipped in streaming due to error", exc_info=True
+                )
+
         # Prompt composition: InstructionCompiler (when context+plan)
         # or legacy PromptComposer (backward compat)
         if context is not None and plan is not None:
@@ -1017,6 +1026,10 @@ class ChatService:
                 task_slot_name=task_slot_name,
                 memory_block=memory_context,
             )
+
+        # Inject skill block into streaming prompt
+        if skill_block_streaming:
+            effective_prompt = f"{effective_prompt}\n\n{skill_block_streaming}"
 
         # Proactive nudge: appended after composition (not part of standard blocks)
         if proactive_nudge_text:
@@ -1131,6 +1144,9 @@ class ChatService:
         # Streaming always uses claude_persistent; resolved_model is a model ID
         # like "claude-sonnet-4-6" which ProviderRouter cannot route to.
         task_meta["_provider_name"] = "claude_persistent"
+        # Skill-Compression: pass match result for post-stream evidence
+        if skill_match_streaming is not None:
+            task_meta["_skill_match"] = skill_match_streaming
 
         return _stream(), memory_entries_loaded, task_meta
 
@@ -1276,6 +1292,80 @@ class ChatService:
     async def reset(self, user_id: int, chat_id: int) -> None:
         """Use-case wrapper: reset conversation and sticky language."""
         await _infra_reset_conversation(user_id, chat_id)
+
+    def _match_skills_for_prompt(
+        self,
+        user_id: int,
+        text: str,
+        lang: str,
+        task_slot_name: str | None,
+    ) -> tuple[str, "SkillMatch | None"]:
+        """Match skills and build a prompt block for injection.
+
+        Called BEFORE prompt composition so the LLM sees the skill context.
+
+        Args:
+            user_id: User ID.
+            text: User message text.
+            lang: Detected language.
+            task_slot_name: Task slot name (if available).
+
+        Returns:
+            Tuple of (skill_block_string, best_match_or_None).
+        """
+        from application.skill_compression.event_normalizer import NormalizedEvent
+
+        event = NormalizedEvent(
+            event_id=f"evt_{uuid.uuid4().hex[:12]}",
+            user_id=user_id,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            raw_text=text,
+            intent=task_slot_name or "",
+            domain="",
+            format_type="",
+            language=lang,
+            fingerprint_hash="",
+        )
+        match_result = self.skill_matcher.match(event)
+        if match_result is None:
+            return "", None
+
+        # Build structured skill block for prompt injection
+        hyp = match_result.hypothesis
+        block_lines = [
+            "[APPLICABLE USER SKILL (from prior learnings)]",
+            f"  Skill: {hyp.claim}",
+            f"  Confidence: {match_result.confidence:.2f}",
+            f"  Source: {hyp.source_type}",
+            "Apply this skill to your response where relevant.",
+        ]
+        return "\n".join(block_lines), match_result
+
+    def _write_skill_evidence(self, match_result: "SkillMatch") -> None:
+        """Write no_correction evidence after successful skill application.
+
+        Args:
+            match_result: The skill match that was applied.
+        """
+        try:
+            hyp = match_result.hypothesis
+            if self.skill_matcher is not None and hasattr(
+                self.skill_matcher, "_storage"
+            ):
+                storage = self.skill_matcher._storage
+                now_iso = datetime.now(timezone.utc).isoformat()
+                evidence_id = f"ev_{uuid.uuid4().hex[:16]}"
+                storage.insert_evidence(
+                    evidence_id=evidence_id,
+                    hypothesis_id=hyp.hypothesis_id,
+                    hypothesis_version=hyp.version,
+                    signal_type="no_correction",
+                    signal_strength=0.3,
+                    created_at=now_iso,
+                )
+                storage.update_hypothesis_last_applied(hyp.hypothesis_id, now_iso)
+        except Exception:
+            log.debug("Failed to write skill evidence", exc_info=True)
 
     async def get_chat_language(self, user_id: int, chat_id: int) -> str | None:
         """Use-case wrapper: read the sticky language for a chat."""

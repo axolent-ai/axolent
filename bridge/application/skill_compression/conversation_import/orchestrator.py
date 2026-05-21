@@ -20,6 +20,7 @@ Architecture:
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -164,6 +165,23 @@ class ImportResult:
 # ---------------------------------------------------------------
 
 
+# ---------------------------------------------------------------
+# Import safety constants (W1: Root-Policy + Caps)
+# ---------------------------------------------------------------
+
+# Default import root directory. Override via AXOLENT_IMPORT_ROOT env.
+_DEFAULT_IMPORT_ROOT = "~/Documents/AxolentImport"
+
+# File count / size caps (configurable via env in future versions)
+MAX_IMPORT_FILES: int = 10_000
+MAX_IMPORT_TOTAL_BYTES: int = 500_000_000  # 500 MB
+MAX_IMPORT_FILE_SIZE: int = 10_000_000  # 10 MB per file
+
+
+class ImportPathViolation(Exception):
+    """Raised when import path is outside the allowed root directory."""
+
+
 class ImportOrchestrator:
     """Orchestrates conversation import from external sources.
 
@@ -185,12 +203,15 @@ class ImportOrchestrator:
         storage: HypothesisStorage,
         *,
         sources: list[ConversationSource] | None = None,
+        import_root: Path | str | None = None,
     ) -> None:
         """Initialize the orchestrator.
 
         Args:
             storage: Hypothesis storage for persisting results.
             sources: Custom list of parsers. Defaults to all built-in parsers.
+            import_root: Override for import root directory. Defaults to
+                AXOLENT_IMPORT_ROOT env variable or ~/Documents/AxolentImport.
         """
         self._storage = storage
         self._sources: list[ConversationSource] = sources or [
@@ -199,6 +220,33 @@ class ImportOrchestrator:
             MarkdownImporter(),
             PlaintextImporter(),
         ]
+        # W1: Resolve import root from parameter, env, or default
+        if import_root is not None:
+            self._import_root = Path(import_root).expanduser().resolve()
+        else:
+            raw_root = os.environ.get("AXOLENT_IMPORT_ROOT", _DEFAULT_IMPORT_ROOT)
+            self._import_root = Path(raw_root).expanduser().resolve()
+
+    def validate_import_path(self, folder_path: Path) -> Path:
+        """Validate that folder_path is within the allowed import root.
+
+        Args:
+            folder_path: The path to validate.
+
+        Returns:
+            Resolved absolute path.
+
+        Raises:
+            ImportPathViolation: If path is outside import root.
+        """
+        resolved = folder_path.expanduser().resolve()
+        try:
+            resolved.relative_to(self._import_root)
+        except ValueError:
+            raise ImportPathViolation(
+                f"Import path must be inside {self._import_root}, got: {resolved}"
+            )
+        return resolved
 
     def init_schema(self) -> None:
         """Create import tracking tables (idempotent).
@@ -214,6 +262,8 @@ class ImportOrchestrator:
         Scans the folder recursively, detects parseable files, and
         counts conversations without creating any database records.
 
+        W1: Validates path is within import root before scanning.
+
         Args:
             folder_path: Path to the folder to scan.
 
@@ -223,7 +273,11 @@ class ImportOrchestrator:
         Raises:
             FileNotFoundError: If folder does not exist.
             NotADirectoryError: If path is not a directory.
+            ImportPathViolation: If path is outside import root.
         """
+        # W1: Root-Policy validation
+        folder_path = self.validate_import_path(folder_path)
+
         if not folder_path.exists():
             raise FileNotFoundError(f"Folder not found: {folder_path}")
         if not folder_path.is_dir():
@@ -300,7 +354,11 @@ class ImportOrchestrator:
         Raises:
             FileNotFoundError: If folder does not exist.
             NotADirectoryError: If path is not a directory.
+            ImportPathViolation: If path is outside import root.
         """
+        # W1: Root-Policy validation
+        folder_path = self.validate_import_path(folder_path)
+
         if not folder_path.exists():
             raise FileNotFoundError(f"Folder not found: {folder_path}")
         if not folder_path.is_dir():
@@ -398,6 +456,8 @@ class ImportOrchestrator:
     def delete_from_source(self, import_id: str) -> int:
         """Delete all hypotheses imported from a specific source (HC-IMPORT-3).
 
+        W3: All deletes run in a single transaction (atomic).
+
         Cascade-deletes:
           1. All hypotheses linked to this import
           2. All evidence linked to those hypotheses
@@ -409,41 +469,49 @@ class ImportOrchestrator:
         Returns:
             Number of hypotheses deleted.
         """
+        conn = self._storage._conn
+
         # Find all hypothesis IDs from this import
-        rows = self._storage._conn.fetchall(
+        rows = conn.fetchall(
             "SELECT hypothesis_id FROM import_hypothesis_map WHERE import_id = ?",
             (import_id,),
         )
 
+        # Build atomic delete operations
+        operations: list[tuple[str, tuple]] = []
         deleted_count = 0
+
         for row in rows:
             hyp_id = row["hypothesis_id"]
-
-            # Delete evidence for this hypothesis
-            self._storage._conn.execute(
-                "DELETE FROM hypothesis_evidence WHERE hypothesis_id = ?",
-                (hyp_id,),
+            operations.append(
+                (
+                    "DELETE FROM hypothesis_evidence WHERE hypothesis_id = ?",
+                    (hyp_id,),
+                )
             )
-
-            # Delete the hypothesis itself
-            self._storage._conn.execute(
-                "DELETE FROM hypotheses WHERE hypothesis_id = ?",
-                (hyp_id,),
+            operations.append(
+                (
+                    "DELETE FROM hypotheses WHERE hypothesis_id = ?",
+                    (hyp_id,),
+                )
             )
-
             deleted_count += 1
 
-        # Delete the import mapping records
-        self._storage._conn.execute(
-            "DELETE FROM import_hypothesis_map WHERE import_id = ?",
-            (import_id,),
+        operations.append(
+            (
+                "DELETE FROM import_hypothesis_map WHERE import_id = ?",
+                (import_id,),
+            )
+        )
+        operations.append(
+            (
+                "DELETE FROM import_sources WHERE import_id = ?",
+                (import_id,),
+            )
         )
 
-        # Delete the import source record
-        self._storage._conn.execute(
-            "DELETE FROM import_sources WHERE import_id = ?",
-            (import_id,),
-        )
+        # W3: Execute all deletes atomically
+        conn.execute_in_transaction(operations)
 
         log.info(
             "Deleted import source %s: %d hypotheses removed",
@@ -668,21 +736,60 @@ class ImportOrchestrator:
         """Iterate over all files in a folder recursively.
 
         Returns files sorted by name for deterministic ordering.
-        Skips hidden files and directories (starting with '.').
+        Skips hidden files, directories (starting with '.'), symlinks,
+        oversized files, and enforces file count + total size caps.
+
+        W1 safety caps:
+          - max_files: MAX_IMPORT_FILES (10,000)
+          - max_file_size: MAX_IMPORT_FILE_SIZE (10 MB per file)
+          - max_total_bytes: MAX_IMPORT_TOTAL_BYTES (500 MB)
+          - symlinks: not followed
 
         Args:
             folder_path: Root folder to scan.
 
         Returns:
-            Sorted list of file paths.
+            Sorted list of file paths (capped).
         """
         files: list[Path] = []
+        total_bytes = 0
         try:
             for item in sorted(folder_path.rglob("*")):
-                if item.is_file() and not any(
-                    part.startswith(".") for part in item.parts
-                ):
-                    files.append(item)
+                # W1: skip symlinks
+                if item.is_symlink():
+                    continue
+                if not item.is_file():
+                    continue
+                if any(part.startswith(".") for part in item.parts):
+                    continue
+                # W1: per-file size cap
+                try:
+                    file_size = item.stat().st_size
+                except OSError:
+                    continue
+                if file_size > MAX_IMPORT_FILE_SIZE:
+                    log.info(
+                        "Import: skipping oversized file (%d bytes): %s",
+                        file_size,
+                        item,
+                    )
+                    continue
+                # W1: total bytes cap
+                if total_bytes + file_size > MAX_IMPORT_TOTAL_BYTES:
+                    log.info(
+                        "Import: total size cap reached at %d bytes, stopping scan",
+                        total_bytes,
+                    )
+                    break
+                total_bytes += file_size
+                files.append(item)
+                # W1: file count cap
+                if len(files) >= MAX_IMPORT_FILES:
+                    log.info(
+                        "Import: file count cap reached at %d files",
+                        len(files),
+                    )
+                    break
         except PermissionError:
             log.warning("Permission denied scanning: %s", folder_path)
         return files

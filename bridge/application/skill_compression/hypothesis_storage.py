@@ -280,6 +280,43 @@ class Hypothesis:
 
 
 # ──────────────────────────────────────────────────────────────
+# State-machine transition matrix (W4)
+# ──────────────────────────────────────────────────────────────
+
+ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
+    "candidate": frozenset({"suggested", "archived", "retired"}),
+    "suggested": frozenset({"confirmed", "archived", "needs_review"}),
+    "confirmed": frozenset({"active", "paused", "needs_review", "archived"}),
+    "active": frozenset({"paused", "needs_review"}),
+    "needs_review": frozenset({"confirmed", "archived", "retired"}),
+    "paused": frozenset({"active", "archived", "retired"}),
+    "archived": frozenset({"retired"}),
+    "retired": frozenset(),  # terminal
+}
+
+
+class InvalidStatusTransition(Exception):
+    """Raised when an invalid hypothesis status transition is attempted.
+
+    Attributes:
+        hypothesis_id: The hypothesis that was targeted.
+        current_status: The current status.
+        target_status: The attempted target status.
+    """
+
+    def __init__(
+        self, hypothesis_id: str, current_status: str, target_status: str
+    ) -> None:
+        self.hypothesis_id = hypothesis_id
+        self.current_status = current_status
+        self.target_status = target_status
+        super().__init__(
+            f"Invalid transition for {hypothesis_id}: "
+            f"'{current_status}' -> '{target_status}' is not allowed"
+        )
+
+
+# ──────────────────────────────────────────────────────────────
 # Storage class
 # ──────────────────────────────────────────────────────────────
 
@@ -705,12 +742,18 @@ class HypothesisStorage:
             (new_claim, new_version, now_iso, hypothesis_id),
         )
 
+        import hashlib
+
+        _old_hash = hashlib.sha256(current.claim.encode()).hexdigest()[:12]
+        _new_hash = hashlib.sha256(new_claim.encode()).hexdigest()[:12]
         log.info(
-            "Created new version v%d for hypothesis %s: '%s' -> '%s' (reason: %s)",
+            "Created new version v%d for hypothesis %s: "
+            "old_hash=%s -> new_hash=%s len=%d (reason: %s)",
             new_version,
             hypothesis_id,
-            current.claim,
-            new_claim,
+            _old_hash,
+            _new_hash,
+            len(new_claim),
             change_reason,
         )
 
@@ -834,7 +877,10 @@ class HypothesisStorage:
         hypothesis_id: str,
         status: str,
     ) -> None:
-        """Update the lifecycle status of a hypothesis.
+        """Update the lifecycle status of a hypothesis (low-level, no validation).
+
+        .. deprecated:: Use transition_hypothesis_status() for validated transitions.
+            This method exists for backward compatibility and internal use only.
 
         Args:
             hypothesis_id: The hypothesis to update.
@@ -843,6 +889,64 @@ class HypothesisStorage:
         self._conn.execute(
             "UPDATE hypotheses SET status = ? WHERE hypothesis_id = ?",
             (status, hypothesis_id),
+        )
+
+    def transition_hypothesis_status(
+        self,
+        hypothesis_id: str,
+        new_status: str,
+        *,
+        force: bool = False,
+    ) -> None:
+        """Validated status transition with state-machine enforcement.
+
+        Checks the transition against the allowed transition matrix.
+        Raises InvalidStatusTransition if the transition is not allowed
+        and force=False.
+
+        Allowed transitions:
+            candidate    -> suggested, archived, retired
+            suggested    -> confirmed, archived, needs_review
+            confirmed    -> active, paused, needs_review, archived
+            active       -> paused, needs_review
+            needs_review -> confirmed, archived, retired
+            paused       -> active, archived, retired
+            archived     -> retired (one-way, or force=True for revival)
+            retired      -> nothing (terminal, force=True only)
+
+        Args:
+            hypothesis_id: The hypothesis to transition.
+            new_status: Target status.
+            force: If True, bypass validation (admin/migration only).
+
+        Raises:
+            InvalidStatusTransition: If transition is not allowed.
+            ValueError: If hypothesis_id not found.
+        """
+        if force:
+            self._conn.execute(
+                "UPDATE hypotheses SET status = ? WHERE hypothesis_id = ?",
+                (new_status, hypothesis_id),
+            )
+            return
+
+        current = self.get_hypothesis(hypothesis_id)
+        if current is None:
+            raise ValueError(f"Hypothesis not found: {hypothesis_id}")
+
+        current_status = current.status
+        allowed = ALLOWED_TRANSITIONS.get(current_status, frozenset())
+
+        if new_status not in allowed:
+            raise InvalidStatusTransition(
+                hypothesis_id=hypothesis_id,
+                current_status=current_status,
+                target_status=new_status,
+            )
+
+        self._conn.execute(
+            "UPDATE hypotheses SET status = ? WHERE hypothesis_id = ?",
+            (new_status, hypothesis_id),
         )
 
     def update_hypothesis_support(

@@ -163,8 +163,8 @@ class CollisionDetector:
             # Clear winner: most specific scope
             winner = top_candidates[0]
             log.info(
-                "Collision auto-resolved: '%s' (specificity=%d) beats %d others",
-                winner.claim,
+                "Collision auto-resolved: hyp=%s (specificity=%d) beats %d others",
+                winner.hypothesis_id,
                 highest_spec,
                 len(candidates) - 1,
             )
@@ -173,7 +173,7 @@ class CollisionDetector:
                 requires_user_decision=False,
                 candidates=tuple(candidates),
                 resolution_reason=(
-                    f"'{winner.claim}' has highest scope specificity "
+                    f"hyp={winner.hypothesis_id} has highest scope specificity "
                     f"({highest_spec}), overriding {len(candidates) - 1} "
                     f"less specific candidate(s)."
                 ),

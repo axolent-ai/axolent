@@ -93,6 +93,16 @@ from presentation.handlers import (
     handle_start_command,
     handle_usage_command,
 )
+from presentation.skill_commands import (
+    handle_explain_command,
+    handle_import_callback,
+    handle_import_command,
+    handle_learn_command,
+    handle_skill_callback,
+    handle_skill_detail_command,
+    handle_skill_forget_command,
+    handle_skills_command,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -423,6 +433,52 @@ def main() -> None:
     )
     log.info("LCP: LanguageEnforcement initialized (Verifier + RepairService)")
 
+    # Skill-Compression: Initialize full pipeline (Review Fix SC-01)
+    from application.skill_compression.hypothesis_storage import HypothesisStorage
+    from application.skill_compression.pattern_judge import PatternJudge
+    from application.skill_compression.privacy.privacy_pipeline import PrivacyPipeline
+    from application.skill_compression.skill_explainer import SkillExplainer
+    from application.skill_compression.skill_learning_service import (
+        SkillLearningService,
+    )
+    from application.skill_compression.skill_matcher import SkillMatcher
+
+    skill_matcher = None
+    hypothesis_storage = None
+    skill_explainer = None
+    import_orchestrator = None
+    skill_learning_service = None
+
+    if use_sqlite:
+        hypothesis_storage = HypothesisStorage(sqlite_conn)
+        hypothesis_storage.init_schema()
+
+        privacy_pipeline = PrivacyPipeline()
+        pattern_judge = PatternJudge(privacy_pipeline=privacy_pipeline)
+
+        skill_matcher = SkillMatcher(
+            storage=hypothesis_storage,
+            judge=pattern_judge,
+        )
+        skill_explainer = SkillExplainer(hypothesis_storage)
+        skill_learning_service = SkillLearningService(
+            storage=hypothesis_storage,
+            privacy_pipeline=privacy_pipeline,
+        )
+
+        from application.skill_compression.conversation_import.orchestrator import (
+            ImportOrchestrator,
+        )
+
+        import_orchestrator = ImportOrchestrator(hypothesis_storage)
+        import_orchestrator.init_schema()
+
+        log.info(
+            "Skill-Compression: pipeline initialized "
+            "(HypothesisStorage + PrivacyPipeline + PatternJudge + "
+            "SkillMatcher + SkillExplainer + ImportOrchestrator)"
+        )
+
     # Create ChatService with constructor injection
     chat_service = ChatService(
         provider_router=router,
@@ -434,6 +490,7 @@ def main() -> None:
         style_adaption_service=style_adaption_svc,
         fallback_resolver=fallback_resolver,
         language_enforcement=language_enforcement,
+        skill_matcher=skill_matcher,
     )
 
     log.info("Trinity memory system initialized (auto-loading active)")
@@ -494,6 +551,16 @@ def main() -> None:
     if onboarding_storage is not None:
         app.bot_data["onboarding_storage"] = onboarding_storage
 
+    # Skill-Compression bot_data entries (Review Fix SC-01)
+    if hypothesis_storage is not None:
+        app.bot_data["hypothesis_storage"] = hypothesis_storage
+    if skill_explainer is not None:
+        app.bot_data["skill_explainer"] = skill_explainer
+    if import_orchestrator is not None:
+        app.bot_data["import_orchestrator"] = import_orchestrator
+    if skill_learning_service is not None:
+        app.bot_data["skill_learning_service"] = skill_learning_service
+
     # Lifecycle hooks: start/stop ProcessPool
     async def post_init(application: Application) -> None:
         """Start the ProcessPool cleanup task after app init."""
@@ -533,6 +600,14 @@ def main() -> None:
     app.add_handler(CommandHandler("debate", handle_debate_command))
     app.add_handler(CommandHandler("onboarding", handle_onboarding_command))
 
+    # Skill-Compression command handlers (Review Fix SC-01)
+    app.add_handler(CommandHandler("skills", handle_skills_command))
+    app.add_handler(CommandHandler("skill", handle_skill_detail_command))
+    app.add_handler(CommandHandler("skillforget", handle_skill_forget_command))
+    app.add_handler(CommandHandler("learn", handle_learn_command))
+    app.add_handler(CommandHandler("explain", handle_explain_command))
+    app.add_handler(CommandHandler("import", handle_import_command))
+
     # Message handler (non-command text)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
@@ -548,6 +623,10 @@ def main() -> None:
     )
     app.add_handler(CallbackQueryHandler(handle_wizard_callback, pattern=r"^wizard_"))
     app.add_handler(CallbackQueryHandler(handle_lang_callback, pattern=r"^lang_set:"))
+
+    # Skill-Compression callback handlers (Review Fix SC-01)
+    app.add_handler(CallbackQueryHandler(handle_skill_callback, pattern=r"^skill_"))
+    app.add_handler(CallbackQueryHandler(handle_import_callback, pattern=r"^import_"))
 
     log.info("Axolent Bridge starting, Mode B (R04: Persistent Pipe + Streaming)")
     log.info("Default-Provider: '%s'", router.default)
