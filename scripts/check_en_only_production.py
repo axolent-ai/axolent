@@ -117,6 +117,10 @@ WHITELIST_PATHS = {
     # Feature data: German keyword patterns for intent/domain/correction classification.
     # The German words in regex patterns ARE the feature (multilingual NLU heuristics).
     "bridge/application/skill_compression/event_normalizer.py",
+    # i18n: German user-facing Telegram replies (skills UI). Full i18n migration in Step 10.
+    "bridge/presentation/skill_commands.py",
+    # i18n: German user-facing skill profile/detail views (skills UI). Full i18n migration in Step 10.
+    "bridge/presentation/skill_profile_view.py",
     # i18n: _STATUS_TEXTS dict with DE + EN status messages (memory, thinking).
     "bridge/application/status_manager.py",
     # one-shot i18n add-script: contains DE translation strings as data literals.
@@ -281,8 +285,8 @@ def _scan_file(path: Path) -> list[tuple[int, str, str]]:
         if line.startswith(("http://", "https://", "git@")):
             continue
 
-        # Inline suppress marker: "# noqa: en-only" allows intentional
-        # German terms in English comments (e.g. quoting a concept).
+        # Inline suppress marker allows intentional German terms in English
+        # comments (e.g. quoting a concept). Marker: noqa + colon + en-only.
         if "noqa: en-only" in line:
             continue
 

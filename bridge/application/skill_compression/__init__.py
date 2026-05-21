@@ -13,4 +13,5 @@ Step 1 implements: Event Normalizer + Fingerprint Similarity + Storage Schema.
 Step 2 implements: N-Gram Extractor + Markov Chain + Elo Rating.
 Step 3 implements: Evidence Ledger + BKT + Pattern Judge + FSRS Decay.
 Step 4 implements: SkillMatcher + Collision Detection + Skill Versioning + Ask Before Applying.
+Step 5 implements: UI Profile View + 4 Chat-Shortcuts + Skill Indicator + ChatService Integration.
 """

@@ -54,6 +54,7 @@ if TYPE_CHECKING:
     from application.proactive_trigger_service import ProactiveTriggerService
     from application.provider_router import ProviderRouter
     from application.self_awareness_service import SelfAwarenessService
+    from application.skill_compression.skill_matcher import SkillMatch, SkillMatcher
     from application.style_adaption_service import StyleAdaptionService
     from application.task_router import TaskRouter
     from infrastructure.providers.claude_persistent import ClaudePersistentProvider
@@ -227,11 +228,13 @@ class ChatService:
         proactive_trigger_service: "ProactiveTriggerService | None" = None,
         fallback_resolver: "FallbackResolver | None" = None,
         language_enforcement: "LanguageEnforcement | None" = None,
+        skill_matcher: "SkillMatcher | None" = None,
     ) -> None:
         self.provider_router = provider_router
         self.memory_service = memory_service
         self.model_service = model_service
         self.task_router = task_router
+        self.skill_matcher: "SkillMatcher | None" = skill_matcher
         self.self_awareness_service = self_awareness_service
         self.style_adaption_service = style_adaption_service
         self.proactive_trigger_service = proactive_trigger_service
@@ -691,6 +694,62 @@ class ChatService:
                 if enforcement_result.was_enforced:
                     response = enforcement_result.final_output
                     audit["language_enforced"] = True
+
+            # Skill-Compression: match and apply skills (Step 5 integration)
+            skill_match_result: "SkillMatch | None" = None
+            if self.skill_matcher is not None:
+                try:
+                    from application.skill_compression.event_normalizer import (
+                        NormalizedEvent,
+                    )
+
+                    event = NormalizedEvent(
+                        event_id=f"evt_{uuid.uuid4().hex[:12]}",
+                        user_id=uid,
+                        timestamp=datetime.now(timezone.utc).isoformat(),
+                        raw_text=text,
+                        intent=task_slot_name or "",
+                        domain="",
+                        format_type="",
+                        language=lang,
+                        fingerprint_hash="",
+                    )
+                    skill_match_result = self.skill_matcher.match(event)
+
+                    if skill_match_result is not None:
+                        from application.skill_compression.skill_matcher import (
+                            should_ask_user,
+                        )
+
+                        ask = should_ask_user(skill_match_result)
+
+                        if not ask:
+                            # HC-UI-2: Auto-apply with indicator (active status only)
+                            from application.skill_compression.skill_formatting import (
+                                format_skill_indicator,
+                            )
+
+                            response = format_skill_indicator(
+                                skill_match_result.hypothesis, response
+                            )
+
+                            # Log no_correction evidence after auto-apply
+                            audit["skill_applied"] = (
+                                skill_match_result.hypothesis.hypothesis_id
+                            )
+                            audit["skill_confidence"] = skill_match_result.confidence
+                            log.info(
+                                "Skill auto-applied: hyp=%s confidence=%.3f",
+                                skill_match_result.hypothesis.hypothesis_id,
+                                skill_match_result.confidence,
+                            )
+                        else:
+                            # HC-SC-10: Ask Before Applying (confirmed status)
+                            audit["skill_matched_ask_before"] = (
+                                skill_match_result.hypothesis.hypothesis_id
+                            )
+                except Exception:
+                    log.debug("Skill matching skipped due to error", exc_info=True)
 
             # Save both turns to history (user + assistant)
             user_turn = ConversationTurn(role="user", content=text)
