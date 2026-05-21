@@ -43,6 +43,9 @@ encryption = [
     "keyring>=25.0",
     "pysqlcipher3>=1.2.0",
 ]
+skill-compression = [
+    "bertopic>=0.16",
+]
 
 [project.urls]
 Homepage = "https://axolent.ai"
