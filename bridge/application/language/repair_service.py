@@ -18,6 +18,7 @@ Token-cost protection:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass
@@ -201,18 +202,24 @@ class RepairService:
             )
 
             try:
-                # Issue 4: explicit short timeout for repair re-query.
-                # 15s is shorter than the initial query (120s default)
-                # because a repair means the model already proved unreliable
-                # and we want to fail fast rather than accumulate latency.
-                result = await provider_router.route(
-                    prompt=repair_prompt,
-                    system_prompt=repair_system_prompt,
-                    provider_name=provider_name,
-                    user_id=user_id,
-                    chat_id=chat_id,
-                    model=model,
-                    timeout_seconds=_REPAIR_TIMEOUT_SECONDS,
+                # Issue 4 + Codex Finding 2: enforce repair timeout at the
+                # call site with asyncio.wait_for. The timeout_seconds
+                # parameter is still passed for providers that honor it,
+                # but asyncio.wait_for is the hard backstop. Even if the
+                # provider ignores timeout_seconds (e.g. ClaudePersistent
+                # with a 120s internal timeout), the repair call WILL be
+                # cancelled after _REPAIR_TIMEOUT_SECONDS.
+                result = await asyncio.wait_for(
+                    provider_router.route(
+                        prompt=repair_prompt,
+                        system_prompt=repair_system_prompt,
+                        provider_name=provider_name,
+                        user_id=user_id,
+                        chat_id=chat_id,
+                        model=model,
+                        timeout_seconds=_REPAIR_TIMEOUT_SECONDS,
+                    ),
+                    timeout=_REPAIR_TIMEOUT_SECONDS,
                 )
 
                 if not result.success or not result.text.strip():
@@ -251,6 +258,14 @@ class RepairService:
                     attempt,
                     final_verification.detected_lang,
                 )
+
+            except asyncio.TimeoutError:
+                log.warning(
+                    "RepairService: repair_service.timeout at attempt %d (limit=%ds)",
+                    attempt,
+                    _REPAIR_TIMEOUT_SECONDS,
+                )
+                continue
 
             except Exception as exc:
                 log.error(

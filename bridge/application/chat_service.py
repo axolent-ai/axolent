@@ -1091,6 +1091,16 @@ class ChatService:
                             cid,
                         )
                         write_audit_log(stream_guard.build_audit_entry())
+                        # Issue 1 fix: report abort outcome to StatsStore
+                        # BEFORE setting cancel_event. After cancel the
+                        # presentation handler hard-exits and never reaches
+                        # save_streaming_result(), so stats would be lost.
+                        if self._stream_guard_stats_store is not None:
+                            _abort_stats = self._stream_guard_stats_store.get(uid, cid)
+                            stream_guard.report_final_outcome(
+                                verification_passed=False,
+                                stats=_abort_stats,
+                            )
                         # Signal cancellation for silent retry
                         if cancel_event is not None:
                             cancel_event.set()

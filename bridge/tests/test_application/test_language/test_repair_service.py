@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
+import time
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock
 
-
 from application.language.context import LanguageContext
-from application.language.repair_service import RepairService
+from application.language.repair_service import RepairService, _REPAIR_TIMEOUT_SECONDS
 from application.language.verifier import (
     VerificationResult,
     VerificationStatus,
 )
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def _make_ctx(code: str = "de") -> LanguageContext:
@@ -363,7 +369,6 @@ class TestRepairServiceTimeout:
 
     async def test_repair_passes_timeout_to_provider(self) -> None:
         """RepairService passes timeout_seconds=15 to provider_router.route()."""
-        from application.language.repair_service import _REPAIR_TIMEOUT_SECONDS
 
         service = RepairService(max_attempts=1)
         ctx = _make_ctx("de")
@@ -430,3 +435,124 @@ class TestRepairServiceProviderName:
         assert call_kwargs.kwargs.get("provider_name") == "claude_persistent"
         # model must be the model ID
         assert call_kwargs.kwargs.get("model") == "claude-sonnet-4-6"
+
+
+class TestRepairServiceTimeoutEnforced:
+    """Codex Finding 2: repair timeout MUST be enforced via asyncio.wait_for.
+
+    Before the fix, RepairService passed timeout_seconds=15 to
+    provider_router.route(), but ClaudePersistentProvider.generate()
+    ignored that parameter. The underlying ClaudeProcessPool had
+    a hardcoded 120s timeout. So a real repair could hang for ~120s.
+
+    The fix wraps the entire provider_router.route() call in
+    asyncio.wait_for(timeout=_REPAIR_TIMEOUT_SECONDS) so the repair
+    call is forcibly cancelled after 15s regardless of what the
+    provider does internally.
+    """
+
+    async def test_hanging_provider_gets_cancelled(
+        self, monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
+        """A provider that sleeps 60s is cancelled within ~2s (monkeypatched)."""
+        # Monkeypatch _REPAIR_TIMEOUT_SECONDS to 2 for fast test
+        import application.language.repair_service as repair_mod
+
+        monkeypatch.setattr(repair_mod, "_REPAIR_TIMEOUT_SECONDS", 2)
+
+        service = RepairService(max_attempts=1)
+        ctx = _make_ctx("de")
+        verification = _make_failed_verification()
+
+        # Mock provider that hangs forever (simulates a provider
+        # that ignores timeout_seconds)
+        async def _hanging_route(**kwargs):  # noqa: ANN003
+            await asyncio.sleep(60)  # Will be cancelled by wait_for
+            # Should never reach here
+            return MagicMock(success=True, text="Should not reach", error=None)
+
+        mock_router = MagicMock()
+        mock_router.route = _hanging_route
+
+        t_start = time.monotonic()
+        result = await service.repair(
+            original_output="This is English text",
+            ctx=ctx,
+            verification_result=verification,
+            provider_router=mock_router,
+        )
+        elapsed = time.monotonic() - t_start
+
+        # Must complete within ~3s (2s timeout + overhead), not 60s
+        assert elapsed < 5.0, (
+            f"Repair took {elapsed:.1f}s, expected <5s. "
+            "asyncio.wait_for is not enforcing the timeout."
+        )
+
+        # Result must indicate failure (timeout = no repair)
+        assert result.was_repaired is False
+        assert result.repair_failed is True
+        assert result.attempts_used == 1
+
+    async def test_hanging_provider_logs_timeout_marker(
+        self, monkeypatch: "pytest.MonkeyPatch", caplog: "pytest.LogCaptureFixture"
+    ) -> None:
+        """Timeout produces a 'repair_service.timeout' log marker."""
+        import application.language.repair_service as repair_mod
+
+        monkeypatch.setattr(repair_mod, "_REPAIR_TIMEOUT_SECONDS", 1)
+
+        service = RepairService(max_attempts=1)
+        ctx = _make_ctx("de")
+        verification = _make_failed_verification()
+
+        async def _hanging_route(**kwargs):  # noqa: ANN003
+            await asyncio.sleep(60)
+
+        mock_router = MagicMock()
+        mock_router.route = _hanging_route
+
+        with caplog.at_level(logging.WARNING):
+            await service.repair(
+                original_output="English text",
+                ctx=ctx,
+                verification_result=verification,
+                provider_router=mock_router,
+            )
+
+        # The timeout handler logs "repair_service.timeout"
+        assert any(
+            "repair_service.timeout" in record.message for record in caplog.records
+        ), (
+            "Expected 'repair_service.timeout' in log output. "
+            "This fails without the asyncio.TimeoutError handler."
+        )
+
+    async def test_successful_repair_still_works_with_wait_for(self) -> None:
+        """A fast provider still succeeds normally (no regression)."""
+        service = RepairService(max_attempts=1)
+        ctx = _make_ctx("de")
+        verification = _make_failed_verification()
+
+        mock_router = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.success = True
+        mock_response.text = (
+            "Dies ist der reparierte deutsche Text der jetzt korrekt "
+            "in der richtigen Sprache verfasst wurde und genug Woerter "
+            "enthaelt um die Verifikation zu bestehen. Dieser Text ist "
+            "definitiv auf Deutsch geschrieben worden."
+        )
+        mock_response.error = None
+        mock_router.route = AsyncMock(return_value=mock_response)
+
+        result = await service.repair(
+            original_output="This is English text that should be German",
+            ctx=ctx,
+            verification_result=verification,
+            provider_router=mock_router,
+        )
+
+        # Fast provider returns successfully
+        assert result.was_repaired is True
+        assert result.repair_failed is False

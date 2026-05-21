@@ -1,12 +1,21 @@
 """Tests for StreamGuard: early streaming abort logic."""
 
+from __future__ import annotations
+
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from application.chat_service import ChatService
 from application.language.stream_guard import (
     StreamGuard,
     StreamGuardStats,
     StreamGuardStatsStore,
+    _EARLY_ABORT_CONFIDENCE,
     _MAX_CONSECUTIVE_FP,
     _MIN_CHARS_FOR_CHECK,
 )
+from infrastructure.claude_process_pool import StreamEvent
+from infrastructure.conversation_storage import _reset_all_for_tests
 
 
 class TestStreamGuardBasics:
@@ -249,3 +258,156 @@ class TestStreamGuardStatsStore:
         assert stats.consecutive_fp == 3
         assert stats.false_positives == 3
         assert stats.should_disable is True
+
+
+class TestStreamGuardAbortWritesStats:
+    """Codex Finding 1: StreamGuard abort path MUST write stats.
+
+    This tests the real abort path in ChatService._stream():
+    when StreamGuard detects a violation during streaming,
+    cancel_event is set and the stream generator returns.
+    Before the fix, save_streaming_result() was never reached
+    so report_final_outcome() was never called and the StatsStore
+    never saw the abort. The fix calls report_final_outcome()
+    directly in the abort path before setting cancel_event.
+    """
+
+    async def test_abort_writes_stats_to_store(self) -> None:
+        """StatsStore gets an abort entry when StreamGuard triggers."""
+        _reset_all_for_tests()
+
+        # Build a mock LanguageEnforcement that enables StreamGuard creation
+        mock_enforcement = MagicMock()
+
+        # Build ChatService with language_enforcement so StatsStore is created
+        mock_router = MagicMock()
+        svc = ChatService(
+            provider_router=mock_router,
+            language_enforcement=mock_enforcement,
+        )
+
+        # Verify StatsStore was created
+        assert svc._stream_guard_stats_store is not None
+
+        # Build a mock persistent provider that yields English tokens
+        # (enough to trigger StreamGuard check at 200+ chars)
+        english_tokens = [
+            StreamEvent(event_type="init", was_cold=False, subprocess_pid=999),
+        ]
+        # Generate English content_delta tokens that will trigger abort
+        english_text = (
+            "This is clearly English text that should trigger "
+            "the StreamGuard abort because it is not German. "
+            "The language detection backend will see this as "
+            "English with very high confidence because every "
+            "single word in this text is in English language."
+        )
+        # Yield the text in one chunk (over 200 chars)
+        english_tokens.append(
+            StreamEvent(event_type="content_delta", text=english_text)
+        )
+
+        mock_provider = MagicMock()
+
+        async def _fake_streaming(**kwargs):  # noqa: ANN003
+            for tok in english_tokens:
+                yield tok
+
+        mock_provider.query_streaming = _fake_streaming
+
+        # Mock the language detection backend to return "en" with high confidence
+        mock_backend = MagicMock()
+        mock_backend.detect_distribution.return_value = {
+            "en": _EARLY_ABORT_CONFIDENCE + 0.05,
+            "de": 0.05,
+        }
+
+        # Mock model profile to enable stream_guard
+        mock_profile = MagicMock()
+        mock_profile.stream_guard_enabled = True
+
+        # Mock LanguageResolver to return German context
+        from application.language.context import LanguageContext
+
+        mock_lang_ctx = LanguageContext(
+            code="de",
+            source="sticky",
+            confidence=1.0,
+            switched_from=None,
+            request_id="test-abort-stats",
+        )
+        mock_resolver_instance = MagicMock()
+        mock_resolver_instance.resolve = AsyncMock(return_value=mock_lang_ctx)
+
+        cancel_event = asyncio.Event()
+
+        # Patch external dependencies:
+        # 1. get_profile to return our mock profile (local import in chat_service)
+        # 2. LangdetectBackend to use our mock backend
+        # 3. get_history to return empty list
+        # 4. LanguageResolver to return German context
+        # 5. write_audit_log to suppress I/O
+        with (
+            patch(
+                "application.language.model_profiles.get_profile",
+                return_value=mock_profile,
+            ),
+            patch(
+                "application.language.stream_guard.LangdetectBackend",
+                return_value=mock_backend,
+            ),
+            patch(
+                "application.chat_service.get_history",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "application.language_resolver.LanguageResolver",
+                return_value=mock_resolver_instance,
+            ),
+            patch(
+                "application.chat_service.write_audit_log",
+            ),
+        ):
+            (
+                stream_iter,
+                mem_count,
+                task_meta,
+            ) = await svc.process_user_message_streaming(
+                text="Wie geht es dir?",
+                user_id=42,
+                chat_id=100,
+                username="testuser",
+                system_prompt="Du bist hilfreich.",
+                persistent_provider=mock_provider,
+                cancel_event=cancel_event,
+            )
+
+            # Consume the stream (the abort happens inside _stream())
+            events = []
+            async for event in stream_iter:
+                events.append(event)
+
+        # cancel_event must have been set by the abort path
+        assert cancel_event.is_set(), (
+            "cancel_event should be set after StreamGuard abort"
+        )
+
+        # The stream_guard in task_meta should have aborted
+        stream_guard = task_meta.get("_stream_guard")
+        assert stream_guard is not None
+        assert stream_guard.state.aborted is True
+
+        # THE CRITICAL ASSERTION: StatsStore must have the abort recorded
+        stats = svc._stream_guard_stats_store.get(42, 100)
+        assert stats.total_checks >= 1, (
+            "StatsStore must have at least 1 check after abort"
+        )
+        assert stats.total_aborts >= 1, (
+            "StatsStore must have at least 1 abort entry "
+            "(this fails without the fix because report_final_outcome "
+            "was never called in the abort path)"
+        )
+        assert stats.confirmed_aborts >= 1, (
+            "Abort with verification_passed=False counts as confirmed"
+        )
