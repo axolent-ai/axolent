@@ -1347,7 +1347,7 @@ def get_pending_skill_confirmations(
 ) -> dict:
     """Get or create the pending skill confirmation store in bot_data.
 
-    Structure: {user_id: {
+    Structure: {(user_id, chat_id, hyp_id): {
         "skill_match": SkillMatch,
         "original_text": str,
         "original_update_data": dict,
@@ -1355,11 +1355,15 @@ def get_pending_skill_confirmations(
         "envelope": RequestEnvelope,
     }}
 
+    Keys are composite tuples ``(user_id, chat_id, hypothesis_id)`` so that
+    multiple pending confirmations (different chats or different hypotheses)
+    can coexist without overwriting each other (C3-SC-01 / Phase-1a fix).
+
     Args:
         context: Telegram handler context.
 
     Returns:
-        Dict of pending confirmations keyed by user_id.
+        Dict of pending confirmations keyed by (user_id, chat_id, hyp_id).
     """
     store = context.application.bot_data.get("_pending_skill_confirmations")
     if store is None:
@@ -1433,9 +1437,12 @@ async def _handle_skill_confirm_inline(
     action = parts[1]  # "yes", "no", "never"
     hyp_id = parts[2]
 
-    # Get pending confirmation
+    # C3-SC-01: Use composite key (user_id, chat_id, hyp_id) and get() first.
+    # Only pop() after successful validation + action to avoid consuming a
+    # pending confirmation that belongs to a different button press.
     pending_store = get_pending_skill_confirmations(context)
-    pending = pending_store.pop(user_id, None)
+    store_key = (user_id, chat_id, hyp_id)
+    pending = pending_store.get(store_key)
 
     if pending is None:
         # Expired or already handled
@@ -1447,12 +1454,14 @@ async def _handle_skill_confirm_inline(
     if skill_match is not None:
         pending_hyp = skill_match.hypothesis
         if hyp_id != pending_hyp.hypothesis_id or pending_hyp.user_id != user_id:
+            # Mismatch: do NOT pop, the real pending stays for its own button
             await query.answer(text=t("skill.confirm_expired", lang), show_alert=True)
             return
 
-    # Timeout check
+    # Timeout check: pop on timeout (pending is stale, no value keeping it)
     elapsed = time.time() - pending.get("timestamp", 0)
     if elapsed > SKILL_CONFIRM_TIMEOUT_SECONDS:
+        pending_store.pop(store_key, None)
         await query.answer(text=t("skill.confirm_expired", lang), show_alert=True)
         return
 
@@ -1513,6 +1522,10 @@ async def _handle_skill_confirm_inline(
             hyp_id,
             user_id,
         )
+
+    # C3-SC-01: Pop pending AFTER successful action so a stale button click
+    # on a different confirmation cannot accidentally consume the live one.
+    pending_store.pop(store_key, None)
 
     # Note on UX flow:
     # The evidence is recorded for future interactions. The ORIGINAL message

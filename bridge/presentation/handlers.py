@@ -633,9 +633,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     await chat_service.get_chat_language(user_id, chat_id)
                     or DEFAULT_LANGUAGE
                 )
-                # Store pending confirmation
+                # Store pending confirmation (C3-SC-01: composite key)
                 _pending_store = get_pending_skill_confirmations(context)
-                _pending_store[user_id] = {
+                _hyp_id = _pre_match.hypothesis.hypothesis_id
+                _pending_store[(user_id, chat_id, _hyp_id)] = {
                     "skill_match": _pre_match,
                     "original_text": text,
                     "timestamp": time.time(),
@@ -683,7 +684,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                             exc_info=True,
                         )
                         # Clean up pending state so it doesn't linger
-                        _pending_store.pop(user_id, None)
+                        _pending_store.pop((user_id, chat_id, _hyp_id), None)
                         return
                 log.info(
                     "Ask-before-apply: showing confirmation for hyp=%s user=%d",

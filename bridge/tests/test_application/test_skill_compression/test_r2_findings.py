@@ -122,7 +122,7 @@ class TestAskBeforeApplyFailSafe:
             "handlers.py must have a plain-text fallback for failed HTML send"
         )
         # Must clean up pending state on total failure
-        assert "_pending_store.pop" in source, (
+        assert "_pending_store.pop(" in source, (
             "handlers.py must clean up pending state if confirmation send "
             "fails completely"
         )

@@ -2633,7 +2633,7 @@ class TestAskBeforeApply:
             "chat_service": mock_chat_service,
             "hypothesis_storage": MagicMock(),
             "_pending_skill_confirmations": {
-                1: {
+                (1, 10, "hyp_confirm_test"): {
                     "skill_match": mock_match,
                     "original_text": "test",
                     "timestamp": time.time(),
@@ -2693,7 +2693,7 @@ class TestAskBeforeApply:
             "chat_service": mock_chat_service,
             "hypothesis_storage": MagicMock(),
             "_pending_skill_confirmations": {
-                1: {
+                (1, 10, "hyp_no_test"): {
                     "skill_match": mock_match,
                     "original_text": "test",
                     "timestamp": time.time(),
@@ -2754,7 +2754,7 @@ class TestAskBeforeApply:
             "chat_service": mock_chat_service,
             "hypothesis_storage": mock_storage,
             "_pending_skill_confirmations": {
-                1: {
+                (1, 10, "hyp_never_test"): {
                     "skill_match": mock_match,
                     "original_text": "test",
                     "timestamp": time.time(),
@@ -2821,7 +2821,7 @@ class TestAskBeforeApply:
             "chat_service": mock_chat_service,
             "hypothesis_storage": MagicMock(),
             "_pending_skill_confirmations": {
-                1: {
+                (1, 10, "hyp_timeout_test"): {
                     "skill_match": mock_match,
                     "original_text": "test",
                     # Timestamp is far in the past (expired)
@@ -2861,3 +2861,438 @@ class TestAskBeforeApply:
         assert "skill_confirm:yes:hyp_test_123" in callback_datas
         assert "skill_confirm:no:hyp_test_123" in callback_datas
         assert "skill_confirm:never:hyp_test_123" in callback_datas
+
+
+# ---------------------------------------------------------------
+# C3-SC-01: Stale button must not consume current pending
+# ---------------------------------------------------------------
+
+
+class TestC3SC01PendingStoreCompositeKey:
+    """C3-SC-01: Mismatched callback must not consume live pending state.
+
+    Option B variant: composite key (user_id, chat_id, hyp_id) so that
+    parallel chats and hypotheses coexist independently.
+    """
+
+    @pytest.mark.asyncio
+    async def test_stale_button_does_not_consume_current_pending(self) -> None:
+        """Stale button (hyp-A) must leave pending for hyp-B intact."""
+        import time
+        from presentation.skill_commands import _handle_skill_confirm_inline
+        from application.skill_compression.skill_matcher import SkillMatch
+        from application.skill_compression.hypothesis_storage import (
+            Hypothesis,
+            HypothesisScope,
+        )
+
+        # Current pending is for hyp-B
+        mock_hyp_b = Hypothesis(
+            hypothesis_id="hyp-B",
+            user_id=1,
+            type="preference",
+            scope=HypothesisScope(),
+            claim="real pending",
+            status="confirmed",
+            version=1,
+            elo_rating=1500.0,
+            source_type="live_chat",
+            decay_immune=False,
+            created_at="2026-01-01T00:00:00Z",
+            last_seen="2026-01-01T00:00:00Z",
+        )
+        mock_match_b = SkillMatch(
+            hypothesis=mock_hyp_b,
+            confidence=0.8,
+            requires_confirmation=True,
+            explanation="test",
+        )
+
+        pending_store = {
+            (1, 10, "hyp-B"): {
+                "skill_match": mock_match_b,
+                "original_text": "test",
+                "timestamp": time.time(),
+            }
+        }
+
+        mock_context = MagicMock()
+        mock_chat_service = MagicMock()
+        mock_chat_service._write_skill_evidence = MagicMock()
+        mock_context.application.bot_data = {
+            "chat_service": mock_chat_service,
+            "hypothesis_storage": MagicMock(),
+            "_pending_skill_confirmations": pending_store,
+        }
+
+        mock_query = AsyncMock()
+        mock_query.answer = AsyncMock()
+        mock_query.edit_message_text = AsyncMock()
+
+        # User clicks stale button for hyp-A (not in store at all)
+        await _handle_skill_confirm_inline(
+            mock_query, mock_context, 1, 10, "skill_confirm:yes:hyp-A", "en"
+        )
+
+        # hyp-B must still be in the store
+        assert (1, 10, "hyp-B") in pending_store, (
+            "Pending for hyp-B must survive a stale button click for hyp-A"
+        )
+        # No evidence written
+        mock_chat_service._write_skill_evidence.assert_not_called()
+        # User gets expired alert
+        mock_query.answer.assert_called_once()
+        assert mock_query.answer.call_args[1].get("show_alert") is True
+
+    @pytest.mark.asyncio
+    async def test_successful_yes_removes_pending(self) -> None:
+        """Successful 'yes' callback must pop pending from store."""
+        import time
+        from presentation.skill_commands import _handle_skill_confirm_inline
+        from application.skill_compression.skill_matcher import SkillMatch
+        from application.skill_compression.hypothesis_storage import (
+            Hypothesis,
+            HypothesisScope,
+        )
+
+        mock_hyp = Hypothesis(
+            hypothesis_id="hyp-Y",
+            user_id=1,
+            type="preference",
+            scope=HypothesisScope(),
+            claim="yes test",
+            status="confirmed",
+            version=1,
+            elo_rating=1500.0,
+            source_type="live_chat",
+            decay_immune=False,
+            created_at="2026-01-01T00:00:00Z",
+            last_seen="2026-01-01T00:00:00Z",
+        )
+        mock_match = SkillMatch(
+            hypothesis=mock_hyp,
+            confidence=0.8,
+            requires_confirmation=True,
+            explanation="test",
+        )
+
+        pending_store = {
+            (1, 10, "hyp-Y"): {
+                "skill_match": mock_match,
+                "original_text": "test",
+                "timestamp": time.time(),
+            }
+        }
+
+        mock_context = MagicMock()
+        mock_chat_service = MagicMock()
+        mock_chat_service._write_skill_evidence = MagicMock()
+        mock_context.application.bot_data = {
+            "chat_service": mock_chat_service,
+            "hypothesis_storage": MagicMock(),
+            "_pending_skill_confirmations": pending_store,
+        }
+
+        mock_query = AsyncMock()
+        mock_query.answer = AsyncMock()
+        mock_query.edit_message_text = AsyncMock()
+
+        await _handle_skill_confirm_inline(
+            mock_query, mock_context, 1, 10, "skill_confirm:yes:hyp-Y", "en"
+        )
+
+        assert (1, 10, "hyp-Y") not in pending_store, (
+            "Pending must be removed after successful yes"
+        )
+        mock_chat_service._write_skill_evidence.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_successful_never_removes_pending(self) -> None:
+        """Successful 'never' callback must pop pending from store."""
+        import time
+        from presentation.skill_commands import _handle_skill_confirm_inline
+        from application.skill_compression.skill_matcher import SkillMatch
+        from application.skill_compression.hypothesis_storage import (
+            Hypothesis,
+            HypothesisScope,
+        )
+
+        mock_hyp = Hypothesis(
+            hypothesis_id="hyp-N",
+            user_id=1,
+            type="preference",
+            scope=HypothesisScope(),
+            claim="never test",
+            status="confirmed",
+            version=1,
+            elo_rating=1500.0,
+            source_type="live_chat",
+            decay_immune=False,
+            created_at="2026-01-01T00:00:00Z",
+            last_seen="2026-01-01T00:00:00Z",
+        )
+        mock_match = SkillMatch(
+            hypothesis=mock_hyp,
+            confidence=0.8,
+            requires_confirmation=True,
+            explanation="test",
+        )
+
+        pending_store = {
+            (1, 10, "hyp-N"): {
+                "skill_match": mock_match,
+                "original_text": "test",
+                "timestamp": time.time(),
+            }
+        }
+
+        mock_context = MagicMock()
+        mock_chat_service = MagicMock()
+        mock_chat_service._write_skill_evidence = MagicMock()
+        mock_storage = MagicMock()
+        mock_context.application.bot_data = {
+            "chat_service": mock_chat_service,
+            "hypothesis_storage": mock_storage,
+            "_pending_skill_confirmations": pending_store,
+        }
+
+        mock_query = AsyncMock()
+        mock_query.answer = AsyncMock()
+        mock_query.edit_message_text = AsyncMock()
+
+        await _handle_skill_confirm_inline(
+            mock_query, mock_context, 1, 10, "skill_confirm:never:hyp-N", "en"
+        )
+
+        assert (1, 10, "hyp-N") not in pending_store, (
+            "Pending must be removed after successful never"
+        )
+        mock_chat_service._write_skill_evidence.assert_called_once()
+        mock_storage.transition_hypothesis_status.assert_called_once_with(
+            "hyp-N", "paused"
+        )
+
+    @pytest.mark.asyncio
+    async def test_timeout_removes_pending(self) -> None:
+        """Timed-out pending must be popped from store."""
+        import time
+        from presentation.skill_commands import (
+            _handle_skill_confirm_inline,
+            SKILL_CONFIRM_TIMEOUT_SECONDS,
+        )
+        from application.skill_compression.skill_matcher import SkillMatch
+        from application.skill_compression.hypothesis_storage import (
+            Hypothesis,
+            HypothesisScope,
+        )
+
+        mock_hyp = Hypothesis(
+            hypothesis_id="hyp-T",
+            user_id=1,
+            type="preference",
+            scope=HypothesisScope(),
+            claim="timeout test",
+            status="confirmed",
+            version=1,
+            elo_rating=1500.0,
+            source_type="live_chat",
+            decay_immune=False,
+            created_at="2026-01-01T00:00:00Z",
+            last_seen="2026-01-01T00:00:00Z",
+        )
+        mock_match = SkillMatch(
+            hypothesis=mock_hyp,
+            confidence=0.8,
+            requires_confirmation=True,
+            explanation="test",
+        )
+
+        pending_store = {
+            (1, 10, "hyp-T"): {
+                "skill_match": mock_match,
+                "original_text": "test",
+                "timestamp": time.time() - SKILL_CONFIRM_TIMEOUT_SECONDS - 60,
+            }
+        }
+
+        mock_context = MagicMock()
+        mock_chat_service = MagicMock()
+        mock_chat_service._write_skill_evidence = MagicMock()
+        mock_context.application.bot_data = {
+            "chat_service": mock_chat_service,
+            "hypothesis_storage": MagicMock(),
+            "_pending_skill_confirmations": pending_store,
+        }
+
+        mock_query = AsyncMock()
+        mock_query.answer = AsyncMock()
+        mock_query.edit_message_text = AsyncMock()
+
+        await _handle_skill_confirm_inline(
+            mock_query, mock_context, 1, 10, "skill_confirm:yes:hyp-T", "en"
+        )
+
+        assert (1, 10, "hyp-T") not in pending_store, (
+            "Timed-out pending must be removed from store"
+        )
+        mock_chat_service._write_skill_evidence.assert_not_called()
+        mock_query.answer.assert_called_once()
+        assert mock_query.answer.call_args[1].get("show_alert") is True
+
+    @pytest.mark.asyncio
+    async def test_parallel_chats_independent_pending(self) -> None:
+        """User in chat 10 and chat 20 can have independent pending states."""
+        import time
+        from presentation.skill_commands import _handle_skill_confirm_inline
+        from application.skill_compression.skill_matcher import SkillMatch
+        from application.skill_compression.hypothesis_storage import (
+            Hypothesis,
+            HypothesisScope,
+        )
+
+        def _make_hyp(hyp_id: str) -> Hypothesis:
+            return Hypothesis(
+                hypothesis_id=hyp_id,
+                user_id=1,
+                type="preference",
+                scope=HypothesisScope(),
+                claim=f"claim for {hyp_id}",
+                status="confirmed",
+                version=1,
+                elo_rating=1500.0,
+                source_type="live_chat",
+                decay_immune=False,
+                created_at="2026-01-01T00:00:00Z",
+                last_seen="2026-01-01T00:00:00Z",
+            )
+
+        hyp_chat10 = _make_hyp("hyp-C10")
+        hyp_chat20 = _make_hyp("hyp-C20")
+        match_chat10 = SkillMatch(
+            hypothesis=hyp_chat10,
+            confidence=0.8,
+            requires_confirmation=True,
+            explanation="test",
+        )
+        match_chat20 = SkillMatch(
+            hypothesis=hyp_chat20,
+            confidence=0.8,
+            requires_confirmation=True,
+            explanation="test",
+        )
+
+        pending_store = {
+            (1, 10, "hyp-C10"): {
+                "skill_match": match_chat10,
+                "original_text": "test chat 10",
+                "timestamp": time.time(),
+            },
+            (1, 20, "hyp-C20"): {
+                "skill_match": match_chat20,
+                "original_text": "test chat 20",
+                "timestamp": time.time(),
+            },
+        }
+
+        mock_context = MagicMock()
+        mock_chat_service = MagicMock()
+        mock_chat_service._write_skill_evidence = MagicMock()
+        mock_context.application.bot_data = {
+            "chat_service": mock_chat_service,
+            "hypothesis_storage": MagicMock(),
+            "_pending_skill_confirmations": pending_store,
+        }
+
+        mock_query = AsyncMock()
+        mock_query.answer = AsyncMock()
+        mock_query.edit_message_text = AsyncMock()
+
+        # Confirm in chat 10
+        await _handle_skill_confirm_inline(
+            mock_query, mock_context, 1, 10, "skill_confirm:yes:hyp-C10", "en"
+        )
+
+        # Chat 10 pending consumed, chat 20 pending survives
+        assert (1, 10, "hyp-C10") not in pending_store
+        assert (1, 20, "hyp-C20") in pending_store, (
+            "Pending in chat 20 must survive confirmation in chat 10"
+        )
+
+    @pytest.mark.asyncio
+    async def test_multiple_pending_same_user_different_hyp(self) -> None:
+        """Same user, same chat, two different hypotheses coexist."""
+        import time
+        from presentation.skill_commands import _handle_skill_confirm_inline
+        from application.skill_compression.skill_matcher import SkillMatch
+        from application.skill_compression.hypothesis_storage import (
+            Hypothesis,
+            HypothesisScope,
+        )
+
+        def _make_hyp(hyp_id: str) -> Hypothesis:
+            return Hypothesis(
+                hypothesis_id=hyp_id,
+                user_id=1,
+                type="preference",
+                scope=HypothesisScope(),
+                claim=f"claim for {hyp_id}",
+                status="confirmed",
+                version=1,
+                elo_rating=1500.0,
+                source_type="live_chat",
+                decay_immune=False,
+                created_at="2026-01-01T00:00:00Z",
+                last_seen="2026-01-01T00:00:00Z",
+            )
+
+        hyp_a = _make_hyp("hyp-MA")
+        hyp_b = _make_hyp("hyp-MB")
+        match_a = SkillMatch(
+            hypothesis=hyp_a,
+            confidence=0.8,
+            requires_confirmation=True,
+            explanation="test",
+        )
+        match_b = SkillMatch(
+            hypothesis=hyp_b,
+            confidence=0.8,
+            requires_confirmation=True,
+            explanation="test",
+        )
+
+        pending_store = {
+            (1, 10, "hyp-MA"): {
+                "skill_match": match_a,
+                "original_text": "test A",
+                "timestamp": time.time(),
+            },
+            (1, 10, "hyp-MB"): {
+                "skill_match": match_b,
+                "original_text": "test B",
+                "timestamp": time.time(),
+            },
+        }
+
+        mock_context = MagicMock()
+        mock_chat_service = MagicMock()
+        mock_chat_service._write_skill_evidence = MagicMock()
+        mock_context.application.bot_data = {
+            "chat_service": mock_chat_service,
+            "hypothesis_storage": MagicMock(),
+            "_pending_skill_confirmations": pending_store,
+        }
+
+        mock_query = AsyncMock()
+        mock_query.answer = AsyncMock()
+        mock_query.edit_message_text = AsyncMock()
+
+        # Confirm hyp-MA
+        await _handle_skill_confirm_inline(
+            mock_query, mock_context, 1, 10, "skill_confirm:no:hyp-MA", "en"
+        )
+
+        # hyp-MA consumed, hyp-MB survives
+        assert (1, 10, "hyp-MA") not in pending_store
+        assert (1, 10, "hyp-MB") in pending_store, (
+            "Pending for hyp-MB must survive when hyp-MA is handled"
+        )
