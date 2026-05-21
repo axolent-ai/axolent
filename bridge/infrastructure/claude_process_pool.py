@@ -345,8 +345,14 @@ class ClaudeProcessPool:
             try:
                 async for event in self._read_response(managed, cancel_event):
                     managed.last_used = time.monotonic()
-                    if event.is_final:
+                    if event.event_type == "result" and event.is_final:
                         response_completed = True
+                    elif event.event_type == "error" and event.is_final:
+                        # Synthetic cancel/timeout/read-error: the stream
+                        # did not reach a normal Claude result.  Leave
+                        # response_completed=False so the finally block
+                        # marks the process dirty if it is still alive.
+                        pass
                     yield event
             finally:
                 if not response_completed and self._is_alive(managed):

@@ -15,6 +15,7 @@ CRITICAL DESIGN NOTES (from Codex review):
 from __future__ import annotations
 
 import logging
+from collections import OrderedDict
 from dataclasses import dataclass
 from enum import Enum
 
@@ -271,6 +272,16 @@ class StreamGuard:
         We would rather classify uncertain cases as UNKNOWN than
         incorrectly call something a confirmed abort.
 
+        Determinism note: langdetect with seed=0 returns identical
+        results for identical text. For texts where target_prob is
+        near the 0.30 threshold or the abort_confidence is near 0.85,
+        a one-token text difference could flip the classification
+        between FP/CONFIRMED/UNKNOWN. Conservative threshold
+        calibration (0.30 FP threshold is generous, 0.10 CONFIRMED
+        ceiling is strict) keeps this edge case robust in practice.
+        If production data shows unstable classifications, consider
+        adding hysteresis bands (e.g. 0.25-0.35 = UNKNOWN, not FP).
+
         Args:
             accumulated_text: The partial stream text at abort time.
             stats: Cumulative stats for self-calibration.
@@ -334,6 +345,7 @@ class StreamGuard:
             )
 
         self._state.outcome = outcome
+        self._record_check(stats)
         self._apply_outcome_to_stats(outcome, stats)
         return outcome
 
@@ -358,7 +370,7 @@ class StreamGuard:
         if not self._state.check_performed:
             return
 
-        stats.total_checks += 1
+        self._record_check(stats)
 
         if self._state.aborted:
             stats.total_aborts += 1
@@ -392,6 +404,24 @@ class StreamGuard:
                 self._state.disable_reason,
             )
 
+    def _record_check(self, stats: StreamGuardStats | None) -> None:
+        """Idempotent total_checks increment (once per guard lifecycle).
+
+        Both ``classify_and_report_abort`` and ``report_final_outcome``
+        call this, but a single StreamGuard instance only increments
+        ``total_checks`` once. If both methods are called on the same
+        instance (theoretically), the second call is a no-op.
+
+        Args:
+            stats: Cumulative stats (None = no-op).
+        """
+        if stats is None:
+            return
+        if getattr(self, "_check_recorded", False):
+            return
+        self._check_recorded = True
+        stats.total_checks += 1
+
     def _apply_outcome_to_stats(
         self,
         outcome: StreamGuardOutcome,
@@ -401,6 +431,11 @@ class StreamGuard:
 
         Called by classify_and_report_abort(). Separated so the
         auto-disable check can run after stats are updated.
+
+        Note: total_checks is handled by _record_check() and is
+        NOT incremented here. This prevents double-counting if
+        both classify_and_report_abort and report_final_outcome
+        are ever called on the same instance.
 
         Rules:
         - CONFIRMED_ABORT: confirmed_aborts++, consecutive_fp = 0
@@ -418,7 +453,6 @@ class StreamGuard:
         if not self._state.check_performed:
             return
 
-        stats.total_checks += 1
         stats.total_aborts += 1
 
         if outcome == StreamGuardOutcome.CONFIRMED_ABORT:
@@ -499,16 +533,27 @@ class StreamGuardStatsStore:
     Keys are (user_id, chat_id) tuples. Each key maps to a
     StreamGuardStats instance that accumulates across streaming sessions.
 
+    Uses LRU eviction with a configurable max size (default 10000) to
+    prevent unbounded memory growth in multi-user deployments.
+
     Thread-safety note: asyncio is single-threaded, so no lock is needed.
     The store lives for the lifetime of the process; a restart resets stats.
     Persistence (e.g. to DB) can be added later without changing the API.
     """
 
-    def __init__(self) -> None:
-        self._stats: dict[tuple[int, int], StreamGuardStats] = {}
+    _MAX_ENTRIES: int = 10_000  # LRU cap
+
+    def __init__(self, max_entries: int | None = None) -> None:
+        self._stats: OrderedDict[tuple[int, int], StreamGuardStats] = OrderedDict()
+        if max_entries is not None:
+            self._MAX_ENTRIES = max_entries
 
     def get(self, user_id: int, chat_id: int) -> StreamGuardStats:
         """Get or create stats for a (user_id, chat_id) pair.
+
+        Existing entries are moved to the end (LRU touch).
+        When the store exceeds _MAX_ENTRIES, the oldest entry
+        is evicted.
 
         Args:
             user_id: Telegram user ID.
@@ -518,9 +563,33 @@ class StreamGuardStatsStore:
             The cumulative StreamGuardStats for this session pair.
         """
         key = (user_id, chat_id)
-        if key not in self._stats:
-            self._stats[key] = StreamGuardStats()
-        return self._stats[key]
+        if key in self._stats:
+            self._stats.move_to_end(key)  # LRU touch
+            return self._stats[key]
+        # Evict oldest if at capacity
+        if len(self._stats) >= self._MAX_ENTRIES:
+            self._stats.popitem(last=False)
+        new_stats = StreamGuardStats()
+        self._stats[key] = new_stats
+        return new_stats
+
+    def clear(self, user_id: int, chat_id: int) -> bool:
+        """Explicitly remove stats for a (user_id, chat_id) pair.
+
+        Useful on /reset to free memory for a terminated session.
+
+        Args:
+            user_id: Telegram user ID.
+            chat_id: Telegram chat ID.
+
+        Returns:
+            True if an entry was removed, False if key was not found.
+        """
+        key = (user_id, chat_id)
+        if key in self._stats:
+            del self._stats[key]
+            return True
+        return False
 
     def all_stats(self) -> dict[tuple[int, int], StreamGuardStats]:
         """Return all stored stats (read-only snapshot).

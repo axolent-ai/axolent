@@ -206,6 +206,69 @@ class TestStreamGuardAudit:
         assert entry["detected_at_abort"] == "en"
 
 
+class TestTotalChecksIdempotency:
+    """Claude Post-Switch Item 1: total_checks must be idempotent.
+
+    Both classify_and_report_abort and report_final_outcome previously
+    incremented total_checks independently. If both were called on the
+    same StreamGuard instance (theoretically possible), total_checks
+    would be double-counted. The fix uses _record_check() which is
+    idempotent per instance.
+    """
+
+    def test_classify_then_report_does_not_double_count(self) -> None:
+        """Calling classify_and_report_abort + report_final_outcome
+        on the same instance: total_checks stays at 1."""
+        backend = _StubBackend({"en": 0.92, "de": 0.03})
+        guard = StreamGuard(expected_lang="de", enabled=True, backend=backend)
+        guard._state.check_performed = True
+        guard._state.aborted = True
+        guard._state.detected_lang_at_abort = "en"
+
+        stats = StreamGuardStats()
+
+        # First: classify (abort path)
+        guard.classify_and_report_abort(
+            accumulated_text="English text " * 20,
+            stats=stats,
+        )
+        assert stats.total_checks == 1
+
+        # Second: report_final_outcome (theoretically, not in production)
+        guard.report_final_outcome(verification_passed=False, stats=stats)
+
+        # total_checks must still be 1, not 2
+        assert stats.total_checks == 1, (
+            "total_checks must be idempotent: _record_check guards "
+            "against double-counting when both methods are called"
+        )
+
+    def test_classify_alone_increments_once(self) -> None:
+        """classify_and_report_abort alone increments total_checks by 1."""
+        backend = _StubBackend({"en": 0.92, "de": 0.03})
+        guard = StreamGuard(expected_lang="de", enabled=True, backend=backend)
+        guard._state.check_performed = True
+        guard._state.aborted = True
+        guard._state.detected_lang_at_abort = "en"
+
+        stats = StreamGuardStats()
+        guard.classify_and_report_abort(
+            accumulated_text="English text " * 20,
+            stats=stats,
+        )
+        assert stats.total_checks == 1
+
+    def test_report_final_alone_increments_once(self) -> None:
+        """report_final_outcome alone increments total_checks by 1."""
+        guard = StreamGuard(expected_lang="de", enabled=True)
+        guard._state.check_performed = True
+        guard._state.aborted = True
+
+        stats = StreamGuardStats()
+        guard.report_final_outcome(verification_passed=False, stats=stats)
+        assert stats.total_checks == 1
+
+
 class TestStreamGuardStatsStore:
     """Issue 1: StreamGuardStatsStore provides per-session stats."""
 
@@ -243,6 +306,77 @@ class TestStreamGuardStatsStore:
         assert len(snapshot) == 2
         assert (1, 100) in snapshot
         assert (2, 200) in snapshot
+
+    def test_lru_eviction_at_max_entries(self) -> None:
+        """When store exceeds max entries, oldest entry is evicted."""
+        store = StreamGuardStatsStore(max_entries=3)
+
+        stats_1 = store.get(user_id=1, chat_id=1)
+        stats_1.total_checks = 10  # mark for identification
+        store.get(user_id=2, chat_id=2)
+        store.get(user_id=3, chat_id=3)
+
+        # Store is full (3/3). Adding a 4th must evict the oldest (1, 1)
+        store.get(user_id=4, chat_id=4)
+
+        snapshot = store.all_stats()
+        assert len(snapshot) == 3
+        assert (1, 1) not in snapshot, (
+            "Oldest entry (1,1) must be evicted when LRU cap is reached"
+        )
+        assert (2, 2) in snapshot
+        assert (3, 3) in snapshot
+        assert (4, 4) in snapshot
+
+    def test_lru_touch_prevents_eviction(self) -> None:
+        """Accessing an existing entry moves it to the end (LRU touch),
+        so it is not the eviction candidate."""
+        store = StreamGuardStatsStore(max_entries=3)
+
+        store.get(user_id=1, chat_id=1)
+        store.get(user_id=2, chat_id=2)
+        store.get(user_id=3, chat_id=3)
+
+        # Touch (1, 1) to make it the most recently used
+        store.get(user_id=1, chat_id=1)
+
+        # Now (2, 2) is the oldest. Adding (4, 4) should evict (2, 2)
+        store.get(user_id=4, chat_id=4)
+
+        snapshot = store.all_stats()
+        assert (1, 1) in snapshot, "Recently touched (1,1) must survive eviction"
+        assert (2, 2) not in snapshot, "Oldest untouched entry (2,2) must be evicted"
+
+    def test_clear_removes_entry(self) -> None:
+        """clear() removes a specific entry and returns True."""
+        store = StreamGuardStatsStore()
+        store.get(user_id=1, chat_id=100)
+        store.get(user_id=2, chat_id=200)
+
+        result = store.clear(user_id=1, chat_id=100)
+        assert result is True
+        assert (1, 100) not in store.all_stats()
+        assert len(store.all_stats()) == 1
+
+    def test_clear_nonexistent_returns_false(self) -> None:
+        """clear() on a nonexistent key returns False."""
+        store = StreamGuardStatsStore()
+        result = store.clear(user_id=99, chat_id=99)
+        assert result is False
+
+    def test_large_scale_lru_eviction(self) -> None:
+        """10001 unique entries: oldest must be evicted at default cap."""
+        store = StreamGuardStatsStore(max_entries=100)
+
+        for i in range(101):
+            store.get(user_id=i, chat_id=i)
+
+        snapshot = store.all_stats()
+        assert len(snapshot) == 100
+        assert (0, 0) not in snapshot, (
+            "First inserted entry must be evicted after exceeding cap"
+        )
+        assert (100, 100) in snapshot
 
     def test_stats_accumulate_across_sessions(self) -> None:
         """Stats accumulate across multiple StreamGuard sessions."""

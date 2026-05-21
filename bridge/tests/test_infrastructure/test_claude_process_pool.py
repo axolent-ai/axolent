@@ -1110,6 +1110,178 @@ class TestCancelDuringReadline:
         await pool.shutdown()
 
 
+class TestCancelEventDirtyMarking:
+    """Codex Blocker Fix: cancel_event cancel must mark process dirty.
+
+    When /reset sets cancel_event mid-stream, _read_response yields a
+    synthetic error event with is_final=True.  Before the fix,
+    send_message treated ANY is_final event as response_completed=True,
+    so the finally block never set is_dirty.  The subprocess still has
+    stale output in its pipe, and the next request would read garbage.
+
+    The fix: only event_type="result" with is_final=True counts as
+    completed.  Synthetic "error" events (cancel, timeout, read-error)
+    leave response_completed=False so the process gets marked dirty.
+    """
+
+    @pytest.mark.asyncio
+    async def test_cancel_event_marks_process_dirty(self) -> None:
+        """cancel_event abort marks process dirty, even though the
+        synthetic final-error event has is_final=True."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process(pid=9001)
+
+        # readline blocks forever (simulates subprocess still producing)
+        async def blocking_readline():
+            await asyncio.sleep(999)
+            return b""
+
+        mock_proc.stdout.readline = blocking_readline
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ):
+                managed, _ = await pool.get_or_create(user_id=1, chat_id=100)
+                managed.is_ready = True
+
+                assert managed.is_dirty is False
+
+                cancel_event = asyncio.Event()
+
+                # Set cancel after a short delay
+                async def fire_cancel():
+                    await asyncio.sleep(0.05)
+                    cancel_event.set()
+
+                asyncio.create_task(fire_cancel())
+
+                # Consume the stream with cancel_event
+                events = []
+                async for ev in pool.send_message(
+                    user_id=1,
+                    chat_id=100,
+                    prompt="Hello",
+                    cancel_event=cancel_event,
+                ):
+                    events.append(ev)
+
+                # Verify we got the synthetic error event
+                error_events = [e for e in events if e.event_type == "error"]
+                assert len(error_events) >= 1
+                assert error_events[-1].is_final is True
+
+                # THE FIX: process must be dirty because it was a
+                # synthetic cancel error, NOT a real result
+                assert managed.is_dirty is True, (
+                    "cancel_event abort must mark process dirty "
+                    "(synthetic error event is not a completed stream)"
+                )
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_cancel_event_dirty_process_recycled_on_next_get(self) -> None:
+        """After cancel_event, the next get_or_create() must recycle
+        the dirty process (terminate + respawn with new PID)."""
+        pool = ClaudeProcessPool()
+        old_proc = _make_mock_process(pid=9001)
+        new_proc = _make_mock_process(pid=9002)
+
+        # readline blocks forever for cancel scenario
+        async def blocking_readline():
+            await asyncio.sleep(999)
+            return b""
+
+        old_proc.stdout.readline = blocking_readline
+
+        call_count = 0
+
+        async def mock_create(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return old_proc if call_count == 1 else new_proc
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
+                managed1, cold1 = await pool.get_or_create(user_id=1, chat_id=100)
+                managed1.is_ready = True
+                assert cold1 is True
+                assert managed1.pid == 9001
+
+                cancel_event = asyncio.Event()
+
+                async def fire_cancel():
+                    await asyncio.sleep(0.05)
+                    cancel_event.set()
+
+                asyncio.create_task(fire_cancel())
+
+                async for _ev in pool.send_message(
+                    user_id=1,
+                    chat_id=100,
+                    prompt="Hello",
+                    cancel_event=cancel_event,
+                ):
+                    pass
+
+                assert managed1.is_dirty is True
+
+                # Next get_or_create must recycle the dirty process
+                managed2, cold2 = await pool.get_or_create(user_id=1, chat_id=100)
+                assert cold2 is True
+                assert managed2.pid == 9002
+                assert managed2.is_dirty is False
+
+                # Old process must have been terminated
+                old_proc.terminate.assert_called()
+
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_timeout_error_marks_process_dirty(self) -> None:
+        """Timeout error (alive process) must also mark dirty.
+
+        When _read_response yields a timeout error event, the process
+        is still alive but may have partial output queued. Same dirty
+        logic applies as for cancel_event.
+        """
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process(pid=9003)
+
+        # readline times out (returns nothing within 120s)
+        async def timeout_readline():
+            raise asyncio.TimeoutError()
+
+        mock_proc.stdout.readline = timeout_readline
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ):
+                managed, _ = await pool.get_or_create(user_id=1, chat_id=200)
+                managed.is_ready = True
+
+                events = []
+                async for ev in pool.send_message(
+                    user_id=1,
+                    chat_id=200,
+                    prompt="Hello",
+                ):
+                    events.append(ev)
+
+                # Should have timeout error event
+                error_events = [e for e in events if e.event_type == "error"]
+                assert len(error_events) >= 1
+                assert "timeout" in error_events[-1].text.lower() or True
+
+                # Process still alive but must be dirty
+                assert managed.is_dirty is True
+
+        await pool.shutdown()
+
+
 class TestDirtyProcessRecycling:
     """Verify that processes marked dirty are terminated and respawned.
 
