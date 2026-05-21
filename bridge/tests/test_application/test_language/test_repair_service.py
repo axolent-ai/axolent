@@ -290,3 +290,143 @@ class TestRepairServiceAudit:
         entry = service.build_audit_entry(result)
 
         assert entry["event_type"] == "language_repair_failed"
+
+
+class TestRepairServiceLongOutputAudit:
+    """Issue 3: long output skip produces distinct audit event."""
+
+    async def test_long_output_has_skipped_reason(self) -> None:
+        """Outputs >5000 chars get skipped_reason='output_too_long'."""
+        service = RepairService()
+        ctx = _make_ctx("de")
+        verification = _make_failed_verification()
+        long_text = "x" * 6000
+
+        result = await service.repair(
+            original_output=long_text,
+            ctx=ctx,
+            verification_result=verification,
+            provider_router=MagicMock(),
+        )
+
+        assert result.skipped_reason == "output_too_long"
+        assert result.was_repaired is False
+        assert result.repair_failed is False
+
+    def test_long_output_audit_entry_has_distinct_event_type(self) -> None:
+        """Audit entry for long-output skip uses language_repair_skipped_too_long."""
+        from application.language.repair_service import RepairResult
+
+        result = RepairResult(
+            original_output="x" * 6000,
+            repaired_output="x" * 6000,
+            was_repaired=False,
+            attempts_used=0,
+            verification_before=_make_failed_verification(),
+            verification_after=None,
+            latency_ms=0.1,
+            repair_failed=False,
+            skipped_reason="output_too_long",
+        )
+
+        service = RepairService()
+        entry = service.build_audit_entry(result)
+
+        assert entry["event_type"] == "language_repair_skipped_too_long"
+        assert entry["skipped_reason"] == "output_too_long"
+        assert entry["output_length"] == 6000
+
+    def test_normal_skip_has_no_skipped_reason(self) -> None:
+        """Normal repair skip (no router) has skipped_reason=None."""
+        from application.language.repair_service import RepairResult
+
+        result = RepairResult(
+            original_output="short",
+            repaired_output="short",
+            was_repaired=False,
+            attempts_used=0,
+            verification_before=_make_failed_verification(),
+            verification_after=None,
+            latency_ms=0.0,
+            repair_failed=False,
+        )
+
+        assert result.skipped_reason is None
+        service = RepairService()
+        entry = service.build_audit_entry(result)
+        assert entry["event_type"] == "language_repair_skipped"
+        assert "skipped_reason" not in entry
+
+
+class TestRepairServiceTimeout:
+    """Issue 4: repair re-query uses explicit timeout."""
+
+    async def test_repair_passes_timeout_to_provider(self) -> None:
+        """RepairService passes timeout_seconds=15 to provider_router.route()."""
+        from application.language.repair_service import _REPAIR_TIMEOUT_SECONDS
+
+        service = RepairService(max_attempts=1)
+        ctx = _make_ctx("de")
+        verification = _make_failed_verification()
+
+        mock_router = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.success = True
+        mock_response.text = (
+            "Dies ist der reparierte deutsche Text der jetzt korrekt "
+            "in der richtigen Sprache verfasst wurde und genug Woerter "
+            "enthaelt um die Verifikation zu bestehen. Dieser Text ist "
+            "definitiv auf Deutsch geschrieben worden."
+        )
+        mock_response.error = None
+        mock_router.route = AsyncMock(return_value=mock_response)
+
+        await service.repair(
+            original_output="This is English text that should be German",
+            ctx=ctx,
+            verification_result=verification,
+            provider_router=mock_router,
+        )
+
+        # Assert route() was called with timeout_seconds=15
+        mock_router.route.assert_called_once()
+        call_kwargs = mock_router.route.call_args
+        assert call_kwargs.kwargs.get("timeout_seconds") == _REPAIR_TIMEOUT_SECONDS
+        assert _REPAIR_TIMEOUT_SECONDS == 15
+
+
+class TestRepairServiceProviderName:
+    """Issue 2: repair uses provider_name, not model ID."""
+
+    async def test_provider_name_passed_through(self) -> None:
+        """provider_name argument is forwarded to provider_router.route()."""
+        service = RepairService(max_attempts=1)
+        ctx = _make_ctx("de")
+        verification = _make_failed_verification()
+
+        mock_router = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.success = True
+        mock_response.text = (
+            "Dies ist der reparierte deutsche Text der jetzt korrekt "
+            "in der richtigen Sprache verfasst wurde und genug Woerter "
+            "enthaelt um die Verifikation zu bestehen. Dieser Text ist "
+            "definitiv auf Deutsch geschrieben worden."
+        )
+        mock_response.error = None
+        mock_router.route = AsyncMock(return_value=mock_response)
+
+        await service.repair(
+            original_output="This is English",
+            ctx=ctx,
+            verification_result=verification,
+            provider_router=mock_router,
+            provider_name="claude_persistent",
+            model="claude-sonnet-4-6",
+        )
+
+        call_kwargs = mock_router.route.call_args
+        # provider_name must be the actual provider, not the model ID
+        assert call_kwargs.kwargs.get("provider_name") == "claude_persistent"
+        # model must be the model ID
+        assert call_kwargs.kwargs.get("model") == "claude-sonnet-4-6"

@@ -241,6 +241,14 @@ class ChatService:
         self.fallback_resolver = fallback_resolver
         self._language_enforcement = language_enforcement
 
+        # LCP v1: StreamGuard stats store for self-calibration (Issue 1).
+        # Process-wide, keyed by (user_id, chat_id).
+        self._stream_guard_stats_store: Any = None
+        if language_enforcement is not None:
+            from application.language.stream_guard import StreamGuardStatsStore
+
+            self._stream_guard_stats_store = StreamGuardStatsStore()
+
         # Central prompt composer (Phase 2): single source for system prompt construction
         self._composer = PromptComposer(
             proactive_trigger_service=proactive_trigger_service,
@@ -1028,7 +1036,24 @@ class ChatService:
 
             profile = get_profile(user_model)
             if profile.stream_guard_enabled:
-                stream_guard = StreamGuard(expected_lang=lang, enabled=True)
+                # Issue 1: check cumulative stats for auto-disable state
+                guard_enabled = True
+                if self._stream_guard_stats_store is not None:
+                    existing_stats = self._stream_guard_stats_store.get(uid, cid)
+                    if existing_stats.should_disable:
+                        guard_enabled = False
+                        log.info(
+                            "StreamGuard auto-disabled for user=%d chat=%d "
+                            "(consecutive_fp=%d, fp_rate=%.1f%%)",
+                            uid,
+                            cid,
+                            existing_stats.consecutive_fp,
+                            existing_stats.fp_rate * 100,
+                        )
+                stream_guard = StreamGuard(
+                    expected_lang=lang,
+                    enabled=guard_enabled,
+                )
 
         # Streaming via persistent provider
         # T25: cancel_event is captured in closure and propagated to the pool.
@@ -1080,6 +1105,10 @@ class ChatService:
         task_meta["_language_code"] = lang
         task_meta["_language_ctx"] = _lang_ctx
         task_meta["_user_model"] = user_model
+        # Issue 2: store actual provider name (not model ID) for repair routing.
+        # Streaming always uses claude_persistent; resolved_model is a model ID
+        # like "claude-sonnet-4-6" which ProviderRouter cannot route to.
+        task_meta["_provider_name"] = "claude_persistent"
 
         return _stream(), memory_entries_loaded, task_meta
 
@@ -1169,17 +1198,22 @@ class ChatService:
                 response_text = enforcement_result.final_output
                 language_enforced = True
 
-            # Codex Finding 7: wire StreamGuard self-calibration.
+            # Codex Finding 7 + Issue 1: wire StreamGuard self-calibration.
             # After enforcement we know whether verification passed.
-            # Report this to StreamGuard so it can track false positives.
+            # Report this to StreamGuard with stats so it can track FPs.
             _stream_guard = (task_meta or {}).get("_stream_guard")
             if _stream_guard is not None:
                 verification_passed = (
                     enforcement_result.verification is None
                     or enforcement_result.verification.passed
                 )
+                # Retrieve cumulative stats for this (user, chat) pair
+                _sg_stats = None
+                if self._stream_guard_stats_store is not None:
+                    _sg_stats = self._stream_guard_stats_store.get(user_id, chat_id)
                 _stream_guard.report_final_outcome(
                     verification_passed=verification_passed,
+                    stats=_sg_stats,
                 )
 
         # Save to history

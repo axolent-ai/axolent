@@ -283,3 +283,41 @@ class StreamGuard:
             entry["disable_reason"] = self._state.disable_reason
 
         return entry
+
+
+class StreamGuardStatsStore:
+    """Process-wide in-memory store for StreamGuard self-calibration stats.
+
+    Keys are (user_id, chat_id) tuples. Each key maps to a
+    StreamGuardStats instance that accumulates across streaming sessions.
+
+    Thread-safety note: asyncio is single-threaded, so no lock is needed.
+    The store lives for the lifetime of the process; a restart resets stats.
+    Persistence (e.g. to DB) can be added later without changing the API.
+    """
+
+    def __init__(self) -> None:
+        self._stats: dict[tuple[int, int], StreamGuardStats] = {}
+
+    def get(self, user_id: int, chat_id: int) -> StreamGuardStats:
+        """Get or create stats for a (user_id, chat_id) pair.
+
+        Args:
+            user_id: Telegram user ID.
+            chat_id: Telegram chat ID.
+
+        Returns:
+            The cumulative StreamGuardStats for this session pair.
+        """
+        key = (user_id, chat_id)
+        if key not in self._stats:
+            self._stats[key] = StreamGuardStats()
+        return self._stats[key]
+
+    def all_stats(self) -> dict[tuple[int, int], StreamGuardStats]:
+        """Return all stored stats (read-only snapshot).
+
+        Returns:
+            Copy of the internal stats dict.
+        """
+        return dict(self._stats)

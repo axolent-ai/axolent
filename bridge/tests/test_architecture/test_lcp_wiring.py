@@ -140,3 +140,27 @@ class TestHandlersPassLanguageDataToStreamingSave:
             "language_enforcement kwarg. Debate responses will skip "
             "language verification."
         )
+
+
+class TestHandlersProviderNameNotModelId:
+    """Issue 2: handlers.py must pass _provider_name, not resolved_model.
+
+    Regression guard: if someone changes provider_name back to
+    task_meta.get("resolved_model"), repair will fail silently because
+    ProviderRouter does not recognise model IDs as provider names.
+    """
+
+    def test_provider_name_uses_provider_name_key(self) -> None:
+        """provider_name kwarg must use _provider_name, not resolved_model."""
+        source = _read_source("presentation/handlers.py")
+        # The fixed line must contain _provider_name
+        assert 'task_meta.get("_provider_name")' in source, (
+            "handlers.py must use task_meta.get('_provider_name') for the "
+            "provider_name parameter, not resolved_model (which is a model ID)."
+        )
+        # The old bug pattern must NOT be present for provider_name
+        # (resolved_model may still be used for other purposes like user_model)
+        assert 'provider_name=task_meta.get("resolved_model")' not in source, (
+            "handlers.py still uses resolved_model as provider_name. "
+            "This causes 'Provider not registered' errors during repair."
+        )

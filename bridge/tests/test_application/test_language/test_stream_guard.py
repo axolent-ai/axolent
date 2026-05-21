@@ -3,6 +3,7 @@
 from application.language.stream_guard import (
     StreamGuard,
     StreamGuardStats,
+    StreamGuardStatsStore,
     _MAX_CONSECUTIVE_FP,
     _MIN_CHARS_FOR_CHECK,
 )
@@ -193,3 +194,58 @@ class TestStreamGuardAudit:
         entry = guard.build_audit_entry()
         assert entry["aborted"] is True
         assert entry["detected_at_abort"] == "en"
+
+
+class TestStreamGuardStatsStore:
+    """Issue 1: StreamGuardStatsStore provides per-session stats."""
+
+    def test_get_creates_stats_on_first_access(self) -> None:
+        """First access for a (user, chat) pair creates fresh stats."""
+        store = StreamGuardStatsStore()
+        stats = store.get(user_id=1, chat_id=100)
+        assert isinstance(stats, StreamGuardStats)
+        assert stats.total_checks == 0
+        assert stats.total_aborts == 0
+
+    def test_get_returns_same_stats_for_same_key(self) -> None:
+        """Repeated access for same (user, chat) returns the same object."""
+        store = StreamGuardStatsStore()
+        stats_a = store.get(user_id=1, chat_id=100)
+        stats_a.total_checks = 5
+        stats_b = store.get(user_id=1, chat_id=100)
+        assert stats_b is stats_a
+        assert stats_b.total_checks == 5
+
+    def test_get_returns_different_stats_for_different_key(self) -> None:
+        """Different (user, chat) pairs get independent stats."""
+        store = StreamGuardStatsStore()
+        stats_1 = store.get(user_id=1, chat_id=100)
+        stats_2 = store.get(user_id=2, chat_id=200)
+        stats_1.total_checks = 10
+        assert stats_2.total_checks == 0
+
+    def test_all_stats_returns_snapshot(self) -> None:
+        """all_stats returns a dict copy of all stored entries."""
+        store = StreamGuardStatsStore()
+        store.get(user_id=1, chat_id=100)
+        store.get(user_id=2, chat_id=200)
+        snapshot = store.all_stats()
+        assert len(snapshot) == 2
+        assert (1, 100) in snapshot
+        assert (2, 200) in snapshot
+
+    def test_stats_accumulate_across_sessions(self) -> None:
+        """Stats accumulate across multiple StreamGuard sessions."""
+        store = StreamGuardStatsStore()
+        stats = store.get(user_id=1, chat_id=100)
+
+        # Simulate 3 sessions with false positives
+        for _ in range(3):
+            guard = StreamGuard(expected_lang="de", enabled=True)
+            guard._state.check_performed = True
+            guard._state.aborted = True
+            guard.report_final_outcome(verification_passed=True, stats=stats)
+
+        assert stats.consecutive_fp == 3
+        assert stats.false_positives == 3
+        assert stats.should_disable is True

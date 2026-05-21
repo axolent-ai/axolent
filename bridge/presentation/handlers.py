@@ -967,7 +967,7 @@ async def _handle_message_streaming(
                 language_code=task_meta.get("_language_code"),
                 language_ctx=task_meta.get("_language_ctx"),
                 user_model=task_meta.get("_user_model"),
-                provider_name=task_meta.get("resolved_model"),
+                provider_name=task_meta.get("_provider_name"),
             )
             # C-3: If leakage detected, final edit with refusal
             if checked_text != final_text:
