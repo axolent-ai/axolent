@@ -1090,17 +1090,29 @@ class ChatService:
                             uid,
                             cid,
                         )
-                        write_audit_log(stream_guard.build_audit_entry())
-                        # Issue 1 fix: report abort outcome to StatsStore
-                        # BEFORE setting cancel_event. After cancel the
-                        # presentation handler hard-exits and never reaches
+                        # Issue 1 fix + FP-Detection fix: classify the
+                        # abort via partial verification BEFORE setting
+                        # cancel_event. After cancel the presentation
+                        # handler hard-exits and never reaches
                         # save_streaming_result(), so stats would be lost.
+                        #
+                        # classify_and_report_abort() runs the detection
+                        # backend on the accumulated partial text (no new
+                        # provider call) and classifies the outcome as
+                        # CONFIRMED / FALSE_POSITIVE / UNKNOWN.
                         if self._stream_guard_stats_store is not None:
                             _abort_stats = self._stream_guard_stats_store.get(uid, cid)
-                            stream_guard.report_final_outcome(
-                                verification_passed=False,
+                            stream_guard.classify_and_report_abort(
+                                accumulated_text=accumulated_for_guard,
                                 stats=_abort_stats,
                             )
+                        else:
+                            stream_guard.classify_and_report_abort(
+                                accumulated_text=accumulated_for_guard,
+                            )
+                        # Write audit AFTER classification so the entry
+                        # includes outcome and partial verification data.
+                        write_audit_log(stream_guard.build_audit_entry())
                         # Signal cancellation for silent retry
                         if cancel_event is not None:
                             cancel_event.set()

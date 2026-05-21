@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from application.chat_service import ChatService
 from application.language.stream_guard import (
     StreamGuard,
+    StreamGuardOutcome,
     StreamGuardStats,
     StreamGuardStatsStore,
     _EARLY_ABORT_CONFIDENCE,
@@ -409,5 +410,188 @@ class TestStreamGuardAbortWritesStats:
             "was never called in the abort path)"
         )
         assert stats.confirmed_aborts >= 1, (
-            "Abort with verification_passed=False counts as confirmed"
+            "Abort with clear wrong-language partial text counts as "
+            "CONFIRMED_ABORT via classify_and_report_abort()"
         )
+
+
+# ---------------------------------------------------------------------------
+# FP-Detection Fix: Partial Verification + Outcome Classification
+# ---------------------------------------------------------------------------
+
+
+class _StubBackend:
+    """Configurable stub backend for partial-verification tests.
+
+    Returns a fixed distribution regardless of input text.
+    """
+
+    def __init__(self, distribution: dict[str, float]) -> None:
+        self._distribution = distribution
+
+    def detect_distribution(self, text: str) -> dict[str, float]:
+        return dict(self._distribution)
+
+
+class TestPartialVerificationOutcomes:
+    """FP-Detection fix: classify_and_report_abort() partial verification."""
+
+    def test_wrong_language_partial_gives_confirmed_abort(self) -> None:
+        """Clear wrong-language partial text: CONFIRMED_ABORT.
+
+        Backend returns high confidence for wrong lang, near-zero
+        for target lang. This is the happy path where StreamGuard
+        was right to abort.
+        """
+        backend = _StubBackend({"en": 0.92, "de": 0.03})
+        guard = StreamGuard(expected_lang="de", enabled=True, backend=backend)
+        guard._state.check_performed = True
+        guard._state.aborted = True
+        guard._state.detected_lang_at_abort = "en"
+
+        stats = StreamGuardStats()
+        outcome = guard.classify_and_report_abort(
+            accumulated_text="This is clearly English text " * 10,
+            stats=stats,
+        )
+
+        assert outcome == StreamGuardOutcome.CONFIRMED_ABORT
+        assert guard.state.outcome == StreamGuardOutcome.CONFIRMED_ABORT
+        assert stats.confirmed_aborts == 1
+        assert stats.false_positives == 0
+        assert stats.unknown_aborts == 0
+        assert stats.consecutive_fp == 0
+
+    def test_target_language_partial_gives_false_positive_abort(self) -> None:
+        """Target language present in partial text: FALSE_POSITIVE_ABORT.
+
+        Backend shows significant target-lang presence (>= 0.30).
+        StreamGuard should not have aborted. This is the scenario
+        that was previously invisible (always counted as confirmed).
+        """
+        backend = _StubBackend({"de": 0.45, "en": 0.40})
+        guard = StreamGuard(expected_lang="de", enabled=True, backend=backend)
+        guard._state.check_performed = True
+        guard._state.aborted = True
+        guard._state.detected_lang_at_abort = "en"
+
+        stats = StreamGuardStats()
+        outcome = guard.classify_and_report_abort(
+            accumulated_text="mixed text " * 10,
+            stats=stats,
+        )
+
+        assert outcome == StreamGuardOutcome.FALSE_POSITIVE_ABORT
+        assert stats.false_positives == 1
+        assert stats.confirmed_aborts == 0
+        assert stats.consecutive_fp == 1
+
+    def test_low_confidence_partial_gives_unknown_abort(self) -> None:
+        """Ambiguous partial text: UNKNOWN_ABORT.
+
+        Target lang has some presence (0.10 <= prob < 0.30) but not
+        enough to call it a false positive. Detected lang also not
+        dominant enough for confirmed. This is the genuinely unclear
+        case that previously was lumped in with confirmed aborts.
+        """
+        backend = _StubBackend({"en": 0.55, "de": 0.20, "nl": 0.15})
+        guard = StreamGuard(expected_lang="de", enabled=True, backend=backend)
+        guard._state.check_performed = True
+        guard._state.aborted = True
+        guard._state.detected_lang_at_abort = "en"
+
+        stats = StreamGuardStats()
+        outcome = guard.classify_and_report_abort(
+            accumulated_text="ambiguous text " * 10,
+            stats=stats,
+        )
+
+        assert outcome == StreamGuardOutcome.UNKNOWN_ABORT
+        assert stats.unknown_aborts == 1
+        assert stats.confirmed_aborts == 0
+        assert stats.false_positives == 0
+
+    def test_false_positive_abort_increments_consecutive_fp(self) -> None:
+        """FALSE_POSITIVE_ABORT must increment consecutive_fp.
+
+        This is the core fix: consecutive_fp now actually gets
+        incremented when partial verification detects a false
+        positive, enabling the auto-disable mechanism.
+        """
+        backend = _StubBackend({"de": 0.50, "en": 0.35})
+        stats = StreamGuardStats(consecutive_fp=1)
+
+        guard = StreamGuard(expected_lang="de", enabled=True, backend=backend)
+        guard._state.check_performed = True
+        guard._state.aborted = True
+        guard._state.detected_lang_at_abort = "en"
+
+        guard.classify_and_report_abort(
+            accumulated_text="text " * 50,
+            stats=stats,
+        )
+
+        assert stats.consecutive_fp == 2
+        assert stats.false_positives == 1
+
+    def test_unknown_aborts_do_not_disable_guard(self) -> None:
+        """5x UNKNOWN_ABORT must NOT disable StreamGuard.
+
+        UNKNOWN means "we don't know if the abort was right".
+        Disabling the guard based on uncertainty would be wrong.
+        Only confirmed false positives (consecutive_fp >= 3) should
+        trigger auto-disable.
+        """
+        backend = _StubBackend({"en": 0.55, "de": 0.20, "nl": 0.15})
+        stats = StreamGuardStats()
+
+        for _ in range(5):
+            guard = StreamGuard(expected_lang="de", enabled=True, backend=backend)
+            guard._state.check_performed = True
+            guard._state.aborted = True
+            guard._state.detected_lang_at_abort = "en"
+            guard.classify_and_report_abort(
+                accumulated_text="ambiguous " * 30,
+                stats=stats,
+            )
+
+        assert stats.unknown_aborts == 5
+        assert stats.consecutive_fp == 0
+        assert stats.should_disable is False
+
+    def test_audit_entry_contains_outcome_no_user_text(self) -> None:
+        """Audit entry must contain outcome but NEVER user text.
+
+        Privacy constraint: the audit log must not leak accumulated
+        stream content. It may contain language codes, confidence
+        scores, text length, and outcome classification.
+        """
+        backend = _StubBackend({"en": 0.90, "de": 0.05})
+        guard = StreamGuard(expected_lang="de", enabled=True, backend=backend)
+        guard._state.check_performed = True
+        guard._state.aborted = True
+        guard._state.detected_lang_at_abort = "en"
+        guard._state.abort_confidence = 0.90
+        guard._state.partial_text_length = 248
+
+        guard.classify_and_report_abort(
+            accumulated_text="This is secret user text that must not appear " * 5,
+        )
+
+        entry = guard.build_audit_entry()
+
+        # Must contain outcome metadata
+        assert "outcome" in entry
+        assert entry["outcome"] == "confirmed_abort"
+        assert "expected_lang" in entry
+        assert "detected_at_abort" in entry
+        assert "partial_length" in entry
+        assert entry["partial_length"] == 248
+        assert "partial_verification_confidence" in entry
+        assert "abort_confidence" in entry
+
+        # Must NOT contain user text
+        all_values = " ".join(str(v) for v in entry.values())
+        assert "secret user text" not in all_values
+        assert "accumulated" not in entry
+        assert "text" not in entry  # no key called "text" or similar
