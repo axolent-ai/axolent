@@ -1,1 +1,1 @@
-"""Tests for the skill-compression engine (Steps 1-3)."""
+"""Tests for the skill-compression engine (Steps 1-4)."""

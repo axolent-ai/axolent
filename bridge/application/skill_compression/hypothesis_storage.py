@@ -23,7 +23,9 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Optional, Protocol
+from uuid import uuid4
 
 log = logging.getLogger(__name__)
 
@@ -619,6 +621,124 @@ class HypothesisStorage:
                 created_at,
             ),
         )
+
+    def create_new_version(
+        self,
+        hypothesis_id: str,
+        new_claim: str,
+        change_reason: str,
+        predecessor_context: Optional[str] = None,
+    ) -> Optional[Hypothesis]:
+        """Create a new version of a hypothesis (HC-SC-12).
+
+        Archives the current version into hypothesis_versions with
+        deprecated_at = now, then creates a new hypothesis row with:
+          - version = old_version + 1
+          - elo_rating = 1500 (reset, needs re-confirmation)
+          - support_count = 0
+          - contradict_count = 0
+          - status = 'suggested' (IC-VERSION-1: enters normal lifecycle)
+          - predecessor_context referencing old evidence
+
+        Historical evidence stays with the old version (HC-SC-12).
+        New version starts fresh with no evidence, requiring user
+        confirmation through the normal lifecycle.
+
+        Args:
+            hypothesis_id: ID of the hypothesis to version.
+            new_claim: Updated claim text for the new version.
+            change_reason: Why the version is being created.
+            predecessor_context: Optional text reference to prior evidence.
+
+        Returns:
+            New Hypothesis object, or None if original not found.
+        """
+        current = self.get_hypothesis(hypothesis_id)
+        if current is None:
+            log.warning(
+                "Cannot create new version: hypothesis %s not found",
+                hypothesis_id,
+            )
+            return None
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        version_id = f"ver_{uuid4().hex[:16]}"
+
+        # Build predecessor_context if not provided
+        effective_predecessor = predecessor_context
+        if effective_predecessor is None:
+            effective_predecessor = (
+                f"Predecessor v{current.version}: {current.claim}. "
+                f"Elo at archive: {current.elo_rating:.1f}, "
+                f"support: {current.support_count}, "
+                f"contradict: {current.contradict_count}."
+            )
+
+        # Step 1: Archive current version into hypothesis_versions
+        self.insert_version(
+            version_id=version_id,
+            hypothesis_id=hypothesis_id,
+            version=current.version,
+            claim=current.claim,
+            elo_rating_at_save=current.elo_rating,
+            created_at=current.created_at,
+            change_reason=change_reason,
+            predecessor_context=effective_predecessor,
+        )
+
+        # Mark the archived version with deprecated_at
+        self._conn.execute(
+            "UPDATE hypothesis_versions SET deprecated_at = ? WHERE version_id = ?",
+            (now_iso, version_id),
+        )
+
+        # Step 2: Update hypothesis row to new version
+        new_version = current.version + 1
+        self._conn.execute(
+            "UPDATE hypotheses SET "
+            "claim = ?, version = ?, elo_rating = 1500.0, "
+            "elo_games_played = 0, bayes_confidence = 0.5, "
+            "support_count = 0, contradict_count = 0, "
+            "last_contradiction_at = NULL, "
+            "status = 'suggested', last_seen = ? "
+            "WHERE hypothesis_id = ?",
+            (new_claim, new_version, now_iso, hypothesis_id),
+        )
+
+        log.info(
+            "Created new version v%d for hypothesis %s: '%s' -> '%s' (reason: %s)",
+            new_version,
+            hypothesis_id,
+            current.claim,
+            new_claim,
+            change_reason,
+        )
+
+        # Return the updated hypothesis
+        return self.get_hypothesis(hypothesis_id)
+
+    def get_version_history(
+        self,
+        hypothesis_id: str,
+    ) -> list[dict]:
+        """Retrieve full version history for a hypothesis.
+
+        Returns archived versions ordered by version number descending
+        (newest first).
+
+        Args:
+            hypothesis_id: The hypothesis ID.
+
+        Returns:
+            List of version dicts with claim, elo, change_reason, etc.
+        """
+        rows = self._conn.fetchall(
+            "SELECT * FROM hypothesis_versions "
+            "WHERE hypothesis_id = ? "
+            "ORDER BY version DESC",
+            (hypothesis_id,),
+        )
+        return [dict(r) for r in rows]
 
     # ── Local Eval Set ───────────────────────────────────────
 
