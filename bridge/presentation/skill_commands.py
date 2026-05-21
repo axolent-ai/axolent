@@ -1,4 +1,4 @@
-"""Skill Chat-Shortcuts: /skills, /skill, /forget, /learn commands.
+"""Skill Chat-Shortcuts: /skills, /skill, /forget, /learn, /explain commands.
 
 Layer 6 (UI): Telegram command handlers for skill management.
 Integrates with SkillMatcher (Layer 5) and HypothesisStorage.
@@ -8,10 +8,12 @@ Commands:
   /skill X     - Show details for skill X (by ID or name fragment)
   /forget X    - Delete skill (30-day tombstone)
   /learn       - Save last bot interaction as permanent skill
+  /explain X   - Explain a skill decision (8 question types)
 
 HC-SC-7 [BLOCKER]: Tombstones 30 days default, "nie wieder" as permanent.
 HC-SC-6 [BLOCKER]: /learn creates decay-immune skills.
 HC-SC-13 [BLOCKER]: No-Model-Secret Rule for /learn (allowlist filter).
+HC-SC-18 [BLOCKER]: 8 Explainer question types via /explain.
 
 Architecture guard: Presentation layer uses only Application services.
 No direct infra-layer or raw domain-layer access (except domain types).
@@ -37,6 +39,10 @@ from application.skill_compression.pattern_judge import (
     STATUS_CONFIRMED,
     STATUS_PAUSED,
     STATUS_RETIRED,
+)
+from application.skill_compression.skill_explainer import (
+    ExplainerQuestionType,
+    SkillExplainer,
 )
 from presentation.decorators import require_private_chat, require_whitelist
 from presentation.skill_profile_view import (
@@ -137,6 +143,65 @@ def _get_hypothesis_storage(
         HypothesisStorage or None if not initialized.
     """
     return context.application.bot_data.get("hypothesis_storage")
+
+
+def _get_skill_explainer(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> Optional[SkillExplainer]:
+    """Get SkillExplainer from bot_data.
+
+    Falls back to creating one from storage if not pre-initialized.
+
+    Args:
+        context: Telegram handler context.
+
+    Returns:
+        SkillExplainer or None.
+    """
+    explainer = context.application.bot_data.get("skill_explainer")
+    if explainer is not None:
+        return explainer
+
+    # Fallback: create from storage
+    storage = _get_hypothesis_storage(context)
+    if storage is None:
+        return None
+    return SkillExplainer(storage)
+
+
+# ---------------------------------------------------------------
+# Question type mapping for /explain
+# ---------------------------------------------------------------
+
+_QUESTION_TYPE_ALIASES: dict[str, ExplainerQuestionType] = {
+    "1": ExplainerQuestionType.WHAT_RECOGNIZED,
+    "was": ExplainerQuestionType.WHAT_RECOGNIZED,
+    "what": ExplainerQuestionType.WHAT_RECOGNIZED,
+    "erkannt": ExplainerQuestionType.WHAT_RECOGNIZED,
+    "2": ExplainerQuestionType.WHY_NOT_SKILL,
+    "warum-nicht": ExplainerQuestionType.WHY_NOT_SKILL,
+    "why-not": ExplainerQuestionType.WHY_NOT_SKILL,
+    "3": ExplainerQuestionType.WHY_PROMOTED,
+    "warum": ExplainerQuestionType.WHY_PROMOTED,
+    "why": ExplainerQuestionType.WHY_PROMOTED,
+    "promotet": ExplainerQuestionType.WHY_PROMOTED,
+    "4": ExplainerQuestionType.WHEN_DRIFT,
+    "drift": ExplainerQuestionType.WHEN_DRIFT,
+    "wann": ExplainerQuestionType.WHEN_DRIFT,
+    "5": ExplainerQuestionType.WHAT_NEEDED,
+    "nötig": ExplainerQuestionType.WHAT_NEEDED,
+    "needed": ExplainerQuestionType.WHAT_NEEDED,
+    "6": ExplainerQuestionType.LESSONS_LEARNED,
+    "lessons": ExplainerQuestionType.LESSONS_LEARNED,
+    "gelernt": ExplainerQuestionType.LESSONS_LEARNED,
+    "7": ExplainerQuestionType.SCOPE_BOUNDARIES,
+    "scope": ExplainerQuestionType.SCOPE_BOUNDARIES,
+    "grenzen": ExplainerQuestionType.SCOPE_BOUNDARIES,
+    "8": ExplainerQuestionType.COUNTER_EVIDENCE,
+    "gegen": ExplainerQuestionType.COUNTER_EVIDENCE,
+    "counter": ExplainerQuestionType.COUNTER_EVIDENCE,
+    "gegenbelege": ExplainerQuestionType.COUNTER_EVIDENCE,
+}
 
 
 # ---------------------------------------------------------------
@@ -591,6 +656,148 @@ async def handle_learn_command(
 
 
 # ---------------------------------------------------------------
+# Command: /explain X
+# ---------------------------------------------------------------
+
+
+@require_whitelist
+@require_private_chat
+async def handle_explain_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handle /explain X command: explain a skill decision.
+
+    HC-SC-18 [BLOCKER]: 8 question types available.
+
+    Usage:
+      /explain <skill_name>                - Default: what was recognized
+      /explain <skill_name> <question>     - Specific question type
+
+    Question types (by number or keyword):
+      1/was     - Was hat das Pattern erkannt?
+      2/warum-nicht - Warum nicht zum Skill?
+      3/warum   - Warum promotet?
+      4/drift   - Wann Drift erkannt?
+      5/nötig   - Was wäre nötig?
+      6/lessons - Welche Lessons?
+      7/scope   - Wo gilt es NICHT?
+      8/gegen   - Welche Gegenbelege?
+
+    Args:
+        update: Telegram update.
+        context: Telegram handler context.
+    """
+    user = update.effective_user
+    if not user:
+        return
+    user_id = user.id
+
+    storage = _get_hypothesis_storage(context)
+    if storage is None:
+        await update.message.reply_text(
+            "Skill-System noch nicht initialisiert."  # i18n: ok
+        )
+        return
+
+    explainer = _get_skill_explainer(context)
+    if explainer is None:
+        await update.message.reply_text(
+            "Skill-System noch nicht initialisiert."  # i18n: ok
+        )
+        return
+
+    args = context.args
+    if not args:
+        # Show help with all question types
+        types_list = explainer.list_question_types()
+        lines = [
+            "Nutze /explain <Skill> [Frage] um einen Skill zu erklären.",  # i18n: ok
+            "",
+            "Fragetypen:",
+        ]
+        for i, (_, desc) in enumerate(types_list, 1):
+            lines.append(f"  {i}. {desc}")
+        lines.append("")
+        lines.append("Beispiel: /explain Drehkonzepte 3")  # i18n: ok
+        await update.message.reply_text("\n".join(lines))
+        return
+
+    # Parse: last arg might be a question type number/keyword
+    raw_args = list(args)
+    question_type = ExplainerQuestionType.WHAT_RECOGNIZED  # default
+
+    # Check if last argument is a question type
+    last_arg_lower = raw_args[-1].lower()
+    if last_arg_lower in _QUESTION_TYPE_ALIASES:
+        question_type = _QUESTION_TYPE_ALIASES[last_arg_lower]
+        raw_args = raw_args[:-1]
+
+    if not raw_args:
+        await update.message.reply_text(
+            "Bitte einen Skill-Namen angeben.\n"  # i18n: ok
+            "Beispiel: /explain Drehkonzepte"
+        )
+        return
+
+    query = " ".join(raw_args).strip()
+
+    # Find the hypothesis
+    hyp = storage.get_hypothesis(query)
+    if hyp is not None and hyp.user_id == user_id:
+        response = explainer.explain(hyp.hypothesis_id, question_type)
+        await update.message.reply_text(
+            f"{response.title}\n{'=' * len(response.title)}\n\n{response.explanation}"
+        )
+        return
+
+    # Fuzzy match
+    all_hyps: list[Hypothesis] = []
+    for status in PROFILE_VISIBLE_STATUSES:
+        all_hyps.extend(
+            storage.get_hypotheses_by_user(user_id, status=status, limit=100)
+        )
+
+    query_lower = query.lower()
+    matches = [
+        h
+        for h in all_hyps
+        if query_lower in derive_skill_name(h).lower() or query_lower in h.claim.lower()
+    ]
+
+    if not matches:
+        await update.message.reply_text(
+            f"Kein Skill gefunden für '{query}'.\n"  # i18n: ok
+            "Nutze /skills für eine Übersicht."
+        )
+        return
+
+    if len(matches) == 1:
+        response = explainer.explain(matches[0].hypothesis_id, question_type)
+        await update.message.reply_text(
+            f"{response.title}\n{'=' * len(response.title)}\n\n{response.explanation}"
+        )
+        return
+
+    # Ambiguous: show selection with explain buttons
+    buttons: list[list[InlineKeyboardButton]] = []
+    for h in matches[:10]:
+        name = derive_skill_name(h)
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text=name,
+                    callback_data=f"skill_explain:{question_type.value}:{h.hypothesis_id}",
+                )
+            ]
+        )
+
+    await update.message.reply_text(
+        text=f"Mehrere Skills gefunden für '{query}':",  # i18n: ok
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
+
+# ---------------------------------------------------------------
 # Callback handlers for inline buttons
 # ---------------------------------------------------------------
 
@@ -664,11 +871,17 @@ async def handle_skill_callback(
         await _handle_undo_callback(query, storage, user_id, hyp_id)
 
     elif data.startswith("skill_explain:"):
-        # Stub for Schritt 6 (Explainer)
-        await query.answer(
-            text="Erklärung kommt in einem künftigen Update.",  # i18n: ok
-            show_alert=True,
-        )
+        # Explainer callback: skill_explain:<question_type>:<hyp_id>
+        parts = data.split(":", 2)
+        if len(parts) == 3:
+            q_type_str = parts[1]
+            hyp_id = parts[2]
+            await _handle_explain_callback(query, context, user_id, hyp_id, q_type_str)
+        elif len(parts) == 2:
+            hyp_id = parts[1]
+            await _handle_explain_callback(
+                query, context, user_id, hyp_id, "what_recognized"
+            )
 
     else:
         await query.answer()
@@ -801,3 +1014,42 @@ async def _handle_undo_callback(query, storage, user_id, hyp_id):
         f"Skill-Anwendung '{name}' rückgängig gemacht.\nWiderspruch wurde notiert."
     )
     log.info("Skill undo: hyp=%s user=%d", hyp_id, user_id)
+
+
+async def _handle_explain_callback(query, context, user_id, hyp_id, q_type_str):
+    """Show skill explanation via callback."""
+    await query.answer()
+
+    explainer = _get_skill_explainer(context)
+    if explainer is None:
+        await query.edit_message_text(
+            "Skill-System nicht initialisiert."  # i18n: ok
+        )
+        return
+
+    storage = _get_hypothesis_storage(context)
+    if storage is None:
+        await query.edit_message_text(
+            "Skill-System nicht initialisiert."  # i18n: ok
+        )
+        return
+
+    hyp = storage.get_hypothesis(hyp_id)
+    if hyp is None or hyp.user_id != user_id:
+        await query.edit_message_text("Skill nicht gefunden.")  # i18n: ok
+        return
+
+    # Resolve question type
+    try:
+        question_type = ExplainerQuestionType(q_type_str)
+    except ValueError:
+        question_type = ExplainerQuestionType.WHAT_RECOGNIZED
+
+    response = explainer.explain(hyp.hypothesis_id, question_type)
+    text = f"{response.title}\n{'=' * min(len(response.title), 40)}\n\n{response.explanation}"
+
+    # Truncate if too long for Telegram (4096 char limit)
+    if len(text) > 4000:
+        text = text[:3997] + "..."
+
+    await query.edit_message_text(text)

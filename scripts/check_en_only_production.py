@@ -121,6 +121,10 @@ WHITELIST_PATHS = {
     "bridge/presentation/skill_commands.py",
     # i18n: German user-facing skill profile/detail views (skills UI). Full i18n migration in Step 10.
     "bridge/presentation/skill_profile_view.py",
+    # i18n: German user-facing explainer texts (8 question types). Full i18n migration in Step 10.
+    "bridge/application/skill_compression/skill_explainer.py",
+    # i18n: German install-hint text for optional BERTopic dependency.
+    "bridge/application/skill_compression/topic_classifier.py",
     # i18n: _STATUS_TEXTS dict with DE + EN status messages (memory, thinking).
     "bridge/application/status_manager.py",
     # one-shot i18n add-script: contains DE translation strings as data literals.
