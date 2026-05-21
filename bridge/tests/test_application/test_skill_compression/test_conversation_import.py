@@ -67,7 +67,9 @@ class FakeDBConnection:
     """Minimal in-memory SQLite for tests."""
 
     def __init__(self):
-        self._conn = sqlite3.connect(":memory:")
+        # isolation_level=None: autocommit mode. Explicit BEGIN/COMMIT
+        # is required for transactions (matches production behavior).
+        self._conn = sqlite3.connect(":memory:", isolation_level=None)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys=ON")
 
@@ -882,3 +884,102 @@ class TestImportArchitectureGuards:
                 f"{type(importer).__name__} does not satisfy "
                 "ConversationSource protocol"
             )
+
+
+# ---------------------------------------------------------------
+# 7. RISK-1 Production Path Tests: Transactional import_folder
+# ---------------------------------------------------------------
+
+
+class TestImportFolderTransactional:
+    """RISK-1: import_folder() must be fully transactional.
+
+    On any exception mid-import, ALL writes (tracking row, hypotheses,
+    mappings) must be rolled back atomically. No partial state.
+    """
+
+    def test_import_partial_failure_rolls_back(self, tmp_path):
+        """If an exception occurs after file processing, no partial state remains.
+
+        Simulates a crash by monkey-patching the conn.execute to raise
+        on the final UPDATE statement (after hypotheses are already written
+        to the DB within the transaction). Assert: no tracking entry,
+        no hypotheses, no mapping entries after ROLLBACK.
+        """
+        # Create a file that produces hypotheses
+        f = tmp_path / "chat.txt"
+        f.write_text(
+            "User: Write Python code for analysis\n"
+            "Assistant: Here is a data analysis script.\n",
+            encoding="utf-8",
+        )
+
+        storage = _setup_storage()
+        orchestrator = ImportOrchestrator(storage, import_root=tmp_path.parent)
+        orchestrator.init_schema()
+
+        # Wrap the conn.execute to raise on the final UPDATE statement.
+        # This simulates a crash AFTER hypotheses are written but BEFORE
+        # the transaction commits (the UPDATE is the last write before COMMIT).
+        original_execute = storage._conn.execute
+        call_count = {"updates": 0}
+
+        def _failing_execute(sql, params=(), **kwargs):
+            if "UPDATE import_sources SET" in sql:
+                call_count["updates"] += 1
+                raise RuntimeError("Simulated crash on final count update")
+            return original_execute(sql, params, **kwargs)
+
+        storage._conn.execute = _failing_execute
+
+        # The import should raise (the exception propagates from outer try)
+        with pytest.raises(RuntimeError, match="Simulated crash"):
+            orchestrator.import_folder(tmp_path, user_id=99)
+
+        # Restore original execute for assertions
+        storage._conn.execute = original_execute
+
+        # CRITICAL ASSERTION: No partial state after ROLLBACK
+        # No tracking entry
+        sources = orchestrator.get_import_sources(99)
+        assert len(sources) == 0, "Tracking entry must not exist after rollback"
+
+        # No hypotheses
+        hyps = storage.get_hypotheses_by_user(99)
+        assert len(hyps) == 0, "No hypotheses must exist after rollback"
+
+        # No import_hypothesis_map entries
+        maps = storage._conn.fetchall("SELECT * FROM import_hypothesis_map", ())
+        assert len(maps) == 0, "No mapping entries must exist after rollback"
+
+    def test_import_duplicate_hash_skipped_not_aborted(self, tmp_path):
+        """If 2 files have the same fingerprint, the 2nd is skipped gracefully.
+
+        The import must not abort; tracking row must reflect correct counts.
+        """
+        # Two files with identical content (same fingerprint)
+        for name in ("chat_a.txt", "chat_b.txt"):
+            f = tmp_path / name
+            f.write_text(
+                "User: Write Python code\nAssistant: Here is code.\n",
+                encoding="utf-8",
+            )
+
+        storage = _setup_storage()
+        orchestrator = ImportOrchestrator(storage, import_root=tmp_path.parent)
+        orchestrator.init_schema()
+
+        result = orchestrator.import_folder(tmp_path, user_id=42)
+
+        # Import must complete without error
+        assert result.files_processed == 2
+        assert result.conversations_parsed == 2
+
+        # Deduplication: only 1 hypothesis created (or at most 1 per unique fp)
+        hyps = storage.get_hypotheses_by_user(42)
+        assert len(hyps) <= 1, "Duplicate hash must be skipped, not create new hyp"
+
+        # Tracking row must exist and be correct
+        sources = orchestrator.get_import_sources(42)
+        assert len(sources) == 1
+        assert sources[0]["file_count"] == 2

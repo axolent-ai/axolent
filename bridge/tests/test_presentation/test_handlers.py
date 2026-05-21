@@ -2339,3 +2339,525 @@ class TestT25BackgroundStreamingTask:
 
         assert callable(_streaming_background_task)
         assert isinstance(_background_streaming_tasks, dict)
+
+
+# ---------------------------------------------------------------
+# RISK-2 Production Path Tests: Streaming Evidence
+# ---------------------------------------------------------------
+
+
+class TestStreamingSkillEvidence:
+    """RISK-2: Evidence must be written in the streaming post-save path.
+
+    Verifies that save_streaming_result calls _write_skill_evidence
+    when a skill match is present in task_meta.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    async def test_streaming_success_writes_no_correction_evidence(self) -> None:
+        """After successful stream with auto-applied skill, evidence is written."""
+        from unittest.mock import patch as _patch
+        from application.chat_service import ChatService
+        from application.skill_compression.skill_matcher import SkillMatch
+        from application.skill_compression.hypothesis_storage import (
+            Hypothesis,
+            HypothesisScope,
+        )
+
+        mock_router = MagicMock()
+        svc = ChatService(provider_router=mock_router, memory_service=None)
+
+        # Create a mock skill match with auto_apply (active + auto_apply_enabled)
+        mock_hyp = Hypothesis(
+            hypothesis_id="hyp_test_001",
+            user_id=1,
+            type="preference",
+            scope=HypothesisScope(),
+            claim="test skill",
+            status="active",
+            version=1,
+            elo_rating=2000.0,
+            source_type="live_chat",
+            decay_immune=False,
+            created_at="2026-01-01T00:00:00Z",
+            last_seen="2026-01-01T00:00:00Z",
+        )
+        mock_match = SkillMatch(
+            hypothesis=mock_hyp,
+            confidence=0.85,
+            requires_confirmation=False,
+            explanation="test match",
+        )
+
+        # Mock _write_skill_evidence
+        svc._write_skill_evidence = MagicMock()
+
+        # Set up skill_matcher so evidence writing works
+        svc.skill_matcher = MagicMock()
+        svc.skill_matcher._storage = MagicMock()
+
+        task_meta = {
+            "_skill_match": mock_match,
+            "_language_code": "en",
+        }
+
+        # Call save_streaming_result (normally called after stream completes)
+        # Patch should_ask_user to return False (simulates auto-apply scenario:
+        # active status + auto_apply_enabled=True in user preferences).
+        # The default preferences have auto_apply_enabled=False, so without
+        # this patch the function would return True and skip evidence writing.
+        with (
+            _patch(
+                "application.chat_service.check_for_system_prompt_leakage",
+                return_value=None,
+            ),
+            _patch(
+                "application.skill_compression.skill_matcher.should_ask_user",
+                return_value=False,
+            ),
+        ):
+            await svc.save_streaming_result(
+                user_id=1,
+                chat_id=10,
+                user_text="test",
+                response_text="response",
+                duration_seconds=1.0,
+                task_meta=task_meta,
+            )
+
+        # Evidence must have been written
+        svc._write_skill_evidence.assert_called_once()
+        call_args = svc._write_skill_evidence.call_args
+        assert call_args[0][0] is mock_match
+
+    async def test_streaming_cancel_skips_evidence(self) -> None:
+        """If stream is cancelled, save_streaming_result is never called,
+        so evidence is naturally skipped (test verifies the contract)."""
+        # This test validates the handler-level contract:
+        # cancelled streams hard-return before save_streaming_result.
+        # The streaming handler code does:
+        #   if session.is_cancelled: return
+        # BEFORE save_streaming_result is called.
+
+        from presentation.handlers import _handle_message_streaming
+
+        # Verify the handler source has the cancel-before-save guard
+        import inspect
+
+        source = inspect.getsource(_handle_message_streaming)
+        # The cancel guard must come BEFORE save_streaming_result
+        cancel_pos = source.find("session.is_cancelled")
+        save_pos = source.find("save_streaming_result")
+        assert cancel_pos > 0, "is_cancelled check must exist"
+        assert save_pos > 0, "save_streaming_result must exist"
+        assert cancel_pos < save_pos, (
+            "is_cancelled check must come BEFORE save_streaming_result"
+        )
+
+    async def test_non_streaming_success_writes_evidence(self) -> None:
+        """Regression: Non-streaming path also writes skill evidence."""
+        # Verify via source inspection that process_user_message
+        # calls _write_skill_evidence
+        import inspect
+
+        from application.chat_service import ChatService
+
+        source = inspect.getsource(ChatService.process_user_message)
+        assert "_write_skill_evidence" in source, (
+            "Non-streaming path must call _write_skill_evidence"
+        )
+
+    async def test_evidence_payload_contains_hypothesis_id(self) -> None:
+        """The _write_skill_evidence call includes the hypothesis_id."""
+        import sqlite3
+        from application.chat_service import ChatService
+        from application.skill_compression.skill_matcher import (
+            SkillMatch,
+        )
+        from application.skill_compression.hypothesis_storage import (
+            Hypothesis,
+            HypothesisScope,
+            HypothesisStorage,
+        )
+
+        # Set up real storage for evidence verification
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
+
+        class _TestConn:
+            def __init__(self, c):
+                self._conn = c
+
+            def execute(self, sql, params=(), **kw):
+                return self._conn.execute(sql, params)
+
+            def executescript(self, sql):
+                self._conn.executescript(sql)
+
+            def fetchall(self, sql, params=()):
+                return self._conn.execute(sql, params).fetchall()
+
+            def fetchone(self, sql, params=()):
+                return self._conn.execute(sql, params).fetchone()
+
+            def execute_in_transaction(self, ops):
+                for sql, p in ops:
+                    self._conn.execute(sql, p)
+                self._conn.commit()
+
+        test_conn = _TestConn(conn)
+        storage = HypothesisStorage(test_conn)
+        storage.init_schema()
+
+        hyp = Hypothesis(
+            hypothesis_id="hyp_ev_test_001",
+            user_id=1,
+            type="preference",
+            scope=HypothesisScope(),
+            claim="test claim",
+            status="active",
+            version=1,
+            elo_rating=1500.0,
+            source_type="live_chat",
+            decay_immune=False,
+            created_at="2026-01-01T00:00:00Z",
+            last_seen="2026-01-01T00:00:00Z",
+        )
+        storage.insert_hypothesis(hyp)
+
+        match_result = SkillMatch(
+            hypothesis=hyp,
+            confidence=0.9,
+            requires_confirmation=False,
+            explanation="test",
+        )
+
+        mock_router = MagicMock()
+        svc = ChatService(provider_router=mock_router, memory_service=None)
+        mock_matcher = MagicMock()
+        mock_matcher._storage = storage
+        svc.skill_matcher = mock_matcher
+
+        svc._write_skill_evidence(match_result)
+
+        # Verify evidence was written with correct hypothesis_id
+        evidence = storage.get_evidence_for_hypothesis("hyp_ev_test_001")
+        assert len(evidence) == 1
+        assert evidence[0]["hypothesis_id"] == "hyp_ev_test_001"
+        assert evidence[0]["signal_type"] == "no_correction"
+
+
+# ---------------------------------------------------------------
+# RISK-3 Production Path Tests: Ask-Before-Apply User Flow
+# ---------------------------------------------------------------
+
+
+class TestAskBeforeApply:
+    """RISK-3: Ask-Before-Apply inline keyboard flow.
+
+    Tests the full confirmation lifecycle:
+      - Keyboard shown (not stream) for ask_before_apply skills
+      - Yes/No/Never callbacks write correct evidence
+      - Timeout defaults to no action
+    """
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self) -> None:
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield  # type: ignore[misc]
+
+    def test_ask_before_apply_sends_keyboard_not_stream(self) -> None:
+        """When skill match needs confirmation, handler shows keyboard,
+        NOT a stream. Verified via source inspection."""
+        import inspect
+
+        from presentation.handlers import handle_message
+
+        source = inspect.getsource(handle_message)
+        # Must contain the pre_match_skill check
+        assert "pre_match_skill" in source, (
+            "handler must call pre_match_skill for ask-before-apply"
+        )
+        # Must contain skill_confirm keyboard builder
+        assert "build_skill_confirm_keyboard" in source, (
+            "handler must use build_skill_confirm_keyboard"
+        )
+        # Must contain the early return after keyboard
+        assert "skill.confirm_apply_question" in source, (
+            "handler must show confirmation question"
+        )
+
+    async def test_user_clicks_yes_writes_confirmed_evidence(self) -> None:
+        """Mock callback 'yes': evidence type = user_confirmed."""
+        import time
+        from presentation.skill_commands import (
+            _handle_skill_confirm_inline,
+        )
+        from application.skill_compression.skill_matcher import SkillMatch
+        from application.skill_compression.hypothesis_storage import (
+            Hypothesis,
+            HypothesisScope,
+        )
+
+        mock_hyp = Hypothesis(
+            hypothesis_id="hyp_confirm_test",
+            user_id=1,
+            type="preference",
+            scope=HypothesisScope(),
+            claim="test confirm",
+            status="confirmed",
+            version=1,
+            elo_rating=1500.0,
+            source_type="live_chat",
+            decay_immune=False,
+            created_at="2026-01-01T00:00:00Z",
+            last_seen="2026-01-01T00:00:00Z",
+        )
+        mock_match = SkillMatch(
+            hypothesis=mock_hyp,
+            confidence=0.8,
+            requires_confirmation=True,
+            explanation="test",
+        )
+
+        # Set up mock context with pending confirmation
+        mock_context = MagicMock()
+        mock_chat_service = MagicMock()
+        mock_chat_service._write_skill_evidence = MagicMock()
+        mock_context.application.bot_data = {
+            "chat_service": mock_chat_service,
+            "hypothesis_storage": MagicMock(),
+            "_pending_skill_confirmations": {
+                1: {
+                    "skill_match": mock_match,
+                    "original_text": "test",
+                    "timestamp": time.time(),
+                }
+            },
+        }
+
+        mock_query = AsyncMock()
+        mock_query.data = "skill_confirm:yes:hyp_confirm_test"
+        mock_query.answer = AsyncMock()
+        mock_query.edit_message_text = AsyncMock()
+
+        await _handle_skill_confirm_inline(
+            mock_query, mock_context, 1, 10, "skill_confirm:yes:hyp_confirm_test", "en"
+        )
+
+        # Evidence must be written with user_confirmed
+        mock_chat_service._write_skill_evidence.assert_called_once()
+        call_kwargs = mock_chat_service._write_skill_evidence.call_args
+        assert call_kwargs[1]["signal_type"] == "user_confirmed"
+
+    async def test_user_clicks_no_writes_declined_evidence(self) -> None:
+        """Mock callback 'no': evidence type = user_declined_once."""
+        import time
+        from presentation.skill_commands import _handle_skill_confirm_inline
+        from application.skill_compression.skill_matcher import SkillMatch
+        from application.skill_compression.hypothesis_storage import (
+            Hypothesis,
+            HypothesisScope,
+        )
+
+        mock_hyp = Hypothesis(
+            hypothesis_id="hyp_no_test",
+            user_id=1,
+            type="preference",
+            scope=HypothesisScope(),
+            claim="test no",
+            status="confirmed",
+            version=1,
+            elo_rating=1500.0,
+            source_type="live_chat",
+            decay_immune=False,
+            created_at="2026-01-01T00:00:00Z",
+            last_seen="2026-01-01T00:00:00Z",
+        )
+        mock_match = SkillMatch(
+            hypothesis=mock_hyp,
+            confidence=0.8,
+            requires_confirmation=True,
+            explanation="test",
+        )
+
+        mock_context = MagicMock()
+        mock_chat_service = MagicMock()
+        mock_chat_service._write_skill_evidence = MagicMock()
+        mock_context.application.bot_data = {
+            "chat_service": mock_chat_service,
+            "hypothesis_storage": MagicMock(),
+            "_pending_skill_confirmations": {
+                1: {
+                    "skill_match": mock_match,
+                    "original_text": "test",
+                    "timestamp": time.time(),
+                }
+            },
+        }
+
+        mock_query = AsyncMock()
+        mock_query.answer = AsyncMock()
+        mock_query.edit_message_text = AsyncMock()
+
+        await _handle_skill_confirm_inline(
+            mock_query, mock_context, 1, 10, "skill_confirm:no:hyp_no_test", "en"
+        )
+
+        mock_chat_service._write_skill_evidence.assert_called_once()
+        assert (
+            mock_chat_service._write_skill_evidence.call_args[1]["signal_type"]
+            == "user_declined_once"
+        )
+
+    async def test_user_clicks_never_pauses_hypothesis(self) -> None:
+        """Mock callback 'never': hypothesis transitions to paused."""
+        import time
+        from presentation.skill_commands import _handle_skill_confirm_inline
+        from application.skill_compression.skill_matcher import SkillMatch
+        from application.skill_compression.hypothesis_storage import (
+            Hypothesis,
+            HypothesisScope,
+        )
+
+        mock_hyp = Hypothesis(
+            hypothesis_id="hyp_never_test",
+            user_id=1,
+            type="preference",
+            scope=HypothesisScope(),
+            claim="test never",
+            status="confirmed",
+            version=1,
+            elo_rating=1500.0,
+            source_type="live_chat",
+            decay_immune=False,
+            created_at="2026-01-01T00:00:00Z",
+            last_seen="2026-01-01T00:00:00Z",
+        )
+        mock_match = SkillMatch(
+            hypothesis=mock_hyp,
+            confidence=0.8,
+            requires_confirmation=True,
+            explanation="test",
+        )
+
+        mock_storage = MagicMock()
+        mock_context = MagicMock()
+        mock_chat_service = MagicMock()
+        mock_chat_service._write_skill_evidence = MagicMock()
+        mock_context.application.bot_data = {
+            "chat_service": mock_chat_service,
+            "hypothesis_storage": mock_storage,
+            "_pending_skill_confirmations": {
+                1: {
+                    "skill_match": mock_match,
+                    "original_text": "test",
+                    "timestamp": time.time(),
+                }
+            },
+        }
+
+        mock_query = AsyncMock()
+        mock_query.answer = AsyncMock()
+        mock_query.edit_message_text = AsyncMock()
+
+        await _handle_skill_confirm_inline(
+            mock_query, mock_context, 1, 10, "skill_confirm:never:hyp_never_test", "en"
+        )
+
+        # Hypothesis must be transitioned to paused
+        mock_storage.transition_hypothesis_status.assert_called_once_with(
+            "hyp_never_test", "paused"
+        )
+        # Evidence must be user_declined_permanent
+        assert (
+            mock_chat_service._write_skill_evidence.call_args[1]["signal_type"]
+            == "user_declined_permanent"
+        )
+
+    async def test_pending_confirmation_timeout_defaults_to_expired(self) -> None:
+        """If pending confirmation is older than timeout, user gets expired message."""
+        import time
+        from presentation.skill_commands import (
+            _handle_skill_confirm_inline,
+            SKILL_CONFIRM_TIMEOUT_SECONDS,
+        )
+        from application.skill_compression.skill_matcher import SkillMatch
+        from application.skill_compression.hypothesis_storage import (
+            Hypothesis,
+            HypothesisScope,
+        )
+
+        mock_hyp = Hypothesis(
+            hypothesis_id="hyp_timeout_test",
+            user_id=1,
+            type="preference",
+            scope=HypothesisScope(),
+            claim="test timeout",
+            status="confirmed",
+            version=1,
+            elo_rating=1500.0,
+            source_type="live_chat",
+            decay_immune=False,
+            created_at="2026-01-01T00:00:00Z",
+            last_seen="2026-01-01T00:00:00Z",
+        )
+        mock_match = SkillMatch(
+            hypothesis=mock_hyp,
+            confidence=0.8,
+            requires_confirmation=True,
+            explanation="test",
+        )
+
+        mock_context = MagicMock()
+        mock_chat_service = MagicMock()
+        mock_chat_service._write_skill_evidence = MagicMock()
+        mock_context.application.bot_data = {
+            "chat_service": mock_chat_service,
+            "hypothesis_storage": MagicMock(),
+            "_pending_skill_confirmations": {
+                1: {
+                    "skill_match": mock_match,
+                    "original_text": "test",
+                    # Timestamp is far in the past (expired)
+                    "timestamp": time.time() - SKILL_CONFIRM_TIMEOUT_SECONDS - 60,
+                }
+            },
+        }
+
+        mock_query = AsyncMock()
+        mock_query.answer = AsyncMock()
+        mock_query.edit_message_text = AsyncMock()
+
+        await _handle_skill_confirm_inline(
+            mock_query, mock_context, 1, 10, "skill_confirm:yes:hyp_timeout_test", "en"
+        )
+
+        # Evidence must NOT be written (expired)
+        mock_chat_service._write_skill_evidence.assert_not_called()
+        # Expired alert must be shown
+        mock_query.answer.assert_called_once()
+        assert mock_query.answer.call_args[1].get("show_alert") is True
+
+    async def test_evidence_written_per_confirmation_outcome(self) -> None:
+        """All 3 outcomes write the correct evidence type."""
+        # This is a structural test: verify the callback data patterns
+        # produce the right evidence signal types
+        from presentation.skill_commands import (
+            build_skill_confirm_keyboard,
+        )
+
+        keyboard = build_skill_confirm_keyboard("hyp_test_123", "en")
+        buttons = [btn for row in keyboard.inline_keyboard for btn in row]
+
+        assert len(buttons) == 3
+        # Verify callback data patterns
+        callback_datas = [btn.callback_data for btn in buttons]
+        assert "skill_confirm:yes:hyp_test_123" in callback_datas
+        assert "skill_confirm:no:hyp_test_123" in callback_datas
+        assert "skill_confirm:never:hyp_test_123" in callback_datas

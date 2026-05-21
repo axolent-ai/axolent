@@ -1283,9 +1283,52 @@ class ChatService:
         if language_enforced:
             audit["language_enforced"] = True
         # TaskRouter metadata into audit (Phase 2a confidence logging)
+        # Filter out internal objects that are not JSON-serializable
+        # (e.g. _skill_match is a SkillMatch dataclass, _stream_guard is
+        # a StreamGuard instance, _language_ctx is a LanguageContext).
+        _NON_SERIALIZABLE_KEYS = frozenset(
+            {"_skill_match", "_stream_guard", "_language_ctx"}
+        )
         if task_meta:
-            audit.update(task_meta)
+            audit.update(
+                {k: v for k, v in task_meta.items() if k not in _NON_SERIALIZABLE_KEYS}
+            )
         write_audit_log(audit)
+
+        # RISK-2 FIX: Write skill evidence in the streaming path.
+        # The non-streaming path writes evidence inline (line ~754).
+        # In streaming, _skill_match is packed into task_meta by
+        # process_user_message_streaming() and evidence is written here
+        # after a successful stream (not on cancel/error).
+        _skill_match = (task_meta or {}).get("_skill_match")
+        if _skill_match is not None:
+            try:
+                from application.skill_compression.skill_matcher import (
+                    should_ask_user,
+                )
+
+                ask = should_ask_user(_skill_match)
+                if not ask:
+                    # Auto-applied skill: write no_correction evidence
+                    self._write_skill_evidence(_skill_match)
+                    audit["skill_applied_streaming"] = (
+                        _skill_match.hypothesis.hypothesis_id
+                    )
+                    log.info(
+                        "Skill evidence written (streaming): hyp=%s confidence=%.3f",
+                        _skill_match.hypothesis.hypothesis_id,
+                        _skill_match.confidence,
+                    )
+                else:
+                    # ask_before_apply: evidence written by confirmation callback
+                    # TODO (Phase 1a): detect user corrections post-stream
+                    audit["skill_matched_ask_before_streaming"] = (
+                        _skill_match.hypothesis.hypothesis_id
+                    )
+            except Exception:
+                log.debug(
+                    "Skill evidence write failed in streaming path", exc_info=True
+                )
 
         return response_text
 
@@ -1341,11 +1384,20 @@ class ChatService:
         ]
         return "\n".join(block_lines), match_result
 
-    def _write_skill_evidence(self, match_result: "SkillMatch") -> None:
-        """Write no_correction evidence after successful skill application.
+    def _write_skill_evidence(
+        self,
+        match_result: "SkillMatch",
+        signal_type: str = "no_correction",
+        signal_strength: float = 0.3,
+    ) -> None:
+        """Write evidence after skill application/decision.
 
         Args:
-            match_result: The skill match that was applied.
+            match_result: The skill match.
+            signal_type: Evidence signal type. Defaults to "no_correction".
+                Supported: "no_correction", "user_confirmed", "user_declined_once",
+                "user_declined_permanent", "cancelled".
+            signal_strength: Signal strength [0, 1]. Defaults to 0.3.
         """
         try:
             hyp = match_result.hypothesis
@@ -1359,13 +1411,47 @@ class ChatService:
                     evidence_id=evidence_id,
                     hypothesis_id=hyp.hypothesis_id,
                     hypothesis_version=hyp.version,
-                    signal_type="no_correction",
-                    signal_strength=0.3,
+                    signal_type=signal_type,
+                    signal_strength=signal_strength,
                     created_at=now_iso,
                 )
-                storage.update_hypothesis_last_applied(hyp.hypothesis_id, now_iso)
+                if signal_type in ("no_correction", "user_confirmed"):
+                    storage.update_hypothesis_last_applied(hyp.hypothesis_id, now_iso)
         except Exception:
             log.debug("Failed to write skill evidence", exc_info=True)
+
+    def pre_match_skill(
+        self,
+        user_id: int,
+        text: str,
+        lang: str,
+        task_slot_name: str | None = None,
+    ) -> "SkillMatch | None":
+        """Pre-flight skill match check (for ask-before-apply flow).
+
+        Called by the presentation layer BEFORE starting the stream.
+        If the result requires user confirmation, the handler can show
+        an inline keyboard instead of streaming immediately.
+
+        Args:
+            user_id: User ID.
+            text: User message text.
+            lang: Detected language code.
+            task_slot_name: Task slot (optional).
+
+        Returns:
+            SkillMatch or None if no match or matcher not available.
+        """
+        if self.skill_matcher is None:
+            return None
+        try:
+            _, match_result = self._match_skills_for_prompt(
+                user_id, text, lang, task_slot_name
+            )
+            return match_result
+        except Exception:
+            log.debug("pre_match_skill failed", exc_info=True)
+            return None
 
     async def get_chat_language(self, user_id: int, chat_id: int) -> str | None:
         """Use-case wrapper: read the sticky language for a chat."""

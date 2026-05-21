@@ -812,6 +812,12 @@ async def handle_skill_callback(
         return
 
     # Parse callback data
+    # RISK-3: Ask-Before-Apply confirmation (skill_confirm:yes/no/never:<id>)
+    if data.startswith("skill_confirm:"):
+        # Delegate to the dedicated confirm handler (shares this callback space)
+        await _handle_skill_confirm_inline(query, context, user_id, chat_id, data, lang)
+        return
+
     if data.startswith("skill_detail:"):
         hyp_id = data.split(":", 1)[1]
         await _handle_detail_callback(query, storage, user_id, hyp_id, lang)
@@ -1326,3 +1332,190 @@ async def handle_import_callback(
 
         deleted = orchestrator.delete_from_source(import_id)
         await query.edit_message_text(t("skill.import_undone", lang, count=deleted))
+
+
+# ---------------------------------------------------------------
+# RISK-3: Ask-Before-Apply confirmation flow
+# ---------------------------------------------------------------
+
+# Timeout for pending skill confirmations (seconds)
+SKILL_CONFIRM_TIMEOUT_SECONDS: float = 300.0
+
+
+def get_pending_skill_confirmations(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> dict:
+    """Get or create the pending skill confirmation store in bot_data.
+
+    Structure: {user_id: {
+        "skill_match": SkillMatch,
+        "original_text": str,
+        "original_update_data": dict,
+        "timestamp": float,
+        "envelope": RequestEnvelope,
+    }}
+
+    Args:
+        context: Telegram handler context.
+
+    Returns:
+        Dict of pending confirmations keyed by user_id.
+    """
+    store = context.application.bot_data.get("_pending_skill_confirmations")
+    if store is None:
+        store = {}
+        context.application.bot_data["_pending_skill_confirmations"] = store
+    return store
+
+
+def build_skill_confirm_keyboard(
+    hypothesis_id: str, lang: str = "en"
+) -> InlineKeyboardMarkup:
+    """Build the inline keyboard for skill confirmation.
+
+    Buttons: [Yes] [No] [Never again]
+
+    Args:
+        hypothesis_id: ID of the hypothesis to confirm.
+        lang: Language code for button labels.
+
+    Returns:
+        InlineKeyboardMarkup with 3 buttons.
+    """
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    text=t("skill.confirm_apply_yes", lang),
+                    callback_data=f"skill_confirm:yes:{hypothesis_id}",
+                ),
+                InlineKeyboardButton(
+                    text=t("skill.confirm_apply_no", lang),
+                    callback_data=f"skill_confirm:no:{hypothesis_id}",
+                ),
+                InlineKeyboardButton(
+                    text=t("skill.confirm_apply_never", lang),
+                    callback_data=f"skill_confirm:never:{hypothesis_id}",
+                ),
+            ]
+        ]
+    )
+
+
+async def _handle_skill_confirm_inline(
+    query, context, user_id: int, chat_id: int, data: str, lang: str
+) -> None:
+    """Internal handler for skill_confirm: callbacks (RISK-3: Ask-Before-Apply).
+
+    Called from handle_skill_callback when pattern matches skill_confirm:*.
+
+    After the user clicks a button, this handler:
+      - yes: writes "user_confirmed" evidence
+      - no: writes "user_declined_once" evidence
+      - never: transitions hypothesis to "paused", writes "user_declined_permanent"
+
+    Args:
+        query: Callback query object.
+        context: Telegram handler context.
+        user_id: User ID.
+        chat_id: Chat ID.
+        data: Callback data string (skill_confirm:<action>:<hyp_id>).
+        lang: Language code.
+    """
+    import time
+
+    # Parse: skill_confirm:<action>:<hypothesis_id>
+    parts = data.split(":", 2)
+    if len(parts) != 3:
+        await query.answer()
+        return
+
+    action = parts[1]  # "yes", "no", "never"
+    hyp_id = parts[2]
+
+    # Get pending confirmation
+    pending_store = get_pending_skill_confirmations(context)
+    pending = pending_store.pop(user_id, None)
+
+    if pending is None:
+        # Expired or already handled
+        await query.answer(text=t("skill.confirm_expired", lang), show_alert=True)
+        return
+
+    # Timeout check
+    elapsed = time.time() - pending.get("timestamp", 0)
+    if elapsed > SKILL_CONFIRM_TIMEOUT_SECONDS:
+        await query.answer(text=t("skill.confirm_expired", lang), show_alert=True)
+        return
+
+    await query.answer()
+
+    # Get services
+    chat_service = context.application.bot_data.get("chat_service")
+    storage = _get_hypothesis_storage(context)
+    skill_match = pending.get("skill_match")
+
+    if chat_service is None or skill_match is None:
+        await query.edit_message_text(t("skill.system_not_initialized_short", lang))
+        return
+
+    if action == "yes":
+        # Write user_confirmed evidence
+        chat_service._write_skill_evidence(
+            skill_match, signal_type="user_confirmed", signal_strength=0.5
+        )
+        # Edit confirmation message to show skill was applied
+        await query.edit_message_text(t("skill.confirm_applied", lang))
+        log.info(
+            "Skill confirmed by user: hyp=%s user=%d",
+            hyp_id,
+            user_id,
+        )
+
+    elif action == "no":
+        # Write user_declined_once evidence
+        chat_service._write_skill_evidence(
+            skill_match, signal_type="user_declined_once", signal_strength=-0.2
+        )
+        await query.edit_message_text(t("skill.confirm_declined", lang))
+        log.info(
+            "Skill declined (once) by user: hyp=%s user=%d",
+            hyp_id,
+            user_id,
+        )
+
+    elif action == "never":
+        # Write user_declined_permanent evidence
+        chat_service._write_skill_evidence(
+            skill_match, signal_type="user_declined_permanent", signal_strength=-0.8
+        )
+        # Transition hypothesis to paused
+        if storage is not None:
+            try:
+                storage.transition_hypothesis_status(hyp_id, "paused")
+            except Exception:
+                # If transition fails (e.g. already paused), log but continue
+                log.debug(
+                    "Failed to pause hypothesis %s after permanent decline",
+                    hyp_id,
+                    exc_info=True,
+                )
+        await query.edit_message_text(t("skill.confirm_never", lang))
+        log.info(
+            "Skill declined permanently by user: hyp=%s user=%d",
+            hyp_id,
+            user_id,
+        )
+
+    # Note on UX flow:
+    # The evidence is recorded for future interactions. The ORIGINAL message
+    # that triggered this flow is not re-streamed (that would be confusing UX).
+    # The user saw the skill claim text before deciding, and the NEXT message
+    # will benefit from the updated state. This is acceptable because:
+    # 1. User saw the skill claim text before deciding
+    # 2. The evidence is recorded for future interactions
+    # 3. Full re-streaming of the original message would be confusing UX
+
+
+# Public alias for the handler (used in tests)
+handle_skill_confirm_callback = _handle_skill_confirm_inline

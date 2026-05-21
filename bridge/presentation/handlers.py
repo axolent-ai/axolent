@@ -607,6 +607,63 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Typing indicator
     await context.bot.send_chat_action(update.effective_chat.id, ChatAction.TYPING)
 
+    # RISK-3: Ask-Before-Apply pre-flight check.
+    # If a skill match requires user confirmation, show inline keyboard
+    # and store pending state instead of streaming immediately.
+    try:
+        _pre_match = chat_service.pre_match_skill(
+            user_id=user_id,
+            text=text,
+            lang=(
+                await chat_service.get_chat_language(user_id, chat_id)
+                or DEFAULT_LANGUAGE
+            ),
+        )
+        if _pre_match is not None:
+            from application.skill_compression.skill_matcher import should_ask_user
+
+            if should_ask_user(_pre_match):
+                from presentation.skill_commands import (
+                    build_skill_confirm_keyboard,
+                    get_pending_skill_confirmations,
+                )
+
+                _confirm_lang = (
+                    await chat_service.get_chat_language(user_id, chat_id)
+                    or DEFAULT_LANGUAGE
+                )
+                # Store pending confirmation
+                _pending_store = get_pending_skill_confirmations(context)
+                _pending_store[user_id] = {
+                    "skill_match": _pre_match,
+                    "original_text": text,
+                    "timestamp": time.time(),
+                    "envelope": _msg_envelope,
+                }
+                # Show confirmation keyboard
+                _hyp = _pre_match.hypothesis
+                _confirm_text = (
+                    f"{t('skill.confirm_apply_question', _confirm_lang)}\n\n"
+                    f"<i>{_hyp.claim}</i>"
+                )
+                _keyboard = build_skill_confirm_keyboard(
+                    _hyp.hypothesis_id, _confirm_lang
+                )
+                await update.message.reply_text(
+                    _confirm_text,
+                    reply_markup=_keyboard,
+                    parse_mode="HTML",
+                )
+                log.info(
+                    "Ask-before-apply: showing confirmation for hyp=%s user=%d",
+                    _hyp.hypothesis_id,
+                    user_id,
+                )
+                return
+    except Exception:
+        # If pre-check fails, proceed normally (non-blocking)
+        log.debug("Ask-before-apply pre-check failed, proceeding", exc_info=True)
+
     # T25: Background-Task pattern for streaming.
     # Instead of blocking the entire handler (which blocks the Update queue),
     # the streaming call runs as a background task. This allows /reset and other

@@ -1555,6 +1555,14 @@
       "source_hash": "5d8a995a6fa7cf7c",
       "auto_translated": true,
       "reviewed": false
-    }
+    },
+    "skill.confirm_apply_question": { "text": "Should I apply this skill?", "source_hash": "r3_confirm_question", "auto_translated": true, "reviewed": false },
+    "skill.confirm_apply_yes": { "text": "Yes", "source_hash": "r3_confirm_yes", "auto_translated": true, "reviewed": false },
+    "skill.confirm_apply_no": { "text": "No", "source_hash": "r3_confirm_no", "auto_translated": true, "reviewed": false },
+    "skill.confirm_apply_never": { "text": "Never again", "source_hash": "r3_confirm_never", "auto_translated": true, "reviewed": false },
+    "skill.confirm_applied": { "text": "Skill applied.", "source_hash": "r3_confirm_applied", "auto_translated": true, "reviewed": false },
+    "skill.confirm_declined": { "text": "Skill declined.", "source_hash": "r3_confirm_declined", "auto_translated": true, "reviewed": false },
+    "skill.confirm_never": { "text": "Skill paused. It will not be suggested again.", "source_hash": "r3_confirm_never_done", "auto_translated": true, "reviewed": false },
+    "skill.confirm_expired": { "text": "Confirmation expired. Please send your message again.", "source_hash": "r3_confirm_expired", "auto_translated": true, "reviewed": false }
   }
 }

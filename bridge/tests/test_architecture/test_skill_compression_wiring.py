@@ -274,3 +274,60 @@ class TestNoBarePatternJudgeInProductionWiring:
                     "PatternJudge() in main.py called WITHOUT privacy_pipeline kwarg. "
                     "This would silently disable all privacy filters."
                 )
+
+
+class TestHandlerWritesEvidenceAfterStreaming:
+    """RISK-2 Guard: chat_service.py writes evidence in streaming post-save path."""
+
+    def test_handler_writes_evidence_after_streaming(self) -> None:
+        """AST-Check: save_streaming_result contains _write_skill_evidence call."""
+        source = _read_source("application/chat_service.py")
+        tree = ast.parse(source, filename="chat_service.py")
+
+        # Find save_streaming_result method
+        found_evidence_call = False
+        for node in ast.walk(tree):
+            if isinstance(node, ast.AsyncFunctionDef):
+                if node.name == "save_streaming_result":
+                    # Search inside this method for _write_skill_evidence
+                    method_source = ast.dump(node)
+                    if "_write_skill_evidence" in method_source:
+                        found_evidence_call = True
+
+        assert found_evidence_call, (
+            "save_streaming_result() in chat_service.py must call "
+            "_write_skill_evidence for streaming evidence writes (RISK-2 fix)"
+        )
+
+
+class TestHandlerHandlesAskBeforeApplyCallback:
+    """RISK-3 Guard: handlers.py implements ask-before-apply pre-check."""
+
+    def test_handler_handles_ask_before_apply_callback(self) -> None:
+        """AST-Check: handlers.py contains pre_match_skill and
+        skill_confirm keyboard builder in the message handler."""
+        source = _read_source("presentation/handlers.py")
+
+        # Must contain pre_match_skill call
+        assert "pre_match_skill" in source, (
+            "handlers.py must call pre_match_skill for ask-before-apply (RISK-3)"
+        )
+        # Must contain skill_confirm keyboard
+        assert "build_skill_confirm_keyboard" in source, (
+            "handlers.py must use build_skill_confirm_keyboard (RISK-3)"
+        )
+        # Must contain confirmation question i18n key
+        assert "skill.confirm_apply_question" in source, (
+            "handlers.py must show skill.confirm_apply_question (RISK-3)"
+        )
+
+    def test_skill_commands_handles_confirm_callback(self) -> None:
+        """AST-Check: skill_commands.py routes skill_confirm: callbacks."""
+        source = _read_source("presentation/skill_commands.py")
+
+        assert "skill_confirm:" in source, (
+            "skill_commands.py must handle skill_confirm: callback pattern (RISK-3)"
+        )
+        assert "_handle_skill_confirm_inline" in source, (
+            "skill_commands.py must define _handle_skill_confirm_inline (RISK-3)"
+        )

@@ -343,6 +343,11 @@ class ImportOrchestrator:
         Parses all files, extracts patterns, creates hypotheses as
         'suggested' status (HC-IMPORT-1).
 
+        RISK-1 FIX: The entire import runs inside a single transaction.
+        On any unhandled exception, ALL writes (tracking row, hypotheses,
+        mappings, evidence) are rolled back atomically. Duplicate hashes
+        are skipped gracefully without aborting the transaction.
+
         Args:
             folder_path: Path to the folder to import.
             user_id: Telegram user ID for the imported hypotheses.
@@ -368,18 +373,7 @@ class ImportOrchestrator:
         import_id = f"imp_{uuid4().hex[:16]}"
         now_iso = start_time.isoformat()
 
-        # Insert import_sources record FIRST so FK constraints work
-        # for import_hypothesis_map entries created during processing.
-        # Counts will be updated at the end.
-        self._storage._conn.execute(
-            """INSERT INTO import_sources (
-                import_id, source_path, source_type, file_count,
-                conversation_count, hypothesis_count, imported_at, user_id
-            ) VALUES (?, ?, ?, 0, 0, 0, ?, ?)""",
-            (import_id, str(folder_path), "mixed", now_iso, user_id),
-        )
-
-        # Collect parseable files first for progress tracking
+        # Collect parseable files first (read-only, before transaction)
         parseable: list[tuple[Path, ConversationSource]] = []
         for file_path in self._iter_files(folder_path):
             source = self._find_source(file_path)
@@ -393,40 +387,67 @@ class ImportOrchestrator:
         hypotheses_skipped = 0
         errors: list[str] = []
 
-        for file_path, source in parseable:
-            try:
-                for conversation in source.parse(file_path):
-                    conversations_parsed += 1
+        # RISK-1: Wrap ALL storage writes in a single transaction.
+        # On crash/exception: ROLLBACK ensures no partial state.
+        conn = self._storage._conn
+        conn.execute("BEGIN")
+        try:
+            # Insert import_sources record FIRST so FK constraints work
+            # for import_hypothesis_map entries created during processing.
+            # Counts will be updated at the end.
+            conn.execute(
+                """INSERT INTO import_sources (
+                    import_id, source_path, source_type, file_count,
+                    conversation_count, hypothesis_count, imported_at, user_id
+                ) VALUES (?, ?, ?, 0, 0, 0, ?, ?)""",
+                (import_id, str(folder_path), "mixed", now_iso, user_id),
+            )
 
-                    # Extract patterns from conversation (HC-IMPORT-2)
-                    created = self._extract_and_store_patterns(
-                        conversation=conversation,
-                        user_id=user_id,
-                        import_id=import_id,
-                    )
+            for file_path, source in parseable:
+                try:
+                    for conversation in source.parse(file_path):
+                        conversations_parsed += 1
 
-                    if created:
-                        hypotheses_created += created
-                    else:
-                        hypotheses_skipped += 1
+                        # Extract patterns from conversation (HC-IMPORT-2)
+                        created = self._extract_and_store_patterns(
+                            conversation=conversation,
+                            user_id=user_id,
+                            import_id=import_id,
+                        )
 
-            except Exception as exc:
-                error_msg = f"{file_path}: {exc}"
-                errors.append(error_msg)
-                log.warning("Import error for %s: %s", file_path, exc)
+                        if created:
+                            hypotheses_created += created
+                        else:
+                            hypotheses_skipped += 1
 
-            files_processed += 1
+                except Exception as exc:
+                    error_msg = f"{file_path}: {exc}"
+                    errors.append(error_msg)
+                    log.warning("Import error for %s: %s", file_path, exc)
 
-            if on_progress is not None:
-                on_progress(files_processed, total_files, hypotheses_created)
+                files_processed += 1
 
-        # Update import source record with final counts (HC-IMPORT-3)
-        self._storage._conn.execute(
-            """UPDATE import_sources SET
-                file_count = ?, conversation_count = ?, hypothesis_count = ?
-            WHERE import_id = ?""",
-            (files_processed, conversations_parsed, hypotheses_created, import_id),
-        )
+                if on_progress is not None:
+                    on_progress(files_processed, total_files, hypotheses_created)
+
+            # Update import source record with final counts (HC-IMPORT-3)
+            conn.execute(
+                """UPDATE import_sources SET
+                    file_count = ?, conversation_count = ?, hypothesis_count = ?
+                WHERE import_id = ?""",
+                (files_processed, conversations_parsed, hypotheses_created, import_id),
+            )
+
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            log.error(
+                "Import transaction rolled back for %s (user=%d)",
+                folder_path,
+                user_id,
+                exc_info=True,
+            )
+            raise
 
         end_time = datetime.now(timezone.utc)
         duration = (end_time - start_time).total_seconds()

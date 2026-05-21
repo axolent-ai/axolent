@@ -1555,6 +1555,54 @@
       "source_hash": "5d8a995a6fa7cf7c",
       "auto_translated": false,
       "reviewed": true
+    },
+    "skill.confirm_apply_question": {
+      "text": "Soll ich diesen Skill anwenden?",
+      "source_hash": "r3_confirm_question",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.confirm_apply_yes": {
+      "text": "Ja",
+      "source_hash": "r3_confirm_yes",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.confirm_apply_no": {
+      "text": "Nein",
+      "source_hash": "r3_confirm_no",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.confirm_apply_never": {
+      "text": "Nie wieder",
+      "source_hash": "r3_confirm_never",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.confirm_applied": {
+      "text": "Skill angewendet.",
+      "source_hash": "r3_confirm_applied",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.confirm_declined": {
+      "text": "Skill abgelehnt.",
+      "source_hash": "r3_confirm_declined",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.confirm_never": {
+      "text": "Skill pausiert. Er wird nicht mehr vorgeschlagen.",
+      "source_hash": "r3_confirm_never_done",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.confirm_expired": {
+      "text": "Bestätigung abgelaufen. Bitte sende deine Nachricht erneut.",
+      "source_hash": "r3_confirm_expired",
+      "auto_translated": false,
+      "reviewed": true
     }
   }
 }
