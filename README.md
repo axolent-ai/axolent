@@ -28,8 +28,10 @@ Built for people who want a powerful AI assistant without giving up control over
 
 Most AI assistants promise multi-lingual support and hope the model follows
 the instruction. AXOLENT treats language as a system-level constraint, not
-a suggestion. Every response is verified, and drift is repaired before
-the user sees it.
+a suggestion. Every response is verified, and language drift in short
+responses (under 5000 characters) is repaired before the user sees it.
+For longer outputs, sample verification flags drift without a full
+rewrite to protect latency.
 
 ### The Problem
 
