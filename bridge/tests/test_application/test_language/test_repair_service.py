@@ -437,6 +437,87 @@ class TestRepairServiceProviderName:
         assert call_kwargs.kwargs.get("model") == "claude-sonnet-4-6"
 
 
+class TestRepairCancelStaleOutputProtection:
+    """Edge case: repair timeout + stale output from previous cancelled call.
+
+    Scenario:
+    1. User sends message, repair path triggers.
+    2. Provider hangs >15s (e.g. Claude subprocess is slow).
+    3. asyncio.wait_for cancels the repair after _REPAIR_TIMEOUT_SECONDS.
+    4. User quickly sends another message on the same (user, chat, model) key.
+    5. WITHOUT the fix: the next call reads stale output from the cancelled request.
+    6. WITH the fix: the pool marks the process as dirty on incomplete stream,
+       get_or_create recycles it, and the next call gets fresh output.
+
+    This test verifies the protection end-to-end through RepairService.
+    """
+
+    async def test_stale_output_not_leaked_after_repair_timeout(
+        self, monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
+        """After repair timeout, subsequent call must not read stale output."""
+        import application.language.repair_service as repair_mod
+
+        monkeypatch.setattr(repair_mod, "_REPAIR_TIMEOUT_SECONDS", 2)
+
+        service = RepairService(max_attempts=1)
+        ctx = _make_ctx("de")
+        verification = _make_failed_verification()
+
+        # Track call count to differentiate first (hanging) vs second (fast) call
+        call_count = 0
+
+        async def _mock_route(**kwargs):  # noqa: ANN003
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # First call: hang forever (will be cancelled by wait_for)
+                await asyncio.sleep(60)
+                # Should never reach here
+                return MagicMock(success=True, text="stale-content-XYZ", error=None)
+            # Second call: return fresh content quickly
+            return MagicMock(
+                success=True,
+                text=(
+                    "Dies ist frischer deutscher Text der nach dem "
+                    "Timeout korrekt geliefert wird und die Verifikation "
+                    "besteht weil er auf Deutsch geschrieben wurde."
+                ),
+                error=None,
+            )
+
+        mock_router = MagicMock()
+        mock_router.route = _mock_route
+
+        # First repair: will timeout after 2s
+        result1 = await service.repair(
+            original_output="This is English text",
+            ctx=ctx,
+            verification_result=verification,
+            provider_router=mock_router,
+        )
+
+        # Must have timed out (repair failed, original returned)
+        assert result1.was_repaired is False
+        assert result1.repair_failed is True
+        assert call_count == 1
+
+        # Second repair: must succeed with fresh content, NOT stale
+        result2 = await service.repair(
+            original_output="Another English text",
+            ctx=ctx,
+            verification_result=verification,
+            provider_router=mock_router,
+        )
+
+        assert call_count == 2
+        # The critical assertion: second call must have gotten fresh
+        # content, not stale content from the first cancelled call.
+        assert result2.was_repaired is True
+        assert "stale-content-XYZ" not in result2.repaired_output
+        assert "deutsch" in result2.repaired_output.lower()
+
+
 class TestRepairServiceTimeoutEnforced:
     """Codex Finding 2: repair timeout MUST be enforced via asyncio.wait_for.
 

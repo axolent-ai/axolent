@@ -90,6 +90,10 @@ class ManagedProcess:
         pid: Process ID for audit logging.
         is_ready: True when init phase is complete.
         model: Model ID this subprocess was started with.
+        is_dirty: True when the response stream was interrupted before
+            completion (e.g. by asyncio.wait_for cancel). A dirty process
+            has stale output in its stdout pipe and must be recycled by
+            get_or_create() before the next request.
     """
 
     routing_key: PoolKey
@@ -100,6 +104,7 @@ class ManagedProcess:
     is_ready: bool = False
     _accumulated_text: str = ""
     model: str = ""
+    is_dirty: bool = False
 
 
 class ClaudeProcessPool:
@@ -191,10 +196,10 @@ class ClaudeProcessPool:
         effective_model = model or CLAUDE_POOL_MODEL
         key: PoolKey = (user_id, chat_id, effective_model)
 
-        # Fast path: existing, alive process
+        # Fast path: existing, alive, clean process
         async with self._pool_lock:
             managed = self._processes.get(key)
-            if managed is not None and self._is_alive(managed):
+            if managed is not None and self._is_alive(managed) and not managed.is_dirty:
                 managed.last_used = time.monotonic()
                 return managed, False
 
@@ -208,16 +213,28 @@ class ClaudeProcessPool:
             # Double-check: another task may have spawned in the meantime
             async with self._pool_lock:
                 managed = self._processes.get(key)
-                if managed is not None and self._is_alive(managed):
+                if (
+                    managed is not None
+                    and self._is_alive(managed)
+                    and not managed.is_dirty
+                ):
                     managed.last_used = time.monotonic()
                     return managed, False
 
-                # Process is dead: clean up
+                # Process is dead or dirty: clean up and restart
                 old_managed_to_kill: ManagedProcess | None = None
-                if managed is not None and not self._is_alive(managed):
+                if managed is not None and (
+                    not self._is_alive(managed) or managed.is_dirty
+                ):
+                    reason = (
+                        "dirty (stale output after cancel)"
+                        if managed.is_dirty
+                        else "dead"
+                    )
                     log.warning(
-                        "Subprocess for key=%s is dead (pid=%d), restarting",
+                        "Subprocess for key=%s is %s (pid=%d), restarting",
                         key,
+                        reason,
                         managed.pid,
                     )
                     old_managed_to_kill = managed
@@ -317,9 +334,28 @@ class ClaudeProcessPool:
 
             # Read response events, updating last_used along the way.
             # T25: pass cancel_event so readline can be interrupted.
-            async for event in self._read_response(managed, cancel_event):
-                managed.last_used = time.monotonic()
-                yield event
+            #
+            # Dirty-tracking: if the generator is closed before a final
+            # event (result/error with is_final=True) arrives, the
+            # subprocess still has pending output in its stdout pipe.
+            # The next request on this key would read stale output.
+            # To prevent this, we mark the process as dirty so
+            # get_or_create() will terminate and respawn it.
+            response_completed = False
+            try:
+                async for event in self._read_response(managed, cancel_event):
+                    managed.last_used = time.monotonic()
+                    if event.is_final:
+                        response_completed = True
+                    yield event
+            finally:
+                if not response_completed and self._is_alive(managed):
+                    managed.is_dirty = True
+                    log.warning(
+                        "Marking subprocess pid=%d as dirty "
+                        "(response not completed, stale output likely)",
+                        managed.pid,
+                    )
 
     async def terminate_session(
         self, user_id: int, chat_id: int, model: str | None = None
@@ -367,6 +403,7 @@ class ClaudeProcessPool:
                     "idle_seconds": round(now - mp.last_used, 1),
                     "is_alive": self._is_alive(mp),
                     "is_locked": mp.lock.locked(),
+                    "is_dirty": mp.is_dirty,
                 }
             )
         return {

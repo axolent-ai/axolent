@@ -1108,3 +1108,179 @@ class TestCancelDuringReadline:
         assert events[0].event_type == "error"
         assert "cancelled" in events[0].text.lower()
         await pool.shutdown()
+
+
+class TestDirtyProcessRecycling:
+    """Verify that processes marked dirty are terminated and respawned.
+
+    Edge case: asyncio.wait_for cancels a provider call mid-stream. The
+    subprocess keeps producing output. Without the dirty flag the next
+    request on the same (user, chat, model) key would read stale output
+    from the previous, cancelled request.
+    """
+
+    @pytest.mark.asyncio
+    async def test_incomplete_stream_marks_process_dirty(self) -> None:
+        """When send_message is cancelled mid-stream, process is marked dirty.
+
+        Simulates the real scenario: asyncio.wait_for cancels the coroutine
+        that is consuming send_message while the subprocess is still producing
+        output. The finally block in send_message must mark the process dirty.
+        """
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process(pid=7777)
+
+        # readline blocks (simulates subprocess still thinking)
+        readline_call_count = 0
+
+        async def slow_readline():
+            nonlocal readline_call_count
+            readline_call_count += 1
+            await asyncio.sleep(999)
+            return b""
+
+        mock_proc.stdout.readline = slow_readline
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ):
+                managed, _ = await pool.get_or_create(user_id=1, chat_id=100)
+                managed.is_ready = True
+
+                assert managed.is_dirty is False
+
+                # Consume send_message like ClaudePersistentProvider.query() does,
+                # but cancel the consuming task after 0.2s (simulates wait_for timeout)
+                async def consume_stream():
+                    async for _ev in pool.send_message(
+                        user_id=1, chat_id=100, prompt="Hello"
+                    ):
+                        pass  # Would normally collect events
+
+                # This is what RepairService's asyncio.wait_for does:
+                # cancel the consuming task when timeout fires
+                with pytest.raises(asyncio.TimeoutError):
+                    await asyncio.wait_for(consume_stream(), timeout=0.3)
+
+                # Give the event loop a cycle for the finally block to execute
+                await asyncio.sleep(0.05)
+
+                # Process must now be marked dirty
+                assert managed.is_dirty is True, (
+                    "Process must be marked dirty after incomplete stream "
+                    "(stale output protection)"
+                )
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_completed_stream_does_not_mark_dirty(self) -> None:
+        """When send_message completes normally, process stays clean."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process(pid=8888)
+
+        result_line = json.dumps({"type": "result", "result": "OK"}) + "\n"
+        mock_proc.stdout.readline = AsyncMock(return_value=result_line.encode("utf-8"))
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ):
+                managed, _ = await pool.get_or_create(user_id=1, chat_id=200)
+                managed.is_ready = True
+
+                async for _ev in pool.send_message(
+                    user_id=1, chat_id=200, prompt="Hello"
+                ):
+                    pass
+
+                assert managed.is_dirty is False
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_get_or_create_recycles_dirty_process(self) -> None:
+        """A dirty process is terminated and replaced by a new one."""
+        pool = ClaudeProcessPool()
+        old_proc = _make_mock_process(pid=1111)
+        new_proc = _make_mock_process(pid=2222)
+
+        call_count = 0
+
+        async def mock_create(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return old_proc if call_count == 1 else new_proc
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
+                # First: create a process
+                managed1, cold1 = await pool.get_or_create(user_id=5, chat_id=500)
+                assert cold1 is True
+                assert managed1.pid == 1111
+
+                # Mark it dirty
+                managed1.is_dirty = True
+
+                # Second: get_or_create should NOT reuse the dirty process
+                managed2, cold2 = await pool.get_or_create(user_id=5, chat_id=500)
+                assert cold2 is True
+                assert managed2.pid == 2222
+                assert managed2.is_dirty is False
+
+                # Old process must have been terminated
+                old_proc.terminate.assert_called()
+
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_dirty_process_not_returned_on_fast_path(self) -> None:
+        """Fast path in get_or_create rejects dirty processes."""
+        pool = ClaudeProcessPool()
+        proc1 = _make_mock_process(pid=3333)
+        proc2 = _make_mock_process(pid=4444)
+
+        call_count = 0
+
+        async def mock_create(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return proc1 if call_count == 1 else proc2
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
+                managed1, _ = await pool.get_or_create(user_id=9, chat_id=900)
+                assert managed1.pid == 3333
+
+                # Dirty it
+                managed1.is_dirty = True
+
+                # Fast path should reject dirty, creation path spawns new
+                managed2, was_cold = await pool.get_or_create(user_id=9, chat_id=900)
+                assert was_cold is True
+                assert managed2.pid == 4444
+
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_stats_includes_dirty_flag(self) -> None:
+        """get_stats() reports is_dirty for each subprocess."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process(pid=5555)
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ):
+                managed, _ = await pool.get_or_create(user_id=1, chat_id=100)
+
+        stats = pool.get_stats()
+        assert stats["processes"][0]["is_dirty"] is False
+
+        managed.is_dirty = True
+        stats = pool.get_stats()
+        assert stats["processes"][0]["is_dirty"] is True
+
+        await pool.shutdown()
