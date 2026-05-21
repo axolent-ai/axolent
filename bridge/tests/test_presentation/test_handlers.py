@@ -2540,7 +2540,7 @@ class TestStreamingSkillEvidence:
         mock_router = MagicMock()
         svc = ChatService(provider_router=mock_router, memory_service=None)
         mock_matcher = MagicMock()
-        mock_matcher._storage = storage
+        mock_matcher.storage = storage
         svc.skill_matcher = mock_matcher
 
         svc._write_skill_evidence(match_result)

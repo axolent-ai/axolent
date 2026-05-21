@@ -458,7 +458,7 @@ def main() -> None:
 
         skill_matcher = SkillMatcher(
             storage=hypothesis_storage,
-            judge=pattern_judge,
+            pattern_judge=pattern_judge,
         )
         skill_explainer = SkillExplainer(hypothesis_storage)
         skill_learning_service = SkillLearningService(

@@ -1442,6 +1442,14 @@ async def _handle_skill_confirm_inline(
         await query.answer(text=t("skill.confirm_expired", lang), show_alert=True)
         return
 
+    # R2-SC-03: Ownership validation before processing callback
+    skill_match = pending.get("skill_match")
+    if skill_match is not None:
+        pending_hyp = skill_match.hypothesis
+        if hyp_id != pending_hyp.hypothesis_id or pending_hyp.user_id != user_id:
+            await query.answer(text=t("skill.confirm_expired", lang), show_alert=True)
+            return
+
     # Timeout check
     elapsed = time.time() - pending.get("timestamp", 0)
     if elapsed > SKILL_CONFIRM_TIMEOUT_SECONDS:
@@ -1453,7 +1461,6 @@ async def _handle_skill_confirm_inline(
     # Get services
     chat_service = context.application.bot_data.get("chat_service")
     storage = _get_hypothesis_storage(context)
-    skill_match = pending.get("skill_match")
 
     if chat_service is None or skill_match is None:
         await query.edit_message_text(t("skill.system_not_initialized_short", lang))

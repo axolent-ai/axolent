@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -176,6 +177,7 @@ _DEFAULT_IMPORT_ROOT = "~/Documents/AxolentImport"
 MAX_IMPORT_FILES: int = 10_000
 MAX_IMPORT_TOTAL_BYTES: int = 500_000_000  # 500 MB
 MAX_IMPORT_FILE_SIZE: int = 10_000_000  # 10 MB per file
+MAX_SCAN_DURATION_SECONDS: float = 60.0  # W1: scan timeout cap
 
 
 class ImportPathViolation(Exception):
@@ -774,8 +776,19 @@ class ImportOrchestrator:
         """
         files: list[Path] = []
         total_bytes = 0
+        scan_start = time.monotonic()
         try:
-            for item in sorted(folder_path.rglob("*")):
+            # NOTE: we iterate rglob lazily (no sorted() wrapping) so the
+            # timeout check can fire during directory traversal. The result
+            # list is sorted after collection for deterministic ordering.
+            for item in folder_path.rglob("*"):
+                # W1: scan duration cap (must come first to catch slow I/O)
+                if time.monotonic() - scan_start > MAX_SCAN_DURATION_SECONDS:
+                    log.info(
+                        "Import: scan timeout (%.0fs) reached, returning partial results",
+                        MAX_SCAN_DURATION_SECONDS,
+                    )
+                    break
                 # W1: skip symlinks
                 if item.is_symlink():
                     continue
@@ -813,4 +826,6 @@ class ImportOrchestrator:
                     break
         except PermissionError:
             log.warning("Permission denied scanning: %s", folder_path)
+        # Sort after collection for deterministic ordering
+        files.sort()
         return files

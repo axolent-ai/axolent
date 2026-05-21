@@ -8,6 +8,8 @@ three show-stopper findings from the Skill-Compression review:
 3. main.py must register all Skill-Compression commands + callbacks
 4. PatternJudge must NEVER be instantiated without privacy_pipeline
 5. ChatService must receive skill_matcher keyword argument
+6. R2-SC-01 Guard: All Skill-Compression component kwargs in main.py
+   must match the real __init__ signatures (inspect.signature check)
 
 These are AST/source-level checks that run without starting the bot.
 """
@@ -15,7 +17,18 @@ These are AST/source-level checks that run without starting the bot.
 from __future__ import annotations
 
 import ast
+import inspect
 from pathlib import Path
+
+from application.skill_compression.conversation_import.orchestrator import (
+    ImportOrchestrator,
+)
+from application.skill_compression.hypothesis_storage import HypothesisStorage
+from application.skill_compression.pattern_judge import PatternJudge
+from application.skill_compression.privacy.privacy_pipeline import PrivacyPipeline
+from application.skill_compression.skill_explainer import SkillExplainer
+from application.skill_compression.skill_learning_service import SkillLearningService
+from application.skill_compression.skill_matcher import SkillMatcher
 
 # bridge/ root
 _BRIDGE_ROOT = Path(__file__).resolve().parents[2]
@@ -330,4 +343,107 @@ class TestHandlerHandlesAskBeforeApplyCallback:
         )
         assert "_handle_skill_confirm_inline" in source, (
             "skill_commands.py must define _handle_skill_confirm_inline (RISK-3)"
+        )
+
+
+# ---------------------------------------------------------------
+# R2-SC-01 Guard: inspect.signature kwarg validation
+# ---------------------------------------------------------------
+
+# Map of class name (as used in main.py AST) -> actual class object
+_SKILL_COMPONENT_CLASSES: dict[str, type] = {
+    "HypothesisStorage": HypothesisStorage,
+    "PrivacyPipeline": PrivacyPipeline,
+    "PatternJudge": PatternJudge,
+    "SkillMatcher": SkillMatcher,
+    "SkillExplainer": SkillExplainer,
+    "SkillLearningService": SkillLearningService,
+    "ImportOrchestrator": ImportOrchestrator,
+}
+
+
+class TestSkillComponentKwargsMatchSignature:
+    """R2-SC-01 Guard: main.py kwargs must match real __init__ signatures.
+
+    The existing AST guards verify that SkillMatcher(...) IS called in
+    main.py, but they did NOT verify that the keyword argument names
+    match the real __init__ signature. This caused a TypeError at
+    runtime (judge= vs pattern_judge=) that the 28 existing guards
+    missed entirely.
+
+    This test class uses inspect.signature() on each of the 7
+    Skill-Compression components, extracts the valid parameter names,
+    then walks the main.py AST to verify every kwarg used in the
+    constructor call is a real parameter.
+    """
+
+    def test_all_skill_component_kwargs_match_signatures(self) -> None:
+        """Parametric check: every kwarg in main.py matches __init__."""
+        tree = _parse_ast("main.py")
+        errors: list[str] = []
+
+        for class_name, cls in _SKILL_COMPONENT_CLASSES.items():
+            # Get valid params from real __init__
+            sig = inspect.signature(cls.__init__)
+            valid_params = set(sig.parameters.keys()) - {"self"}
+
+            # Find all calls to this class in main.py
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                callee = node.func
+                name = ""
+                if isinstance(callee, ast.Name):
+                    name = callee.id
+                elif isinstance(callee, ast.Attribute):
+                    name = callee.attr
+                if name != class_name:
+                    continue
+
+                # Check each keyword argument
+                for kw in node.keywords:
+                    if kw.arg is None:
+                        continue  # **kwargs expansion
+                    if kw.arg not in valid_params:
+                        errors.append(
+                            f"main.py: {class_name}({kw.arg}=...) "
+                            f"but real __init__ params are {sorted(valid_params)}. "
+                            f"TypeError at runtime!"
+                        )
+
+        assert not errors, (
+            "Keyword argument mismatch in main.py constructor calls:\n"
+            + "\n".join(f"  - {e}" for e in errors)
+        )
+
+
+class TestChatServiceNoPrivateAttributeAccess:
+    """Claude Beob 2 Guard: ChatService must not access SkillMatcher._storage.
+
+    ChatService should use the public .storage property instead of
+    reaching into the private _storage attribute.
+    """
+
+    def test_chat_service_does_not_access_skill_matcher_private_storage(
+        self,
+    ) -> None:
+        """No '._storage' access on skill_matcher in chat_service.py."""
+        source = _read_source("application/chat_service.py")
+        # Check that no line contains skill_matcher._storage
+        # The pattern we're looking for is accessing _storage on self.skill_matcher
+        assert "skill_matcher._storage" not in source, (
+            "chat_service.py accesses SkillMatcher._storage directly. "
+            "Use the public .storage property instead."
+        )
+
+
+class TestHandlersEscapeHtmlInSkillClaim:
+    """R2-SC-02 Guard: handlers.py must html-escape skill claims."""
+
+    def test_handlers_uses_html_escape_for_skill_claim(self) -> None:
+        """The ask-before-apply block must escape _hyp.claim for HTML."""
+        source = _read_source("presentation/handlers.py")
+        assert "html_mod.escape" in source or "html.escape" in source, (
+            "handlers.py must use html.escape() on skill claim text "
+            "to prevent Telegram HTML parse errors (R2-SC-02)"
         )

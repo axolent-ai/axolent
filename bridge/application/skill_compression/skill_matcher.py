@@ -181,6 +181,15 @@ class SkillMatcher:
         self._storage = storage
         self._judge = pattern_judge
 
+    @property
+    def storage(self) -> HypothesisStorage:
+        """Public accessor for hypothesis storage.
+
+        Provides controlled access for callers that need to write
+        evidence (e.g. ChatService). Avoids private-attribute access.
+        """
+        return self._storage
+
     def match(
         self,
         event: NormalizedEvent,

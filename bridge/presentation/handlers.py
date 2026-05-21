@@ -9,6 +9,7 @@ Since R04: streaming handler for real-time token updates via Telegram edits.
 from __future__ import annotations
 
 import asyncio
+import html as html_mod
 import logging
 import re
 import time
@@ -642,18 +643,48 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 }
                 # Show confirmation keyboard
                 _hyp = _pre_match.hypothesis
+                _safe_claim = html_mod.escape(_hyp.claim)
                 _confirm_text = (
                     f"{t('skill.confirm_apply_question', _confirm_lang)}\n\n"
-                    f"<i>{_hyp.claim}</i>"
+                    f"<i>{_safe_claim}</i>"
                 )
                 _keyboard = build_skill_confirm_keyboard(
                     _hyp.hypothesis_id, _confirm_lang
                 )
-                await update.message.reply_text(
-                    _confirm_text,
-                    reply_markup=_keyboard,
-                    parse_mode="HTML",
-                )
+                try:
+                    await update.message.reply_text(
+                        _confirm_text,
+                        reply_markup=_keyboard,
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    # R2-SC-02 fail-safe: HTML send failed, try plain-text
+                    log.warning(
+                        "Ask-before-apply HTML send failed, trying plain-text",
+                        exc_info=True,
+                    )
+                    try:
+                        _plain_text = (
+                            f"{t('skill.confirm_apply_question', _confirm_lang)}"
+                            f"\n\n{_hyp.claim}"
+                        )
+                        await update.message.reply_text(
+                            _plain_text,
+                            reply_markup=_keyboard,
+                        )
+                    except Exception:
+                        # Both HTML and plain-text failed: abort confirmation
+                        # CRITICAL: must NOT fall through to streaming path
+                        log.error(
+                            "Ask-before-apply confirmation send failed completely "
+                            "for hyp=%s user=%d. Aborting skill application.",
+                            _hyp.hypothesis_id,
+                            user_id,
+                            exc_info=True,
+                        )
+                        # Clean up pending state so it doesn't linger
+                        _pending_store.pop(user_id, None)
+                        return
                 log.info(
                     "Ask-before-apply: showing confirmation for hyp=%s user=%d",
                     _hyp.hypothesis_id,
@@ -661,7 +692,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 )
                 return
     except Exception:
-        # If pre-check fails, proceed normally (non-blocking)
+        # If pre-check fails (matching logic, not send), proceed normally
         log.debug("Ask-before-apply pre-check failed, proceeding", exc_info=True)
 
     # T25: Background-Task pattern for streaming.

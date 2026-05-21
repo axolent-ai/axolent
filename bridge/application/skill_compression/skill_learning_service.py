@@ -132,10 +132,10 @@ class SkillLearningService:
         rejection: Optional[PipelineRejection] = self._privacy.check(hypothesis)
         if rejection is not None:
             log.info(
-                "Privacy pipeline blocked learn: hyp=%s source=%s filter=%s",
+                "Privacy pipeline blocked learn: hyp=%s source=%s reason=%s",
                 hyp_id,
                 rejection.source.value,
-                rejection.source.value,
+                rejection.reason,
             )
             return LearnResult(
                 success=False,

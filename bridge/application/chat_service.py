@@ -1293,13 +1293,11 @@ class ChatService:
             audit.update(
                 {k: v for k, v in task_meta.items() if k not in _NON_SERIALIZABLE_KEYS}
             )
-        write_audit_log(audit)
 
-        # RISK-2 FIX: Write skill evidence in the streaming path.
-        # The non-streaming path writes evidence inline (line ~754).
-        # In streaming, _skill_match is packed into task_meta by
-        # process_user_message_streaming() and evidence is written here
-        # after a successful stream (not on cancel/error).
+        # R2-SC-04 FIX: Write skill metadata into audit BEFORE persisting.
+        # Previously, write_audit_log was called before skill fields were set,
+        # so skill_applied_streaming / skill_matched_ask_before_streaming
+        # never appeared in the persisted audit event.
         _skill_match = (task_meta or {}).get("_skill_match")
         if _skill_match is not None:
             try:
@@ -1329,6 +1327,8 @@ class ChatService:
                 log.debug(
                     "Skill evidence write failed in streaming path", exc_info=True
                 )
+
+        write_audit_log(audit)
 
         return response_text
 
@@ -1402,9 +1402,9 @@ class ChatService:
         try:
             hyp = match_result.hypothesis
             if self.skill_matcher is not None and hasattr(
-                self.skill_matcher, "_storage"
+                self.skill_matcher, "storage"
             ):
-                storage = self.skill_matcher._storage
+                storage = self.skill_matcher.storage
                 now_iso = datetime.now(timezone.utc).isoformat()
                 evidence_id = f"ev_{uuid.uuid4().hex[:16]}"
                 storage.insert_evidence(
