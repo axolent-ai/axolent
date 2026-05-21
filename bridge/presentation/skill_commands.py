@@ -25,7 +25,6 @@ No direct infra-layer or raw domain-layer access (except domain types).
 from __future__ import annotations
 
 import logging
-import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import uuid4
@@ -43,6 +42,7 @@ from application.skill_compression.pattern_judge import (
     STATUS_PAUSED,
     STATUS_RETIRED,
 )
+from application.skill_compression.privacy.secret_scanner import SecretScanner
 from application.skill_compression.skill_explainer import (
     ExplainerQuestionType,
     SkillExplainer,
@@ -62,36 +62,11 @@ log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------
 # Secret filter for /learn (HC-SC-13)
+# Delegates to the centralized SecretScanner (Step 8).
 # ---------------------------------------------------------------
 
-# Allowlist: only these field patterns are acceptable in a /learn skill.
-# Anything matching SECRET_PATTERNS is rejected.
-SECRET_PATTERNS: list[re.Pattern] = [
-    # API tokens (sk-, ghp_, gho_, xox, bearer, etc.)
-    re.compile(
-        r"(?:sk-|ghp_|gho_|xox[bpas]-|bearer\s+|token[:\s=]+)\S{8,}",
-        re.IGNORECASE,
-    ),
-    # Currency amounts with digits (prices)
-    re.compile(
-        r"(?:[$€£¥])\s*\d+[.,]?\d*|\d+[.,]?\d*\s*(?:EUR|USD|GBP|CHF)",
-        re.IGNORECASE,
-    ),
-    # Email addresses
-    re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"),
-    # Phone numbers (international format)
-    re.compile(r"\+?\d[\d\s\-()]{8,}\d"),
-    # IBANs
-    re.compile(r"[A-Z]{2}\d{2}\s?[\dA-Z]{4,}"),
-    # Password-adjacent content
-    re.compile(
-        r"(?:passwor[td]|kennwort|password|pwd|secret)[:\s=]+\S+",
-        re.IGNORECASE,
-    ),
-    # Long hex/base64 strings (likely tokens/keys)
-    re.compile(r"[a-fA-F0-9]{32,}"),
-    re.compile(r"[A-Za-z0-9+/=]{40,}"),
-]
+# Shared scanner instance (Step 8 consolidation).
+_secret_scanner = SecretScanner()
 
 
 def check_secret_content(text: str) -> Optional[str]:
@@ -100,32 +75,17 @@ def check_secret_content(text: str) -> Optional[str]:
     No-Model-Secret Rule: Skills must not store API tokens, prices,
     passwords, private identifiers, or raw data.
 
+    Delegates to SecretScanner (Step 8) for multi-layered detection.
+
     Args:
         text: Text to check.
 
     Returns:
         Description of the detected secret type, or None if clean.
     """
-    for pattern in SECRET_PATTERNS:
-        match = pattern.search(text)
-        if match:
-            # Map pattern to user-friendly description
-            pattern_str = pattern.pattern
-            if "sk-" in pattern_str or "token" in pattern_str:
-                return "API-Token oder Secret"
-            if "$" in pattern_str or "EUR" in pattern_str:
-                return "Preisangabe"
-            if "@" in pattern_str:
-                return "E-Mail-Adresse"
-            if r"\+" in pattern_str or "phone" in pattern_str.lower():
-                return "Telefonnummer"
-            if "IBAN" in pattern_str.upper() or r"[A-Z]{2}\d{2}" in pattern_str:
-                return "IBAN/Kontonummer"
-            if "passwor" in pattern_str:
-                return "Passwort"
-            if "hex" in pattern_str.lower() or "32," in pattern_str:
-                return "Langer Token/Key"
-            return "Sensible Daten"
+    matches = _secret_scanner.scan(text)
+    if matches:
+        return matches[0].description_de
     return None
 
 

@@ -6,6 +6,14 @@ Evaluates hypotheses and manages their 7-status lifecycle based on:
   3. Elo Rating (pattern confidence)
   4. FSRS State (decay/freshness)
 
+Privacy Pipeline (Step 8, Layer 7 integration):
+  Before ANY promotion (candidate->suggested, confirmed->active),
+  the Privacy Pipeline runs three hard filters:
+    - HealthcareFilter (HC-SC-14): blocks clinical phenotyping
+    - SecretScanner (HC-SC-13): blocks secrets/PII
+    - NudgeFilter (HC-SC-15): blocks nudge policy violations
+  If ANY filter rejects, the hypothesis is NOT promoted.
+
 Lifecycle (7 status, HC-SC-1):
   1. candidate   - 1-2 evidence items, internal, user sees nothing
   2. suggested   - 3-5 evidence over 2+ sessions, bot asks user
@@ -32,6 +40,7 @@ HC-SC-3 [BLOCKER]: Auto-Apply thresholds scope-differentiated:
 
 AG: Pattern Judge imports ONLY via EvidenceLedger + Hypothesis.
   Never directly from N-Gram/Markov/Elo modules.
+AG: Privacy filters called BEFORE any promotion. No bypass possible.
 
 No external dependencies. Pure Python.
 """
@@ -280,22 +289,43 @@ class CollisionResult:
 # ---------------------------------------------------------------
 
 
+STATUS_PRIVACY_REJECTED = "privacy_rejected"
+
+
 class PatternJudge:
     """Layer 4: Lifecycle manager for hypotheses.
 
     Evaluates hypothesis state against evidence, BKT, Elo, and FSRS
     to recommend lifecycle transitions.
 
+    Privacy Pipeline (Step 8): Before any promotion, the judge runs
+    three hard privacy filters (healthcare, secrets, nudge). If any
+    filter rejects, the hypothesis is NOT promoted and receives a
+    REJECT decision.
+
     The judge does NOT mutate hypotheses directly. It returns
     JudgeDecision objects that the orchestrator uses to trigger
     status updates via HypothesisStorage.
 
     Usage:
-        judge = PatternJudge()
+        from application.skill_compression.privacy.privacy_pipeline import PrivacyPipeline
+
+        judge = PatternJudge(privacy_pipeline=PrivacyPipeline())
         decision = judge.evaluate(hypothesis, evidence_summary, bkt_state, elo, fsrs)
         if decision.should_transition:
             storage.update_hypothesis_status(hyp_id, decision.recommended_status)
     """
+
+    def __init__(self, *, privacy_pipeline=None) -> None:
+        """Initialize the Pattern Judge.
+
+        Args:
+            privacy_pipeline: Optional PrivacyPipeline instance.
+                If None, privacy checks are skipped (for backwards
+                compatibility with existing tests).
+                In production, MUST be provided.
+        """
+        self._privacy = privacy_pipeline
 
     def evaluate(
         self,
@@ -344,7 +374,21 @@ class PatternJudge:
             if review_decision is not None:
                 return review_decision
 
-        # Rule 3: Check for promotion
+        # Rule 3: Privacy pipeline (HC-SC-13, HC-SC-14, HC-SC-15)
+        # Must run BEFORE any promotion to prevent blocked hypotheses
+        # from ever reaching suggested/confirmed/active status.
+        if self._privacy is not None:
+            rejection = self._privacy.check(hypothesis)
+            if rejection is not None:
+                return JudgeDecision(
+                    hypothesis_id=hypothesis.hypothesis_id,
+                    current_status=current_status,
+                    recommended_status=STATUS_PRIVACY_REJECTED,
+                    should_transition=True,
+                    reason=f"Privacy pipeline rejection: {rejection.reason}",
+                )
+
+        # Rule 4: Check for promotion
         promotion_decision = self._check_promotion(hypothesis, evidence, bkt, elo)
         if promotion_decision is not None:
             return promotion_decision

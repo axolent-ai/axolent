@@ -16,4 +16,5 @@ Step 4 implements: SkillMatcher + Collision Detection + Skill Versioning + Ask B
 Step 5 implements: UI Profile View + 4 Chat-Shortcuts + Skill Indicator + ChatService Integration.
 Step 6 implements: Explainer (8 Question Types) + Local Evaluation Set + BERTopic Background Classification.
 Step 7 implements: Conversation Import (4 parsers + orchestrator + /import command).
+Step 8 implements: Privacy & Safety Layer (HealthcareFilter + SecretScanner + NudgeFilter + PrivacyPipeline).
 """
