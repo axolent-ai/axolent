@@ -33,6 +33,7 @@ from application.skill_compression.skill_formatting import (
     derive_skill_name,
     format_skill_indicator,  # noqa: F401 (re-export for backward compat)
 )
+from i18n.domain.i18n import t
 
 log = logging.getLogger(__name__)
 
@@ -45,9 +46,6 @@ MAX_PROFILE_SKILLS: int = 10
 
 # Telegram message length limit
 TELEGRAM_MAX_CHARS: int = 4096
-
-# Profile header
-PROFILE_HEADER: str = "Dein Profil\n───────────"
 
 # Statuses that are visible in the profile
 PROFILE_VISIBLE_STATUSES: frozenset[str] = frozenset(
@@ -103,7 +101,7 @@ def _escape_markdown(text: str) -> str:
 # ---------------------------------------------------------------
 
 
-def render_skill_line(hypothesis: Hypothesis) -> str:
+def render_skill_line(hypothesis: Hypothesis, lang: str = "de") -> str:
     """Render a single skill as a bullet-point line.
 
     Format (HC-UI-1, Notiz-style):
@@ -112,6 +110,7 @@ def render_skill_line(hypothesis: Hypothesis) -> str:
 
     Args:
         hypothesis: The hypothesis to render.
+        lang: Language code for i18n.
 
     Returns:
         Formatted bullet-point string (1-2 lines).
@@ -121,9 +120,9 @@ def render_skill_line(hypothesis: Hypothesis) -> str:
 
     # Status indicator
     status_map = {
-        STATUS_ACTIVE: "aktiv",
-        STATUS_CONFIRMED: "bestaetigt",
-        STATUS_PAUSED: "pausiert",
+        STATUS_ACTIVE: t("skill.status_active", lang),
+        STATUS_CONFIRMED: t("skill.status_confirmed", lang),
+        STATUS_PAUSED: t("skill.status_paused", lang),
     }
     status_label = status_map.get(hypothesis.status, hypothesis.status)
 
@@ -138,6 +137,7 @@ def render_skill_line(hypothesis: Hypothesis) -> str:
 def render_skill_detail_text(
     hypothesis: Hypothesis,
     version_history: list[dict],
+    lang: str = "de",
 ) -> str:
     """Render detailed view of a single skill with version history.
 
@@ -146,6 +146,7 @@ def render_skill_detail_text(
     Args:
         hypothesis: The hypothesis to display.
         version_history: Archived versions from storage.
+        lang: Language code for i18n.
 
     Returns:
         Formatted detail string.
@@ -160,30 +161,35 @@ def render_skill_detail_text(
 
     # Current version
     version_tag = f"v{hypothesis.version}" if hypothesis.version > 1 else "v1"
-    lines.append(f"Version: {version_tag}")
-    lines.append(f"Beschreibung: {hypothesis.claim}")
+    lines.append(t("skill.detail_version", lang, version=version_tag))
+    lines.append(t("skill.detail_description", lang, claim=hypothesis.claim))
 
     # Status
     status_map = {
-        STATUS_ACTIVE: "Aktiv (wird automatisch angewendet)",
-        STATUS_CONFIRMED: "Bestaetigt (fragt vor Anwendung)",
-        STATUS_PAUSED: "Pausiert",
+        STATUS_ACTIVE: t("skill.detail_status_active", lang),
+        STATUS_CONFIRMED: t("skill.detail_status_confirmed", lang),
+        STATUS_PAUSED: t("skill.detail_status_paused", lang),
     }
     lines.append(f"Status: {status_map.get(hypothesis.status, hypothesis.status)}")
 
     # Evidence
     lines.append(
-        f"Belege: {hypothesis.support_count} dafuer, "
-        f"{hypothesis.contradict_count} dagegen"
+        t(
+            "skill.detail_evidence",
+            lang,
+            support=hypothesis.support_count,
+            contradict=hypothesis.contradict_count,
+        )
     )
 
     # Type
     type_map = {
-        "preference": "Präferenz",
-        "negative": "Vermeidung",
-        "request": "Anfrage-Muster",
+        "preference": t("skill.type_preference", lang),
+        "negative": t("skill.type_negative", lang),
+        "request": t("skill.type_request", lang),
     }
-    lines.append(f"Typ: {type_map.get(hypothesis.type, hypothesis.type)}")
+    type_label = type_map.get(hypothesis.type, hypothesis.type)
+    lines.append(f"Typ: {type_label}")
 
     # Scope
     scope_parts: list[str] = []
@@ -194,14 +200,14 @@ def render_skill_detail_text(
     if scope_parts:
         lines.append(f"Geltungsbereich: {', '.join(scope_parts)}")
     else:
-        lines.append("Geltungsbereich: Global")
+        lines.append(f"Geltungsbereich: {t('skill.scope_global', lang)}")
 
     # Source
     source_map = {
-        "live_chat": "Aus Chat gelernt",
-        "learn_command": "Manuell gespeichert (/learn)",
-        "manual": "Manuell erstellt",
-        "import": "Importiert",
+        "live_chat": t("skill.source_live_chat", lang),
+        "learn_command": t("skill.source_learn_command", lang),
+        "manual": t("skill.source_manual", lang),
+        "import": t("skill.source_import", lang),
     }
     lines.append(
         f"Quelle: {source_map.get(hypothesis.source_type, hypothesis.source_type)}"
@@ -217,7 +223,7 @@ def render_skill_detail_text(
 
     # Decay immunity
     if hypothesis.decay_immune:
-        lines.append("Decay: Immun (manuell gespeichert)")
+        lines.append(t("skill.decay_immune", lang))
 
     # Version history
     if version_history:
@@ -241,6 +247,7 @@ def render_skill_detail_text(
 def render_profile(
     hypotheses: list[Hypothesis],
     max_skills: int = MAX_PROFILE_SKILLS,
+    lang: str = "de",
 ) -> str:
     """Render the complete skill profile as compact Markdown.
 
@@ -250,20 +257,19 @@ def render_profile(
     Args:
         hypotheses: All user hypotheses (pre-filtered by caller).
         max_skills: Maximum skills to show.
+        lang: Language code for i18n.
 
     Returns:
         Formatted profile string.
     """
+    profile_header_text = t("skill.profile_header", lang)
+    header = f"{profile_header_text}\n───────────"
+
     # Filter to profile-visible statuses
     visible = [h for h in hypotheses if h.status in PROFILE_VISIBLE_STATUSES]
 
     if not visible:
-        return (
-            f"{PROFILE_HEADER}\n\n"
-            "Noch keine Skills gelernt.\n"
-            "Nutze den Bot und er lernt automatisch deine Präferenzen,\n"
-            "oder speichere direkt mit /learn."
-        )
+        return f"{header}\n\n{t('skill.profile_empty', lang)}"
 
     # Sort by last_applied DESC (None = bottom)
     visible.sort(
@@ -274,17 +280,16 @@ def render_profile(
     # Limit to max
     shown = visible[:max_skills]
 
-    lines: list[str] = [PROFILE_HEADER, ""]
+    lines: list[str] = [header, ""]
 
     for h in shown:
-        lines.append(render_skill_line(h))
+        lines.append(render_skill_line(h, lang=lang))
 
     # Footer
     total = len(visible)
     if total > max_skills:
         lines.append("")
-        lines.append(f"... und {total - max_skills} weitere Skills.")
-        lines.append("Nutze /skill <name> für Details.")
+        lines.append(t("skill.profile_more", lang, count=total - max_skills))
 
     profile_text = "\n".join(lines)
 
@@ -302,6 +307,7 @@ def render_profile(
 
 def build_skill_actions_keyboard(
     hypothesis: Hypothesis,
+    lang: str = "de",
 ) -> InlineKeyboardMarkup:
     """Build inline keyboard with skill action buttons.
 
@@ -309,6 +315,7 @@ def build_skill_actions_keyboard(
 
     Args:
         hypothesis: The hypothesis to build actions for.
+        lang: Language code for i18n.
 
     Returns:
         InlineKeyboardMarkup with action buttons.
@@ -322,21 +329,21 @@ def build_skill_actions_keyboard(
     if hypothesis.status == STATUS_PAUSED:
         row1.append(
             InlineKeyboardButton(
-                text="fortsetzen",  # i18n: ok
+                text=t("skill.btn_resume", lang),
                 callback_data=f"skill_resume:{hyp_id}",
             )
         )
     else:
         row1.append(
             InlineKeyboardButton(
-                text="pausieren",  # i18n: ok
+                text=t("skill.btn_pause", lang),
                 callback_data=f"skill_pause:{hyp_id}",
             )
         )
 
     row1.append(
         InlineKeyboardButton(
-            text="vergessen",  # i18n: ok
+            text=t("skill.btn_forget", lang),
             callback_data=f"skill_forget:{hyp_id}",
         )
     )
@@ -347,7 +354,7 @@ def build_skill_actions_keyboard(
         buttons.append(
             [
                 InlineKeyboardButton(
-                    text="Versionen",  # i18n: ok
+                    text=t("skill.btn_versions", lang),
                     callback_data=f"skill_versions:{hyp_id}",
                 )
             ]
@@ -401,6 +408,7 @@ def build_profile_list_keyboard(
 
 def build_indicator_keyboard(
     hypothesis_id: str,
+    lang: str = "de",
 ) -> InlineKeyboardMarkup:
     """Build inline keyboard for skill indicator buttons.
 
@@ -408,6 +416,7 @@ def build_indicator_keyboard(
 
     Args:
         hypothesis_id: The applied hypothesis ID.
+        lang: Language code for i18n.
 
     Returns:
         InlineKeyboardMarkup with undo and explain buttons.
@@ -416,11 +425,11 @@ def build_indicator_keyboard(
         [
             [
                 InlineKeyboardButton(
-                    text="/undo",  # i18n: ok
+                    text=t("skill.btn_undo", lang),
                     callback_data=f"skill_undo:{hypothesis_id}",
                 ),
                 InlineKeyboardButton(
-                    text="Warum?",  # i18n: ok
+                    text=t("skill.btn_why", lang),
                     callback_data=f"skill_explain:{hypothesis_id}",
                 ),
             ]

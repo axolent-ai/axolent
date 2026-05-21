@@ -155,6 +155,12 @@ python main.py
 
 The bot starts long-polling. Send it a message on Telegram and Claude responds.
 
+## Skill Compression
+
+AXOLENT learns your preferences automatically from conversations. Repeated patterns become reusable "skills" that personalize responses without manual configuration. Skills can also be created manually (`/learn`), explained (`/explain`), imported from other AI conversation exports (`/import`), and forgotten (`/forget`). A 3-layer privacy pipeline (SecretScanner, HealthcareFilter, NudgeFilter) ensures no sensitive data is ever stored as a skill.
+
+See [`docs/SKILL_COMPRESSION.md`](docs/SKILL_COMPRESSION.md) for architecture details.
+
 ## Repository Structure
 
 ```

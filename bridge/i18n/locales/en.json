@@ -1087,6 +1087,468 @@
       "source_hash": "d171665344401dd9",
       "auto_translated": false,
       "reviewed": true
+    },
+    "skill.system_not_initialized": {
+      "text": "Skill system not yet initialized.",
+      "source_hash": "4265f79e4d54e374",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.system_not_initialized_short": {
+      "text": "Skill system not initialized.",
+      "source_hash": "18e94da0edc9413d",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.not_found": {
+      "text": "Skill not found.",
+      "source_hash": "97cd06e1a48e2a01",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.none_available": {
+      "text": "No skills available.",
+      "source_hash": "a0643757b3471218",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.detail_usage": {
+      "text": "Please provide a skill name or ID.\nExample: /skill Drehkonzepte",
+      "source_hash": "08f83c0ceee67fb0",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.not_found_query": {
+      "text": "No skill found for '{query}'.\nUse /skills for an overview.",
+      "source_hash": "a2af5aa5f5da7a5f",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.ambiguous_query": {
+      "text": "Multiple skills found for '{query}':",
+      "source_hash": "d163cdee7f533f32",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.forget_prompt": {
+      "text": "Which skill would you like to forget?",
+      "source_hash": "3a441958e9c6dcd1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.forget_button": {
+      "text": "Forget: {name}",
+      "source_hash": "09a9774c0dc527e0",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.not_found_query_short": {
+      "text": "No skill found for '{query}'.",
+      "source_hash": "0631ed995a42f6ee",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.forgotten_permanent": {
+      "text": "Skill '{name}' permanently forgotten.\nThis pattern will never be learned again.",
+      "source_hash": "97827fb91ad62bfa",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.forgotten_tombstone": {
+      "text": "Skill '{name}' forgotten (30-day tombstone).\nAfter 30 days, the pattern can be learned again.",
+      "source_hash": "1e245dd2c86f20c9",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_usage": {
+      "text": "Please describe the skill or reply to a bot message.\nExample: /learn Always use bullet points in summaries",
+      "source_hash": "72ca5f65528ef02e",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_empty": {
+      "text": "Empty skill text. Please describe what I should remember.",
+      "source_hash": "3008a1eced718b71",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_secret_blocked": {
+      "text": "This skill cannot be saved: may contain {secret_type}.\nSkills must not contain passwords, API keys, prices, or personal data.",
+      "source_hash": "adca17adfdefbe78",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_max_reached": {
+      "text": "You already have 50 active skills.\nUse /forget to make room, or /skills for an overview.",
+      "source_hash": "74d3efbd1761bfe9",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_saved": {
+      "text": "Skill saved: '{name}'\nStatus: Confirmed (will be applied when matching).\nThis skill is decay-immune and remains until you forget it.",
+      "source_hash": "e47c736ee2726fc9",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.explain_usage": {
+      "text": "Use /explain <skill> [question] to explain a skill.",
+      "source_hash": "1125e4d20ddf6f3e",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.explain_example": {
+      "text": "Example: /explain Drehkonzepte 3",
+      "source_hash": "f16aaa3faf7832a4",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.explain_name_required": {
+      "text": "Please provide a skill name.\nExample: /explain Drehkonzepte",
+      "source_hash": "bbd0fa9fada75e95",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.paused": {
+      "text": "Skill '{name}' paused.\nWill no longer be applied, but remains saved.",
+      "source_hash": "29de1c034da7fdb5",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.resumed": {
+      "text": "Skill '{name}' active again (confirmed).\nWill be applied with confirmation when matching.",
+      "source_hash": "cc6cdc3eee047da4",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.no_version_history": {
+      "text": "No version history available.",
+      "source_hash": "3b788ec818d426c8",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.undo_done": {
+      "text": "Skill application '{name}' undone.\nContradiction has been noted.",
+      "source_hash": "747adf346f73beca",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_usage": {
+      "text": "Please provide a folder path.\nExample: /import ~/Documents/ChatGPT-Export/",
+      "source_hash": "0b07579f5a6c94c3",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_folder_not_found": {
+      "text": "Folder not found: {path}",
+      "source_hash": "c92257d74b57c6e4",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_not_a_folder": {
+      "text": "Not a folder: {path}",
+      "source_hash": "0a4bd5999ab15517",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_scan_error": {
+      "text": "Error while scanning: {error}",
+      "source_hash": "bba076858f8dd5b7",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_no_files": {
+      "text": "No importable files found.\nSupported formats: .md, .json, .jsonl, .txt",
+      "source_hash": "7fadf0d7e49b7d62",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_preview_header": {
+      "text": "The following files will be analyzed locally:",
+      "source_hash": "9df8488157144a6c",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_conversations_label": {
+      "text": "{count} conversations",
+      "source_hash": "2889fc6b0647a2fe",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_more_files": {
+      "text": "... and {count} more",
+      "source_hash": "528b0930130ac881",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_total": {
+      "text": "Total: {conversations} conversations in {files} files.",
+      "source_hash": "8dd4661c677a1412",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_privacy_note": {
+      "text": "Content will NOT be modified or uploaded.",
+      "source_hash": "9e91e2e3201f9603",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_duration": {
+      "text": "Estimated duration: {seconds:.0f} seconds.",
+      "source_hash": "38139a874ebafe7d",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_start_btn": {
+      "text": "Start import",
+      "source_hash": "9b2a970676fb7fb5",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_cancel_btn": {
+      "text": "Cancel",
+      "source_hash": "19766ed6ccb2f4a3",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_cancelled": {
+      "text": "Import cancelled.",
+      "source_hash": "33ffe414fe4ec20d",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_no_pending": {
+      "text": "No pending import.",
+      "source_hash": "ef347ab6d0916af1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_progress": {
+      "text": "Import running... {count} files processed.",
+      "source_hash": "ba9d3b44a90a9804",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_failed": {
+      "text": "Import failed: {error}",
+      "source_hash": "6133684153fb74ef",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_done_header": {
+      "text": "Import completed ({duration:.1f}s):",
+      "source_hash": "5ea92141138fe640",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_files_processed": {
+      "text": "Files processed: {count}",
+      "source_hash": "ef0002fe0859e5c5",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_conversations_parsed": {
+      "text": "Conversations: {count}",
+      "source_hash": "d0421435fb579de5",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_hypotheses_created": {
+      "text": "New hypotheses: {count}",
+      "source_hash": "bd6720bcf4067821",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_hypotheses_skipped": {
+      "text": "Skipped: {count}",
+      "source_hash": "c3856a32c559aac5",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_errors": {
+      "text": "Errors: {count}",
+      "source_hash": "1b3d5e65e597acf6",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_suggested_note": {
+      "text": "All imported patterns start as suggestions.\nUse /skills to view them.",
+      "source_hash": "afa522e54b5a07bb",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_undo_btn": {
+      "text": "Undo import",
+      "source_hash": "4c2180d21740ce29",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.import_undone": {
+      "text": "Import undone: {count} hypotheses removed.",
+      "source_hash": "4bf607d96c8ac6b9",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.profile_header": {
+      "text": "Your Profile",
+      "source_hash": "7289f8ec58277546",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.profile_empty": {
+      "text": "No skills learned yet.\nUse the bot and it will automatically learn your preferences,\nor save directly with /learn.",
+      "source_hash": "5c38de5b60f8ac94",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.profile_more": {
+      "text": "... and {count} more skills.\nUse /skill <name> for details.",
+      "source_hash": "1bd64cece03cfe12",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.status_active": {
+      "text": "active",
+      "source_hash": "96879611650f80a8",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.status_confirmed": {
+      "text": "confirmed",
+      "source_hash": "9599915bd8cd62b6",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.status_paused": {
+      "text": "paused",
+      "source_hash": "a7a9dc5bcf71adb2",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.detail_version": {
+      "text": "Version: {version}",
+      "source_hash": "fa9eacb3beda513c",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.detail_description": {
+      "text": "Description: {claim}",
+      "source_hash": "bcdb17bd8dff09f3",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.detail_status_active": {
+      "text": "Active (applied automatically)",
+      "source_hash": "061a856d0d0a100a",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.detail_status_confirmed": {
+      "text": "Confirmed (asks before applying)",
+      "source_hash": "2b984a9d2f2eabbd",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.detail_status_paused": {
+      "text": "Paused",
+      "source_hash": "e159b06187d369a0",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.detail_evidence": {
+      "text": "Evidence: {support} for, {contradict} against",
+      "source_hash": "d2b4198c078d164f",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.type_preference": {
+      "text": "Preference",
+      "source_hash": "a0dc191bc1d4b7f4",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.type_negative": {
+      "text": "Avoidance",
+      "source_hash": "3264f3032c9e2e1b",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.type_request": {
+      "text": "Request pattern",
+      "source_hash": "d5e15abed68b5bc6",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.scope_global": {
+      "text": "Global",
+      "source_hash": "a258b30f88c30650",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.source_live_chat": {
+      "text": "Learned from chat",
+      "source_hash": "ed2189e555b50353",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.source_learn_command": {
+      "text": "Manually saved (/learn)",
+      "source_hash": "12733efe4e2933c5",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.source_manual": {
+      "text": "Manually created",
+      "source_hash": "600d3d55d5cad5ff",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.source_import": {
+      "text": "Imported",
+      "source_hash": "321f179c80ba93ea",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.decay_immune": {
+      "text": "Decay: Immune (manually saved)",
+      "source_hash": "5c63d8da89d33530",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.btn_pause": {
+      "text": "pause",
+      "source_hash": "6210c0bf05396716",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.btn_resume": {
+      "text": "resume",
+      "source_hash": "a83a31320d921b88",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.btn_forget": {
+      "text": "forget",
+      "source_hash": "babc1bd8ec812c74",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.btn_versions": {
+      "text": "Versions",
+      "source_hash": "f89ea27036ac1d31",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.btn_undo": {
+      "text": "/undo",
+      "source_hash": "487836806cf6aa7f",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.btn_why": {
+      "text": "Why?",
+      "source_hash": "5d8a995a6fa7cf7c",
+      "auto_translated": false,
+      "reviewed": true
     }
   }
 }

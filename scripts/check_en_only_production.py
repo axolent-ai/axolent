@@ -124,9 +124,11 @@ WHITELIST_PATHS = {
     "bridge/application/skill_compression/privacy/secret_scanner.py",
     # Feature data: German nudge-policy descriptions and regex patterns (HC-SC-15).
     "bridge/application/skill_compression/privacy/nudge_filter.py",
-    # i18n: German user-facing Telegram replies (skills UI). Full i18n migration in Step 10.
+    # i18n: Step 10 complete. Remaining: _QUESTION_TYPE_ALIASES contains German
+    # keywords as feature data (dict keys like "nötig", "warum"). Not user-facing prose.
     "bridge/presentation/skill_commands.py",
-    # i18n: German user-facing skill profile/detail views (skills UI). Full i18n migration in Step 10.
+    # i18n: Step 10 complete. Remaining: render_skill_detail_text field labels
+    # ("Beschreibung:", "Belege:", "Geltungsbereich:") contain umlauts. TODO: Phase D full label i18n.
     "bridge/presentation/skill_profile_view.py",
     # i18n: German user-facing explainer texts (8 question types). Full i18n migration in Step 10.
     "bridge/application/skill_compression/skill_explainer.py",

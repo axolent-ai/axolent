@@ -19,8 +19,8 @@ from application.skill_compression.pattern_judge import (
     STATUS_ACTIVE,
     STATUS_PAUSED,
 )
+from i18n.domain.i18n import t
 from presentation.skill_profile_view import (
-    PROFILE_HEADER,
     TELEGRAM_MAX_CHARS,
     build_indicator_keyboard,
     build_profile_list_keyboard,
@@ -124,14 +124,16 @@ class TestRenderProfile:
     def test_empty_skills(self) -> None:
         """Profile with 0 skills shows empty message."""
         result = render_profile([])
-        assert PROFILE_HEADER in result
-        assert "Noch keine Skills" in result
+        profile_header = t("skill.profile_header", "de")
+        assert profile_header in result
+        assert t("skill.profile_empty", "de").split("\n")[0] in result
 
     def test_single_skill(self) -> None:
         """Profile with 1 skill renders correctly."""
         hyp = _make_hypothesis()
         result = render_profile([hyp])
-        assert PROFILE_HEADER in result
+        profile_header = t("skill.profile_header", "de")
+        assert profile_header in result
         assert "User prefers bullet points" in result
 
     def test_five_skills(self) -> None:
