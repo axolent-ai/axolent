@@ -1,4 +1,4 @@
-"""Skill Chat-Shortcuts: /skills, /skill, /forget, /learn, /explain commands.
+"""Skill Chat-Shortcuts: /skills, /skill, /forget, /learn, /explain, /import.
 
 Layer 6 (UI): Telegram command handlers for skill management.
 Integrates with SkillMatcher (Layer 5) and HypothesisStorage.
@@ -9,11 +9,14 @@ Commands:
   /forget X    - Delete skill (30-day tombstone)
   /learn       - Save last bot interaction as permanent skill
   /explain X   - Explain a skill decision (8 question types)
+  /import PATH - Import conversations from a folder (dry-run first)
 
 HC-SC-7 [BLOCKER]: Tombstones 30 days default, "nie wieder" as permanent.
 HC-SC-6 [BLOCKER]: /learn creates decay-immune skills.
 HC-SC-13 [BLOCKER]: No-Model-Secret Rule for /learn (allowlist filter).
+HC-SC-16 [BLOCKER]: Import strictly opt-in, dry-run first, never periodic.
 HC-SC-18 [BLOCKER]: 8 Explainer question types via /explain.
+HC-IMPORT-1 [BLOCKER]: All imported hypotheses start as 'suggested'.
 
 Architecture guard: Presentation layer uses only Application services.
 No direct infra-layer or raw domain-layer access (except domain types).
@@ -1053,3 +1056,299 @@ async def _handle_explain_callback(query, context, user_id, hyp_id, q_type_str):
         text = text[:3997] + "..."
 
     await query.edit_message_text(text)
+
+
+# ---------------------------------------------------------------
+# Command: /import (Step 7 - Conversation Import)
+# ---------------------------------------------------------------
+
+# Import state keys for context.user_data
+_IMPORT_PENDING_KEY = "import_pending_folder"
+
+
+def _get_import_orchestrator(
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    """Get ImportOrchestrator from bot_data.
+
+    Args:
+        context: Telegram handler context.
+
+    Returns:
+        ImportOrchestrator or None if not initialized.
+    """
+    return context.application.bot_data.get("import_orchestrator")
+
+
+@require_whitelist
+@require_private_chat
+async def handle_import_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handle /import command: import conversations from a folder.
+
+    HC-SC-16: Strictly opt-in, dry-run first, progress display.
+    HC-IMPORT-1: All imported hypotheses start as 'suggested'.
+
+    Workflow:
+      1. User: /import ~/Documents/ChatGPT-Export/
+      2. Bot: shows dry-run preview
+      3. User: confirms (via callback button)
+      4. Bot: shows progress and result
+
+    Args:
+        update: Telegram update.
+        context: Telegram handler context.
+    """
+    from pathlib import Path as _Path  # noqa: E402 — deferred to avoid circular
+
+    from application.skill_compression.conversation_import.orchestrator import (  # noqa: E402
+        ImportOrchestrator,
+    )
+
+    user = update.effective_user
+    if not user:
+        return
+
+    orchestrator = _get_import_orchestrator(context)
+    storage = _get_hypothesis_storage(context)
+
+    # Fallback: create orchestrator from storage if not pre-initialized
+    if orchestrator is None and storage is not None:
+        orchestrator = ImportOrchestrator(storage)
+        orchestrator.init_schema()
+        context.application.bot_data["import_orchestrator"] = orchestrator
+
+    if orchestrator is None:
+        await update.message.reply_text(
+            "Skill-System noch nicht initialisiert."  # i18n: ok
+        )
+        return
+
+    args = context.args
+    if not args:
+        await update.message.reply_text(  # i18n: ok
+            "Bitte einen Ordner-Pfad angeben.\n"
+            "Beispiel: /import ~/Documents/ChatGPT-Export/"
+        )
+        return
+
+    folder_str = " ".join(args).strip()
+    folder_path = _Path(folder_str).expanduser().resolve()
+
+    if not folder_path.exists():
+        await update.message.reply_text(  # i18n: ok
+            f"Ordner nicht gefunden: {folder_path}"
+        )
+        return
+
+    if not folder_path.is_dir():
+        await update.message.reply_text(  # i18n: ok
+            f"Kein Ordner: {folder_path}"
+        )
+        return
+
+    # Execute dry-run (HC-SC-16)
+    try:
+        dry_run = orchestrator.dry_run(folder_path)
+    except Exception as exc:
+        await update.message.reply_text(  # i18n: ok
+            f"Fehler beim Scannen: {exc}"
+        )
+        return
+
+    if not dry_run.files:
+        await update.message.reply_text(  # i18n: ok
+            "Keine importierbaren Dateien gefunden.\n"
+            "Unterstützte Formate: .md, .json, .jsonl, .txt"  # i18n: ok
+        )
+        return
+
+    # Build dry-run preview message
+    lines = [
+        "Folgende Dateien werden lokal analysiert:",  # i18n: ok
+        "",
+    ]
+    for fp in dry_run.files[:15]:  # Limit display to 15 files
+        size_kb = fp.size_bytes / 1024
+        lines.append(
+            f"  {fp.path} ({size_kb:.0f} KB, "
+            f"{fp.conversation_count} Konversationen, "  # i18n: ok
+            f"{fp.source_type})"
+        )
+    if len(dry_run.files) > 15:
+        lines.append(f"  ... und {len(dry_run.files) - 15} weitere")  # i18n: ok
+
+    lines.extend(
+        [
+            "",
+            f"Gesamt: {dry_run.total_conversations} Konversationen "  # i18n: ok
+            f"in {len(dry_run.files)} Dateien.",
+            "",
+            "Inhalte werden NICHT verändert oder hochgeladen.",  # i18n: ok
+            f"Geschätzte Dauer: {dry_run.estimated_duration_seconds:.0f} Sekunden.",  # i18n: ok
+        ]
+    )
+
+    preview_text = "\n".join(lines)
+
+    # Truncate for Telegram
+    if len(preview_text) > 3800:
+        preview_text = preview_text[:3797] + "..."
+
+    # Store pending import in user_data for callback confirmation
+    context.user_data[_IMPORT_PENDING_KEY] = str(folder_path)
+
+    keyboard = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    text="Import starten",  # i18n: ok
+                    callback_data="import_confirm",
+                ),
+                InlineKeyboardButton(
+                    text="Abbrechen",  # i18n: ok
+                    callback_data="import_cancel",
+                ),
+            ]
+        ]
+    )
+
+    await update.message.reply_text(
+        text=preview_text,
+        reply_markup=keyboard,
+    )
+
+
+@require_whitelist
+@require_private_chat
+async def handle_import_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handle import confirmation/cancellation callbacks.
+
+    Callback patterns:
+      import_confirm - Start the actual import
+      import_cancel  - Cancel the pending import
+      import_delete:<import_id> - Delete imported source (HC-IMPORT-3)
+
+    Args:
+        update: Telegram update.
+        context: Telegram handler context.
+    """
+    from pathlib import Path as _Path  # noqa: E402
+
+    query = update.callback_query
+    if not query or not query.data:
+        return
+
+    data = query.data
+    user = query.from_user
+    if not user:
+        return
+
+    if data == "import_cancel":
+        await query.answer()
+        context.user_data.pop(_IMPORT_PENDING_KEY, None)
+        await query.edit_message_text("Import abgebrochen.")  # i18n: ok
+        return
+
+    if data == "import_confirm":
+        await query.answer()
+
+        folder_str = context.user_data.pop(_IMPORT_PENDING_KEY, None)
+        if not folder_str:
+            await query.edit_message_text(
+                "Kein ausstehender Import."  # i18n: ok
+            )
+            return
+
+        orchestrator = _get_import_orchestrator(context)
+        if orchestrator is None:
+            await query.edit_message_text(
+                "Skill-System nicht initialisiert."  # i18n: ok
+            )
+            return
+
+        folder_path = _Path(folder_str)
+
+        # Progress update via message edit
+        progress_msg = await query.edit_message_text(
+            "Import läuft... 0 Dateien verarbeitet."  # i18n: ok
+        )
+
+        last_update_count = [0]  # Mutable for closure
+
+        def on_progress(done, total, hyps):
+            # Only update every 5 files to avoid rate limiting
+            if done - last_update_count[0] >= 5 or done == total:
+                last_update_count[0] = done
+
+        # Run import
+        try:
+            result = orchestrator.import_folder(
+                folder_path,
+                user_id=user.id,
+                on_progress=on_progress,
+            )
+        except Exception as exc:
+            await progress_msg.edit_text(  # i18n: ok
+                f"Import fehlgeschlagen: {exc}"
+            )
+            log.error("Import failed: %s", exc, exc_info=True)
+            return
+
+        # Show result
+        result_lines = [
+            f"Import abgeschlossen ({result.duration_seconds:.1f}s):",  # i18n: ok
+            "",
+            f"  Dateien verarbeitet: {result.files_processed}",  # i18n: ok
+            f"  Konversationen: {result.conversations_parsed}",  # i18n: ok
+            f"  Neue Hypothesen: {result.hypotheses_created}",  # i18n: ok
+            f"  Übersprungen: {result.hypotheses_skipped}",  # i18n: ok
+        ]
+
+        if result.errors:
+            result_lines.append(f"  Fehler: {len(result.errors)}")  # i18n: ok
+
+        result_lines.extend(
+            [
+                "",
+                "Alle importierten Muster starten als Vorschläge.",  # i18n: ok
+                "Nutze /skills um sie zu sehen.",  # i18n: ok
+            ]
+        )
+
+        # Add delete button (HC-IMPORT-3)
+        keyboard = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        text="Import rückgängig machen",  # i18n: ok
+                        callback_data=f"import_delete:{result.import_id}",
+                    )
+                ]
+            ]
+        )
+
+        await progress_msg.edit_text(
+            text="\n".join(result_lines),
+            reply_markup=keyboard,
+        )
+        return
+
+    if data.startswith("import_delete:"):
+        await query.answer()
+        import_id = data.split(":", 1)[1]
+
+        orchestrator = _get_import_orchestrator(context)
+        if orchestrator is None:
+            await query.edit_message_text(
+                "Skill-System nicht initialisiert."  # i18n: ok
+            )
+            return
+
+        deleted = orchestrator.delete_from_source(import_id)
+        await query.edit_message_text(  # i18n: ok
+            f"Import rückgängig gemacht: {deleted} Hypothesen entfernt."
+        )
