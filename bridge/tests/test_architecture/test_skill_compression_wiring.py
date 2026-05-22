@@ -29,6 +29,7 @@ from application.skill_compression.privacy.privacy_pipeline import PrivacyPipeli
 from application.skill_compression.skill_explainer import SkillExplainer
 from application.skill_compression.skill_learning_service import SkillLearningService
 from application.skill_compression.skill_matcher import SkillMatcher
+from infrastructure.sqlite_storage import SqliteConnection
 
 # bridge/ root
 _BRIDGE_ROOT = Path(__file__).resolve().parents[2]
@@ -446,4 +447,159 @@ class TestHandlersEscapeHtmlInSkillClaim:
         assert "html_mod.escape" in source or "html.escape" in source, (
             "handlers.py must use html.escape() on skill claim text "
             "to prevent Telegram HTML parse errors (R2-SC-02)"
+        )
+
+
+# ---------------------------------------------------------------
+# R3-SC-01 Guard: SqliteConnection must satisfy DBConnection Protocol
+# ---------------------------------------------------------------
+
+
+class TestSqliteConnectionSatisfiesDBConnectionProtocol:
+    """R3-SC-01 Guard: SqliteConnection must expose all DBConnection methods.
+
+    Root cause of the 2026-05-21 production crash: SqliteConnection
+    was missing executescript(), causing AttributeError in
+    HypothesisStorage.init_schema() during bot startup.
+
+    This guard ensures every method declared in the DBConnection
+    Protocol also exists on SqliteConnection. If someone adds a
+    method to DBConnection but forgets to implement it on the
+    wrapper, this test catches it before production.
+    """
+
+    def test_sqlite_connection_has_execute(self) -> None:
+        """SqliteConnection must have execute method."""
+        assert hasattr(SqliteConnection, "execute"), (
+            "SqliteConnection missing execute() required by DBConnection"
+        )
+
+    def test_sqlite_connection_has_executescript(self) -> None:
+        """SqliteConnection must have executescript for schema init.
+
+        This was the exact method missing in the 2026-05-21 crash.
+        HypothesisStorage.init_schema() calls self._conn.executescript()
+        and main.py passes a SqliteConnection as _conn.
+        """
+        assert hasattr(SqliteConnection, "executescript"), (
+            "SqliteConnection missing executescript() required by "
+            "HypothesisStorage.init_schema(). This causes AttributeError "
+            "at bot startup (main.py line 454)."
+        )
+
+    def test_sqlite_connection_has_fetchall(self) -> None:
+        """SqliteConnection must have fetchall method."""
+        assert hasattr(SqliteConnection, "fetchall"), (
+            "SqliteConnection missing fetchall() required by DBConnection"
+        )
+
+    def test_sqlite_connection_has_fetchone(self) -> None:
+        """SqliteConnection must have fetchone method."""
+        assert hasattr(SqliteConnection, "fetchone"), (
+            "SqliteConnection missing fetchone() required by DBConnection"
+        )
+
+    def test_sqlite_connection_has_execute_in_transaction(self) -> None:
+        """SqliteConnection must have execute_in_transaction method."""
+        assert hasattr(SqliteConnection, "execute_in_transaction"), (
+            "SqliteConnection missing execute_in_transaction() required by DBConnection"
+        )
+
+    def test_sqlite_connection_has_close(self) -> None:
+        """SqliteConnection must have close method."""
+        assert hasattr(SqliteConnection, "close"), (
+            "SqliteConnection missing close() required by DBConnection"
+        )
+
+    def test_all_dbconnection_protocol_methods_exist_on_sqlite_connection(
+        self,
+    ) -> None:
+        """Exhaustive check: every DBConnection Protocol method must exist.
+
+        Walks the DBConnection Protocol class and checks that
+        SqliteConnection has each declared method. This is the
+        generalized guard that catches future Protocol additions.
+        """
+        from application.skill_compression.hypothesis_storage import DBConnection
+
+        protocol_methods: set[str] = set()
+        for name in dir(DBConnection):
+            if name.startswith("_"):
+                continue
+            if callable(getattr(DBConnection, name, None)):
+                protocol_methods.add(name)
+
+        missing = [
+            m for m in sorted(protocol_methods) if not hasattr(SqliteConnection, m)
+        ]
+        assert not missing, (
+            f"SqliteConnection is missing DBConnection Protocol methods: "
+            f"{missing}. These will cause AttributeError at runtime when "
+            f"HypothesisStorage or ImportOrchestrator calls them."
+        )
+
+
+class TestHypothesisStorageInitSchemaProductionPath:
+    """R3-SC-01 Integration: real production wiring path must not crash.
+
+    Reproduces the exact path that crashed in production:
+    main.py -> SqliteConnection(db) -> HypothesisStorage(conn) -> init_schema()
+    """
+
+    def test_hypothesis_storage_init_schema_with_real_sqlite_connection(
+        self,
+    ) -> None:
+        """The real production path must not raise AttributeError."""
+        conn = SqliteConnection(":memory:")
+        storage = HypothesisStorage(conn)
+        storage.init_schema()  # must not raise
+        conn.close()
+
+
+# ---------------------------------------------------------------
+# R3-SC-01 AST Guard: method calls on _conn in HypothesisStorage
+# ---------------------------------------------------------------
+
+
+class TestHypothesisStorageConnMethodCallsExist:
+    """AST-level guard: every method called on self._conn in
+    HypothesisStorage must exist on SqliteConnection.
+
+    This is the method-existence variant of the R2-SC-01 kwarg check.
+    Walks the HypothesisStorage source, finds all self._conn.<method>()
+    calls, and verifies SqliteConnection has each method.
+    """
+
+    def test_all_conn_method_calls_exist_on_sqlite_connection(self) -> None:
+        """AST walk: self._conn.<method>() calls must resolve."""
+        source = _read_source("application/skill_compression/hypothesis_storage.py")
+        tree = ast.parse(source, filename="hypothesis_storage.py")
+
+        called_methods: set[str] = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            # Match self._conn.<method>()
+            if (
+                isinstance(func, ast.Attribute)
+                and isinstance(func.value, ast.Attribute)
+                and isinstance(func.value.value, ast.Name)
+                and func.value.value.id == "self"
+                and func.value.attr == "_conn"
+            ):
+                called_methods.add(func.attr)
+
+        assert called_methods, (
+            "No self._conn.<method>() calls found in HypothesisStorage. "
+            "Either the source changed or the AST walk is broken."
+        )
+
+        missing = [
+            m for m in sorted(called_methods) if not hasattr(SqliteConnection, m)
+        ]
+        assert not missing, (
+            f"HypothesisStorage calls self._conn.{missing} but "
+            f"SqliteConnection does not have these methods. "
+            f"This will cause AttributeError at runtime."
         )

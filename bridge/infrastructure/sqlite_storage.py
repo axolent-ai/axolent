@@ -256,6 +256,17 @@ class SqliteConnection:
             conn = self._ensure_connection()
             return conn.execute(sql, params).fetchone()
 
+    def executescript(self, script: str) -> None:
+        """Execute a multi-statement SQL script (DDL etc.).
+
+        Delegates to the underlying sqlite3 connection. Used by callers
+        that need to run CREATE TABLE / CREATE INDEX / TRIGGER schemas
+        in one call (e.g. HypothesisStorage.init_schema).
+        """
+        with self._lock:
+            conn = self._ensure_connection()
+            conn.executescript(script)
+
     def close(self) -> None:
         """Close the connection (for graceful shutdown)."""
         with self._lock:

@@ -13,6 +13,9 @@ dependencies = [
     "python-dotenv==1.2.2",
     "filelock>=3.13",
     "langdetect>=1.0.9,<2",
+    # Floor-pin: transitive dep via fastapi/mcp/sse_starlette.
+    # Pinned to patch PYSEC-2026-161 (starlette <1.0.1 vulnerability).
+    "starlette>=1.0.1",
 ]
 
 [project.optional-dependencies]
