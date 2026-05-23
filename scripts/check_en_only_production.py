@@ -140,6 +140,8 @@ WHITELIST_PATHS = {
     "scripts/i18n_add_settings_v2_keys.py",
     # one-shot i18n translate-script: contains 18 non-EN languages as data literals.
     "scripts/i18n_translate_settings_v2.py",
+    # Smoke test: contains German user messages as test input data.
+    "scripts/smoke_test.py",
 }
 
 WHITELIST_DIR_PREFIXES = (

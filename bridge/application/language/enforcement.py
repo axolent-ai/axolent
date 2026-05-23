@@ -28,7 +28,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+
+import icontract
 
 from application.language.context import LanguageContext
 from application.language.model_profiles import ModelAdherenceProfile, get_profile
@@ -41,6 +43,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+@runtime_checkable
 class AuditLogPort(Protocol):
     """Application-layer port for audit logging.
 
@@ -107,6 +110,22 @@ class LanguageEnforcement:
         self._provider_router = provider_router
         self._audit_log = audit_log
 
+    @icontract.require(
+        lambda ctx: isinstance(ctx, LanguageContext),
+        "ctx must be a LanguageContext instance (immutable)",
+    )
+    @icontract.require(
+        lambda ctx: ctx.code and ctx.code.strip(),
+        "ctx.code (language code) must not be empty",
+    )
+    @icontract.ensure(
+        lambda result: isinstance(result, EnforcementResult),
+        "result must be an EnforcementResult",
+    )
+    @icontract.ensure(
+        lambda result: result.final_output is not None,
+        "result.final_output must not be None",
+    )
     async def enforce(
         self,
         output: str,
@@ -119,6 +138,10 @@ class LanguageEnforcement:
         request_id: str = "",
     ) -> EnforcementResult:
         """Run the full enforcement pipeline on LLM output.
+
+        Contracts:
+            Pre: ctx is an immutable LanguageContext with non-empty code.
+            Post: returns EnforcementResult with non-None final_output.
 
         Steps:
         1. Look up model profile

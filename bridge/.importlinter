@@ -24,6 +24,21 @@ forbidden_modules =
     application
     presentation
 
+# NOTE: Application -> Infrastructure contract is NOT active yet.
+# The application layer currently has ~20 direct imports from infrastructure
+# (chat_service.py, fallback_resolver.py, provider_router.py, etc.).
+# Activating this contract requires introducing ports/adapters first.
+# Tracked for Welle 2 refactoring.
+#
+# [importlinter:contract:application-no-infra-no-presentation]
+# name = Application must not depend on infrastructure or presentation directly
+# type = forbidden
+# source_modules =
+#     application
+# forbidden_modules =
+#     infrastructure
+#     presentation
+
 [importlinter:contract:presentation-no-infra]
 name = Presentation must not import directly from Infrastructure
 type = forbidden

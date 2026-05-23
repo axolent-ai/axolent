@@ -11,12 +11,13 @@ identical to the ChatService pattern.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, Protocol
+from typing import Any, Optional, Protocol, runtime_checkable
 
 
 log = logging.getLogger(__name__)
 
 
+@runtime_checkable
 class BookmarkStorage(Protocol):
     """Protocol for swappable bookmark storage backends.
 

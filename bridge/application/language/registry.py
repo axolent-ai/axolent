@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import FrozenSet, Optional, Protocol
+from typing import FrozenSet, Optional, Protocol, runtime_checkable
 
 log = logging.getLogger(__name__)
 
@@ -82,6 +82,7 @@ class LanguageRegistryEntry:
     notes: Optional[str] = None
 
 
+@runtime_checkable
 class LanguageRegistryProtocol(Protocol):
     """Protocol for the language registry.
 

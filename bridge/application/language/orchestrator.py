@@ -52,7 +52,7 @@ import logging
 import time
 import types
 from dataclasses import dataclass
-from typing import Optional, Protocol, Tuple
+from typing import Optional, Protocol, Tuple, runtime_checkable
 
 from application.language.backends import LanguageDetectorBackend
 from application.language.context import LanguageContext
@@ -151,6 +151,7 @@ class OrchestratedDetection:
 # ---------------------------------------------------------------------------
 
 
+@runtime_checkable
 class DetectionOrchestratorProtocol(Protocol):
     """Protocol for the detection orchestrator.
 

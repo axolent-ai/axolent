@@ -1,0 +1,36 @@
+rules:
+  - id: pattern-judge-without-privacy-pipeline
+    patterns:
+      - pattern: PatternJudge(...)
+      - pattern-not: PatternJudge(..., privacy_pipeline=..., ...)
+    paths:
+      exclude:
+        - "tests/"
+        - "test_*.py"
+        - "*_test.py"
+    message: >
+      PatternJudge must be instantiated with privacy_pipeline= parameter.
+      Without it, all privacy filters are silently skipped.
+      Test files are excluded since they intentionally test the
+      "no privacy pipeline" path.
+    severity: ERROR
+    languages: [python]
+
+  - id: direct-infrastructure-import-in-presentation
+    pattern-regex: '^\s*from\s+infrastructure\.(conversation_storage|crypto_storage|sqlite_storage|memory_storage)\s+import\b'
+    paths:
+      include:
+        - presentation/
+    message: >
+      Presentation layer must not import directly from infrastructure.
+      Use application services as intermediary (hexagonal architecture).
+    severity: ERROR
+    languages: [python]
+
+  - id: phase-zero-stub-marker
+    pattern-regex: "#\\s*(Phase 0|TODO|FIXME|not implemented)"
+    message: >
+      Phase 0 / TODO / FIXME stub found. Please create a tracking issue
+      or resolve before merging.
+    severity: WARNING
+    languages: [python]

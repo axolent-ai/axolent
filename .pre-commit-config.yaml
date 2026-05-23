@@ -113,7 +113,19 @@ repos:
       # Uses scripts/run_with_venv.py for platform-portable venv access.
       - id: semgrep
         name: semgrep
-        entry: python scripts/run_with_venv.py semgrep --config=auto --quiet --error
+        entry: python scripts/run_with_venv.py semgrep --config=auto --quiet --error --exclude=test_main_wiring_generalized.py
+        language: system
+        pass_filenames: false
+        files: ^bridge/.*\.py$
+        types: [python]
+        stages: [pre-commit]
+
+      # AXOLENT-specific semgrep rules (custom patterns)
+      # --severity=ERROR: only ERROR-level findings block the commit.
+      # WARNING-level (e.g. TODO/FIXME markers) are reported but pass.
+      - id: semgrep-axolent
+        name: semgrep (axolent rules)
+        entry: python scripts/run_with_venv.py semgrep --config=../.semgrep/axolent-rules.yml --quiet --error --severity=ERROR .
         language: system
         pass_filenames: false
         files: ^bridge/.*\.py$

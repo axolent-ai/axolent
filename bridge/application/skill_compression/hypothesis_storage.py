@@ -24,8 +24,10 @@ import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional, Protocol
+from typing import Optional, Protocol, runtime_checkable
 from uuid import uuid4
+
+import icontract  # noqa: F401 (design-by-contract, installed via pip)
 
 log = logging.getLogger(__name__)
 
@@ -161,6 +163,7 @@ CREATE INDEX IF NOT EXISTS idx_difficulty_fingerprint
 # ──────────────────────────────────────────────────────────────
 
 
+@runtime_checkable
 class DBConnection(Protocol):
     """Minimal DB connection interface used by HypothesisStorage.
 
@@ -293,6 +296,11 @@ ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     "archived": frozenset({"retired"}),
     "retired": frozenset(),  # terminal
 }
+
+# All valid statuses (union of keys and all target values).
+ALLOWED_STATUSES: frozenset[str] = frozenset(ALLOWED_TRANSITIONS.keys()) | frozenset(
+    s for targets in ALLOWED_TRANSITIONS.values() for s in targets
+)
 
 
 class InvalidStatusTransition(Exception):
@@ -891,6 +899,14 @@ class HypothesisStorage:
             (status, hypothesis_id),
         )
 
+    @icontract.require(
+        lambda new_status: new_status in ALLOWED_STATUSES,
+        "new_status must be a valid status from ALLOWED_STATUSES",
+    )
+    @icontract.require(
+        lambda hypothesis_id: hypothesis_id and hypothesis_id.strip(),
+        "hypothesis_id must not be empty",
+    )
     def transition_hypothesis_status(
         self,
         hypothesis_id: str,
@@ -903,6 +919,10 @@ class HypothesisStorage:
         Checks the transition against the allowed transition matrix.
         Raises InvalidStatusTransition if the transition is not allowed
         and force=False.
+
+        Contracts:
+            Pre: new_status in ALLOWED_STATUSES.
+            Pre: hypothesis_id is non-empty.
 
         Allowed transitions:
             candidate    -> suggested, archived, retired

@@ -14,7 +14,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from i18n.domain.i18n import get_status_text  # noqa: F401 (re-export)
 
@@ -34,6 +34,7 @@ MIN_STATUS_DISPLAY_MS: int = 1100  # Minimum display duration per status update 
 # ---------------------------------------------------------------------------
 
 
+@runtime_checkable
 class StatusCallback(Protocol):
     """Protocol for status update callbacks.
 

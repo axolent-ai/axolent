@@ -26,11 +26,12 @@ Phase 2 migration (Step 4/4):
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from application.language.registry import InMemoryLanguageRegistry
 
 
+@runtime_checkable
 class LanguageDetectorBackend(Protocol):
     """Backend protocol for language detection in the Verifier.
 

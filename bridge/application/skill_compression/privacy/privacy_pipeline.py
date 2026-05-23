@@ -22,6 +22,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
+import icontract
+
 from application.skill_compression.hypothesis_storage import Hypothesis
 from application.skill_compression.privacy.healthcare_filter import HealthcareFilter
 from application.skill_compression.privacy.nudge_filter import NudgeFilter
@@ -161,10 +163,29 @@ class PrivacyPipeline:
         """Access the nudge filter directly."""
         return self._nudge
 
+    @icontract.require(
+        lambda hypothesis: hypothesis is not None
+        and bool(hypothesis.claim)
+        and bool(hypothesis.claim.strip()),
+        "hypothesis must not be None and claim must not be empty or whitespace-only",
+    )
+    @icontract.ensure(
+        lambda result: result is None or isinstance(result, PipelineRejection),
+        "result must be None (clean) or a PipelineRejection",
+    )
+    @icontract.ensure(
+        lambda result: result is None or hasattr(result, "source"),
+        "rejected result must have a valid source attribute",
+    )
     def check(self, hypothesis: Hypothesis) -> Optional[PipelineRejection]:
         """Run all privacy filters on a hypothesis.
 
         Fail-fast: returns on first rejection.
+
+        Contracts:
+            Pre: hypothesis is not None.
+            Pre: hypothesis.claim is not empty.
+            Post: returns None (clean) or PipelineRejection (with source).
 
         Args:
             hypothesis: The hypothesis to validate.

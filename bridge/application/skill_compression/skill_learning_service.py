@@ -21,6 +21,8 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import uuid4
 
+import icontract
+
 from application.skill_compression.hypothesis_storage import (
     Hypothesis,
     HypothesisScope,
@@ -33,6 +35,12 @@ from application.skill_compression.privacy.privacy_pipeline import (
 )
 
 log = logging.getLogger(__name__)
+
+# Allowed source values for learn(). Defined at module level so the
+# icontract lambda can reference it without needing `self`.
+_ALLOWED_SOURCES: frozenset[str] = frozenset(
+    {"learn_command", "import", "auto", "user"}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +77,9 @@ class SkillLearningService:
             print(f"Blocked: {result.rejection_reason}")
     """
 
+    # Exposed as class attribute for test introspection.
+    ALLOWED_SOURCES: frozenset[str] = _ALLOWED_SOURCES
+
     def __init__(
         self,
         storage: HypothesisStorage,
@@ -77,6 +88,22 @@ class SkillLearningService:
         self._storage = storage
         self._privacy = privacy_pipeline
 
+    @icontract.require(
+        lambda claim_text: claim_text and claim_text.strip(),
+        "claim_text must not be empty or whitespace-only",
+    )
+    @icontract.require(
+        lambda user_id: user_id > 0,
+        "user_id must be a positive integer",
+    )
+    @icontract.require(
+        lambda source: source in _ALLOWED_SOURCES,
+        "source must be one of the allowed source values",
+    )
+    @icontract.ensure(
+        lambda result: not result.success or result.hypothesis_id,
+        "on success, hypothesis_id must be non-empty",
+    )
     def learn(
         self,
         claim_text: str,
@@ -91,6 +118,12 @@ class SkillLearningService:
 
         Runs the complete PrivacyPipeline (Healthcare + Secret + Nudge)
         before storing. If any filter rejects, nothing is persisted.
+
+        Contracts:
+            Pre: claim_text is not empty.
+            Pre: user_id > 0.
+            Pre: source in ALLOWED_SOURCES.
+            Post: if success=True then hypothesis_id is non-empty.
 
         Args:
             claim_text: The skill claim text.

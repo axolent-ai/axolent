@@ -8,6 +8,25 @@ Loads configuration, registers providers + handlers, starts long-polling.
 
 from __future__ import annotations
 
+# beartype: Runtime type-checking - DEFERRED to Phase 1a.
+# Initial activation crashed on Forward References from
+# `from __future__ import annotations` (PEP 563) which makes all
+# type hints strings that beartype cannot resolve across modules at
+# import time. Activating this requires a systematic pass over the
+# codebase to either:
+#   (a) Remove `from __future__ import annotations` from modules
+#       containing module-level Protocol/Union types referenced
+#       from other modules, or
+#   (b) Use beartype.typing.* imports instead of typing.* for the
+#       affected modules, or
+#   (c) Decorate critical functions individually with @beartype
+#       instead of global package activation.
+# Tracked as Phase 1a follow-up. The 7 Protocols already have
+# @runtime_checkable so they're ready when beartype gets re-enabled.
+#
+# from beartype.claw import beartype_packages
+# beartype_packages(("domain", "application", "infrastructure", "presentation"))
+
 import logging
 import os
 import sys

@@ -168,6 +168,74 @@ pre-commit run pytest --all-files
 
 See [docs/TESTING.md](docs/TESTING.md) for the complete list and what each hook checks.
 
+## Production-Path Tests (mandatory)
+
+Every new feature **must** include a production-path test. This is non-negotiable.
+
+**What counts as a production-path test:**
+
+* Uses real wrapper classes (e.g. `SqliteConnection`, not `FakeConn` or `MagicMock`)
+* Imports through the composition root (`main.py` imports), not directly from
+  `application/` internals where possible
+* Exercises the full call chain from the entry point consumers actually use
+* Verifies wiring: the component is instantiated, injected, and callable in the
+  production path
+
+**Why:** Mock-only tests can pass while the production path is broken (wiring bugs).
+The Codex review found multiple instances where components existed but were never
+called in the real code path. Production-path tests catch this class of bugs.
+
+**Example (good):**
+
+```python
+# Uses real SqliteConnection, calls through the service interface
+conn = SqliteConnection(tmp_path / "test.db")
+storage = HypothesisStorage(conn)
+storage.init_schema()
+service = SkillLearningService(storage, PrivacyPipeline())
+result = service.learn("Always respond in German", user_id=1, source="learn_command")
+assert result.success
+```
+
+**Example (insufficient on its own):**
+
+```python
+# Mock-only test: passes even if wiring is broken
+storage = MagicMock()
+service = SkillLearningService(storage, MagicMock())
+# This can't catch real wiring bugs
+```
+
+## Architecture Guards
+
+When adding a new service or component that gets wired in `main.py`:
+
+1. Add an AST-based architecture test in `tests/test_architecture/` that verifies
+   the component is actually instantiated in `main.py`
+2. Add an `inspect.signature` check that validates constructor kwargs match what
+   `main.py` passes
+3. This prevents "code exists but never runs" bugs
+
+## Pre-Commit Compliance
+
+All 17 pre-commit hooks must pass. No exceptions.
+
+* **Semgrep warnings:** Either fix the finding or explicitly suppress with a
+  `# nosemgrep` comment that includes a justification
+* **Phase 0 / TODO / FIXME markers:** Do not leave these in committed code.
+  Create a GitHub Issue instead and reference it in a comment
+* **import-linter:** Zero contract violations. The hexagonal layer boundaries
+  are enforced at commit time
+
+## Design-by-Contract (icontract)
+
+New pipeline-level methods must include `icontract` pre/post-conditions:
+
+* `@icontract.require()` for parameter validation at the boundary
+* `@icontract.ensure()` for return value guarantees
+* Tests in `tests/test_application/test_contracts/` that verify
+  `ViolationError` is raised on boundary violations
+
 ## Code Style
 
 * **Language:** English only for all code, comments, docstrings, log messages, and
