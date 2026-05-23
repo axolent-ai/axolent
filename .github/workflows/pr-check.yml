@@ -1,0 +1,60 @@
+name: PR Quality Gate
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        working-directory: ./bridge
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev,test]"
+
+      - name: Lint (ruff check)
+        working-directory: ./bridge
+        run: ruff check .
+
+      - name: Lint (ruff format)
+        working-directory: ./bridge
+        run: ruff format --check .
+
+      - name: Architecture (import-linter)
+        working-directory: ./bridge
+        run: lint-imports
+
+      - name: Security (bandit)
+        working-directory: ./bridge
+        run: bandit -c .bandit.yaml -r .
+
+      - name: Security (semgrep)
+        working-directory: ./bridge
+        run: semgrep --config=auto --error
+
+      - name: Custom rules (semgrep axolent)
+        run: semgrep --config=.semgrep/axolent-rules.yml --severity=ERROR --error bridge/
+
+      - name: Test suite
+        working-directory: ./bridge
+        env:
+          AXOLENT_TIMEZONE: Europe/Berlin
+        run: pytest --tb=short -q
+
+      - name: Smoke test
+        env:
+          AXOLENT_TIMEZONE: Europe/Berlin
+        run: python scripts/smoke_test.py

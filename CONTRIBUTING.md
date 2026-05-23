@@ -246,6 +246,13 @@ New pipeline-level methods must include `icontract` pre/post-conditions:
 * **Bullets:** Use `*` or numbered lists in Markdown. Never `-` as a bullet marker.
 * **Comments:** Only when the WHY is non-obvious. Do not explain what the code does.
 
+## Dogfood Day
+
+Once per week, contributors are encouraged to use AXOLENT as a normal
+user (not as a tester) for 30 minutes. This finds UX/UI bugs that
+automated tests cannot find. See [docs/DOGFOOD.md](docs/DOGFOOD.md)
+for the full protocol and reporting format.
+
 ## Code of Conduct
 
 Be respectful, constructive, and professional. Technical disagreements are welcome

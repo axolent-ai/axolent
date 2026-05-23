@@ -1,0 +1,47 @@
+name: Daily Smoke Test
+
+on:
+  schedule:
+    # Run every day at 03:00 UTC (04:00 CET / 05:00 CEST)
+    - cron: '0 3 * * *'
+  workflow_dispatch:  # manual trigger
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        working-directory: ./bridge
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev,test]"
+
+      - name: Run smoke test
+        working-directory: ./
+        env:
+          AXOLENT_TIMEZONE: Europe/Berlin
+        run: |
+          python scripts/smoke_test.py
+
+      - name: Run full test suite
+        working-directory: ./bridge
+        run: |
+          pytest --tb=short -q
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Daily smoke test failed. Check the logs above for details."
+          echo "Daily smoke test failed at $(date -u '+%Y-%m-%d %H:%M UTC')"
+          # Future: post to Slack/Telegram via webhook
