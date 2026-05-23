@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from zoneinfo import ZoneInfo
+
 import pytest
 
 from application.execution.context import PartialExecutionContext
@@ -12,6 +14,7 @@ from application.execution.resolvers import (
     TimeResolver,
     _classify_time_of_day,
     _get_weekday_name,
+    _resolve_timezone,
 )
 from application.language_resolver import LanguageContext
 
@@ -98,6 +101,33 @@ class TestLanguageResolverAdapter:
         assert result.language.request_id == env.request_id
 
 
+class TestResolveTimezone:
+    """Test _resolve_timezone helper."""
+
+    def test_uses_env_var_when_valid(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """AXOLENT_TIMEZONE env var is respected."""
+        monkeypatch.setenv("AXOLENT_TIMEZONE", "Europe/Berlin")
+        tz_info, tz_name = _resolve_timezone()
+        assert tz_name == "Europe/Berlin"
+        assert tz_info == ZoneInfo("Europe/Berlin")
+
+    def test_invalid_env_var_falls_back(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Invalid AXOLENT_TIMEZONE falls back gracefully."""
+        monkeypatch.setenv("AXOLENT_TIMEZONE", "Mars/Olympus")
+        tz_info, tz_name = _resolve_timezone()
+        # Should fall back to system local or Europe/Berlin
+        assert tz_name != "Mars/Olympus"
+        assert tz_info is not None
+
+    def test_no_env_var_returns_valid_tz(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Without env var, returns a valid timezone."""
+        monkeypatch.delenv("AXOLENT_TIMEZONE", raising=False)
+        tz_info, tz_name = _resolve_timezone()
+        assert tz_info is not None
+        assert isinstance(tz_name, str)
+        assert len(tz_name) > 0
+
+
 class TestTimeResolver:
     """Test TimeResolver behavior."""
 
@@ -117,7 +147,7 @@ class TestTimeResolver:
 
         result = await resolver.resolve(partial)
         assert result.time is not None
-        assert result.time.timezone_name == "UTC"
+        assert result.time.timezone_name != ""
         assert result.time.weekday >= 0
         assert result.time.weekday <= 6
 
@@ -146,6 +176,65 @@ class TestTimeResolver:
             "Sonntag",
         }
         assert result.time.weekday_name in german_days
+
+    @pytest.mark.asyncio
+    async def test_resolve_uses_env_timezone(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """TimeResolver respects AXOLENT_TIMEZONE env var."""
+        monkeypatch.setenv("AXOLENT_TIMEZONE", "Europe/Berlin")
+        resolver = TimeResolver()
+        partial = PartialExecutionContext()
+        result = await resolver.resolve(partial)
+
+        assert result.time.timezone_name == "Europe/Berlin"
+        assert result.time.now_local.tzinfo == ZoneInfo("Europe/Berlin")
+        assert result.time.now_utc.tzinfo.tzname(None) == "UTC"
+
+    @pytest.mark.asyncio
+    async def test_now_local_differs_from_utc_in_europe(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """now_local in Europe/Berlin has CET (+1) or CEST (+2) offset."""
+        monkeypatch.setenv("AXOLENT_TIMEZONE", "Europe/Berlin")
+        resolver = TimeResolver()
+        partial = PartialExecutionContext()
+        result = await resolver.resolve(partial)
+
+        offset_hours = result.time.now_local.utcoffset().total_seconds() / 3600
+        assert offset_hours in (1, 2)  # CET=+1, CEST=+2
+
+    @pytest.mark.asyncio
+    async def test_now_local_and_utc_represent_same_instant(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """now_local and now_utc must represent the same point in time."""
+        monkeypatch.setenv("AXOLENT_TIMEZONE", "America/New_York")
+        resolver = TimeResolver()
+        partial = PartialExecutionContext()
+        result = await resolver.resolve(partial)
+
+        # Same instant: difference should be less than 1 second
+        delta = abs(
+            (
+                result.time.now_utc
+                - result.time.now_local.astimezone(result.time.now_utc.tzinfo)
+            ).total_seconds()
+        )
+        assert delta < 1.0
+
+    @pytest.mark.asyncio
+    async def test_weekday_uses_local_time(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Weekday and time_of_day are derived from local time, not UTC."""
+        monkeypatch.setenv("AXOLENT_TIMEZONE", "Europe/Berlin")
+        resolver = TimeResolver()
+        partial = PartialExecutionContext()
+        result = await resolver.resolve(partial)
+
+        # Verify weekday matches local time, not UTC
+        assert result.time.weekday == result.time.now_local.weekday()
 
 
 class TestTimeOfDayClassification:

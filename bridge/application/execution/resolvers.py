@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import abc
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Literal, Optional
+from zoneinfo import ZoneInfo
 
 from application.execution.context import (
     ChannelCapabilities,
@@ -25,6 +27,37 @@ from application.execution.context import (
 from application.language_resolver import LanguageResolver
 
 log = logging.getLogger(__name__)
+
+
+def _resolve_timezone() -> tuple[ZoneInfo, str]:
+    """Resolve timezone from env var AXOLENT_TIMEZONE or system default.
+
+    Falls back to Europe/Berlin if both fail (bot is currently
+    single-tenant central europe).
+    """
+    tz_name = os.environ.get("AXOLENT_TIMEZONE")
+    if tz_name:
+        try:
+            return ZoneInfo(tz_name), tz_name
+        except Exception:  # nosec B110 - intentional silent fallback to system tz
+            pass
+
+    # Fallback: try to detect system local timezone
+    try:
+        local_now = datetime.now().astimezone()
+        sys_tz = local_now.tzinfo
+        if sys_tz is not None:
+            sys_name = str(sys_tz)
+            # Try as IANA name; if fails, fall through
+            try:
+                return ZoneInfo(sys_name), sys_name
+            except Exception:  # nosec B110 - silent fallback to Europe/Berlin
+                pass
+    except Exception:  # nosec B110 - silent fallback to Europe/Berlin
+        pass
+
+    # Final fallback
+    return ZoneInfo("Europe/Berlin"), "Europe/Berlin"
 
 
 class BaseResolver(abc.ABC):
@@ -174,14 +207,15 @@ def _get_weekday_name(weekday: int, lang: str) -> str:
 class TimeResolver(BaseResolver):
     """Resolves time context for the current request.
 
-    Phase 0: uses UTC (no user timezone detection yet).
-    The time context enables time-aware prompts and scheduling.
+    Uses AXOLENT_TIMEZONE env var, system local timezone, or
+    Europe/Berlin fallback. The time context enables time-aware
+    prompts and scheduling.
     """
 
     async def resolve(
         self, partial: PartialExecutionContext
     ) -> PartialExecutionContext:
-        """Fill time context with current UTC time.
+        """Fill time context with current local and UTC time.
 
         Args:
             partial: Partial context (language should be resolved first).
@@ -189,21 +223,21 @@ class TimeResolver(BaseResolver):
         Returns:
             Partial context with time field populated.
         """
-        now = datetime.now(timezone.utc)
-        weekday = now.weekday()
+        now_utc = datetime.now(timezone.utc)
+        tz_info, tz_name = _resolve_timezone()
+        now_local = now_utc.astimezone(tz_info)
 
-        # Use resolved language for weekday name, fallback to "en"
         lang = "de"
         if partial.language is not None:
             lang = partial.language.code
 
         partial.time = TimeContext(
-            now_utc=now,
-            now_local=now,  # Phase 0: no timezone conversion yet
-            weekday=weekday,
-            weekday_name=_get_weekday_name(weekday, lang),
-            time_of_day=_classify_time_of_day(now.hour),
-            timezone_name="UTC",
+            now_utc=now_utc,
+            now_local=now_local,
+            weekday=now_local.weekday(),
+            weekday_name=_get_weekday_name(now_local.weekday(), lang),
+            time_of_day=_classify_time_of_day(now_local.hour),
+            timezone_name=tz_name,
         )
         return partial
 

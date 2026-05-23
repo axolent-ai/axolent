@@ -26,7 +26,7 @@ class TimeContext:
 
     Attributes:
         now_utc: Current UTC timestamp.
-        now_local: Local timestamp (user timezone, defaults to UTC).
+        now_local: Local timestamp (user timezone, defaults to system local).
         weekday: Weekday as integer (0=Monday, 6=Sunday).
         weekday_name: Localized weekday name.
         time_of_day: Classification of current time.
@@ -34,7 +34,7 @@ class TimeContext:
     """
 
     now_utc: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    now_local: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    now_local: datetime = field(default_factory=lambda: datetime.now().astimezone())
     weekday: int = 0
     weekday_name: str = "Monday"
     time_of_day: Literal["morning", "afternoon", "evening", "night"] = "morning"

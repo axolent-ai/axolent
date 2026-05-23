@@ -90,7 +90,7 @@ class TestContextKernelResolvesPipeline:
         )
         ctx = await kernel.build(env)
 
-        assert ctx.time.timezone_name == "UTC"
+        assert ctx.time.timezone_name != ""
         assert ctx.time.weekday >= 0
         assert ctx.time.time_of_day in ("morning", "afternoon", "evening", "night")
 
