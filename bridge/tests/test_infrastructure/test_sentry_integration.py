@@ -4,13 +4,14 @@ Validates:
 1. _sentry_before_send strips user-controlled text from events
 2. _sentry_before_send preserves non-sensitive data
 3. Breadcrumb data is also sanitized
+4. Telegram bot tokens in request/breadcrumb URLs are redacted
 """
 
 from __future__ import annotations
 
 import copy
 
-from main import _sentry_before_send
+from main import _redact_sensitive_url, _sentry_before_send
 
 
 class TestSentryBeforeSend:
@@ -121,3 +122,74 @@ class TestSentryBeforeSend:
         hint_copy = copy.deepcopy(hint)
         _sentry_before_send(event, hint)
         assert hint == hint_copy
+
+    # --- R6-SEC-01: Telegram bot token redaction ---
+
+    def test_redacts_telegram_bot_token_from_request_url(self) -> None:
+        """Bot tokens in request URLs are replaced with [REDACTED]."""
+        event = {
+            "request": {
+                "url": "https://api.telegram.org/bot123:ABC/sendMessage",
+                "method": "POST",
+            }
+        }
+        cleaned = _sentry_before_send(event, {})
+
+        assert "123:ABC" not in cleaned["request"]["url"]
+        assert (
+            cleaned["request"]["url"]
+            == "https://api.telegram.org/bot[REDACTED]/sendMessage"
+        )
+
+    def test_redacts_telegram_bot_token_from_breadcrumb_url(self) -> None:
+        """Bot tokens in breadcrumb data URLs are replaced with [REDACTED]."""
+        event = {
+            "breadcrumbs": {
+                "values": [
+                    {
+                        "category": "http",
+                        "data": {
+                            "url": "https://api.telegram.org/bot789:XYZ/getUpdates",
+                            "status_code": 200,
+                        },
+                    },
+                ],
+            },
+        }
+        cleaned = _sentry_before_send(event, {})
+
+        crumb_url = cleaned["breadcrumbs"]["values"][0]["data"]["url"]
+        assert "789:XYZ" not in crumb_url
+        assert crumb_url == "https://api.telegram.org/bot[REDACTED]/getUpdates"
+
+    def test_preserves_non_telegram_urls(self) -> None:
+        """Non-Telegram URLs are not modified by the redaction."""
+        event = {
+            "request": {
+                "url": "https://example.com/api/v1/data",
+                "method": "GET",
+            }
+        }
+        cleaned = _sentry_before_send(event, {})
+        assert cleaned["request"]["url"] == "https://example.com/api/v1/data"
+
+
+class TestRedactSensitiveUrl:
+    """Direct tests for the _redact_sensitive_url helper."""
+
+    def test_redacts_standard_bot_url(self) -> None:
+        url = "https://api.telegram.org/bot123456:ABCDEF/sendMessage"
+        assert (
+            _redact_sensitive_url(url)
+            == "https://api.telegram.org/bot[REDACTED]/sendMessage"
+        )
+
+    def test_no_match_returns_original(self) -> None:
+        url = "https://example.com/some/path"
+        assert _redact_sensitive_url(url) == url
+
+    def test_redacts_long_token(self) -> None:
+        url = "https://api.telegram.org/bot1234567890:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw/getMe"
+        result = _redact_sensitive_url(url)
+        assert "1234567890:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw" not in result
+        assert result == "https://api.telegram.org/bot[REDACTED]/getMe"

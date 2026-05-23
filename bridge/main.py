@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -42,6 +43,25 @@ from sentry_sdk.integrations.logging import LoggingIntegration
 from sentry_sdk.integrations.asyncio import AsyncioIntegration
 
 
+_TELEGRAM_BOT_URL_RE = re.compile(r"(https://api\.telegram\.org/bot)[^/]+(/)")
+
+
+def _redact_sensitive_url(url: str) -> str:
+    """Replace Telegram bot tokens embedded in URL paths.
+
+    Telegram bot API URLs have the form
+    ``https://api.telegram.org/bot<TOKEN>/<method>``.
+    This replaces ``<TOKEN>`` with ``[REDACTED]``.
+
+    Args:
+        url: Original URL string.
+
+    Returns:
+        URL with bot token replaced, or the original if no match.
+    """
+    return _TELEGRAM_BOT_URL_RE.sub(r"\1[REDACTED]\2", url)
+
+
 def _sentry_before_send(event, hint):
     """Strip user-controlled text from Sentry events.
 
@@ -56,22 +76,26 @@ def _sentry_before_send(event, hint):
     Returns:
         Modified event or None to drop the event entirely.
     """
-    # Strip request bodies / message content
+    # Strip request bodies / message content and redact bot tokens in URLs
     if "request" in event and isinstance(event["request"], dict):
         event["request"].pop("data", None)
         event["request"].pop("query_string", None)
+        if "url" in event["request"] and isinstance(event["request"]["url"], str):
+            event["request"]["url"] = _redact_sensitive_url(event["request"]["url"])
 
     # Strip user-message text from extra context
     if "extra" in event and isinstance(event["extra"], dict):
         for key in ("message_text", "user_message", "user_input", "claim"):
             event["extra"].pop(key, None)
 
-    # Strip from breadcrumb data
+    # Strip from breadcrumb data and redact bot tokens in breadcrumb URLs
     breadcrumbs = event.get("breadcrumbs", {}).get("values", [])
     for crumb in breadcrumbs:
         if isinstance(crumb.get("data"), dict):
             for key in ("message_text", "user_message", "user_input", "claim", "text"):
                 crumb["data"].pop(key, None)
+            if "url" in crumb["data"] and isinstance(crumb["data"]["url"], str):
+                crumb["data"]["url"] = _redact_sensitive_url(crumb["data"]["url"])
 
     return event
 
@@ -85,6 +109,9 @@ if _sentry_dsn:
         release=os.getenv("AXOLENT_RELEASE", "dev"),
         # Privacy: never send raw user input
         send_default_pii=False,
+        # Privacy: never attach local variables from stack frames
+        # (could leak user text captured in handler locals)
+        include_local_variables=False,
         # Errors only, no performance tracking (saves quota)
         traces_sample_rate=0.0,
         profiles_sample_rate=0.0,

@@ -98,8 +98,36 @@ def _make_context_kernel() -> MagicMock:
 
 
 def _make_mock_chat_service() -> MagicMock:
-    """Create a mock ChatService that returns a simple response."""
+    """Create a mock ChatService that returns a simple response.
+
+    All methods that are ``await``-ed by presentation-layer handlers
+    MUST be ``AsyncMock`` instances.  Using plain ``MagicMock`` for
+    those causes ``TypeError: object MagicMock can't be used in
+    'await' expression``.
+    """
     svc = MagicMock()
+
+    # --- async methods awaited by handlers -------------------------
+    svc.get_chat_language = AsyncMock(return_value="de")
+    svc.set_chat_language = AsyncMock()
+    svc.reset = AsyncMock()
+    svc.save_static_response_to_history = AsyncMock()
+    svc.process_user_message = AsyncMock(
+        return_value=MagicMock(
+            text="Smoke test response",
+            duration_seconds=0.1,
+            provider_name="mock",
+        )
+    )
+    svc.process_user_message_streaming = AsyncMock(
+        return_value=(
+            "Smoke test response",  # full_text
+            0.1,  # duration
+            "mock",  # provider_name
+        )
+    )
+    svc.save_streaming_result = AsyncMock(return_value="Smoke test response")
+    svc.save_debate_turns = AsyncMock()
     svc.route = AsyncMock(
         return_value=MagicMock(
             text="Smoke test response",
@@ -108,7 +136,8 @@ def _make_mock_chat_service() -> MagicMock:
         )
     )
     svc.route_streaming = AsyncMock(return_value=None)
-    svc.save_streaming_result = AsyncMock()
+
+    # --- sync attributes / services --------------------------------
     svc.provider_router = MagicMock()
     svc.provider_router.providers = {}
     svc.memory_service = None
@@ -138,6 +167,38 @@ def _make_memory_service() -> MagicMock:
     return svc
 
 
+def _make_rate_limiter() -> MagicMock:
+    """Create a mock RateLimiter with realistic return values.
+
+    ``check_and_consume`` returns a real ``RateLimitResult`` (allowed)
+    and ``get_usage`` returns a real ``UsageInfo`` so that the
+    ``/usage`` handler can do arithmetic on the fields.
+    """
+    # Lazy import to avoid circular deps at module level
+    rl_mod = importlib.import_module("application.rate_limiter")
+
+    limiter = MagicMock()
+    limiter.check_and_consume = MagicMock(
+        return_value=rl_mod.RateLimitResult(allowed=True, profile="normal"),
+    )
+    limiter.get_usage = MagicMock(
+        return_value=rl_mod.UsageInfo(
+            profile="normal",
+            minute_used=1,
+            minute_limit=10,
+            minute_reset_seconds=30.0,
+            hour_used=5,
+            hour_limit=60,
+            hour_reset_seconds=1800.0,
+            day_used=10,
+            day_limit=200,
+            day_reset_seconds=3600.0,
+        ),
+    )
+    limiter.get_user_profile = MagicMock(return_value="normal")
+    return limiter
+
+
 def _make_context(
     args: list[str] | None = None,
     chat_service: Any = None,
@@ -160,7 +221,7 @@ def _make_context(
         "memory_service": mem,
         "persistent_provider": None,
         "process_pool": MagicMock(),
-        "rate_limiter": MagicMock(),
+        "rate_limiter": _make_rate_limiter(),
         "bookmark_service": MagicMock(),
         "context_kernel": _make_context_kernel(),
         "model_service": MagicMock(),
