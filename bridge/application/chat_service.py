@@ -1453,6 +1453,31 @@ class ChatService:
             log.debug("pre_match_skill failed", exc_info=True)
             return None
 
+    async def save_debate_turns(
+        self,
+        user_id: int,
+        chat_id: int,
+        question: str,
+        synthesis: str,
+    ) -> None:
+        """Save debate user question and synthesis to conversation history.
+
+        Keeps the context window lean by storing only the synthesis
+        (not per-provider details). Called by the presentation layer
+        after a /debate command completes.
+
+        Args:
+            user_id: Telegram user ID.
+            chat_id: Telegram chat ID.
+            question: The original user question.
+            synthesis: The debate synthesis text.
+        """
+        user_turn = ConversationTurn(role="user", content=question)
+        assistant_content = f"[Debate-Synthese aus /debate]\n{synthesis}"
+        assistant_turn = ConversationTurn(role="assistant", content=assistant_content)
+        await save_turn(user_id, chat_id, user_turn)
+        await save_turn(user_id, chat_id, assistant_turn)
+
     async def get_chat_language(self, user_id: int, chat_id: int) -> str | None:
         """Use-case wrapper: read the sticky language for a chat."""
         return await get_language(user_id, chat_id)

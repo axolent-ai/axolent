@@ -2742,6 +2742,20 @@ async def handle_debate_command(
     formatted = sanitize_telegram_slashes(formatted)
     await send_response(update, formatted)
 
+    # Save debate turns to conversation history so follow-up messages
+    # have context. Only the synthesis is stored (not per-provider details)
+    # to keep the context window lean.
+    _synthesis_text = ""
+    if debate_result.final_verdict and debate_result.final_verdict.synthesis:
+        _synthesis_text = debate_result.final_verdict.synthesis
+    elif debate_result.consensus_analysis:
+        _synthesis_text = debate_result.consensus_analysis
+    else:
+        # Fallback: first provider response (better than nothing)
+        _first_resp = next(iter(debate_result.responses.values()), "")
+        _synthesis_text = _first_resp
+    await chat_service.save_debate_turns(user_id, chat_id, question, _synthesis_text)
+
     # Audit log (enriched with kernel data)
     write_raw_audit(
         {

@@ -1571,6 +1571,112 @@ class TestHandleDebateCommand:
         # Reply was sent (rate limit message)
         update.message.reply_text.assert_called_once()
 
+    @patch("presentation.handlers.write_raw_audit")
+    async def test_debate_command_saves_conversation_turns(
+        self, mock_audit: MagicMock
+    ) -> None:
+        """After /debate, conversation_storage should have 2 new turns:
+        user (question) + assistant (synthesis with [Debate-Synthese] marker)."""
+        from application.debate_orchestrator import (
+            DebateResult,
+            FinalVerdict,
+            ProviderEvaluation,
+        )
+        from infrastructure.conversation_storage import get_history
+        from presentation.handlers import handle_debate_command
+
+        synthesis_text = "KI ist ein Teilgebiet der Informatik."
+        mock_result = DebateResult(
+            question="Was ist KI?",
+            responses={"claude_persistent": "KI ist kuenstliche Intelligenz."},
+            errors={},
+            consensus_analysis="",
+            duration_seconds=2.5,
+            providers_queried=["claude_persistent"],
+            final_verdict=FinalVerdict(
+                winner="claude_persistent",
+                synthesis=synthesis_text,
+                recommendation="KI ist ein breites Feld.",
+                evaluations=[
+                    ProviderEvaluation(
+                        provider="claude_persistent",
+                        pros=["Genau"],
+                        cons=[],
+                    )
+                ],
+            ),
+        )
+
+        update = _make_update(user_id=42, chat_id=99, text="/debate Was ist KI?")
+        status_msg = MagicMock()
+        status_msg.delete = AsyncMock()
+        update.message.reply_text = AsyncMock(side_effect=[status_msg, None])
+
+        context = _make_context(args=["Was", "ist", "KI?"])
+
+        with patch(
+            "application.debate_orchestrator.DebateOrchestrator.debate",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
+            await handle_debate_command(update, context)
+
+        # Verify conversation history was saved
+        history = await get_history(42, 99)
+        assert len(history) == 2, f"Expected 2 turns, got {len(history)}"
+
+        # Turn 1: user question
+        assert history[0].role == "user"
+        assert history[0].content == "Was ist KI?"
+
+        # Turn 2: assistant with debate synthesis marker
+        assert history[1].role == "assistant"
+        assert "[Debate-Synthese aus /debate]" in history[1].content
+        assert synthesis_text in history[1].content
+
+    @patch("presentation.handlers.write_raw_audit")
+    async def test_debate_command_saves_fallback_when_no_synthesis(
+        self, mock_audit: MagicMock
+    ) -> None:
+        """When debate has no synthesis/verdict, saves consensus or first response."""
+        from application.debate_orchestrator import DebateResult
+        from infrastructure.conversation_storage import get_history
+        from presentation.handlers import handle_debate_command
+
+        mock_result = DebateResult(
+            question="Test Frage",
+            responses={"claude_persistent": "Antwort von Claude."},
+            errors={},
+            consensus_analysis="Nur ein Provider.",
+            duration_seconds=1.0,
+            providers_queried=["claude_persistent"],
+        )
+
+        update = _make_update(user_id=43, chat_id=100, text="/debate Test Frage")
+        status_msg = MagicMock()
+        status_msg.delete = AsyncMock()
+        update.message.reply_text = AsyncMock(side_effect=[status_msg, None])
+
+        context = _make_context(args=["Test", "Frage"])
+
+        with patch(
+            "application.debate_orchestrator.DebateOrchestrator.debate",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
+            await handle_debate_command(update, context)
+
+        history = await get_history(43, 100)
+        assert len(history) == 2
+
+        assert history[0].role == "user"
+        assert history[0].content == "Test Frage"
+
+        assert history[1].role == "assistant"
+        assert "[Debate-Synthese aus /debate]" in history[1].content
+        # Should contain consensus_analysis as fallback
+        assert "Nur ein Provider." in history[1].content
+
 
 class TestFormatDebateSynthesis:
     """Tests for the synthesis display in the debate formatter."""
