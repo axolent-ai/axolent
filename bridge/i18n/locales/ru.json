@@ -1563,6 +1563,8 @@
     "skill.confirm_applied": { "text": "Skill applied.", "source_hash": "r3_confirm_applied", "auto_translated": true, "reviewed": false },
     "skill.confirm_declined": { "text": "Skill declined.", "source_hash": "r3_confirm_declined", "auto_translated": true, "reviewed": false },
     "skill.confirm_never": { "text": "Skill paused. It will not be suggested again.", "source_hash": "r3_confirm_never_done", "auto_translated": true, "reviewed": false },
-    "skill.confirm_expired": { "text": "Confirmation expired. Please send your message again.", "source_hash": "r3_confirm_expired", "auto_translated": true, "reviewed": false }
+    "skill.confirm_expired": { "text": "Confirmation expired. Please send your message again.", "source_hash": "r3_confirm_expired", "auto_translated": true, "reviewed": false },
+    "stop.confirmation": { "text": "Stream stopped. Your conversation is preserved.", "source_hash": "stop_confirm_v1", "auto_translated": true, "reviewed": false },
+    "stop.no_active_stream": { "text": "No active stream to stop.", "source_hash": "stop_no_stream_v1", "auto_translated": true, "reviewed": false }
   }
 }

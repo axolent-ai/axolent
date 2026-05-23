@@ -13,9 +13,24 @@ from threading import Lock
 
 from telegram import Message, Update
 
+import re
+
 from domain.markdown import markdown_to_telegram_html, strip_markdown
 
 log = logging.getLogger(__name__)
+
+_SLASH_BEFORE_LETTER = re.compile(r"/(?=[a-zA-Z])")
+
+
+def sanitize_telegram_slashes(text: str) -> str:
+    """Replace ``/`` directly before a letter with U+2044 fraction slash.
+
+    Telegram interprets ``/word`` as a clickable bot command link.
+    This function replaces the slash only when followed by a letter,
+    leaving standalone slashes untouched.
+    """
+    return _SLASH_BEFORE_LETTER.sub("⁄", text)
+
 
 TELEGRAM_CHUNK_SIZE: int = 4000
 
@@ -89,6 +104,7 @@ async def send_response(update: Update, response: str) -> Message | None:
     Returns:
         The last sent Telegram Message (for cache), or None.
     """
+    response = sanitize_telegram_slashes(response)
     plain_chunks = split_message(response, chunk_size=TELEGRAM_CHUNK_SIZE - 200)
     last_sent_message: Message | None = None
     sent_ids: list[int] = []

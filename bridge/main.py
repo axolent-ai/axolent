@@ -86,6 +86,7 @@ from presentation.handlers import (
     handle_remember_command,
     handle_reset_command,
     handle_resetmodel_command,
+    handle_stop_command,
     handle_save_command,
     handle_setlimit_command,
     handle_setmodel_command,
@@ -586,6 +587,7 @@ def main() -> None:
     app.add_handler(CommandHandler("save", handle_save_command))
     app.add_handler(CommandHandler("bookmarks", handle_bookmarks_command))
     app.add_handler(CommandHandler("reset", handle_reset_command))
+    app.add_handler(CommandHandler("stop", handle_stop_command))
     app.add_handler(CommandHandler("new", handle_new_command))
     app.add_handler(CommandHandler("lang", handle_lang_command))
     app.add_handler(CommandHandler("remember", handle_remember_command))

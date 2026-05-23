@@ -39,6 +39,7 @@ from i18n.domain.i18n import t
 from presentation.decorators import require_private_chat, require_whitelist
 from presentation.render import (
     get_cached_response,
+    sanitize_telegram_slashes,
     send_response,
     split_message,
 )
@@ -1250,6 +1251,55 @@ async def handle_reset_command(
     log.info("User %d reset conversation in chat %d", user_id, chat_id)
     log_command_audit(
         action="reset",
+        user_id=user_id,
+        chat_id=chat_id,
+        username=user.username if user else None,
+    )
+
+
+@require_whitelist
+async def handle_stop_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handles /stop. Cancels active stream but keeps conversation history.
+
+    Unlike /reset, this does NOT clear conversation history or sticky language.
+    """
+    chat_service = _get_chat_service(context)
+    user = update.effective_user
+    user_id: int = user.id if user else 0
+    chat_id: int = update.effective_chat.id if update.effective_chat else 0
+
+    raw_lang = await chat_service.get_chat_language(user_id, chat_id)
+    lang = raw_lang or DEFAULT_LANGUAGE
+
+    session_key = (user_id, chat_id)
+    with _active_sessions_lock:
+        active_session = _active_streaming_sessions.get(session_key)
+
+    if active_session is None:
+        await update.message.reply_text(t("stop.no_active_stream", lang))
+        log.info("Stop: no active stream for user=%d chat=%d", user_id, chat_id)
+        log_command_audit(
+            action="stop",
+            user_id=user_id,
+            chat_id=chat_id,
+            username=user.username if user else None,
+            details="no_active_stream",
+        )
+        return
+
+    active_session.cancel()
+    for _ in range(20):
+        await asyncio.sleep(0.1)
+        with _active_sessions_lock:
+            if _active_streaming_sessions.get(session_key) is None:
+                break
+
+    await update.message.reply_text(t("stop.confirmation", lang))
+    log.info("Stop: cancelled active stream for user=%d chat=%d", user_id, chat_id)
+    log_command_audit(
+        action="stop",
         user_id=user_id,
         chat_id=chat_id,
         username=user.username if user else None,
@@ -2686,9 +2736,8 @@ async def handle_debate_command(
     if _debate_guard is not None:
         formatted = _debate_guard.fix(formatted)
 
-    chunks = split_message(formatted)
-    for chunk in chunks:
-        await update.message.reply_text(chunk)
+    formatted = sanitize_telegram_slashes(formatted)
+    await send_response(update, formatted)
 
     # Audit log (enriched with kernel data)
     write_raw_audit(

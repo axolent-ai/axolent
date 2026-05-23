@@ -1603,6 +1603,18 @@
       "source_hash": "r3_confirm_expired",
       "auto_translated": false,
       "reviewed": true
+    },
+    "stop.confirmation": {
+      "text": "Stream stopped. Your conversation is preserved.",
+      "source_hash": "stop_confirm_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "stop.no_active_stream": {
+      "text": "No active stream to stop.",
+      "source_hash": "stop_no_stream_v1",
+      "auto_translated": false,
+      "reviewed": true
     }
   }
 }
