@@ -30,6 +30,8 @@ import logging
 import uuid
 from typing import Optional
 
+from typeguard import typechecked
+
 from application.language.audit import (
     DetectionAuditLogger,
     build_audit_event,
@@ -155,6 +157,7 @@ class LanguageResolver:
     Phase 2: Detection is delegated to DetectionOrchestrator (HC-O7).
     """
 
+    @typechecked
     def __init__(
         self,
         default_lang: str = _DEFAULT_LANGUAGE,
@@ -208,6 +211,7 @@ class LanguageResolver:
         )
         self._audit_logger.log(event)
 
+    @typechecked
     async def resolve(
         self,
         user_id: int,

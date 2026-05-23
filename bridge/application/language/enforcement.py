@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import icontract
+from typeguard import typechecked
 
 from application.language.context import LanguageContext
 from application.language.model_profiles import ModelAdherenceProfile, get_profile
@@ -88,6 +89,7 @@ class LanguageEnforcement:
         final_response = result.final_output
     """
 
+    @typechecked
     def __init__(
         self,
         verifier: ResponseLanguageVerifier | None = None,
@@ -126,6 +128,7 @@ class LanguageEnforcement:
         lambda result: result.final_output is not None,
         "result.final_output must not be None",
     )
+    @typechecked
     async def enforce(
         self,
         output: str,

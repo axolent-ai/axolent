@@ -49,6 +49,8 @@ from application.skill_compression.skill_explainer import (
 )
 from domain.language import DEFAULT_LANGUAGE
 from i18n.domain.i18n import t
+from typeguard import typechecked
+
 from presentation.decorators import lcp_aware, require_private_chat, require_whitelist
 from presentation.skill_profile_view import (
     PROFILE_VISIBLE_STATUSES,
@@ -533,6 +535,7 @@ def _execute_forget(
 @require_whitelist
 @require_private_chat
 @lcp_aware
+@typechecked
 async def handle_learn_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:

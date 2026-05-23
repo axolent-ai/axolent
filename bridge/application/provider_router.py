@@ -24,6 +24,7 @@ from infrastructure.providers.base import (
     ProviderResponse,
     ProviderUnavailable,
 )
+from typeguard import typechecked
 
 log = logging.getLogger(__name__)
 
@@ -84,6 +85,7 @@ class ProviderRouter:
         default: Name of the default provider.
     """
 
+    @typechecked
     def __init__(
         self,
         providers: dict[str, LLMProvider],

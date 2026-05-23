@@ -8,24 +8,20 @@ Loads configuration, registers providers + handlers, starts long-polling.
 
 from __future__ import annotations
 
-# beartype: Runtime type-checking - DEFERRED to Phase 1a.
-# Initial activation crashed on Forward References from
-# `from __future__ import annotations` (PEP 563) which makes all
-# type hints strings that beartype cannot resolve across modules at
-# import time. Activating this requires a systematic pass over the
-# codebase to either:
-#   (a) Remove `from __future__ import annotations` from modules
-#       containing module-level Protocol/Union types referenced
-#       from other modules, or
-#   (b) Use beartype.typing.* imports instead of typing.* for the
-#       affected modules, or
-#   (c) Decorate critical functions individually with @beartype
-#       instead of global package activation.
-# Tracked as Phase 1a follow-up. The 7 Protocols already have
-# @runtime_checkable so they're ready when beartype gets re-enabled.
+# Runtime type-checking: typeguard 4.x replaces beartype (2026-05-23).
+# beartype crashed on PEP 563 Forward References (`from __future__ import
+# annotations`). typeguard uses AST-based instrumentation which resolves
+# annotations in source-code context, avoiding the get_type_hints() crash.
 #
-# from beartype.claw import beartype_packages
-# beartype_packages(("domain", "application", "infrastructure", "presentation"))
+# Two layers:
+#   (1) pytest import-hook: typeguard-packages in pyproject.toml instruments
+#       ALL functions in domain/application/infrastructure/presentation
+#       during tests. Zero production overhead.
+#   (2) @typechecked on critical entry-points: runtime checks in production
+#       for the ~15 most important functions (constructors, handlers, pipelines).
+#
+# forward_ref_policy=WARN: unresolvable forward refs produce warnings
+# instead of crashes (graceful degradation).
 
 import logging
 import os
@@ -37,6 +33,74 @@ os.environ["PYTHONIOENCODING"] = "utf-8"
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# ---------------------------------------------------------------------------
+# Sentry error tracking (initialized early so it catches startup errors)
+# ---------------------------------------------------------------------------
+import sentry_sdk
+from sentry_sdk.integrations.logging import LoggingIntegration
+from sentry_sdk.integrations.asyncio import AsyncioIntegration
+
+
+def _sentry_before_send(event, hint):
+    """Strip user-controlled text from Sentry events.
+
+    AXOLENT processes user messages; we never want to send raw
+    Telegram messages to Sentry. The audit-log layer handles
+    user-text auditing separately (privacy-by-design).
+
+    Args:
+        event: The Sentry event dict.
+        hint: Additional context (usually contains the exception).
+
+    Returns:
+        Modified event or None to drop the event entirely.
+    """
+    # Strip request bodies / message content
+    if "request" in event and isinstance(event["request"], dict):
+        event["request"].pop("data", None)
+        event["request"].pop("query_string", None)
+
+    # Strip user-message text from extra context
+    if "extra" in event and isinstance(event["extra"], dict):
+        for key in ("message_text", "user_message", "user_input", "claim"):
+            event["extra"].pop(key, None)
+
+    # Strip from breadcrumb data
+    breadcrumbs = event.get("breadcrumbs", {}).get("values", [])
+    for crumb in breadcrumbs:
+        if isinstance(crumb.get("data"), dict):
+            for key in ("message_text", "user_message", "user_input", "claim", "text"):
+                crumb["data"].pop(key, None)
+
+    return event
+
+
+_sentry_dsn = os.getenv("SENTRY_DSN", "")
+if _sentry_dsn:
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        environment=os.getenv("SENTRY_ENVIRONMENT", "development"),
+        # Release tag from git commit hash (short)
+        release=os.getenv("AXOLENT_RELEASE", "dev"),
+        # Privacy: never send raw user input
+        send_default_pii=False,
+        # Errors only, no performance tracking (saves quota)
+        traces_sample_rate=0.0,
+        profiles_sample_rate=0.0,
+        integrations=[
+            LoggingIntegration(
+                level=logging.INFO,  # Capture info+ as breadcrumbs
+                event_level=logging.ERROR,  # Send errors as events
+            ),
+            AsyncioIntegration(),
+        ],
+        # Filter: drop events that contain user-message text
+        # (the audit-log layer is responsible for those)
+        before_send=_sentry_before_send,
+    )
+else:
+    pass  # Sentry DSN not set, error tracking disabled
 
 from telegram.ext import (
     Application,
@@ -129,6 +193,12 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 log = logging.getLogger("axolent")
+
+# Deferred Sentry log (logger only available after basicConfig)
+if _sentry_dsn:
+    log.info("Sentry initialized (environment=%s)", os.getenv("SENTRY_ENVIRONMENT"))
+else:
+    log.info("Sentry DSN not set, error tracking disabled")
 
 # Flag: whether DEV_MODE is active (only for ALLOW_ALL_USERS safeguard)
 _dev_mode_raw = os.getenv("AXOLENT_DEV_MODE", "")

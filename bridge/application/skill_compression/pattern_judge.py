@@ -49,7 +49,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from application.skill_compression.privacy.privacy_pipeline import PrivacyPipeline
 
 from application.skill_compression.bkt import BKTState
 from application.skill_compression.evidence_ledger import EvidenceSummary
@@ -316,7 +319,7 @@ class PatternJudge:
             storage.update_hypothesis_status(hyp_id, decision.recommended_status)
     """
 
-    def __init__(self, *, privacy_pipeline=None) -> None:
+    def __init__(self, *, privacy_pipeline: "PrivacyPipeline | None" = None) -> None:
         """Initialize the Pattern Judge.
 
         Args:

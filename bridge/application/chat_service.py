@@ -45,6 +45,7 @@ from infrastructure.conversation_storage import (
     reset_conversation as _infra_reset_conversation,
 )
 from infrastructure.providers.base import ProviderError
+from typeguard import typechecked
 
 if TYPE_CHECKING:
     from application.fallback_resolver import FallbackResolver
@@ -217,6 +218,7 @@ class ChatService:
     with clean constructor injection.
     """
 
+    @typechecked
     def __init__(
         self,
         provider_router: "ProviderRouter",

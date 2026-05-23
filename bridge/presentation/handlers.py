@@ -21,6 +21,8 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 
+from typeguard import typechecked
+
 from application.audit_service import log_command_audit, write_raw_audit
 from application.bookmark_service import BookmarkService
 from application.chat_service import ChatService
@@ -362,6 +364,7 @@ def _get_persistent_provider(
 
 @require_whitelist
 @require_private_chat
+@typechecked
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Processes incoming Telegram messages via Claude Code subprocess.
 
@@ -1307,6 +1310,7 @@ async def handle_stop_command(
 
 
 @require_whitelist
+@typechecked
 async def handle_lang_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -1687,6 +1691,7 @@ async def handle_onboarding_command(
 @require_whitelist
 @require_private_chat
 @lcp_aware
+@typechecked
 async def handle_remember_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -2560,6 +2565,7 @@ def _format_debate_result(result: Any, lang: str = "en") -> str:
 @require_whitelist
 @require_private_chat
 @lcp_aware
+@typechecked
 async def handle_debate_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:

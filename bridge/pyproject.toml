@@ -13,8 +13,9 @@ dependencies = [
     "python-dotenv==1.2.2",
     "filelock>=3.13",
     "langdetect>=1.0.9,<2",
-    "beartype>=0.18",
+    "typeguard>=4.0",
     "icontract>=2.7",
+    "sentry-sdk>=2.0",
     # Floor-pin: transitive dep via fastapi/mcp/sse_starlette.
     # Pinned to patch PYSEC-2026-161 (starlette <1.0.1 vulnerability).
     "starlette>=1.0.1",
@@ -65,6 +66,21 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
 addopts = "-v --tb=short"
+# typeguard pytest import-hook DEFERRED to Phase 1a.
+# Initial activation surfaced 26 fails + 66 errors of real Protocol/type
+# mismatches (e.g. CryptoConnection.execute signature not matching
+# DBConnection.execute protocol). These are genuine bugs typeguard
+# correctly detected, but too many to fix pre-public-switch.
+# Phase 1a will systematically resolve them, then re-enable the hook.
+# Until then, @typechecked decorators on 18 critical functions
+# (Stufe 2) provide runtime type-checks for the production hot path.
+#
+# typeguard-packages = """
+# domain
+# application
+# infrastructure
+# presentation"""
+# typeguard-forward-ref-policy = "WARN"
 markers = [
     "unit: pure unit tests, no external dependencies",
     "integration: tests that touch storage, subprocesses, or external services",

@@ -22,7 +22,6 @@ from typing import Optional
 from uuid import uuid4
 
 import icontract
-
 from application.skill_compression.hypothesis_storage import (
     Hypothesis,
     HypothesisScope,

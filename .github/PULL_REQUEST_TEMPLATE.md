@@ -22,7 +22,7 @@
 ## Architecture compliance
 - [ ] import-linter: 0 contracts broken
 - [ ] Semgrep: no new ERROR-severity findings
-- [ ] beartype: no new untyped function signatures in critical paths
+- [ ] typeguard: new critical functions decorated with @typechecked or covered by import-hook
 - [ ] icontract: pre/post-conditions added for new pipeline-level methods
 
 ## Live behavior verification

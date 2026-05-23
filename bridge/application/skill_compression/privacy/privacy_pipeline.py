@@ -23,7 +23,6 @@ from enum import Enum
 from typing import Optional
 
 import icontract
-
 from application.skill_compression.hypothesis_storage import Hypothesis
 from application.skill_compression.privacy.healthcare_filter import HealthcareFilter
 from application.skill_compression.privacy.nudge_filter import NudgeFilter
