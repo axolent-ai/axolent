@@ -36,7 +36,7 @@ from application.streaming_handler import (
 from domain.bookmark import format_bookmark_preview
 from domain.language import DEFAULT_LANGUAGE
 from i18n.domain.i18n import t
-from presentation.decorators import require_private_chat, require_whitelist
+from presentation.decorators import lcp_aware, require_private_chat, require_whitelist
 from presentation.render import (
     get_cached_response,
     sanitize_telegram_slashes,
@@ -1686,6 +1686,7 @@ async def handle_onboarding_command(
 
 @require_whitelist
 @require_private_chat
+@lcp_aware
 async def handle_remember_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -1860,6 +1861,7 @@ async def handle_memory_command(
 
 @require_whitelist
 @require_private_chat
+@lcp_aware
 async def handle_forget_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -2557,6 +2559,7 @@ def _format_debate_result(result: Any, lang: str = "en") -> str:
 
 @require_whitelist
 @require_private_chat
+@lcp_aware
 async def handle_debate_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:

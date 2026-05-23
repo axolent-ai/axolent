@@ -49,7 +49,7 @@ from application.skill_compression.skill_explainer import (
 )
 from domain.language import DEFAULT_LANGUAGE
 from i18n.domain.i18n import t
-from presentation.decorators import require_private_chat, require_whitelist
+from presentation.decorators import lcp_aware, require_private_chat, require_whitelist
 from presentation.skill_profile_view import (
     PROFILE_VISIBLE_STATUSES,
     build_profile_list_keyboard,
@@ -265,6 +265,7 @@ async def handle_skills_command(
 
 @require_whitelist
 @require_private_chat
+@lcp_aware
 async def handle_skill_detail_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -364,6 +365,7 @@ async def handle_skill_detail_command(
 
 @require_whitelist
 @require_private_chat
+@lcp_aware
 async def handle_skill_forget_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -530,6 +532,7 @@ def _execute_forget(
 
 @require_whitelist
 @require_private_chat
+@lcp_aware
 async def handle_learn_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -638,6 +641,7 @@ async def handle_learn_command(
 
 @require_whitelist
 @require_private_chat
+@lcp_aware
 async def handle_explain_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -1065,6 +1069,7 @@ def _get_import_orchestrator(
 
 @require_whitelist
 @require_private_chat
+@lcp_aware
 async def handle_import_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:

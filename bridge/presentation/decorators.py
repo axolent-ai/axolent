@@ -1,4 +1,4 @@
-"""Telegram decorators: whitelist check, privacy guard, and other guards.
+"""Telegram decorators: whitelist check, privacy guard, LCP-aware, and other guards.
 
 Contains decorator functions that run before handler logic.
 """
@@ -13,9 +13,16 @@ from typing import Callable
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from application.language.resolver import LanguageResolver
 from i18n.domain.i18n import t
 
 log = logging.getLogger(__name__)
+
+# Minimum character count for the user-text portion of a command
+# before LCP detection is triggered.  Below this threshold the
+# detection backends produce unreliable results (e.g. langdetect
+# returns "fi" for "Hallo").
+_LCP_AWARE_MIN_CHARS: int = 15
 
 
 def _parse_whitelist() -> set[int]:
@@ -96,6 +103,59 @@ def require_private_chat(func: Callable) -> Callable:
             if update.message:
                 await update.message.reply_text(_PRIVATE_ONLY_MSG)
             return
+        return await func(update, context)
+
+    return wrapper
+
+
+def lcp_aware(func: Callable) -> Callable:
+    """Decorator: runs LCP language detection on user text before the handler.
+
+    Commands like /remember, /learn, /explain carry user-authored text
+    that may differ from the current sticky language.  Without this
+    decorator, the sticky language is never updated by command handlers,
+    causing responses in the wrong language.
+
+    Behaviour:
+        1. Extracts the user-text portion (everything after "/command ").
+        2. If the text is >= _LCP_AWARE_MIN_CHARS characters, runs the
+           full LanguageResolver.resolve() pipeline which:
+           a) detects the language of the text,
+           b) performs a smart-switch of the sticky language when
+              confidence is high enough (>= 0.7) and the detected
+              language differs from the current sticky.
+        3. The handler then executes as usual; it will read the
+           (potentially updated) sticky language for its response.
+
+    This decorator is intentionally fire-and-forget: if detection or
+    the resolver raises, the error is logged and the handler proceeds
+    with the existing sticky language.
+    """
+
+    @wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        message = update.message
+        if message and message.text:
+            raw = message.text
+            # Strip "/command " prefix to get pure user text
+            text = raw
+            if raw.startswith("/"):
+                parts = raw.split(maxsplit=1)
+                text = parts[1] if len(parts) > 1 else ""
+
+            if text and len(text) >= _LCP_AWARE_MIN_CHARS:
+                user = update.effective_user
+                user_id: int = user.id if user else 0
+                chat_id: int = update.effective_chat.id if update.effective_chat else 0
+                try:
+                    resolver = LanguageResolver()
+                    await resolver.resolve(user_id, chat_id, text)
+                except Exception:
+                    log.debug(
+                        "lcp_aware: detection failed for user=%d, proceeding",
+                        user.id if user else 0,
+                        exc_info=True,
+                    )
         return await func(update, context)
 
     return wrapper
