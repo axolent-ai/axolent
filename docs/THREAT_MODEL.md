@@ -452,9 +452,9 @@ For reference, these mitigations are already active and tested:
 
 | Gap | Severity | Status | Resolution |
 |-----|----------|--------|------------|
-| GAP-03 | HIGH | FIXED | ImportOrchestrator injection detection + InjectionDetector pre-filter on all imported user messages |
-| GAP-05 | HIGH | FIXED | /remember injection-pattern check (InjectionDetector) + `<user_memory>` delimiter wrap in system prompt |
-| GAP-11 | HIGH | FIXED | Claude CLI subprocess env-scrubbing via allowlist (`build_scrubbed_env()`) in both ProcessPool and ClaudeProvider |
+| GAP-03 | HIGH | FIXED (9f4a24e) | ImportOrchestrator injection detection + InjectionDetector pre-filter on all imported user messages |
+| GAP-05 | HIGH | FIXED (9f4a24e) | /remember injection-pattern check (InjectionDetector) + `<user_memory>` delimiter wrap in system prompt |
+| GAP-11 | HIGH | FIXED (9f4a24e) | Claude CLI subprocess env-scrubbing via allowlist (`build_scrubbed_env()`) in both ProcessPool and ClaudeProvider |
 | GAP-01 | MEDIUM | TESTED (xfail) | WAL checkpoint test added. Standard close() handles it on most platforms; explicit PRAGMA recommended |
 | GAP-02 | MEDIUM | TESTED (xfail) | Test verifies public_boundary.yaml coverage. *.bak pattern not yet added to forbidden list |
 | GAP-04 | MEDIUM | TESTED (partial) | StreamEvent schema validation passes. Version check not yet implemented |
