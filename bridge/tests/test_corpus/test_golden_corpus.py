@@ -26,10 +26,11 @@ from tests.corpus.golden_runner import load_corpus, validate_expected
 # These entries document real bugs in domain.language.detect_language()
 # that should be fixed. When the detector is improved, these xfails
 # will auto-pass and can be removed.
-_XFAIL_LANGUAGE_DETECTION = {
-    "lang_sv_keeps_sv": "detect_language() lacks Swedish markers, falls back to 'en'",
-    "lang_fr_keeps_fr": "detect_language() confuses French with Portuguese on short inputs",
-    "lang_es_keeps_es": "detect_language() confuses Spanish with French on short inputs",
+_XFAIL_LANGUAGE_DETECTION: dict[str, str] = {
+    # All 3 bugs fixed in commit "fix(language): detect Swedish + disambiguate FR/PT/ES":
+    # - lang_sv_keeps_sv: SV markers extended with ASCII transliterations
+    # - lang_fr_keeps_fr: FR markers extended with unique pronouns/verbs
+    # - lang_es_keeps_es: ES markers extended with unique content words
 }
 
 
