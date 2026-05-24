@@ -115,3 +115,64 @@ These are documented in detail in [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md):
 
 The full threat model, including adversary model, trust boundaries, and planned
 mitigations, is documented in [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
+
+## OWASP LLM Top 10 Test Suite
+
+AXOLENT includes a dedicated security test suite mapped to the
+[OWASP Top 10 for LLM Applications (2025)](https://owasp.org/www-project-top-10-for-large-language-model-applications/).
+
+### Critical Categories for AXOLENT (Mode-B Telegram Bot)
+
+| OWASP ID | Category | Tests | Status |
+|----------|----------|-------|--------|
+| LLM01 | Prompt Injection | 7 | All pass |
+| LLM02 | Insecure Output Handling | 5 | All pass |
+| LLM06 | Sensitive Information Disclosure | 6 | All pass |
+| LLM07 | System Prompt Leakage | 5 | All pass |
+| LLM08 | Vector and Embedding Weaknesses | 4 | All pass |
+| LLM09 | Misinformation | 4 | All pass |
+| LLM10 | Unbounded Consumption | 5 | All pass |
+
+### Less Critical (covered by other mechanisms)
+
+* **LLM03 Supply Chain:** Covered by TruffleHog (Item 3), Dependabot (Item 7),
+  pip-audit, and gitleaks in pre-commit hooks.
+* **LLM04 Data Poisoning:** Not applicable (Mode-B, no custom model training).
+* **LLM05 Improper Output Handling:** Subset of LLM02, covered there.
+
+### Running the Security Tests
+
+```bash
+cd bridge
+pytest tests/test_security/ -v -m security
+```
+
+### Test Location
+
+All security tests reside in `bridge/tests/test_security/`:
+
+* `test_owasp_llm01_prompt_injection.py` (7 tests)
+* `test_owasp_llm02_insecure_output.py` (5 tests)
+* `test_owasp_llm06_sensitive_disclosure.py` (6 tests)
+* `test_owasp_llm07_system_prompt_leak.py` (5 tests)
+* `test_owasp_llm08_vector_embedding.py` (4 tests)
+* `test_owasp_llm09_misinformation.py` (4 tests)
+* `test_owasp_llm10_unbounded_consumption.py` (5 tests)
+* `conftest.py` (shared fixtures: injection payloads, PII samples, isolated stores)
+
+### CI Integration
+
+The security suite runs as a dedicated step in `.github/workflows/pr-check.yml`
+after the full test suite. Both must pass for a PR to merge.
+
+### XFAIL Policy
+
+Tests marked `@pytest.mark.xfail` represent known gaps with documented reasons.
+Each XFAIL entry includes:
+
+* A clear `reason` string explaining the gap
+* `strict=True` so the test fails if the gap is accidentally fixed (prompting
+  the XFAIL to be removed)
+* A roadmap reference for when the fix is planned
+
+Currently: **0 XFAIL tests** (all defenses are active and passing).

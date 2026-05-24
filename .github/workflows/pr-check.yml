@@ -54,6 +54,12 @@ jobs:
           AXOLENT_TIMEZONE: Europe/Berlin
         run: pytest --tb=short -q
 
+      - name: OWASP LLM Top 10 Security Tests
+        working-directory: ./bridge
+        env:
+          AXOLENT_TIMEZONE: Europe/Berlin
+        run: pytest tests/test_security/ -v -m security
+
       - name: Smoke test
         env:
           AXOLENT_TIMEZONE: Europe/Berlin

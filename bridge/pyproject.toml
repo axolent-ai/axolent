@@ -90,6 +90,7 @@ markers = [
     "dialog_flow: multi-turn language consistency tests",
     "skill_compression: tests for the skill-compression engine (pattern recognition)",
     "adversarial: Phase D adversarial stress and edge-hunting tests",
+    "owasp_llm: OWASP LLM Top 10 security tests (prompt injection, leakage, disclosure)",
 ]
 filterwarnings = [
     "ignore:coroutine.*was never awaited:RuntimeWarning",
