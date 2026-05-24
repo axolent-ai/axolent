@@ -37,6 +37,10 @@ dev = [
     "bandit>=1.7",
     "pip-audit>=2.7",
 ]
+e2e = [
+    "tgintegration>=1.2",
+    "pyrogram>=1.4",
+]
 text-guard-office = [
     "python-docx>=1.0",
     "openpyxl>=3.1",
@@ -95,6 +99,7 @@ markers = [
     "golden_corpus: critical prompt regression anchors (language, streaming, commands, debate, memory, skills, privacy, edge)",
     "llm_output: LLM output property validators (language, secrets, leak, markdown, length, telegram)",
     "matrix: parametrized cross-cutting test matrices (language x command x channel)",
+    "e2e_telegram: end-to-end Telegram tests via tgintegration (requires real bot + account)",
 ]
 filterwarnings = [
     "ignore:coroutine.*was never awaited:RuntimeWarning",
