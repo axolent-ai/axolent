@@ -112,20 +112,19 @@ def lcp_aware(func: Callable) -> Callable:
     """Decorator: runs LCP language detection on user text before the handler.
 
     Commands like /remember, /learn, /explain carry user-authored text
-    that may differ from the current sticky language.  Without this
-    decorator, the sticky language is never updated by command handlers,
-    causing responses in the wrong language.
+    that may differ from the current sticky language.  This decorator
+    uses resolve_readonly() so that detection runs (for logging/stats)
+    but the user's sticky language is NEVER mutated by command arguments.
 
     Behaviour:
         1. Extracts the user-text portion (everything after "/command ").
         2. If the text is >= _LCP_AWARE_MIN_CHARS characters, runs the
-           full LanguageResolver.resolve() pipeline which:
+           read-only LanguageResolver.resolve_readonly() pipeline which:
            a) detects the language of the text,
-           b) performs a smart-switch of the sticky language when
-              confidence is high enough (>= 0.7) and the detected
-              language differs from the current sticky.
-        3. The handler then executes as usual; it will read the
-           (potentially updated) sticky language for its response.
+           b) returns a LanguageContext for logging/stats purposes,
+           c) does NOT perform a smart-switch or write to storage.
+        3. The handler then executes as usual; it reads the unchanged
+           sticky language for its response.
 
     This decorator is intentionally fire-and-forget: if detection or
     the resolver raises, the error is logged and the handler proceeds
@@ -149,7 +148,7 @@ def lcp_aware(func: Callable) -> Callable:
                 chat_id: int = update.effective_chat.id if update.effective_chat else 0
                 try:
                     resolver = LanguageResolver()
-                    await resolver.resolve(user_id, chat_id, text)
+                    await resolver.resolve_readonly(user_id, chat_id, text)
                 except Exception:
                     log.debug(
                         "lcp_aware: detection failed for user=%d, proceeding",

@@ -1,13 +1,14 @@
 """Tests for the @lcp_aware decorator.
 
 Verifies that command handlers with user-authored text trigger
-language detection via the LCP (Language Control Plane) and update
-the sticky language when a clear language change is detected.
+language detection via the LCP (Language Control Plane) in read-only mode.
+The decorator uses resolve_readonly() so detection runs for logging/stats
+but the user's sticky language is NEVER mutated by command arguments.
 
-Bug context: Commands like /remember, /learn bypassed the LCP entirely.
-A user with sticky_language='ru' sending '/remember ich mag Kirschenbaeume'
-would get "Сохранено." as response because the German text was never
-detected and the sticky was never updated.
+Bug context (Item 12): Commands like /remember, /learn called resolve()
+which would smart-switch the sticky language based on English command
+arguments. A user with sticky='fr' sending '/learn test english pattern'
+would have their sticky overwritten to 'en'. Fix: use resolve_readonly().
 """
 
 from __future__ import annotations
@@ -39,11 +40,11 @@ class TestLcpAwareDecorator:
     """Tests for the @lcp_aware decorator."""
 
     @pytest.mark.asyncio
-    async def test_updates_sticky_on_clear_language_change(self) -> None:
-        """German text with sticky='ru' triggers smart-switch to 'de'.
+    async def test_readonly_detection_on_clear_language_text(self) -> None:
+        """German text triggers readonly detection (no sticky mutation).
 
-        This is the exact bug scenario: /remember with German text
-        while sticky is Russian.
+        Previously this was a smart-switch scenario; now resolve_readonly()
+        is used so sticky is never overwritten by command argument text.
         """
         handler = AsyncMock()
         decorated = lcp_aware(handler)
@@ -53,9 +54,9 @@ class TestLcpAwareDecorator:
         update = _make_update(f"/remember {german_text}")
         context = MagicMock()
 
-        # Mock the LanguageResolver.resolve to track calls
+        # Mock the LanguageResolver.resolve_readonly to track calls
         mock_resolver_instance = MagicMock()
-        mock_resolver_instance.resolve = AsyncMock()
+        mock_resolver_instance.resolve_readonly = AsyncMock()
 
         with patch(
             "presentation.decorators.LanguageResolver",
@@ -66,9 +67,9 @@ class TestLcpAwareDecorator:
         # Handler must still be called
         handler.assert_called_once_with(update, context)
 
-        # LanguageResolver.resolve() must have been called with the
+        # LanguageResolver.resolve_readonly() must have been called with the
         # stripped text (without "/remember " prefix)
-        mock_resolver_instance.resolve.assert_called_once_with(
+        mock_resolver_instance.resolve_readonly.assert_called_once_with(
             12345,  # user_id
             67890,  # chat_id
             german_text,
@@ -89,7 +90,7 @@ class TestLcpAwareDecorator:
         context = MagicMock()
 
         mock_resolver_instance = MagicMock()
-        mock_resolver_instance.resolve = AsyncMock()
+        mock_resolver_instance.resolve_readonly = AsyncMock()
 
         with patch(
             "presentation.decorators.LanguageResolver",
@@ -101,7 +102,7 @@ class TestLcpAwareDecorator:
         handler.assert_called_once_with(update, context)
 
         # Resolver NOT called (text too short)
-        mock_resolver_instance.resolve.assert_not_called()
+        mock_resolver_instance.resolve_readonly.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_keeps_sticky_on_no_text_after_command(self) -> None:
@@ -113,7 +114,7 @@ class TestLcpAwareDecorator:
         context = MagicMock()
 
         mock_resolver_instance = MagicMock()
-        mock_resolver_instance.resolve = AsyncMock()
+        mock_resolver_instance.resolve_readonly = AsyncMock()
 
         with patch(
             "presentation.decorators.LanguageResolver",
@@ -122,11 +123,11 @@ class TestLcpAwareDecorator:
             await decorated(update, context)
 
         handler.assert_called_once_with(update, context)
-        mock_resolver_instance.resolve.assert_not_called()
+        mock_resolver_instance.resolve_readonly.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_handler_runs_even_if_detection_fails(self) -> None:
-        """If LanguageResolver.resolve() raises, handler still executes.
+        """If LanguageResolver.resolve_readonly() raises, handler still executes.
 
         The decorator is fire-and-forget: detection errors must not
         block the command handler.
@@ -139,7 +140,7 @@ class TestLcpAwareDecorator:
         context = MagicMock()
 
         mock_resolver_instance = MagicMock()
-        mock_resolver_instance.resolve = AsyncMock(
+        mock_resolver_instance.resolve_readonly = AsyncMock(
             side_effect=RuntimeError("langdetect boom")
         )
 
@@ -163,7 +164,7 @@ class TestLcpAwareDecorator:
         context = MagicMock()
 
         mock_resolver_instance = MagicMock()
-        mock_resolver_instance.resolve = AsyncMock()
+        mock_resolver_instance.resolve_readonly = AsyncMock()
 
         with patch(
             "presentation.decorators.LanguageResolver",
@@ -172,7 +173,7 @@ class TestLcpAwareDecorator:
             await decorated(update, context)
 
         handler.assert_called_once_with(update, context)
-        mock_resolver_instance.resolve.assert_not_called()
+        mock_resolver_instance.resolve_readonly.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_non_command_text_uses_full_text(self) -> None:
@@ -186,7 +187,7 @@ class TestLcpAwareDecorator:
         context = MagicMock()
 
         mock_resolver_instance = MagicMock()
-        mock_resolver_instance.resolve = AsyncMock()
+        mock_resolver_instance.resolve_readonly = AsyncMock()
 
         with patch(
             "presentation.decorators.LanguageResolver",
@@ -195,7 +196,9 @@ class TestLcpAwareDecorator:
             await decorated(update, context)
 
         handler.assert_called_once_with(update, context)
-        mock_resolver_instance.resolve.assert_called_once_with(12345, 67890, full_text)
+        mock_resolver_instance.resolve_readonly.assert_called_once_with(
+            12345, 67890, full_text
+        )
 
     @pytest.mark.asyncio
     async def test_exactly_at_min_chars_triggers_detection(self) -> None:
@@ -209,7 +212,7 @@ class TestLcpAwareDecorator:
         context = MagicMock()
 
         mock_resolver_instance = MagicMock()
-        mock_resolver_instance.resolve = AsyncMock()
+        mock_resolver_instance.resolve_readonly = AsyncMock()
 
         with patch(
             "presentation.decorators.LanguageResolver",
@@ -218,7 +221,9 @@ class TestLcpAwareDecorator:
             await decorated(update, context)
 
         handler.assert_called_once_with(update, context)
-        mock_resolver_instance.resolve.assert_called_once_with(12345, 67890, user_text)
+        mock_resolver_instance.resolve_readonly.assert_called_once_with(
+            12345, 67890, user_text
+        )
 
     @pytest.mark.asyncio
     async def test_one_below_min_chars_skips_detection(self) -> None:
@@ -231,7 +236,7 @@ class TestLcpAwareDecorator:
         context = MagicMock()
 
         mock_resolver_instance = MagicMock()
-        mock_resolver_instance.resolve = AsyncMock()
+        mock_resolver_instance.resolve_readonly = AsyncMock()
 
         with patch(
             "presentation.decorators.LanguageResolver",
@@ -240,7 +245,7 @@ class TestLcpAwareDecorator:
             await decorated(update, context)
 
         handler.assert_called_once_with(update, context)
-        mock_resolver_instance.resolve.assert_not_called()
+        mock_resolver_instance.resolve_readonly.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_preserves_functools_wraps(self) -> None:
