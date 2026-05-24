@@ -27,6 +27,23 @@ repos:
         files: ^bridge/
         exclude: ^bridge/tests/
 
+  # Security: trufflehog (secrets scanner, pre-commit)
+  # Scans staged diffs for leaked secrets before each commit.
+  # Requires trufflehog v3 binary installed (Go binary from GitHub Releases).
+  # Install: see docs/SECURITY_TRUFFLEHOG.md
+  # STATUS: ACTIVE (requires trufflehog binary in PATH)
+  # NOTE: Entry includes version guard. If only trufflehog v2 (pip) is found,
+  #   the hook prints a warning and exits 0 (skip). v3 runs the real scan.
+  #   To install v3: https://github.com/trufflesecurity/trufflehog#installation
+  - repo: local
+    hooks:
+      - id: trufflehog
+        name: TruffleHog (secret scan)
+        entry: bash -c 'if ! command -v trufflehog &>/dev/null; then echo "[trufflehog] not found, skipping (install v3 for active scanning)"; exit 0; fi; v=$(trufflehog --version 2>&1 | head -1); if echo "$v" | grep -qE "^trufflehog 3|^3\.|trufflehog v3"; then trufflehog git file://. --since-commit HEAD --only-verified --fail --no-update; else echo "[trufflehog] $v detected (need v3), skipping hook"; exit 0; fi'
+        language: system
+        stages: [pre-commit]
+        pass_filenames: false
+
   # Security: gitleaks (secrets scanner)
   # STATUS: Disabled (as of 2026-05-14).
   # REASON: gitleaks pre-commit mirror uses wasm-based go-re2 which crashes on

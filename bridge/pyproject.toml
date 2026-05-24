@@ -89,6 +89,7 @@ markers = [
     "security: tests for whitelisting, rate-limit, privacy guard, audit-log",
     "dialog_flow: multi-turn language consistency tests",
     "skill_compression: tests for the skill-compression engine (pattern recognition)",
+    "adversarial: Phase D adversarial stress and edge-hunting tests",
 ]
 filterwarnings = [
     "ignore:coroutine.*was never awaited:RuntimeWarning",

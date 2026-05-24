@@ -62,12 +62,59 @@ def _redact_sensitive_url(url: str) -> str:
     return _TELEGRAM_BOT_URL_RE.sub(r"\1[REDACTED]\2", url)
 
 
+# FIX-01: Allowlist for Sentry extra/breadcrumb data keys.
+# Only these keys survive; everything else is stripped.
+# The old blocklist is kept as a second safety net (defense-in-depth).
+_SENTRY_EXTRA_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "request_id",
+        # CFV-03: user_id removed (raw Telegram user ID is PII).
+        # Use chat_id_hash for correlation instead.
+        "model_id",
+        "lang",
+        "session_id",
+        "chat_id_hash",
+    }
+)
+
+# Legacy blocklist: second safety net. Even if a key somehow survives
+# the allowlist filter, these are explicitly removed.
+_SENTRY_EXTRA_BLOCKLIST: frozenset[str] = frozenset(
+    {
+        "message_text",
+        "user_message",
+        "user_input",
+        "claim",
+        "text",
+        "prompt",
+        "raw_text",
+        "response_text",
+        "system_prompt",
+        "response",
+        "body",
+    }
+)
+
+# FIX-02 (CFV-02): Privacy-by-default exception redaction.
+# ALL exception values are redacted. The previous allowlist approach
+# (_SENTRY_REDACT_EXCEPTION_TYPES with 5 types) left gaps: any custom
+# exception like Exception("user text") or MyAppError("private data")
+# would leak raw user text to Sentry. Removed the type-check entirely.
+
+
 def _sentry_before_send(event, hint):
     """Strip user-controlled text from Sentry events.
 
     AXOLENT processes user messages; we never want to send raw
     Telegram messages to Sentry. The audit-log layer handles
     user-text auditing separately (privacy-by-design).
+
+    Three hardening layers (Phase D findings):
+      1. Allowlist: only approved keys survive in extra/breadcrumb data.
+      2. Exception-value redaction: standard exception messages are
+         replaced to prevent user-text leakage.
+      3. Frame-locals stripping: defense-in-depth alongside
+         ``include_local_variables=False``.
 
     Args:
         event: The Sentry event dict.
@@ -83,17 +130,48 @@ def _sentry_before_send(event, hint):
         if "url" in event["request"] and isinstance(event["request"]["url"], str):
             event["request"]["url"] = _redact_sensitive_url(event["request"]["url"])
 
-    # Strip user-message text from extra context
+    # FIX-01: Allowlist + blocklist for extra context
     if "extra" in event and isinstance(event["extra"], dict):
-        for key in ("message_text", "user_message", "user_input", "claim"):
+        # Primary: remove anything NOT in the allowlist
+        disallowed = [k for k in event["extra"] if k not in _SENTRY_EXTRA_ALLOWLIST]
+        for key in disallowed:
+            del event["extra"][key]
+        # Secondary: blocklist safety net (in case allowlist is accidentally widened)
+        for key in _SENTRY_EXTRA_BLOCKLIST:
             event["extra"].pop(key, None)
 
-    # Strip from breadcrumb data and redact bot tokens in breadcrumb URLs
+    # FIX-02: Sanitize exception values for standard exception types
+    if "exception" in event and isinstance(event["exception"], dict):
+        for exc_val in event["exception"].get("values", []):
+            if not isinstance(exc_val, dict):
+                continue
+            # CFV-02: Redact ALL exception messages (privacy-by-default)
+            if "value" in exc_val:
+                exc_val["value"] = "<exception message redacted>"
+            # FIX-03: Strip frame locals (defense-in-depth)
+            st = exc_val.get("stacktrace")
+            if isinstance(st, dict):
+                for frame in st.get("frames", []):
+                    if isinstance(frame, dict):
+                        frame.pop("vars", None)
+
+    # FIX-01 (breadcrumbs): Allowlist + blocklist + bot-token redaction
     breadcrumbs = event.get("breadcrumbs", {}).get("values", [])
     for crumb in breadcrumbs:
         if isinstance(crumb.get("data"), dict):
-            for key in ("message_text", "user_message", "user_input", "claim", "text"):
+            # Primary: allowlist
+            disallowed = [
+                k
+                for k in crumb["data"]
+                if k not in _SENTRY_EXTRA_ALLOWLIST
+                and k not in ("url", "status_code", "method", "category", "handler")
+            ]
+            for key in disallowed:
+                del crumb["data"][key]
+            # Secondary: blocklist safety net
+            for key in _SENTRY_EXTRA_BLOCKLIST:
                 crumb["data"].pop(key, None)
+            # Redact bot tokens in URLs
             if "url" in crumb["data"] and isinstance(crumb["data"]["url"], str):
                 crumb["data"]["url"] = _redact_sensitive_url(crumb["data"]["url"])
 
