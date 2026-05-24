@@ -69,7 +69,6 @@ forbidden_licenses:
 # Packages to skip (own packages, not third-party)
 own_packages:
   - "axolent-bridge"
-  - "jarvis-bridge"  # legacy name, kept for compatibility with older venvs
 
 # Manually reviewed and approved packages with non-standard license strings.
 # Each entry: package name -> license string + reason for approval.
