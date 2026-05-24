@@ -48,3 +48,9 @@ Paste relevant log output or attach screenshots.
 ## Additional context
 
 Any other context about the problem.
+
+## For maintainers: regression test
+
+Before fixing this bug, please write a failing test that reproduces
+it. See CONTRIBUTING.md "Regression-Test Policy" for the bug-first-
+test workflow.

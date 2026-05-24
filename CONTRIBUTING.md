@@ -14,6 +14,7 @@ setup, testing, code conventions, and the submission process.
 * [What Not to Commit](#what-not-to-commit)
 * [Internationalization (i18n)](#internationalization-i18n)
 * [Pre-Commit Hooks](#pre-commit-hooks)
+* [Regression-Test Policy (Bug-First-Test)](#regression-test-policy-bug-first-test)
 * [Code of Conduct](#code-of-conduct)
 
 ## Prerequisites
@@ -276,6 +277,113 @@ Once per week, contributors are encouraged to use AXOLENT as a normal
 user (not as a tester) for 30 minutes. This finds UX/UI bugs that
 automated tests cannot find. See [docs/DOGFOOD.md](docs/DOGFOOD.md)
 for the full protocol and reporting format.
+
+## Regression-Test Policy (Bug-First-Test)
+
+Every manually-found bug becomes a permanent automated safeguard:
+
+1. **Discover bug.** During development, dogfood, beta testing, user
+   reports, or QA-walk-throughs, you find unexpected behavior.
+
+2. **Write the failing test FIRST.** Before you touch any production
+   code, write a test that reproduces the bug. The test must FAIL
+   for the right reason (verify the failure mode matches the bug
+   description).
+
+3. **Commit the failing test** with a clear commit message that
+   references the bug:
+
+   ```
+   test(<scope>): RED: reproduce <bug-description> (re #<issue>)
+
+   Reproduces the bug found via <discovery-source> on <date>.
+   Test fails with: <observed wrong behavior>
+   Expected: <correct behavior>
+   ```
+
+   Optionally mark the test `@pytest.mark.xfail(reason="bug-XXX",
+   strict=True)` so the suite stays green while the bug is open.
+   `strict=True` ensures the test fails the suite when the bug is
+   fixed (xfail -> xpass = test author forgot to remove the marker).
+
+4. **Fix the bug** in the production code.
+
+5. **Commit the fix + remove xfail.** Test should now pass without
+   the marker:
+
+   ```
+   fix(<scope>): GREEN: <bug-description> (closes #<issue>)
+
+   Root cause: <one-line explanation>
+   Fix: <one-line explanation>
+
+   Removes xfail marker from test in <test_file>.
+   ```
+
+### Why this policy
+
+* **Permanence**: every bug ever found leaves a permanent automated
+  trace. A bug cannot silently come back unless the test itself
+  is removed (which requires explicit human action, reviewable in
+  git history).
+
+* **Discipline**: forcing the failing test first prevents the all-too-
+  common "fix worked, didn't write test, bug returns six months later"
+  pattern.
+
+* **Documentation**: the test name + commit message are searchable
+  documentation of every bug AXOLENT ever had.
+
+* **Confidence**: regression tests outnumber feature tests over time,
+  which builds confidence that future refactors do not break old
+  behavior.
+
+### Exemptions
+
+This policy applies to bugs in production code. It does NOT apply to:
+* Test-only fixes (flaky test stabilization)
+* Documentation typos
+* Build/CI configuration
+* Cosmetic refactors with no behavior change
+
+For these, write a clear commit message but no regression test is
+required.
+
+### Bug discovery sources we track
+
+Each kind of source has its own commit-message prefix to make
+historical analysis easier:
+
+| Source | Prefix | Example |
+|--------|--------|---------|
+| Manual dev test | `dogfood` | `test(lcp): RED: dogfood found swedish defaulting to english` |
+| User report | `user` | `test(memory): RED: user reported /remember swallows trailing whitespace` |
+| Live smoke (Phase C) | `live-smoke` | `test(streaming): RED: live-smoke /stop did not abort after 2s` |
+| Codex review | `codex` | `test(security): RED: codex review found exception.value leak` |
+| Claude review | `claude` | `test(language): RED: claude review found cyrillic homoglyph bypass` |
+| Adversarial test discovery | `adversarial` | `test(privacy): RED: adversarial K6 found IBAN with double-space bypass` |
+| Mutation testing | `mutmut` | `test(sentry): RED: mutmut found exception.continue not breaking the loop` |
+| OWASP LLM Top 10 | `owasp` | `test(security): RED: owasp scan found system prompt leak via DAN pattern` |
+| STRIDE threat-modeling | `stride` | `test(security): RED: stride found subprocess env-var leak` |
+
+### Anti-Pattern: silent fix
+
+If you fix a bug without writing the failing test first, the PR
+should be REJECTED in review. The reviewer requests:
+> "Please add a regression test that fails on the pre-fix commit
+> and passes on the fix commit. Then I will review."
+
+This is non-negotiable for production-code bugs.
+
+### How this complements other tests
+
+* Unit tests, integration tests, OWASP-LLM tests, STRIDE tests,
+  adversarial tests, performance tests, mutation tests, E2E tests,
+  golden corpus tests, parametrized matrices are all forward-looking
+  (cover known threat models, expected behaviors).
+* Regression tests are backward-looking (cover every bug we ever
+  shipped).
+* Together they form a safety net that grows denser over time.
 
 ## Code of Conduct
 

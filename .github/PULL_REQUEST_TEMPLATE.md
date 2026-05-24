@@ -18,6 +18,9 @@
 - [ ] **Production-path test** (uses real wrappers, not mocks)
 - [ ] Architecture guard (if new main.py-wired component)
 - [ ] Edge cases covered
+- [ ] If this PR fixes a bug: a failing regression test was committed
+      BEFORE the fix commit. See CONTRIBUTING.md "Regression-Test
+      Policy" for the workflow.
 
 ## Architecture compliance
 - [ ] import-linter: 0 contracts broken
