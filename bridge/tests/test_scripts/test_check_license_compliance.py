@@ -41,7 +41,7 @@ def base_config() -> dict:
             "Commercial",
             "EPL-1.0",
         ],
-        "own_packages": ["jarvis-bridge"],
+        "own_packages": ["axolent-bridge"],
         "manual_exceptions": {
             "special-pkg": {
                 "license": "Custom",
@@ -91,7 +91,7 @@ class TestCheckLicense:
 
     def test_own_package_skipped(self, base_config: dict) -> None:
         """Own packages are skipped."""
-        status, _ = check_license("jarvis-bridge", "UNKNOWN", base_config)
+        status, _ = check_license("axolent-bridge", "UNKNOWN", base_config)
         assert status == "OWN"
 
     def test_manual_exception_applies(self, base_config: dict) -> None:

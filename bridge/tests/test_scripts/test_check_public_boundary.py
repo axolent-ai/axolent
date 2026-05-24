@@ -39,7 +39,7 @@ class TestMatchesGlobPattern:
 
     def test_double_star_extension(self):
         assert matches_glob_pattern("data/test.db", "**/*.db")
-        assert matches_glob_pattern("bridge/data/jarvis.db", "**/*.db")
+        assert matches_glob_pattern("bridge/data/axolent.db", "**/*.db")
 
     def test_double_star_directory(self):
         assert matches_glob_pattern("src/private/secret.py", "**/private/**")
@@ -84,11 +84,11 @@ class TestCheckForbiddenPaths:
         assert result[0][1] == "**/.env"
 
     def test_db_file_blocked(self):
-        tracked = ["bridge/data/jarvis.db", "bridge/main.py"]
+        tracked = ["bridge/data/axolent.db", "bridge/main.py"]
         patterns = ["**/*.db"]
         result = check_forbidden_paths(tracked, patterns)
         assert len(result) == 1
-        assert result[0][0] == "bridge/data/jarvis.db"
+        assert result[0][0] == "bridge/data/axolent.db"
 
     def test_clean_files_pass(self):
         tracked = ["bridge/main.py", "docs/README.md"]
