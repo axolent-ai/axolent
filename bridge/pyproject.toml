@@ -100,6 +100,7 @@ markers = [
     "llm_output: LLM output property validators (language, secrets, leak, markdown, length, telegram)",
     "matrix: parametrized cross-cutting test matrices (language x command x channel)",
     "e2e_telegram: end-to-end Telegram tests via tgintegration (requires real bot + account)",
+    "performance: performance budget tests (not in default run, manual or scheduled)",
 ]
 filterwarnings = [
     "ignore:coroutine.*was never awaited:RuntimeWarning",

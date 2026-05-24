@@ -1,0 +1,101 @@
+# AXOLENT Performance Budgets
+# Maximum durations per operation. Tests fail if budget exceeded.
+# Budgets based on UX-acceptability + measured baselines.
+#
+# How to adjust:
+#   1. Run tests locally 5 times to establish baseline.
+#   2. Set max_ms to 2x the P95 measurement (headroom for CI variance).
+#   3. Document why in this file (comment above the entry).
+#   4. Get review from a second engineer.
+#
+# NOTE: These tests are marked @pytest.mark.performance and do NOT run
+# in the default pr-check. They run weekly on schedule or on-demand.
+
+version: 1
+budgets:
+  # ------------------------------------------------------------------
+  # LCP (Language Control Plane)
+  # ------------------------------------------------------------------
+
+  # detect_language() is called on every single user message.
+  # Must be sub-10ms to not add perceptible latency.
+  language_detection_short_text:
+    max_ms: 10
+    description: "detect_language() for text under 100 chars"
+
+  # Full resolver with sticky-update (includes detection + storage read/write).
+  # 20ms budget because it includes async storage lookup.
+  language_resolver_resolve:
+    max_ms: 20
+    description: "LanguageResolver.resolve() with sticky-update"
+
+  # Read-only resolver path (no storage write). Used for preflight checks.
+  language_resolver_resolve_readonly:
+    max_ms: 10
+    description: "LanguageResolver.resolve_readonly()"
+
+  # ------------------------------------------------------------------
+  # Skill Compression Privacy Pipeline
+  # ------------------------------------------------------------------
+
+  # Full pipeline (3 filters): called before every hypothesis promotion.
+  privacy_pipeline_check:
+    max_ms: 50
+    description: "PrivacyPipeline.check() through all 3 filters"
+
+  # Individual filter budgets (must sum to less than pipeline budget).
+  healthcare_filter_check:
+    max_ms: 15
+    description: "HealthcareFilter.filter_hypothesis()"
+
+  secret_scanner_check:
+    max_ms: 15
+    description: "SecretScanner.block_if_secrets()"
+
+  nudge_filter_check:
+    max_ms: 15
+    description: "NudgeFilter.violates_nudge_policy()"
+
+  # ------------------------------------------------------------------
+  # Sentry Filter
+  # ------------------------------------------------------------------
+
+  # Called on EVERY error event before it leaves the process.
+  # Must be sub-millisecond to never delay error reporting.
+  sentry_before_send:
+    max_ms: 1
+    description: "_sentry_before_send() per Event"
+
+  # ------------------------------------------------------------------
+  # Storage
+  # ------------------------------------------------------------------
+
+  # Simple indexed SELECT (e.g. conversation_storage get_language).
+  sqlite_connection_query_simple:
+    max_ms: 5
+    description: "Simple SELECT on indexed column"
+
+  # Memory retrieval: read + filter + sort for one user.
+  memory_storage_retrieve_user:
+    max_ms: 30
+    description: "Memory retrieval for one user (up to 100 entries)"
+
+  # ------------------------------------------------------------------
+  # Rate Limiter
+  # ------------------------------------------------------------------
+
+  # Per-request check. Called on every incoming message.
+  rate_limiter_check:
+    max_ms: 2
+    description: "RateLimiter.check_and_consume() per request"
+
+  # ------------------------------------------------------------------
+  # Stream Guard
+  # ------------------------------------------------------------------
+
+  # Full abort cycle: check_early() triggers abort + classify_and_report_abort().
+  # Both call langdetect.detect_distribution() on ~620 chars (~4ms each).
+  # Budget reflects the combined cost (production abort path).
+  stream_guard_classify:
+    max_ms: 10
+    description: "StreamGuard abort cycle: check_early + classify_and_report_abort()"
