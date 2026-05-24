@@ -1,0 +1,175 @@
+name: Mutation Testing
+
+on:
+  schedule:
+    - cron: '0 6 * * 0'  # Sunday 06:00 UTC weekly
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mutate-language:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        working-directory: ./bridge
+        run: |
+          pip install -e ".[test]"
+          pip install "mutmut<3"
+      - name: Mutate application/language/
+        working-directory: ./bridge
+        run: |
+          mutmut run \
+            --paths-to-mutate "application/language/" \
+            --tests-dir "tests/" \
+            --runner "python -m pytest tests/test_application/test_language/ -x -q --tb=no" \
+            || true
+          mutmut results
+        continue-on-error: true
+      - name: Upload mutation cache
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: mutation-cache-language
+          path: bridge/.mutmut-cache/
+
+  mutate-stream-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        working-directory: ./bridge
+        run: |
+          pip install -e ".[test]"
+          pip install "mutmut<3"
+      - name: Mutate stream_guard.py
+        working-directory: ./bridge
+        run: |
+          mutmut run \
+            --paths-to-mutate "application/language/stream_guard.py" \
+            --tests-dir "tests/" \
+            --runner "python -m pytest tests/test_application/test_language/test_stream_guard.py tests/test_application/test_language/test_stream_guard_hypothesis.py -x -q --tb=no" \
+            || true
+          mutmut results
+        continue-on-error: true
+      - name: Upload mutation cache
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: mutation-cache-stream-guard
+          path: bridge/.mutmut-cache/
+
+  mutate-sentry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        working-directory: ./bridge
+        run: |
+          pip install -e ".[test]"
+          pip install "mutmut<3"
+      - name: Mutate main.py (sentry filter)
+        working-directory: ./bridge
+        run: |
+          mutmut run \
+            --paths-to-mutate "main.py" \
+            --tests-dir "tests/" \
+            --runner "python -m pytest tests/test_infrastructure/test_sentry_integration.py tests/test_adversarial/test_K8_sentry_pii.py -x -q --tb=no" \
+            || true
+          mutmut results
+        continue-on-error: true
+      - name: Upload mutation cache
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: mutation-cache-sentry
+          path: bridge/.mutmut-cache/
+
+  mutate-privacy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        working-directory: ./bridge
+        run: |
+          pip install -e ".[test]"
+          pip install "mutmut<3"
+      - name: Mutate skill_compression/privacy/
+        working-directory: ./bridge
+        run: |
+          mutmut run \
+            --paths-to-mutate "application/skill_compression/privacy/" \
+            --tests-dir "tests/" \
+            --runner "python -m pytest tests/test_application/test_skill_compression/test_privacy_pipeline.py tests/test_application/test_skill_compression/test_privacy_healthcare.py tests/test_application/test_skill_compression/test_privacy_nudge.py tests/test_application/test_skill_compression/test_privacy_secrets.py tests/test_adversarial/test_K6_privacy_bypass.py -x -q --tb=no" \
+            || true
+          mutmut results
+        continue-on-error: true
+      - name: Upload mutation cache
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: mutation-cache-privacy
+          path: bridge/.mutmut-cache/
+
+  mutate-rate-limiter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        working-directory: ./bridge
+        run: |
+          pip install -e ".[test]"
+          pip install "mutmut<3"
+      - name: Mutate rate_limiter.py
+        working-directory: ./bridge
+        run: |
+          mutmut run \
+            --paths-to-mutate "application/rate_limiter.py" \
+            --tests-dir "tests/" \
+            --runner "python -m pytest tests/test_application/test_rate_limiter.py tests/test_application/test_rate_limiter_benchmark.py -x -q --tb=no" \
+            || true
+          mutmut results
+        continue-on-error: true
+      - name: Upload mutation cache
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: mutation-cache-rate-limiter
+          path: bridge/.mutmut-cache/
