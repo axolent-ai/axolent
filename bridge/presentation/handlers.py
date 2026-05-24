@@ -51,6 +51,7 @@ from application.execution import (
     ExecutionPlanner,
     RequestEnvelope,
 )
+from application.security.injection_detector import InjectionDetector
 
 if TYPE_CHECKING:
     from application.memory_service import MemoryService
@@ -1732,6 +1733,36 @@ async def handle_remember_command(
         content = " ".join(args)
     else:
         await update.message.reply_text(t("remember.usage", _remember_lang))
+        return
+
+    # GAP-05 FIX: Check for prompt injection patterns before storing.
+    # Memory entries are injected into every future system prompt, so
+    # a malicious entry would achieve persistent prompt injection.
+    _injection_detector = InjectionDetector()
+    injection_match = _injection_detector.check(content)
+    if injection_match is not None:
+        log.warning(
+            "GAP-05: Blocked /remember injection attempt from user %d: "
+            "pattern=%s matched='%s'",
+            user_id,
+            injection_match.pattern_name,
+            injection_match.matched_text,
+        )
+        write_raw_audit(
+            action="remember_injection_blocked",
+            user_id=user_id,
+            chat_id=update.effective_chat.id if update.effective_chat else 0,
+            details={
+                "pattern": injection_match.pattern_name,
+                "severity": injection_match.severity,
+                "content_preview": content[:100],
+            },
+        )
+        await update.message.reply_text(  # i18n: ok (security message, intentionally English-only for audit clarity)
+            "This memory contains a pattern that looks like a prompt "
+            "injection attempt and was rejected. If this is a false "
+            "positive, please rephrase your memory entry."
+        )
         return
 
     entry_id = memory_service.remember_episodic(user_id=user_id, content=content)

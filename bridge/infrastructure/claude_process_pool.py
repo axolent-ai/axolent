@@ -13,6 +13,7 @@ Features:
     * Graceful shutdown: all subprocesses are cleanly terminated
     * asyncio.Lock per process against race conditions
     * Per-key creation lock against race conditions on parallel first requests
+    * GAP-11 FIX: Subprocess env is scrubbed via allowlist (no TELEGRAM_BOT_TOKEN, SENTRY_DSN leak)
 """
 
 from __future__ import annotations
@@ -26,6 +27,8 @@ import sys
 import time
 from dataclasses import dataclass, field
 from typing import AsyncIterator
+
+from infrastructure.security.env_scrubber import build_scrubbed_env
 
 log = logging.getLogger(__name__)
 
@@ -513,7 +516,11 @@ class ClaudeProcessPool:
         #    means the OS pipe flushes on each newline anyway when the buffer
         #    is not full. The real fix is ensuring the CLI writes \n after
         #    each JSON event (which it does in streaming mode).
-        spawn_env = os.environ.copy()
+        #
+        # GAP-11 FIX: Use scrubbed env (allowlist only) instead of full
+        # os.environ.copy(). This prevents TELEGRAM_BOT_TOKEN, SENTRY_DSN,
+        # and other secrets from being accessible in the subprocess.
+        spawn_env = build_scrubbed_env()
         spawn_env["NO_COLOR"] = "1"
         spawn_env["FORCE_COLOR"] = "0"
         spawn_env["PYTHONUNBUFFERED"] = "1"

@@ -10,6 +10,7 @@ HC-IMPORT-1 [BLOCKER]: All imported hypotheses start as 'suggested'.
 HC-IMPORT-2 [BLOCKER]: Raw input text never becomes hypothesis claim.
   Only structured patterns (intent, format, etc.) are stored.
 HC-IMPORT-3 [BLOCKER]: Source deletable via cascade delete.
+GAP-03 FIX: Imported content is checked for prompt injection patterns.
 
 Architecture:
   - Lives in application layer (uses domain types + infra storage)
@@ -28,6 +29,7 @@ from pathlib import Path
 from typing import Callable
 from uuid import uuid4
 
+from application.security.injection_detector import InjectionDetector
 from application.skill_compression.event_normalizer import (
     NormalizedEvent,
     compute_fingerprint,
@@ -147,6 +149,7 @@ class ImportResult:
         conversations_parsed: Number of conversations extracted.
         hypotheses_created: Number of new hypotheses created.
         hypotheses_skipped: Number skipped (duplicates or empty).
+        injection_rejections: Number of turns rejected for injection patterns (GAP-03).
         duration_seconds: Actual duration.
         errors: List of error descriptions.
     """
@@ -157,7 +160,8 @@ class ImportResult:
     conversations_parsed: int
     hypotheses_created: int
     hypotheses_skipped: int
-    duration_seconds: float
+    injection_rejections: int = 0
+    duration_seconds: float = 0.0
     errors: tuple[str, ...] = ()
 
 
@@ -206,6 +210,7 @@ class ImportOrchestrator:
         *,
         sources: list[ConversationSource] | None = None,
         import_root: Path | str | None = None,
+        injection_detector: InjectionDetector | None = None,
     ) -> None:
         """Initialize the orchestrator.
 
@@ -214,6 +219,8 @@ class ImportOrchestrator:
             sources: Custom list of parsers. Defaults to all built-in parsers.
             import_root: Override for import root directory. Defaults to
                 AXOLENT_IMPORT_ROOT env variable or ~/Documents/AxolentImport.
+            injection_detector: Optional injection detector. Defaults to
+                a fresh InjectionDetector instance (GAP-03).
         """
         self._storage = storage
         self._sources: list[ConversationSource] = sources or [
@@ -222,6 +229,8 @@ class ImportOrchestrator:
             MarkdownImporter(),
             PlaintextImporter(),
         ]
+        # GAP-03: Injection detection for imported content
+        self._injection_detector = injection_detector or InjectionDetector()
         # W1: Resolve import root from parameter, env, or default
         if import_root is not None:
             self._import_root = Path(import_root).expanduser().resolve()
@@ -387,6 +396,7 @@ class ImportOrchestrator:
         conversations_parsed = 0
         hypotheses_created = 0
         hypotheses_skipped = 0
+        self._injection_rejections = 0  # GAP-03: counter for rejected turns
         errors: list[str] = []
 
         # RISK-1: Wrap ALL storage writes in a single transaction.
@@ -456,12 +466,13 @@ class ImportOrchestrator:
 
         log.info(
             "Import complete: id=%s files=%d conversations=%d "
-            "hypotheses=%d skipped=%d duration=%.1fs",
+            "hypotheses=%d skipped=%d injection_rejected=%d duration=%.1fs",
             import_id,
             files_processed,
             conversations_parsed,
             hypotheses_created,
             hypotheses_skipped,
+            self._injection_rejections,
             duration,
         )
 
@@ -472,6 +483,7 @@ class ImportOrchestrator:
             conversations_parsed=conversations_parsed,
             hypotheses_created=hypotheses_created,
             hypotheses_skipped=hypotheses_skipped,
+            injection_rejections=self._injection_rejections,
             duration_seconds=duration,
             errors=tuple(errors),
         )
@@ -573,6 +585,7 @@ class ImportOrchestrator:
 
         HC-IMPORT-1: All hypotheses start as 'suggested'.
         HC-IMPORT-2: Only structured patterns, no raw input text in claim.
+        GAP-03 FIX: Imported messages are checked for prompt injection.
 
         Args:
             conversation: Parsed conversation data.
@@ -580,7 +593,7 @@ class ImportOrchestrator:
             import_id: Import session ID for tracking.
 
         Returns:
-            Number of hypotheses created.
+            Number of hypotheses created (negative turns are skipped silently).
         """
         created = 0
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -588,6 +601,21 @@ class ImportOrchestrator:
         # Process each user message through the event normalizer
         for user_msg in conversation.user_messages:
             if not user_msg.strip():
+                continue
+
+            # GAP-03 FIX: Check user message for injection patterns.
+            # Imported content becomes persistent knowledge, so injection
+            # here would be amplified into future system prompts.
+            injection_match = self._injection_detector.check(user_msg)
+            if injection_match is not None:
+                log.warning(
+                    "GAP-03: Skipping imported message with injection pattern "
+                    "(source=%s, pattern=%s, matched='%s')",
+                    conversation.source_path,
+                    injection_match.pattern_name,
+                    injection_match.matched_text,
+                )
+                self._injection_rejections += 1
                 continue
 
             # Normalize the event to extract structured fields

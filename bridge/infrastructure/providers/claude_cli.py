@@ -5,6 +5,8 @@ Only subprocess call to `claude -p`. User has their own Pro/Max subscription.
 
 This module replaces the old infrastructure/claude_cli.py and implements
 the LLMProvider interface.
+
+GAP-11 FIX: Subprocess env is scrubbed via allowlist.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ import logging
 import shutil
 import time
 
+from infrastructure.security.env_scrubber import build_scrubbed_env
 from infrastructure.providers.base import (
     LLMProvider,
     ProviderCapabilities,
@@ -92,11 +95,16 @@ class ClaudeProvider(LLMProvider):
         else:
             combined = prompt
 
+        # GAP-11 FIX: Use scrubbed env (allowlist only) to prevent
+        # TELEGRAM_BOT_TOKEN, SENTRY_DSN, and other secrets from leaking.
+        scrubbed_env = build_scrubbed_env()
+
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=scrubbed_env,
         )
 
         try:

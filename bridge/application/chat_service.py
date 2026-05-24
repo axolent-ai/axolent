@@ -408,7 +408,11 @@ class ChatService:
             sections.append("Episodic (what happened):")
             for entry in episodic:
                 content = _truncate(entry["content"], MAX_MEMORY_CHARS_PER_ENTRY)
-                sections.append(f"  • [{entry['id']}] {content}")
+                # GAP-05 defense-in-depth: wrap user content in delimiters
+                # so the model can distinguish memory from instructions.
+                sections.append(
+                    f"  • [{entry['id']}] <user_memory>{content}</user_memory>"
+                )
             sections.append("")
 
         if semantic:
@@ -417,7 +421,9 @@ class ChatService:
                 category = entry.get("category", "")
                 cat_part = f" (category: {category})" if category else ""
                 content = _truncate(entry["content"], MAX_MEMORY_CHARS_PER_ENTRY)
-                sections.append(f"  • [{entry['id']}]{cat_part} {content}")
+                sections.append(
+                    f"  • [{entry['id']}]{cat_part} <user_memory>{content}</user_memory>"
+                )
             sections.append("")
 
         if procedural:
@@ -426,7 +432,9 @@ class ChatService:
                 skill = entry.get("skill_name", "")
                 skill_part = f" [skill: {skill}]" if skill else ""
                 content = _truncate(entry["content"], MAX_MEMORY_CHARS_PER_ENTRY)
-                sections.append(f"  • [{entry['id']}]{skill_part} {content}")
+                sections.append(
+                    f"  • [{entry['id']}]{skill_part} <user_memory>{content}</user_memory>"
+                )
             sections.append("")
 
         memory_block = "\n".join(sections)

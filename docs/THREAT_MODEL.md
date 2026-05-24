@@ -337,21 +337,21 @@
 
 ### Summary Table
 
-| Gap ID | Component | Category | Severity |
-|--------|-----------|----------|----------|
-| STRIDE-GAP-01 | SQLite Storage | Information Disclosure | MEDIUM |
-| STRIDE-GAP-02 | SQLite Storage | Information Disclosure | MEDIUM |
-| STRIDE-GAP-03 | Skill Compression | Tampering / EoP | **HIGH** |
-| STRIDE-GAP-04 | Claude CLI Subprocess | Tampering | MEDIUM |
-| STRIDE-GAP-05 | Chat Service / Memory | Elevation of Privilege | **HIGH** |
-| STRIDE-GAP-06 | Telegram Bot Handler | Tampering | MEDIUM |
-| STRIDE-GAP-07 | Audit Log | Repudiation | LOW |
-| STRIDE-GAP-08 | Skill Compression Privacy | Tampering | MEDIUM |
-| STRIDE-GAP-09 | Pre-Commit Hooks | Tampering / Repudiation | LOW |
-| STRIDE-GAP-10 | GitHub Actions | Tampering | LOW |
-| STRIDE-GAP-11 | Claude CLI Subprocess | Information Disclosure | **HIGH** |
-| STRIDE-GAP-12 | Telegram Bot Handler | Repudiation | LOW |
-| STRIDE-GAP-13 | GitHub Actions | Tampering | LOW |
+| Gap ID | Component | Category | Severity | Status |
+|--------|-----------|----------|----------|--------|
+| STRIDE-GAP-01 | SQLite Storage | Information Disclosure | MEDIUM | TESTED (xfail, Post-Switch) |
+| STRIDE-GAP-02 | SQLite Storage | Information Disclosure | MEDIUM | TESTED (xfail, Post-Switch) |
+| STRIDE-GAP-03 | Skill Compression | Tampering / EoP | **HIGH** | **FIXED** |
+| STRIDE-GAP-04 | Claude CLI Subprocess | Tampering | MEDIUM | TESTED (partial) |
+| STRIDE-GAP-05 | Chat Service / Memory | Elevation of Privilege | **HIGH** | **FIXED** |
+| STRIDE-GAP-06 | Telegram Bot Handler | Tampering | MEDIUM | TESTED (ownership verified) |
+| STRIDE-GAP-07 | Audit Log | Repudiation | LOW | TESTED (xfail, Post-Switch) |
+| STRIDE-GAP-08 | Skill Compression Privacy | Tampering | MEDIUM | TESTED (xfail, Post-Switch) |
+| STRIDE-GAP-09 | Pre-Commit Hooks | Tampering / Repudiation | LOW | TESTED (xfail, Post-Switch) |
+| STRIDE-GAP-10 | GitHub Actions | Tampering | LOW | TESTED (xfail, Post-Switch) |
+| STRIDE-GAP-11 | Claude CLI Subprocess | Information Disclosure | **HIGH** | **FIXED** |
+| STRIDE-GAP-12 | Telegram Bot Handler | Repudiation | LOW | TESTED (xfail, Post-Switch) |
+| STRIDE-GAP-13 | GitHub Actions | Tampering | LOW | TESTED (xfail, Post-Switch) |
 
 ## 5. Out of Scope
 
@@ -445,6 +445,47 @@ For reference, these mitigations are already active and tested:
 - StreamGuard + FP-Detection for language enforcement
 - Optional SQLCipher encryption (AG-SC-7 enforces in production)
 - Keyring-based key management (OS credential vault)
+
+---
+
+## 8. Resolution Status (Updated 2026-05-24)
+
+| Gap | Severity | Status | Resolution |
+|-----|----------|--------|------------|
+| GAP-03 | HIGH | FIXED | ImportOrchestrator injection detection + InjectionDetector pre-filter on all imported user messages |
+| GAP-05 | HIGH | FIXED | /remember injection-pattern check (InjectionDetector) + `<user_memory>` delimiter wrap in system prompt |
+| GAP-11 | HIGH | FIXED | Claude CLI subprocess env-scrubbing via allowlist (`build_scrubbed_env()`) in both ProcessPool and ClaudeProvider |
+| GAP-01 | MEDIUM | TESTED (xfail) | WAL checkpoint test added. Standard close() handles it on most platforms; explicit PRAGMA recommended |
+| GAP-02 | MEDIUM | TESTED (xfail) | Test verifies public_boundary.yaml coverage. *.bak pattern not yet added to forbidden list |
+| GAP-04 | MEDIUM | TESTED (partial) | StreamEvent schema validation passes. Version check not yet implemented |
+| GAP-06 | MEDIUM | TESTED | BookmarkService.remove_bookmark() requires user_id (ownership check verified) |
+| GAP-07 | LOW | TESTED (xfail) | Hash-chain not implemented. Accepted risk RA-02 for single-user context |
+| GAP-08 | MEDIUM | TESTED (xfail) | Homoglyph tests reveal NFKC normalization gap in privacy filters. Post-switch fix |
+| GAP-09 | LOW | TESTED (xfail) | No retroactive pre-commit enforcement in CI yet |
+| GAP-10 | LOW | TESTED (xfail) | All 10 actions pinned to version tags, not SHAs. Standard practice but less secure |
+| GAP-12 | LOW | TESTED (xfail) | require_whitelist only uses log.warning(), no structured audit entry |
+| GAP-13 | LOW | TESTED (xfail) | No hash-pinned requirements file. Post-switch task |
+
+### Implementation Details (HIGH Fixes)
+
+**GAP-11 (Env Scrubbing):**
+- New module: `bridge/application/security/env_scrubber.py`
+- Allowlist: PATH, HOME, USERPROFILE, ANTHROPIC_*, CLAUDE_*, system paths, TLS cert paths
+- Applied in: `infrastructure/claude_process_pool.py` (_spawn_process) and `infrastructure/providers/claude_cli.py` (query)
+- Verified: TELEGRAM_BOT_TOKEN, SENTRY_DSN, DATABASE_URL never reach subprocess
+
+**GAP-05 (Memory Injection):**
+- New module: `bridge/application/security/injection_detector.py`
+- 15 regex patterns (EN + DE) with NFKC normalization pre-processing
+- Applied in: `presentation/handlers.py` (handle_remember_command) before storage
+- Defense-in-depth: `<user_memory>` delimiters in `chat_service.py` memory formatting
+- Audit trail: blocked attempts logged via write_raw_audit()
+
+**GAP-03 (Import Injection):**
+- Same InjectionDetector used in ImportOrchestrator._extract_and_store_patterns()
+- Per-message check on all imported user_messages
+- Rejected messages counted in ImportResult.injection_rejections
+- Logged with source_path, pattern_name, matched_text
 
 ---
 
