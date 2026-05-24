@@ -29,6 +29,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -e ".[dev,test]"
+          pip install ruff  # ruff is a standalone linter, not bundled in extras
 
       - name: Lint (ruff check)
         working-directory: ./bridge

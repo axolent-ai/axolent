@@ -30,8 +30,11 @@ jobs:
         working-directory: ./bridge
         run: |
           pip install --upgrade pip
-          pip install -e ".[dev,test,encryption,skill-compression]"
-          pip install pip-licenses
+          # Skip 'encryption' extra: pysqlcipher3 requires libsqlcipher-dev
+          # (C headers) unavailable on GitHub runners. Its license (BSD-3-Clause)
+          # and keyring (MIT) are both AGPL-compatible and manually verified.
+          pip install -e ".[dev,test,skill-compression]"
+          pip install pip-licenses PyYAML
 
       - name: Run license compliance check
         run: python scripts/check_license_compliance.py
