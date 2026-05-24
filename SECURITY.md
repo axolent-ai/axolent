@@ -99,6 +99,11 @@ request lifecycle.
   on every commit.
 * **SAST:** Bandit (Python-specific) and Semgrep (2000+ rules) scan for security
   anti-patterns.
+* **CodeQL (GitHub-native SAST):** Cross-file taint-tracking analysis runs on every
+  push to `main`, every PR, and weekly (Monday 04:23 UTC). Finds SQL injection,
+  command injection, path traversal, insecure deserialization, and hardcoded credentials
+  via data-flow analysis. Findings appear in the GitHub Security tab. See
+  [docs/CODEQL.md](docs/CODEQL.md) for the triage workflow.
 
 ### Consciously Accepted Risks (Phase 1)
 

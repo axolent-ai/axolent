@@ -1,0 +1,20 @@
+name: AXOLENT CodeQL Config
+
+queries:
+  - uses: security-extended
+  - uses: security-and-quality
+
+paths-ignore:
+  - bridge/tests/**
+  - bridge/.venv/**
+  - bridge/data/**
+  - bridge/pytest_tmp_v9/**
+  - docs/**
+
+paths:
+  - bridge/domain/**
+  - bridge/application/**
+  - bridge/infrastructure/**
+  - bridge/presentation/**
+  - bridge/main.py
+  - scripts/**

@@ -227,6 +227,30 @@ All 17 pre-commit hooks must pass. No exceptions.
 * **import-linter:** Zero contract violations. The hexagonal layer boundaries
   are enforced at commit time
 
+## CodeQL (GitHub SAST)
+
+CodeQL runs automatically on every push to `main` and every pull request.
+
+* **Critical/High findings block merge.** Fix them before requesting review.
+* **Medium/Low findings** are tracked but do not block merge.
+* Findings appear in the PR's "Security" checks and in the repository's
+  Security > Code scanning tab.
+
+**Triaging findings:**
+
+1. Click the finding in the PR checks or Security tab
+2. Review the data-flow path (source to sink)
+3. Fix the vulnerability, or dismiss with a reason if it is a false positive
+
+**Suppressing false positives inline:**
+
+```python
+value = cursor.execute(query)  # codeql[py/sql-injection] query is a compile-time constant
+```
+
+See [docs/CODEQL.md](docs/CODEQL.md) for full documentation on severity levels,
+custom queries, and the relationship to Bandit/Semgrep.
+
 ## Design-by-Contract (icontract)
 
 New pipeline-level methods must include `icontract` pre/post-conditions:
