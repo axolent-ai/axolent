@@ -118,6 +118,13 @@ repos:
         pass_filenames: false
         stages: [pre-commit]
 
+      - id: english-only-commit-msg
+        name: English-only commit messages
+        entry: python scripts/check_commit_message_english_only.py
+        language: system
+        stages: [commit-msg]
+        pass_filenames: true
+
       - id: pytest-coverage-report
         name: Generate test coverage report
         entry: python scripts/pytest_coverage.py
