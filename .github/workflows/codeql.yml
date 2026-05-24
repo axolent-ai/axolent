@@ -24,18 +24,18 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           persist-credentials: false
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@03e4368ac7daa2bd82b3e85262f3bf87ee112f57  # v3.36.0
+        uses: github/codeql-action/init@7211b7c8077ea37d8641b6271f6a365a22a5fbfa  # v4.36.0
         with:
           languages: ${{ matrix.language }}
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: '3.12'
           cache: 'pip'
@@ -47,6 +47,6 @@ jobs:
           pip install -e ".[dev,test,encryption,skill-compression]"
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@03e4368ac7daa2bd82b3e85262f3bf87ee112f57  # v3.36.0
+        uses: github/codeql-action/analyze@7211b7c8077ea37d8641b6271f6a365a22a5fbfa  # v4.36.0
         with:
           category: "/language:${{ matrix.language }}"
