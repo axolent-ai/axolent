@@ -94,6 +94,7 @@ markers = [
     "privacy: tests verifying no PII/user-text leaks in audit logs, logging, reports, CI artifacts",
     "golden_corpus: critical prompt regression anchors (language, streaming, commands, debate, memory, skills, privacy, edge)",
     "llm_output: LLM output property validators (language, secrets, leak, markdown, length, telegram)",
+    "matrix: parametrized cross-cutting test matrices (language x command x channel)",
 ]
 filterwarnings = [
     "ignore:coroutine.*was never awaited:RuntimeWarning",
