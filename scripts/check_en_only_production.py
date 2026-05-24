@@ -144,6 +144,11 @@ WHITELIST_PATHS = {
     "scripts/i18n_translate_settings_v2.py",
     # Smoke test: contains German user messages as test input data.
     "scripts/smoke_test.py",
+    # License compliance: SPDX identifiers (e.g. "MIT") trigger false-positives
+    # on German marker word "mit". Content is purely license names + logic.
+    "scripts/check_license_compliance.py",
+    # License compliance YAML: same issue (SPDX identifiers + comments).
+    "scripts/license_compliance.yaml",
 }
 
 WHITELIST_DIR_PREFIXES = (

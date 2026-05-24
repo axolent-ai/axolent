@@ -166,3 +166,15 @@ repos:
         stages: [pre-commit]
         pass_filenames: false
         always_run: true
+
+      # License Compliance: AGPL-3.0 compatibility check
+      # Verifies all installed dependencies are AGPL-3.0 compatible.
+      # Config: scripts/license_compliance.yaml
+      # Requires pip-licenses (skips gracefully if not installed).
+      - id: license-compliance
+        name: License Compliance (AGPL-3.0)
+        entry: python scripts/check_license_compliance.py
+        language: system
+        stages: [pre-commit]
+        pass_filenames: false
+        always_run: true

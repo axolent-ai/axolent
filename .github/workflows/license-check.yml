@@ -1,0 +1,32 @@
+name: License Compliance Gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  license-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies + pip-licenses
+        working-directory: ./bridge
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev,test,encryption,skill-compression]"
+          pip install pip-licenses
+
+      - name: Run license compliance check
+        run: python scripts/check_license_compliance.py

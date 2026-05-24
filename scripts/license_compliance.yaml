@@ -1,0 +1,111 @@
+# License compliance configuration for AGPL-3.0-only project (AXOLENT)
+#
+# AGPL-3.0 is strong copyleft. All dependencies must be compatible.
+# This file defines the allowlist, blocklist, and manual exceptions.
+
+# AGPL-3.0 compatible licenses (exact match against pip-licenses output)
+allowed_licenses:
+  # AGPL/GPL/LGPL family (3.0+)
+  - "AGPL-3.0+"
+  - "AGPL-3.0-or-later"
+  - "AGPL-3.0-only"
+  - "GPL-3.0+"
+  - "GPL-3.0-or-later"
+  - "GPL-3.0-only"
+  - "LGPL-3.0+"
+  - "LGPL-3.0-or-later"
+  - "LGPL-3.0-only"
+  - "LGPL-2.1-only"
+  - "LGPL-2.1-or-later"
+  - "LGPL-2.1+"
+  # MIT variants
+  - "MIT"
+  - "MIT License"
+  - "MIT-CMU"
+  - "License :: OSI Approved :: MIT License"
+  # BSD variants
+  - "BSD"
+  - "BSD License"
+  - "BSD-2-Clause"
+  - "BSD-3-Clause"
+  - "3-Clause BSD License"
+  - "0BSD"
+  # Apache variants
+  - "Apache-2.0"
+  - "Apache 2.0"
+  - "Apache Software License"
+  # ISC
+  - "ISC"
+  - "ISC License (ISCL)"
+  # Python
+  - "Python-2.0"
+  - "PSF-2.0"
+  - "Python Software Foundation License"
+  - "CNRI-Python"
+  # Mozilla
+  - "MPL-2.0"
+  - "Mozilla Public License 2.0 (MPL 2.0)"
+  # Public domain / permissive
+  - "CC0-1.0"
+  - "Unlicense"
+  - "Zlib"
+  - "Boost Software License 1.0"
+  - "Public Domain"
+
+# Licenses that are INCOMPATIBLE with AGPL-3.0
+forbidden_licenses:
+  - "GPL-2.0-only"
+  - "GPL-2.0"
+  - "Apache-1.0"
+  - "BSD-4-Clause"
+  - "CC-BY-NC"
+  - "Proprietary"
+  - "Commercial"
+  - "OSL-3.0"
+  - "EPL-1.0"
+  - "EPL-2.0"
+  - "AGPL-1.0"
+
+# Packages to skip (own packages, not third-party)
+own_packages:
+  - "jarvis-bridge"
+
+# Manually reviewed and approved packages with non-standard license strings.
+# Each entry: package name -> license string + reason for approval.
+manual_exceptions:
+  gitdb2:
+    license: "UNKNOWN"
+    actual_license: "BSD-3-Clause"
+    reason: "Mirror/shim package for gitdb (BSD). Verified via PyPI and GitHub 2026-05-24."
+  truffleHog:
+    license: "GNU"
+    actual_license: "GPL-2.0"
+    reason: "Dev-only secret scanner (not bundled in distribution). Not linked at runtime. Used only as pre-commit tool."
+  truffleHogRegexes:
+    license: "GNU"
+    actual_license: "GPL-2.0"
+    reason: "Dependency of truffleHog (dev-only). Not bundled in distribution. Not linked at runtime."
+
+# Compound license expressions that are compatible (contain only allowed components)
+# These are matched if the license string contains multiple licenses separated by
+# AND, OR, comma, or semicolon.
+allowed_compound_keywords:
+  - "MIT"
+  - "BSD"
+  - "Apache"
+  - "ISC"
+  - "PSF"
+  - "MPL"
+  - "LGPL"
+  - "AGPL-3"
+  - "GPL-3"
+  - "Zlib"
+  - "CC0"
+  - "0BSD"
+  - "Unlicense"
+  - "Python"
+  - "CNRI"
+  - "LLVM-exception"
+  - "Artifex"
+  - "GNU AFFERO GPL 3"
+  - "dependency licenses"
