@@ -306,14 +306,7 @@ else:
     log.info("Sentry DSN not set, error tracking disabled")
 
 # Flag: whether DEV_MODE is active (only for ALLOW_ALL_USERS safeguard)
-_dev_mode_raw = os.getenv("AXOLENT_DEV_MODE", "")
-if not _dev_mode_raw:
-    _dev_mode_raw = os.getenv("JARVIS_DEV_MODE", "")
-    if _dev_mode_raw:
-        logging.getLogger("axolent").warning(
-            "JARVIS_DEV_MODE is deprecated, please use AXOLENT_DEV_MODE instead."
-        )
-AXOLENT_DEV_MODE: bool = _dev_mode_raw.lower() in (
+AXOLENT_DEV_MODE: bool = os.getenv("AXOLENT_DEV_MODE", "").lower() in (
     "true",
     "1",
     "yes",
@@ -487,13 +480,6 @@ def main() -> None:
         import time as _time
 
         _t0 = _time.monotonic()
-
-        # Backwards-compat: silent rename jarvis.db -> axolent.db
-        _legacy_db = bridge_root / "data" / "jarvis.db"
-        _new_db = bridge_root / "data" / "axolent.db"
-        if _legacy_db.exists() and not _new_db.exists():
-            _legacy_db.rename(_new_db)
-            log.info("DB migration: jarvis.db -> axolent.db renamed (one-time)")
 
         sqlite_conn = SqliteConnection(bridge_root / "data" / "axolent.db")
 
