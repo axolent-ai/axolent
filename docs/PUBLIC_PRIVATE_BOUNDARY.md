@@ -82,6 +82,74 @@ If a future proprietary module exists, it will:
 * If you want to build your own proprietary or open-source extensions:
   use the documented Protocol interfaces as integration points.
 
+## Automated Boundary Scanner
+
+The repository includes an automated scanner that enforces the public/private
+boundary at commit time and in CI.
+
+### How It Works
+
+The scanner (`scripts/check_public_boundary.py`) reads its configuration from
+`scripts/public_boundary.yaml` and performs three checks on all git-tracked files:
+
+1. **Forbidden Paths** - Files matching patterns like `**/.env`, `**/*.db`,
+   `**/credentials.json` are blocked. These must never be committed.
+
+2. **Forbidden Content** - All text files are scanned line-by-line for regex
+   patterns matching real tokens, API keys, DSN strings, and brand-internal
+   terms (e.g. `SemanticBridge`, `revenue strategy`). Files on the whitelist
+   are excluded.
+
+3. **Allowed Path Coverage** - Files not matching any `public_allowed_paths`
+   pattern trigger a warning (not a block), prompting the developer to either
+   add the path to allowed paths or to `.gitignore`.
+
+A special **dummy-value detector** ensures that placeholder values in example
+files (e.g. `TELEGRAM_BOT_TOKEN=YOUR_TOKEN_HERE`) are not flagged.
+
+### Integration Points
+
+- **Pre-commit hook**: Runs on every commit via `.pre-commit-config.yaml`
+  (hook id: `public-boundary-scanner`)
+- **GitHub Actions**: `.github/workflows/public-boundary.yml` runs on every
+  push/PR to `main`
+
+### Whitelisting a False Positive
+
+If a file legitimately contains a forbidden content pattern (e.g. a
+documentation file explaining token formats), add it to
+`content_pattern_whitelist` in `scripts/public_boundary.yaml`:
+
+```yaml
+content_pattern_whitelist:
+  - docs/MY_FILE.md
+```
+
+### Adding a New Forbidden Pattern
+
+To block a new content pattern, add a regex to
+`private_forbidden_content_patterns` in `scripts/public_boundary.yaml`:
+
+```yaml
+private_forbidden_content_patterns:
+  - 'MY_NEW_SECRET_PATTERN\s*=\s*real-value-regex'
+```
+
+To block a new path pattern, add it to `private_forbidden_paths`:
+
+```yaml
+private_forbidden_paths:
+  - "**/my-secret-dir/**"
+```
+
+### Running Manually
+
+```bash
+python scripts/check_public_boundary.py
+```
+
+Exit code 0 means clean; exit code 1 means blocked items were found.
+
 ## Related Documents
 
 * [ARCHITECTURE.md](ARCHITECTURE.md): System architecture and layer rules

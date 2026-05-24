@@ -1,0 +1,85 @@
+# Public/Private Boundary Scanner Configuration
+# ================================================
+# This file defines what may exist in the public repository
+# and what must NEVER be committed (paths, content patterns).
+
+# Files/paths that are EXPLICITLY allowed to be public.
+# Everything else triggers a WARNING (not a block) if tracked.
+public_allowed_paths:
+  - bridge/**
+  - desktop/**
+  - docs/**
+  - scripts/**
+  - shared/**
+  - mini-app/**
+  - .github/**
+  - .semgrep/**
+  - .semgrepignore
+  - .gitleaks.toml
+  - README.md
+  - LICENSE
+  - CONTRIBUTING.md
+  - SECURITY.md
+  - CHANGELOG.md
+  - CODE_OF_CONDUCT.md
+  - CLAUDE.md
+  - .gitignore
+  - .editorconfig
+  - .pre-commit-config.yaml
+  - start-bot.bat
+
+# Path patterns that must NEVER be tracked in the repo.
+# If a tracked file matches any of these: BLOCK (exit 1).
+private_forbidden_paths:
+  - "**/.env"
+  - "**/.env.local"
+  - "**/.env.development"
+  - "**/.env.production"
+  - "**/.env.test"
+  - "**/*.sqlite"
+  - "**/*.sqlite3"
+  - "**/*.db"
+  - "**/*.db-wal"
+  - "**/*.db-shm"
+  - "**/*.log"
+  - "**/credentials.json"
+  - "**/credentials.yaml"
+  - "**/secrets.json"
+  - "**/secrets.yaml"
+  - "**/private/**"
+  - "**/internal/**"
+  - "**/_private/**"
+  - "**/07_internal-archive/**"
+  - "**/Obsidian/**"
+
+# Content patterns that must NEVER appear in any tracked file.
+# Regex patterns scanned line-by-line.
+private_forbidden_content_patterns:
+  # Brand-internal naming
+  - 'Semantic[\s-]?Bridge'
+  - 'SemanticBridge'
+
+  # Token/Secret patterns (with actual values, not placeholders)
+  - 'TELEGRAM_BOT_TOKEN\s*=\s*\d+:[A-Za-z0-9_-]+'
+  - 'SENTRY_DSN\s*=\s*https://[a-z0-9]+@'
+  - 'ANTHROPIC_API_KEY\s*=\s*sk-ant-[A-Za-z0-9_-]+'
+  - 'OPENAI_API_KEY\s*=\s*sk-[A-Za-z0-9]+'
+  - 'GROQ_API_KEY\s*=\s*gsk_[A-Za-z0-9]+'
+  - 'AWS_SECRET_ACCESS_KEY\s*=\s*[A-Za-z0-9/+]+'
+  - 'GITHUB_TOKEN\s*=\s*gh[pous]_[A-Za-z0-9]+'
+
+  # Internal branding
+  - 'revenue[\s-]?strategy'
+  - 'private[\s-]?roadmap'
+  - 'internal[\s-]?only'
+
+# Whitelist for false-positives: paths that contain forbidden patterns
+# but are known-safe (e.g. the scanner config itself, example files).
+content_pattern_whitelist:
+  - scripts/check_public_boundary.py
+  - scripts/public_boundary.yaml
+  - .semgrep/axolent-rules.yml
+  - bridge/.env.example
+  - bridge/tests/test_scripts/test_check_public_boundary.py
+  - docs/DEFENSIVE_PUBLICATION.md
+  - docs/PUBLIC_PRIVATE_BOUNDARY.md

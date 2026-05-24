@@ -155,3 +155,14 @@ repos:
         files: ^bridge/.*\.py$
         types: [python]
         stages: [pre-commit]
+
+      # Security: Public/Private Boundary Scanner
+      # Blocks committed .env, *.db, credentials, token patterns, brand-internal terms.
+      # Config: scripts/public_boundary.yaml
+      - id: public-boundary-scanner
+        name: Public/Private Boundary Scanner
+        entry: python scripts/check_public_boundary.py
+        language: system
+        stages: [pre-commit]
+        pass_filenames: false
+        always_run: true
