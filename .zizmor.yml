@@ -1,0 +1,9 @@
+rules:
+  dangerous-triggers:
+    ignore:
+      # Dependabot auto-merge legitimately requires pull_request_target
+      # because dependabot PRs need write access to merge. The workflow
+      # is safe: it only acts on PRs from dependabot[bot] (checked via
+      # github.event.pull_request.user.login) and only auto-merges
+      # semver-patch updates.
+      - dependabot-auto-merge.yml
