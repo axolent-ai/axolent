@@ -92,6 +92,7 @@ markers = [
     "adversarial: Phase D adversarial stress and edge-hunting tests",
     "owasp_llm: OWASP LLM Top 10 security tests (prompt injection, leakage, disclosure)",
     "privacy: tests verifying no PII/user-text leaks in audit logs, logging, reports, CI artifacts",
+    "golden_corpus: critical prompt regression anchors (language, streaming, commands, debate, memory, skills, privacy, edge)",
 ]
 filterwarnings = [
     "ignore:coroutine.*was never awaited:RuntimeWarning",

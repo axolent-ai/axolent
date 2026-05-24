@@ -65,6 +65,12 @@ jobs:
           AXOLENT_TIMEZONE: Europe/Berlin
         run: pytest tests/test_security/ -v -m security
 
+      - name: Golden Corpus
+        working-directory: ./bridge
+        env:
+          AXOLENT_TIMEZONE: Europe/Berlin
+        run: pytest tests/test_corpus/ -v -m golden_corpus
+
       - name: Smoke test
         env:
           AXOLENT_TIMEZONE: Europe/Berlin
