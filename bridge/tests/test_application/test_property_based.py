@@ -168,15 +168,17 @@ class TestModelServicePropertyBased:
     @given(
         user_id=st.integers(min_value=1, max_value=10**12),
         alias=st.text(min_size=1, max_size=50).filter(
-            lambda x: x.lower().strip()
-            not in {
-                "opus",
-                "sonnet",
-                "haiku",
-                "claude-opus-4-7",
-                "claude-sonnet-4-6",
-                "claude-haiku-4-5-20251001",
-            }
+            lambda x: (
+                x.lower().strip()
+                not in {
+                    "opus",
+                    "sonnet",
+                    "haiku",
+                    "claude-opus-4-7",
+                    "claude-sonnet-4-6",
+                    "claude-haiku-4-5-20251001",
+                }
+            )
         ),
     )
     @settings(max_examples=100)
