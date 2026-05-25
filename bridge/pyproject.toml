@@ -9,7 +9,7 @@ description = "Axolent Bridge: Telegram bot with Claude Code CLI (AXOLENT AI)"
 license = { text = "AGPL-3.0-only" }
 requires-python = ">=3.11"
 dependencies = [
-    "python-telegram-bot==21.7",
+    "python-telegram-bot==22.7",
     "python-dotenv==1.2.2",
     "filelock>=3.13",
     "langdetect>=1.0.9,<2",
