@@ -26,6 +26,7 @@ public_allowed_paths:
   - .gitignore
   - .editorconfig
   - .pre-commit-config.yaml
+  - .zizmor.yml
   - start-bot.bat
 
 # Path patterns that must NEVER be tracked in the repo.

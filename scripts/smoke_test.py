@@ -158,11 +158,17 @@ def _make_mock_chat_service() -> MagicMock:
 
 
 def _make_memory_service() -> MagicMock:
-    """Create a mock MemoryService."""
+    """Create a mock MemoryService.
+
+    All methods that are consumed by handlers must return primitive values
+    (not MagicMock) to avoid 'Object of type MagicMock is not JSON
+    serializable' warnings in the audit log (R7-LOW-03).
+    """
     svc = MagicMock()
     svc.remember_episodic = MagicMock(return_value="mem_001")
     svc.list_episodic = MagicMock(return_value=[])
     svc.forget_episodic = MagicMock(return_value=True)
+    svc.forget = MagicMock(return_value=True)
     svc.load_all_for_prompt = MagicMock(return_value="")
     return svc
 
