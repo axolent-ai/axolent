@@ -83,9 +83,8 @@ def _extract_constructor_calls(
 def _resolve_class(module_path: str, class_name: str) -> type | None:
     """Try to import and return the class. Returns None on failure."""
     try:
-        mod = importlib.import_module(
-            module_path
-        )  # nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import - test only, imports our own modules from main.py AST walk
+        # nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import
+        mod = importlib.import_module(module_path)
         return getattr(mod, class_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
         return None
