@@ -34,7 +34,7 @@ dev = [
     "pre-commit>=4.0",
     "import-linter>=2.0",
     "semgrep>=1.45",
-    "bandit>=1.7",
+    "bandit>=1.9.4",
     "pip-audit>=2.7",
 ]
 e2e = [
