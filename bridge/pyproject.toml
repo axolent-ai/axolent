@@ -14,7 +14,7 @@ dependencies = [
     "filelock>=3.13",
     "langdetect>=1.0.9,<2",
     "typeguard>=4.0",
-    "icontract>=2.7",
+    "icontract>=2.7.3",
     "sentry-sdk>=2.0",
     # Floor-pin: transitive dep via fastapi/mcp/sse_starlette.
     # Pinned to patch PYSEC-2026-161 (starlette <1.0.1 vulnerability).
