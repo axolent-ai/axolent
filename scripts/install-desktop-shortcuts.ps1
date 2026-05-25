@@ -1,9 +1,9 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Creates AXOLENT desktop shortcuts (Start, Stop, Status).
+    Creates AXOLENT desktop shortcuts (Start, Stop, Status, Logs).
 .DESCRIPTION
-    Installs three .lnk files on the current user's Desktop that launch
+    Installs four .lnk files on the current user's Desktop that launch
     the corresponding PowerShell management scripts with -NoExit so the
     terminal window stays visible. Idempotent: re-running overwrites
     existing shortcuts.
@@ -41,6 +41,11 @@ $Shortcuts = @(
         Name        = 'AXOLENT Status'
         Target      = Join-Path $ScriptsDir 'status-axolent.ps1'
         Description = 'Show current AXOLENT bot status'
+    },
+    @{
+        Name        = 'AXOLENT Logs'
+        Target      = Join-Path $ScriptsDir 'tail-axolent.ps1'
+        Description = 'AXOLENT live log viewer (tail -f equivalent)'
     }
 )
 
@@ -83,4 +88,4 @@ foreach ($sc in $Shortcuts) {
     $CreatedCount++
 }
 
-Write-Host "$CreatedCount desktop shortcuts created." -ForegroundColor Green
+Write-Host "4 desktop shortcuts created." -ForegroundColor Green
