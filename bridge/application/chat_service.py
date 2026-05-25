@@ -31,6 +31,7 @@ from application.execution.instruction_compiler import InstructionCompiler
 from application.execution.plan import ExecutionPlan
 from application.leakage_filter import check_for_system_prompt_leakage
 from application.prompt_composer import PromptComposer
+from application.security.prompt_delimiters import escape_prompt_delimited_text
 from domain.conversation import ConversationTurn, build_context_block
 from domain.language import DEFAULT_LANGUAGE
 from infrastructure.audit_log import write_audit_log
@@ -410,8 +411,10 @@ class ChatService:
                 content = _truncate(entry["content"], MAX_MEMORY_CHARS_PER_ENTRY)
                 # GAP-05 defense-in-depth: wrap user content in delimiters
                 # so the model can distinguish memory from instructions.
+                # R7-BLOCKER-01: escape angle brackets to prevent delimiter injection.
+                safe_content = escape_prompt_delimited_text(content)
                 sections.append(
-                    f"  • [{entry['id']}] <user_memory>{content}</user_memory>"
+                    f"  • [{entry['id']}] <user_memory>{safe_content}</user_memory>"
                 )
             sections.append("")
 
@@ -421,8 +424,10 @@ class ChatService:
                 category = entry.get("category", "")
                 cat_part = f" (category: {category})" if category else ""
                 content = _truncate(entry["content"], MAX_MEMORY_CHARS_PER_ENTRY)
+                # R7-BLOCKER-01: escape angle brackets to prevent delimiter injection.
+                safe_content = escape_prompt_delimited_text(content)
                 sections.append(
-                    f"  • [{entry['id']}]{cat_part} <user_memory>{content}</user_memory>"
+                    f"  • [{entry['id']}]{cat_part} <user_memory>{safe_content}</user_memory>"
                 )
             sections.append("")
 
@@ -432,8 +437,10 @@ class ChatService:
                 skill = entry.get("skill_name", "")
                 skill_part = f" [skill: {skill}]" if skill else ""
                 content = _truncate(entry["content"], MAX_MEMORY_CHARS_PER_ENTRY)
+                # R7-BLOCKER-01: escape angle brackets to prevent delimiter injection.
+                safe_content = escape_prompt_delimited_text(content)
                 sections.append(
-                    f"  • [{entry['id']}]{skill_part} <user_memory>{content}</user_memory>"
+                    f"  • [{entry['id']}]{skill_part} <user_memory>{safe_content}</user_memory>"
                 )
             sections.append("")
 

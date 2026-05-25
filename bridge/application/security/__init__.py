@@ -11,8 +11,10 @@ from application.security.injection_detector import (
     InjectionDetector,
     InjectionMatch,
 )
+from application.security.prompt_delimiters import escape_prompt_delimited_text
 
 __all__ = [
     "InjectionDetector",
     "InjectionMatch",
+    "escape_prompt_delimited_text",
 ]

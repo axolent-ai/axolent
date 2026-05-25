@@ -1741,22 +1741,27 @@ async def handle_remember_command(
     _injection_detector = InjectionDetector()
     injection_match = _injection_detector.check(content)
     if injection_match is not None:
+        # R7-BLOCKER-02: Do NOT log matched_text (user PII / injection payload).
         log.warning(
-            "GAP-05: Blocked /remember injection attempt from user %d: "
-            "pattern=%s matched='%s'",
-            user_id,
+            "remember rejected for injection pattern=%s severity=%s user=%s chat=%s",
             injection_match.pattern_name,
-            injection_match.matched_text,
+            injection_match.severity,
+            user_id,
+            chat_id,
         )
+        # R7-BLOCKER-02: write_raw_audit expects a single dict, not kwargs.
+        # Do NOT include content_preview or matched_text (PII / payload).
+        from datetime import datetime, timezone
+
         write_raw_audit(
-            action="remember_injection_blocked",
-            user_id=user_id,
-            chat_id=update.effective_chat.id if update.effective_chat else 0,
-            details={
+            {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "event_type": "remember_injection_blocked",
+                "user_id": user_id,
+                "chat_id": chat_id,
                 "pattern": injection_match.pattern_name,
                 "severity": injection_match.severity,
-                "content_preview": content[:100],
-            },
+            }
         )
         await update.message.reply_text(  # i18n: ok (security message, intentionally English-only for audit clarity)
             "This memory contains a pattern that looks like a prompt "
