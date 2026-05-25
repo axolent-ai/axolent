@@ -76,10 +76,10 @@ class TestGap11SubprocessEnvScrubbing:
         fake_env = {
             "PATH": "/usr/bin",
             "HOME": "/home/user",
-            "DATABASE_URL": "postgresql://secret@host/db",
-            "AWS_SECRET_ACCESS_KEY": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYtest",
-            "STRIPE_SECRET_KEY": "sk_live_secret",
-            "MY_CUSTOM_SECRET": "super-secret-value",
+            "DATABASE_URL": "EXAMPLE_DUMMY_DATABASE_URL_DO_NOT_USE",
+            "AWS_SECRET_ACCESS_KEY": "EXAMPLE_DUMMY_AWS_KEY_DO_NOT_USE",
+            "STRIPE_SECRET_KEY": "EXAMPLE_DUMMY_STRIPE_KEY_DO_NOT_USE",
+            "MY_CUSTOM_SECRET": "EXAMPLE_DUMMY_CUSTOM_SECRET_DO_NOT_USE",
         }
         scrubbed = build_scrubbed_env(source_env=fake_env)
 
