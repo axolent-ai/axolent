@@ -297,6 +297,14 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+
+# Install global secret-redaction filter BEFORE any HTTP calls happen.
+# Masks Telegram bot tokens, Sentry DSNs, API keys, Bearer tokens in all
+# log records (root + httpx/telegram/httpcore/anthropic/openai loggers).
+from infrastructure.log_redaction import install_secret_redaction_filter
+
+install_secret_redaction_filter()
+
 log = logging.getLogger("axolent")
 
 # Deferred Sentry log (logger only available after basicConfig)
