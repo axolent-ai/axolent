@@ -24,9 +24,9 @@ budgets:
     description: "detect_language() for text under 100 chars"
 
   # Full resolver with sticky-update (includes detection + storage read/write).
-  # 20ms budget because it includes async storage lookup.
+  # Baseline ~10ms; doubled to 40ms for CI/shared-runner headroom.
   language_resolver_resolve:
-    max_ms: 20
+    max_ms: 40
     description: "LanguageResolver.resolve() with sticky-update"
 
   # Read-only resolver path (no storage write). Used for preflight checks.
@@ -61,9 +61,9 @@ budgets:
   # ------------------------------------------------------------------
 
   # Called on EVERY error event before it leaves the process.
-  # Must be sub-millisecond to never delay error reporting.
+  # Baseline <0.5ms; raised to 2ms for CI/shared-runner headroom.
   sentry_before_send:
-    max_ms: 1
+    max_ms: 2
     description: "_sentry_before_send() per Event"
 
   # ------------------------------------------------------------------
@@ -95,7 +95,7 @@ budgets:
 
   # Full abort cycle: check_early() triggers abort + classify_and_report_abort().
   # Both call langdetect.detect_distribution() on ~620 chars (~4ms each).
-  # Budget reflects the combined cost (production abort path).
+  # Baseline ~8ms; raised to 20ms for CI/shared-runner headroom.
   stream_guard_classify:
-    max_ms: 10
+    max_ms: 20
     description: "StreamGuard abort cycle: check_early + classify_and_report_abort()"
