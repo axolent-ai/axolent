@@ -163,9 +163,11 @@ class PrivacyPipeline:
         return self._nudge
 
     @icontract.require(
-        lambda hypothesis: hypothesis is not None
-        and bool(hypothesis.claim)
-        and bool(hypothesis.claim.strip()),
+        lambda hypothesis: (
+            hypothesis is not None
+            and bool(hypothesis.claim)
+            and bool(hypothesis.claim.strip())
+        ),
         "hypothesis must not be None and claim must not be empty or whitespace-only",
     )
     @icontract.ensure(
