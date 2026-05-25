@@ -40,12 +40,9 @@ paths = [
     '''docs/SBOM_.*\.md''',
 ]
 
-# Python kwargs like is_final=True falsely matched as generic-api-key
-[[allowlist.regexes]]
-description = "Python keyword arguments that look like key=value"
-regex = '''(is_final|is_active|is_admin|is_owner|is_default|is_complete)=(True|False)'''
-
-# Intentional dummy/example API keys in documentation and config
-[[allowlist.regexes]]
-description = "Placeholder and example credentials"
-regex = '''(REPLACE_ME|EXAMPLE|YOUR_TOKEN_HERE|YOUR_KEY_HERE|xxx|abc123|def456|test_token)'''
+# Python kwargs like is_final=True falsely matched as generic-api-key;
+# Placeholder/example credentials in docs and config.
+regexes = [
+    '''(is_final|is_active|is_admin|is_owner|is_default|is_complete)=(True|False)''',
+    '''(REPLACE_ME|EXAMPLE|YOUR_TOKEN_HERE|YOUR_KEY_HERE|xxx|abc123|def456|test_token)''',
+]
