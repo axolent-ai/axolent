@@ -205,6 +205,8 @@ See [LICENSE](LICENSE) for the full text.
 
 Issues and pull requests are welcome.
 
+This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md).
+
 1. Fork the repo
 2. Create a feature branch
 3. Write tests (we have 1900+ and counting)
