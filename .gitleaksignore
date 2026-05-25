@@ -1,0 +1,10 @@
+# .gitleaksignore - per-finding fingerprint ignores
+#
+# Format: <commit-sha>:<file>:<rule-id>:<line>
+# Use sparingly - only for confirmed false-positives or historical
+# test-fixture values that have been cleaned up in HEAD.
+
+# Historical test-fixture value in test_stride_high_fixes.py:80
+# (commit 9f4a24e). Working-tree value is already dummy-safe since
+# commit a51e77b. See .gitleaks.toml allowlist for current rules.
+9f4a24ec4cbd13c3a2b6b74b37ce2492b3729570:bridge/tests/test_security/test_stride_high_fixes.py:generic-api-key:80
