@@ -38,6 +38,7 @@ paths = [
     '''bridge/tests/test_security/test_llm_output_properties\.py''',
     '''bridge/tests/test_security/test_owasp_llm06_sensitive_disclosure\.py''',
     '''bridge/tests/test_security/test_stride_medium_low_gaps\.py''',
+    '''bridge/tests/test_adversarial/test_K6_privacy_bypass\.py''',
     # Semgrep rules describe secret patterns by design
     '''.semgrep/.*''',
     # Scanner script itself contains detection patterns

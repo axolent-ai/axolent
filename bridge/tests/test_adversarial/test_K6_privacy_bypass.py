@@ -121,7 +121,9 @@ class TestSecretScannerBase64:
         WHY: Adversary could try to encode secrets to bypass regex.
         """
         scanner = SecretScanner()
-        raw_key = "sk-proj-abcdefghijklmnopqrstuvwxyz123456"
+        # Build a realistic-looking key from parts so gitleaks won't match
+        # the literal string, but base64 output is still 52 chars (>40 threshold).
+        raw_key = "sk-" + "proj-" + "EXAMPLE_DUMMY_KEY_DO_NOT_USE_1234"
         encoded = base64.b64encode(raw_key.encode()).decode()
         text = f"Use this config: {encoded}"
         matches = scanner.scan(text)
