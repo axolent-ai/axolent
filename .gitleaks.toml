@@ -17,6 +17,7 @@ regex = '''sk-ant-[A-Za-z0-9_-]{20,}'''
 keywords = ["anthropic", "claude", "sk-ant"]
 
 [allowlist]
+description = "Known safe paths and false-positive patterns"
 paths = [
     '''.venv/''',
     '''venv/''',
@@ -24,4 +25,27 @@ paths = [
     '''\.egg-info/''',
     '''desktop/''',
     '''mini-app/''',
+    # Test files contain intentional dummy credentials for privacy-filter
+    # testing (SecretScanner, HealthcareFilter, etc.)
+    '''bridge/tests/.*''',
+    # Semgrep rules describe secret patterns by design
+    '''.semgrep/.*''',
+    # Scanner script itself contains detection patterns
+    '''scripts/check_public_boundary\.py''',
+    # Config with patterns for boundary checks
+    '''scripts/public_boundary\.yaml''',
+    # License-check script contains license-like strings
+    '''scripts/check_license_compliance\.py''',
+    # SBOM docs may contain license-like strings
+    '''docs/SBOM_.*\.md''',
 ]
+
+# Python kwargs like is_final=True falsely matched as generic-api-key
+[[allowlist.regexes]]
+description = "Python keyword arguments that look like key=value"
+regex = '''(is_final|is_active|is_admin|is_owner|is_default|is_complete)=(True|False)'''
+
+# Intentional dummy/example API keys in documentation and config
+[[allowlist.regexes]]
+description = "Placeholder and example credentials"
+regex = '''(REPLACE_ME|EXAMPLE|YOUR_TOKEN_HERE|YOUR_KEY_HERE|xxx|abc123|def456|test_token)'''
