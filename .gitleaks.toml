@@ -25,9 +25,19 @@ paths = [
     '''\.egg-info/''',
     '''desktop/''',
     '''mini-app/''',
-    # Test files contain intentional dummy credentials for privacy-filter
-    # testing (SecretScanner, HealthcareFilter, etc.)
-    '''bridge/tests/.*''',
+    # R7-MED-01: Narrowed from blanket bridge/tests/.* to specific files
+    # that contain intentional dummy credentials for privacy-filter /
+    # security testing. Convention: test fixtures use DUMMY_ / EXAMPLE_ /
+    # TEST_ / REDACTED_ prefixes for fake secrets.
+    '''bridge/tests/test_application/test_contracts/test_pipeline_contracts\.py''',
+    '''bridge/tests/test_application/test_skill_compression/test_privacy_pipeline\.py''',
+    '''bridge/tests/test_application/test_skill_compression/test_privacy_secrets\.py''',
+    '''bridge/tests/test_application/test_skill_compression/test_skill_commands\.py''',
+    '''bridge/tests/test_scripts/test_check_public_boundary\.py''',
+    '''bridge/tests/test_security/conftest\.py''',
+    '''bridge/tests/test_security/test_llm_output_properties\.py''',
+    '''bridge/tests/test_security/test_owasp_llm06_sensitive_disclosure\.py''',
+    '''bridge/tests/test_security/test_stride_medium_low_gaps\.py''',
     # Semgrep rules describe secret patterns by design
     '''.semgrep/.*''',
     # Scanner script itself contains detection patterns
