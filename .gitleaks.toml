@@ -38,6 +38,8 @@ paths = [
     '''scripts/check_license_compliance\.py''',
     # SBOM docs may contain license-like strings
     '''docs/SBOM_.*\.md''',
+    # E2E setup docs contain placeholder TELEGRAM_API_HASH=abcdef... examples
+    '''docs/E2E_TELEGRAM_TESTS\.md''',
 ]
 
 # Python kwargs like is_final=True falsely matched as generic-api-key;
