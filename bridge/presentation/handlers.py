@@ -56,6 +56,7 @@ from application.execution import (
     RequestEnvelope,
 )
 from application.security.injection_detector import InjectionDetector
+from application.security.secret_scanner import SecretBlockedError
 
 if TYPE_CHECKING:
     from application.memory_service import MemoryService
@@ -1774,11 +1775,46 @@ async def handle_remember_command(
         )
         return
 
-    entry_id = memory_service.remember_episodic(user_id=user_id, content=content)
+    # BL-3: MemoryService.remember_episodic() contains SecretScanner gate.
+    # Handler catches SecretBlockedError for i18n reply + audit.
+    try:
+        entry_id = memory_service.remember_episodic(user_id=user_id, content=content)
+    except SecretBlockedError as exc:
+        from datetime import datetime, timezone
+
+        _first_secret = exc.matches[0]
+        log.warning(  # nosemgrep: python-logger-credential-disclosure
+            "remember blocked by secret scanner: user=%d pattern=%s layer=%d",
+            user_id,
+            _first_secret.pattern_name,
+            _first_secret.layer,
+        )
+        write_raw_audit(
+            {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "event_type": "remember_secret_blocked",
+                "user_id": user_id,
+                "chat_id": chat_id,
+                "pattern": _first_secret.pattern_name,
+                "layer": _first_secret.layer,
+            }
+        )
+        secret_label = t(_first_secret.pattern_label_key, _remember_lang)
+        await update.message.reply_text(
+            t("remember.secret_blocked", _remember_lang, secret_type=secret_label)
+        )
+        return
+
     await update.message.reply_text(
         t("remember.saved", _remember_lang, entry_id=entry_id)
     )
-    log.info("User %d remembered: %s (id=%s)", user_id, content[:50], entry_id)
+    # A3.2: Log only content length, never cleartext content.
+    log.info(
+        "[remember] user=%d remembered: content_len=%d id=%s",
+        user_id,
+        len(content),
+        entry_id,
+    )
     log_command_audit(
         action="remember",
         user_id=user_id,

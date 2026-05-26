@@ -149,6 +149,15 @@ WHITELIST_PATHS = {
     "scripts/check_license_compliance.py",
     # License compliance YAML: same issue (SPDX identifiers + comments).
     "scripts/license_compliance.yaml",
+    # Feature data: German PII/secret descriptions and i18n label keys (HC-SC-13).
+    # SecretScanner is the canonical location in application/security/.
+    "bridge/application/security/secret_scanner.py",
+    # Feature data: German trigger-extraction regex patterns and stoplist for
+    # skill alias matching (DE "wenn ich X sage" pattern). Words ARE the feature.
+    "bridge/application/skill_compression/skill_learning_service.py",
+    # Feature data: Memory-conflict detection with German regex patterns
+    # (DE "Mein/Meine X ist Y" patterns). The German words ARE the feature.
+    "bridge/application/memory_conflict_detector.py",
 }
 
 WHITELIST_DIR_PREFIXES = (

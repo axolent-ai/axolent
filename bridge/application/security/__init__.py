@@ -1,6 +1,6 @@
 """Security utilities for AXOLENT application layer.
 
-Provides prompt-injection detection for user-supplied content.
+Provides prompt-injection detection and secret scanning for user-supplied content.
 
 Architecture note: env_scrubber lives in infrastructure/security/ because
 it is used by infrastructure-layer modules (claude_process_pool, claude_cli).
@@ -12,9 +12,17 @@ from application.security.injection_detector import (
     InjectionMatch,
 )
 from application.security.prompt_delimiters import escape_prompt_delimited_text
+from application.security.secret_scanner import (
+    SecretBlockedError,
+    SecretMatch,
+    SecretScanner,
+)
 
 __all__ = [
     "InjectionDetector",
     "InjectionMatch",
+    "SecretBlockedError",
+    "SecretMatch",
+    "SecretScanner",
     "escape_prompt_delimited_text",
 ]

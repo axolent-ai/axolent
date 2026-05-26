@@ -1615,6 +1615,150 @@
       "source_hash": "stop_no_stream_v1",
       "auto_translated": false,
       "reviewed": true
+    },
+    "remember.secret_blocked": {
+      "text": "Das sieht nach sensiblen Daten aus ({secret_type}). Aus Sicherheitsgründen kann ich keine Secrets, API-Keys oder persönliche Kennungen im Memory speichern. Bitte formuliere die Notiz ohne sensible Inhalte.",
+      "source_hash": "remember_secret_blocked_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.api_token": {
+      "text": "API-Token oder Secret",
+      "source_hash": "secret_api_token_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.aws_key": {
+      "text": "AWS Access Key",
+      "source_hash": "secret_aws_key_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.generic_key": {
+      "text": "API-Key oder Secret-Key",
+      "source_hash": "secret_generic_key_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.stripe_key": {
+      "text": "Stripe API Key",
+      "source_hash": "secret_stripe_key_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.google_key": {
+      "text": "Google API Key",
+      "source_hash": "secret_google_key_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.github_token": {
+      "text": "GitHub Token",
+      "source_hash": "secret_github_token_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.jwt": {
+      "text": "JSON Web Token (JWT)",
+      "source_hash": "secret_jwt_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.price": {
+      "text": "Preisangabe",
+      "source_hash": "secret_price_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.tax": {
+      "text": "Steuerangabe",
+      "source_hash": "secret_tax_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.iban": {
+      "text": "IBAN/Kontonummer",
+      "source_hash": "secret_iban_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.credit_card": {
+      "text": "Kreditkartennummer",
+      "source_hash": "secret_cc_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.email": {
+      "text": "E-Mail-Adresse",
+      "source_hash": "secret_email_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.phone": {
+      "text": "Telefonnummer",
+      "source_hash": "secret_phone_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.ssn": {
+      "text": "Sozialversicherungsnummer",
+      "source_hash": "secret_ssn_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.password": {
+      "text": "Passwort",
+      "source_hash": "secret_password_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.long_hex": {
+      "text": "Langer Hex-String (vermutlich Token/Key)",
+      "source_hash": "secret_long_hex_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.long_base64": {
+      "text": "Langer Base64-String (vermutlich Token/Key)",
+      "source_hash": "secret_long_base64_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.url_credentials": {
+      "text": "URL mit eingebetteten Zugangsdaten",
+      "source_hash": "secret_url_creds_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.ip_address": {
+      "text": "IP-Adresse",
+      "source_hash": "secret_ip_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.long_digit": {
+      "text": "Lange Ziffernfolge (vermutlich Kontonummer/ID)",
+      "source_hash": "secret_long_digit_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.file_path": {
+      "text": "Dateipfad mit Benutzername",
+      "source_hash": "secret_file_path_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.third_party_pii": {
+      "text": "Personenbezogene Daten Dritter",
+      "source_hash": "secret_third_party_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "secret.generic": {
+      "text": "Sensible Daten",
+      "source_hash": "secret_generic_v1",
+      "auto_translated": false,
+      "reviewed": true
     }
   }
 }

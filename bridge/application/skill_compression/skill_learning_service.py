@@ -16,6 +16,7 @@ Architecture: Application service. No Telegram imports, no infrastructure.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
@@ -34,6 +35,150 @@ from application.skill_compression.privacy.privacy_pipeline import (
 )
 
 log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------
+# Trigger alias extraction (Bug 2 fix)
+# ---------------------------------------------------------------
+
+# Minimum alias length to avoid overly broad triggers.
+MIN_ALIAS_LEN: int = 2
+MAX_ALIAS_LEN: int = 100
+
+# Stoplist: words that must NEVER become a skill alias because they
+# are too common in normal conversation and would fire constantly.
+# Stoplist per briefing: ja, nein, ok, yes, no, danke, thanks, help.
+# Extended with very common functional words that would fire on every message.
+_ALIAS_STOPLIST: frozenset[str] = frozenset(
+    {
+        "ja",
+        "nein",
+        "ok",
+        "yes",
+        "no",
+        "danke",
+        "thanks",
+        "thank",
+        "help",
+        "hilfe",
+        "bitte",
+        "please",
+        "der",
+        "die",
+        "das",
+        "the",
+        "a",
+        "an",
+        "und",
+        "and",
+        "or",
+        "oder",
+        "ich",
+        "du",
+        "er",
+        "sie",
+        "es",
+        "we",
+        "you",
+        "it",
+    }
+)
+
+# Patterns for trigger alias extraction.
+# DE: "wenn ich X sage/schreibe/tippe/eingebe/sende"
+_TRIGGER_PATTERNS_DE: list[re.Pattern[str]] = [
+    re.compile(
+        r"wenn\s+ich\s+(.+?)\s+(?:sage|schreibe|tippe|eingebe|sende)",
+        re.IGNORECASE,
+    ),
+]
+
+# EN: "when I say/type/write/send/enter X"
+# Strategy: capture the first word after the verb as the trigger.
+# If quoted, capture the full quoted content. Otherwise, capture
+# the first word(s) before a terminator verb, comma, period, or sentence end.
+_TRIGGER_PATTERNS_EN: list[re.Pattern[str]] = [
+    # Quoted triggers: "when I say "hello" then do X"
+    re.compile(
+        r"when\s+I\s+(?:say|type|write|send|enter)\s+"
+        r"(['\"])(.+?)\1",
+        re.IGNORECASE,
+    ),
+    # Unquoted triggers: "when I say hello greet me" or "when I say red, explain"
+    # Captures the word between the verb and the next separator (comma, period,
+    # another word, or end of string). The captured group is group(2).
+    re.compile(
+        r"when\s+I\s+(?:say|type|write|send|enter)\s+"
+        r"()([a-zA-Z0-9_\-]+)"
+        r"(?:\s|[,.]|$)",
+        re.IGNORECASE,
+    ),
+]
+
+
+def _extract_trigger_aliases(claim_text: str) -> list[str]:
+    """Extract trigger aliases from a skill claim text.
+
+    Looks for natural-language patterns like:
+      DE: "wenn ich rot sage, erkläre mir die RGB-Farben"  -> ["rot"]
+      EN: "when I say red, explain me RGB colors"           -> ["red"]
+      Multiple: "wenn ich rot oder blau sage, mach X"       -> ["rot", "blau"]
+
+    Applies validation:
+      - Min length >= MIN_ALIAS_LEN
+      - Max length <= MAX_ALIAS_LEN
+      - Not in stoplist
+      - Stripped and lowercased
+
+    Args:
+        claim_text: The raw skill claim text from the user.
+
+    Returns:
+        List of validated alias strings (may be empty).
+    """
+    raw_aliases: list[str] = []
+
+    # Try DE patterns (use findall for multi-trigger support)
+    for pattern in _TRIGGER_PATTERNS_DE:
+        for match in pattern.finditer(claim_text):
+            captured = match.group(1).strip()
+            # Handle "oder"/"or" splitting for multi-trigger
+            parts = re.split(r"\s+oder\s+|\s+or\s+", captured, flags=re.IGNORECASE)
+            for part in parts:
+                cleaned = part.strip().strip("\"'").strip()
+                if cleaned:
+                    raw_aliases.append(cleaned)
+
+    # Try EN patterns
+    for pattern in _TRIGGER_PATTERNS_EN:
+        for match in pattern.finditer(claim_text):
+            # Group 2 is the actual trigger text (group 1 is optional quote)
+            captured = match.group(2).strip()
+            parts = re.split(r"\s+oder\s+|\s+or\s+", captured, flags=re.IGNORECASE)
+            for part in parts:
+                cleaned = part.strip().strip("\"'").strip()
+                if cleaned:
+                    raw_aliases.append(cleaned)
+
+    # Validate and deduplicate
+    seen: set[str] = set()
+    valid_aliases: list[str] = []
+    for alias in raw_aliases:
+        lower = alias.lower()
+        if lower in seen:
+            continue
+        if len(lower) < MIN_ALIAS_LEN or len(lower) > MAX_ALIAS_LEN:
+            continue
+        if lower in _ALIAS_STOPLIST:
+            continue
+        # Reject command-like triggers
+        if lower.startswith("/"):
+            continue
+        seen.add(lower)
+        valid_aliases.append(lower)
+
+    return valid_aliases
+
 
 # Allowed source values for learn(). Defined at module level so the
 # icontract lambda can reference it without needing `self`.
@@ -179,12 +324,33 @@ class SkillLearningService:
         # Privacy passed: persist
         self._storage.insert_hypothesis(hypothesis)
 
+        # Bug 2: Extract trigger aliases from the claim text and persist.
+        aliases = _extract_trigger_aliases(claim_text)
+        for alias_text in aliases:
+            alias_id = f"alias_{uuid4().hex[:12]}"
+            self._storage.insert_alias(
+                alias_id=alias_id,
+                hypothesis_id=hyp_id,
+                alias_text=alias_text,
+                first_seen=now_iso,
+                last_seen=now_iso,
+                confidence=0.9,
+                evidence_count=1,
+            )
+            # B2-2: Do NOT log alias cleartext. Only log length.
+            log.info(
+                "Alias created for skill: hyp=%s alias_len=%d",
+                hyp_id,
+                len(alias_text),
+            )
+
         log.info(
-            "Skill learned: hyp=%s user=%d source=%s len=%d",
+            "Skill learned: hyp=%s user=%d source=%s len=%d aliases=%d",
             hyp_id,
             user_id,
             source,
             len(claim_text),
+            len(aliases),
         )
 
         return LearnResult(

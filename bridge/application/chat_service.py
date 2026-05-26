@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any, AsyncIterator, Optional
 
 from application.execution.context import ExecutionContext
 from application.execution.instruction_compiler import InstructionCompiler
+from application.memory_conflict_detector import MemoryConflictDetector
 from application.execution.plan import ExecutionPlan
 from application.leakage_filter import check_for_system_prompt_leakage
 from application.prompt_composer import PromptComposer
@@ -444,6 +445,33 @@ class ChatService:
                     f"  • [{entry['id']}]{skill_part} <user_memory>{safe_content}</user_memory>"
                 )
             sections.append("")
+
+        # Bug 1: Detect and surface memory conflicts.
+        # BL-1: All subject/values are escaped to prevent prompt-delimiter injection.
+        all_entries = list(episodic) + list(semantic) + list(procedural)
+        if all_entries:
+            detector = MemoryConflictDetector()
+            conflicts = detector.detect(all_entries)
+            if conflicts:
+                sections.append("[MEMORY CONFLICT DETECTED]")
+                sections.append(
+                    "The following entries contain conflicting information. "
+                    "Prefer the most recent entry, or ask the user to clarify."
+                )
+                for conflict in conflicts:
+                    escaped_subject = escape_prompt_delimited_text(conflict.subject)
+                    entry_ids_str = ",".join(conflict.entry_ids)
+                    sections.append(
+                        f'<memory_conflict subject="{escaped_subject}" '
+                        f'entries="{entry_ids_str}">'
+                    )
+                    for val in conflict.values:
+                        escaped_val = escape_prompt_delimited_text(val)
+                        sections.append(
+                            f"  <conflict_value>{escaped_val}</conflict_value>"
+                        )
+                    sections.append("</memory_conflict>")
+                sections.append("")
 
         memory_block = "\n".join(sections)
         budget = self._get_memory_budget(provider_name)

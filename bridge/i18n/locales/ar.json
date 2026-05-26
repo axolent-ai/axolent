@@ -1615,6 +1615,174 @@
       "source_hash": "stop_no_stream_v1",
       "auto_translated": true,
       "reviewed": false
+    },
+    "remember.secret_blocked": {
+      "text": "This looks like sensitive data ({secret_type}). For security reasons, I cannot store secrets, API keys, or personal identifiers in memory. Please rephrase without the sensitive content.",
+      "source_hash": "remember_secret_blocked_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.api_token": {
+      "text": "API token or secret",
+      "source_hash": "secret_api_token_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.aws_key": {
+      "text": "AWS Access Key",
+      "source_hash": "secret_aws_key_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.generic_key": {
+      "text": "API key or secret key",
+      "source_hash": "secret_generic_key_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.stripe_key": {
+      "text": "Stripe API Key",
+      "source_hash": "secret_stripe_key_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.google_key": {
+      "text": "Google API Key",
+      "source_hash": "secret_google_key_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.github_token": {
+      "text": "GitHub Token",
+      "source_hash": "secret_github_token_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.jwt": {
+      "text": "JSON Web Token (JWT)",
+      "source_hash": "secret_jwt_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.price": {
+      "text": "Price information",
+      "source_hash": "secret_price_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.tax": {
+      "text": "Tax information",
+      "source_hash": "secret_tax_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.iban": {
+      "text": "IBAN / account number",
+      "source_hash": "secret_iban_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.credit_card": {
+      "text": "Credit card number",
+      "source_hash": "secret_cc_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.email": {
+      "text": "Email address",
+      "source_hash": "secret_email_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.phone": {
+      "text": "Phone number",
+      "source_hash": "secret_phone_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.ssn": {
+      "text": "Social security number",
+      "source_hash": "secret_ssn_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.password": {
+      "text": "Password",
+      "source_hash": "secret_password_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.long_hex": {
+      "text": "Long hex string (likely token/key)",
+      "source_hash": "secret_long_hex_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.long_base64": {
+      "text": "Long Base64 string (likely token/key)",
+      "source_hash": "secret_long_base64_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.url_credentials": {
+      "text": "URL with embedded credentials",
+      "source_hash": "secret_url_creds_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.ip_address": {
+      "text": "IP address",
+      "source_hash": "secret_ip_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.long_digit": {
+      "text": "Long digit sequence (likely account number/ID)",
+      "source_hash": "secret_long_digit_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.file_path": {
+      "text": "File path with username",
+      "source_hash": "secret_file_path_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.third_party_pii": {
+      "text": "Third-party personal data",
+      "source_hash": "secret_third_party_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
+    },
+    "secret.generic": {
+      "text": "Sensitive data",
+      "source_hash": "secret_generic_v1",
+      "auto_translated": false,
+      "reviewed": false,
+      "needs_human_translation": true
     }
   }
 }

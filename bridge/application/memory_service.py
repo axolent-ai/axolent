@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Optional, Union
 
+from application.security.secret_scanner import SecretBlockedError, SecretScanner
 from domain.memory.episodic import EpisodicEntry
 from domain.memory.procedural import ProceduralEntry
 from domain.memory.semantic import SemanticEntry
@@ -21,6 +22,9 @@ if TYPE_CHECKING:
     from infrastructure.sqlite_storage import SqliteMemoryStorage
 
 log = logging.getLogger(__name__)
+
+# Module-level scanner instance (stateless, safe to share).
+_secret_scanner = SecretScanner()
 
 
 class MemoryService:
@@ -47,6 +51,11 @@ class MemoryService:
     ) -> str:
         """Store an episodic event.
 
+        Defense-in-depth: scans content for secrets/PII before storage.
+        Raises SecretBlockedError if secrets are detected, ensuring that
+        ALL callers (handler, auto-promotion, admin CLI, tests) are
+        protected, not just the Telegram /remember handler.
+
         Args:
             user_id: Telegram user ID.
             content: Description of the event.
@@ -55,7 +64,21 @@ class MemoryService:
 
         Returns:
             ID of the new entry (ep_...).
+
+        Raises:
+            SecretBlockedError: If content contains detected secrets.
         """
+        # BL-3: Defense-in-depth gate. Every caller goes through this.
+        matches = _secret_scanner.scan(content)
+        if matches:
+            log.warning(
+                "remember_episodic blocked: user=%d pattern=%s layer=%d",
+                user_id,
+                matches[0].pattern_name,
+                matches[0].layer,
+            )
+            raise SecretBlockedError(matches)
+
         entry = EpisodicEntry(
             user_id=user_id,
             content=content,
