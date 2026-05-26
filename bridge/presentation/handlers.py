@@ -23,7 +23,11 @@ from telegram.ext import ContextTypes
 
 from typeguard import typechecked
 
-from application.audit_service import log_command_audit, write_raw_audit
+from application.audit_service import (
+    filter_task_meta,
+    log_command_audit,
+    write_raw_audit,
+)
 from application.bookmark_service import BookmarkService
 from application.chat_service import ChatService
 from application.model_service import DEFAULT_MODEL, ModelService
@@ -1087,7 +1091,7 @@ async def _handle_message_streaming(
                 "streaming_chunks": streaming_chunks,
                 "was_cold": was_cold,
                 "subprocess_pid": subprocess_pid,
-                **task_meta,
+                **filter_task_meta(task_meta),
             }
             write_raw_audit(audit_error)
             log.warning(
@@ -1112,7 +1116,7 @@ async def _handle_message_streaming(
             "error_id": error_id,
             "duration_seconds": round(duration, 2),
             "error": "outer_exception",
-            **task_meta,
+            **filter_task_meta(task_meta),
         }
         write_raw_audit(audit_crash)
 

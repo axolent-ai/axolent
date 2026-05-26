@@ -108,6 +108,8 @@ class ManagedProcess:
     _accumulated_text: str = ""
     model: str = ""
     is_dirty: bool = False
+    _stderr_lines: list[str] = field(default_factory=list)
+    _stderr_task: asyncio.Task | None = field(default=None, repr=False)
 
 
 class ClaudeProcessPool:
@@ -532,15 +534,17 @@ class ClaudeProcessPool:
                 spawn_env["NODE_OPTIONS"] + " --no-warnings"
             ).strip()
 
-        # Platform-specific subprocess flags for reduced buffering
+        # Platform-specific subprocess flags
         _extra_kwargs: dict = {}
         if sys.platform == "win32":
-            # CREATE_NEW_PROCESS_GROUP avoids inheriting the parent console
-            # buffer settings; combined with Node.js JSON-lines mode this
-            # ensures each \n-terminated event line is flushed immediately.
+            # CREATE_NO_WINDOW prevents a visible console window for the
+            # subprocess while avoiding the CREATE_NEW_PROCESS_GROUP flag
+            # which conflicts with stdin PIPE usage on Windows (causes
+            # unexpected EOF after seconds of operation due to signal
+            # handling changes in the new process group).
             import subprocess as _sp  # nosec B404 - constant flag, no shell exec
 
-            _extra_kwargs["creationflags"] = _sp.CREATE_NEW_PROCESS_GROUP
+            _extra_kwargs["creationflags"] = _sp.CREATE_NO_WINDOW
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -567,6 +571,9 @@ class ClaudeProcessPool:
             is_ready=False,
             model=effective_model,
         )
+
+        # Start stderr reader background task for diagnostics (Fix 2)
+        self._start_stderr_reader(managed)
 
         return managed
 
@@ -618,6 +625,45 @@ class ClaudeProcessPool:
         log.debug(
             "Subprocess pid=%d: init deadline reached, marking as ready", managed.pid
         )
+
+    @staticmethod
+    async def _stderr_reader(managed: ManagedProcess) -> None:
+        """Background task: read stderr lines and store them for diagnostics.
+
+        Runs until EOF on stderr (process death). Each non-empty line is
+        logged at WARNING level and appended to managed._stderr_lines for
+        later inclusion in error messages.
+        """
+        proc = managed.process
+        if proc.stderr is None:
+            return
+        try:
+            while True:
+                line = await proc.stderr.readline()
+                if not line:
+                    break  # EOF: process died or stderr closed
+                decoded = line.decode("utf-8", "replace").strip()
+                if decoded:
+                    managed._stderr_lines.append(decoded)
+                    log.warning(
+                        "claude_subprocess stderr pid=%d: %s",
+                        managed.pid,
+                        decoded,
+                    )
+        except (asyncio.CancelledError, Exception):
+            pass
+
+    def _start_stderr_reader(self, managed: ManagedProcess) -> None:
+        """Launch the stderr reader background task for a managed process."""
+        if managed._stderr_task is None or managed._stderr_task.done():
+            managed._stderr_task = asyncio.ensure_future(self._stderr_reader(managed))
+
+    def _get_stderr_tail(self, managed: ManagedProcess, max_lines: int = 20) -> str:
+        """Return the last N stderr lines as a single string for diagnostics."""
+        if not managed._stderr_lines:
+            return "(empty)"
+        tail = managed._stderr_lines[-max_lines:]
+        return "\n".join(tail)
 
     async def _read_response(
         self,
@@ -727,8 +773,16 @@ class ClaudeProcessPool:
                     return
 
             if not line:
-                # EOF: process has died
-                log.error("EOF from pid=%d during response reading", managed.pid)
+                # EOF: process has died (Fix 4: log returncode + stderr)
+                returncode = managed.process.returncode
+                stderr_tail = self._get_stderr_tail(managed)
+                log.error(
+                    "EOF from pid=%d during response reading. "
+                    "returncode=%s, stderr_tail=%s",
+                    managed.pid,
+                    returncode if returncode is not None else "still_running",
+                    stderr_tail,
+                )
                 yield StreamEvent(
                     event_type="error",
                     text="Subprocess terminated unexpectedly",
@@ -837,6 +891,14 @@ class ClaudeProcessPool:
     @staticmethod
     async def _kill_process(managed: ManagedProcess) -> None:
         """Kill a subprocess (terminate, then kill after 3s)."""
+        # Cancel stderr reader task to avoid resource leak
+        if managed._stderr_task is not None and not managed._stderr_task.done():
+            managed._stderr_task.cancel()
+            try:
+                await managed._stderr_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
         proc = managed.process
         if proc.returncode is not None:
             return  # Already terminated

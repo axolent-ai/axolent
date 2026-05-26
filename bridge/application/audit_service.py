@@ -19,6 +19,23 @@ from infrastructure.audit_log import write_audit_log
 
 log = logging.getLogger(__name__)
 
+# Keys in task_meta that hold non-JSON-serializable objects (LanguageContext,
+# StreamGuard, SkillMatch). Must be filtered before writing audit dicts.
+# Shared between chat_service.save_streaming_result and handlers.py error paths.
+AUDIT_NON_SERIALIZABLE_KEYS: frozenset[str] = frozenset(
+    {"_skill_match", "_stream_guard", "_language_ctx"}
+)
+
+
+def filter_task_meta(task_meta: dict[str, Any] | None) -> dict[str, Any]:
+    """Return a copy of task_meta with non-serializable keys removed.
+
+    Safe for JSON serialization in audit log entries.
+    """
+    if not task_meta:
+        return {}
+    return {k: v for k, v in task_meta.items() if k not in AUDIT_NON_SERIALIZABLE_KEYS}
+
 
 def log_command_audit(
     *,

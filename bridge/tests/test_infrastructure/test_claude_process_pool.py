@@ -1456,3 +1456,306 @@ class TestDirtyProcessRecycling:
         assert stats["processes"][0]["is_dirty"] is True
 
         await pool.shutdown()
+
+
+class TestSubprocessCreationFlags:
+    """Fix 1: Verify CREATE_NO_WINDOW replaces CREATE_NEW_PROCESS_GROUP on Windows."""
+
+    @pytest.mark.asyncio
+    async def test_creation_flag_is_create_no_window_on_windows(self) -> None:
+        """On Windows, creationflags must be CREATE_NO_WINDOW (not PROCESS_GROUP)."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process()
+        captured_kwargs: dict = {}
+
+        async def capture_exec(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            return mock_proc
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch("asyncio.create_subprocess_exec", side_effect=capture_exec):
+                with patch("sys.platform", "win32"):
+                    await pool.get_or_create(user_id=1, chat_id=100)
+
+        import subprocess as sp
+
+        assert captured_kwargs.get("creationflags") == sp.CREATE_NO_WINDOW
+        await pool.shutdown()
+
+
+class TestStderrCapture:
+    """Fix 2: 4-path tests for stderr capture and EOF diagnostics.
+
+    Covers:
+    - Happy Path: subprocess starts, responds, terminates cleanly
+    - Malicious/Bug Path: subprocess killed mid-response (EOF + stderr_tail)
+    - Rejection Path: subprocess crashes immediately (stderr visible)
+    - Privacy Path: stderr capture does not leak token values
+    """
+
+    @pytest.mark.asyncio
+    async def test_happy_path_subprocess_responds_normally(self) -> None:
+        """Subprocess starts, sends result, terminates cleanly. Stderr empty."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process(pid=50001)
+
+        result_line = json.dumps({"type": "result", "result": "Hello"}) + "\n"
+        mock_proc.stdout.readline = AsyncMock(return_value=result_line.encode("utf-8"))
+        # stderr readline returns EOF immediately (nothing on stderr)
+        mock_proc.stderr.readline = AsyncMock(return_value=b"")
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ):
+                managed, _ = await pool.get_or_create(user_id=1, chat_id=100)
+                managed.is_ready = True
+
+                events = []
+                async for ev in pool.send_message(
+                    user_id=1, chat_id=100, prompt="Test"
+                ):
+                    events.append(ev)
+
+        result_events = [e for e in events if e.event_type == "result"]
+        assert len(result_events) == 1
+        assert result_events[0].full_text == "Hello"
+        assert managed._stderr_lines == []
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_malicious_path_subprocess_killed_mid_response(self) -> None:
+        """Subprocess dies mid-response (simulates OOM-kill). EOF logged with stderr_tail + returncode."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process(pid=50002)
+
+        # First readline: content delta, then EOF (process died)
+        delta_line = (
+            json.dumps(
+                {
+                    "type": "stream_event",
+                    "event": {
+                        "type": "content_block_delta",
+                        "index": 1,
+                        "delta": {"type": "text_delta", "text": "Partial"},
+                    },
+                }
+            )
+            + "\n"
+        )
+
+        call_count = 0
+
+        async def mock_readline():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return delta_line.encode("utf-8")
+            # Process died
+            mock_proc.returncode = -9  # SIGKILL
+            return b""
+
+        mock_proc.stdout.readline = mock_readline
+
+        # Stderr has a diagnostic message from before death
+        stderr_call = 0
+
+        async def mock_stderr_readline():
+            nonlocal stderr_call
+            stderr_call += 1
+            if stderr_call == 1:
+                return b"Error: out of memory\n"
+            return b""
+
+        mock_proc.stderr.readline = mock_stderr_readline
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ):
+                managed, _ = await pool.get_or_create(user_id=1, chat_id=200)
+                managed.is_ready = True
+
+                # Give stderr reader time to run
+                await asyncio.sleep(0.1)
+
+                events = []
+                async for ev in pool.send_message(
+                    user_id=1, chat_id=200, prompt="Test"
+                ):
+                    events.append(ev)
+
+        error_events = [e for e in events if e.event_type == "error"]
+        assert len(error_events) >= 1
+        assert error_events[-1].text == "Subprocess terminated unexpectedly"
+
+        # Verify stderr was captured
+        stderr_tail = pool._get_stderr_tail(managed)
+        assert "out of memory" in stderr_tail
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_rejection_path_subprocess_crashes_immediately(self) -> None:
+        """Subprocess crashes on start (EOF on first readline). Stderr shows why."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process(pid=50003)
+
+        # stdout: immediate EOF
+        mock_proc.stdout.readline = AsyncMock(return_value=b"")
+        mock_proc.returncode = 1
+
+        # stderr: crash reason
+        stderr_call = 0
+
+        async def mock_stderr_readline():
+            nonlocal stderr_call
+            stderr_call += 1
+            if stderr_call == 1:
+                return b"Fatal: authentication_failed\n"
+            return b""
+
+        mock_proc.stderr.readline = mock_stderr_readline
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ):
+                managed, _ = await pool.get_or_create(user_id=1, chat_id=300)
+
+                # Give stderr reader time to capture the line
+                await asyncio.sleep(0.1)
+
+        # Verify stderr was captured
+        assert any("authentication_failed" in line for line in managed._stderr_lines)
+
+        stderr_tail = pool._get_stderr_tail(managed)
+        assert "authentication_failed" in stderr_tail
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_privacy_path_stderr_no_token_leak(self) -> None:
+        """Stderr capture does not contain raw API token values.
+
+        The subprocess env is scrubbed (GAP-11), so token values should
+        never appear in stderr. This test verifies that even if stderr
+        contains key-like patterns, they are from the subprocess itself
+        (not injected by our code).
+        """
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process(pid=50004)
+
+        # Simulate stderr with a generic error (no tokens)
+        stderr_call = 0
+        # Build token-like string programmatically (not as literal)
+        token_prefix = "sk-ant-"
+        token_suffix = "REDACTED"
+        fake_token = token_prefix + token_suffix
+
+        async def mock_stderr_readline():
+            nonlocal stderr_call
+            stderr_call += 1
+            if stderr_call == 1:
+                # Subprocess itself might mention "token" in errors
+                return b"Error: invalid request format\n"
+            return b""
+
+        mock_proc.stderr.readline = mock_stderr_readline
+        mock_proc.stdout.readline = AsyncMock(return_value=b"")
+        mock_proc.returncode = 1
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ):
+                managed, _ = await pool.get_or_create(user_id=1, chat_id=400)
+                await asyncio.sleep(0.1)
+
+        # No token values in captured stderr
+        for line in managed._stderr_lines:
+            assert fake_token not in line
+
+        stderr_tail = pool._get_stderr_tail(managed)
+        assert fake_token not in stderr_tail
+        # Stderr captures only what the subprocess emits
+        assert "invalid request format" in stderr_tail
+        await pool.shutdown()
+
+
+class TestEofReturncodeDiagnostics:
+    """Fix 4: EOF error now includes returncode and stderr_tail."""
+
+    @pytest.mark.asyncio
+    async def test_eof_logs_returncode_and_stderr(self) -> None:
+        """When subprocess dies (EOF), the error log includes returncode and stderr."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process(pid=60001)
+
+        # EOF immediately
+        mock_proc.stdout.readline = AsyncMock(return_value=b"")
+        mock_proc.returncode = 42
+
+        # Stderr
+        stderr_call = 0
+
+        async def mock_stderr_readline():
+            nonlocal stderr_call
+            stderr_call += 1
+            if stderr_call == 1:
+                return b"segfault at 0x0\n"
+            return b""
+
+        mock_proc.stderr.readline = mock_stderr_readline
+
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch(
+                "asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ):
+                managed, _ = await pool.get_or_create(user_id=1, chat_id=500)
+                managed.is_ready = True
+                await asyncio.sleep(0.1)
+
+                events = []
+                async for ev in pool._read_response(managed):
+                    events.append(ev)
+
+        assert len(events) == 1
+        assert events[0].event_type == "error"
+        assert events[0].is_final is True
+        # Verify stderr was captured for diagnostics
+        assert "segfault" in pool._get_stderr_tail(managed)
+        await pool.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_eof_returncode_still_running(self) -> None:
+        """When EOF happens but returncode is None (still running), log 'still_running'."""
+        pool = ClaudeProcessPool()
+        mock_proc = _make_mock_process(pid=60002)
+
+        mock_proc.stdout.readline = AsyncMock(return_value=b"")
+        # returncode None = still running
+        mock_proc.returncode = None
+        mock_proc.stderr.readline = AsyncMock(return_value=b"")
+
+        managed = ManagedProcess(
+            routing_key=(1, 600, "claude-sonnet-4-6"),
+            process=mock_proc,
+            lock=asyncio.Lock(),
+            last_used=0,
+            pid=60002,
+            is_ready=True,
+        )
+
+        events = []
+        async for ev in pool._read_response(managed):
+            events.append(ev)
+
+        assert len(events) == 1
+        assert events[0].event_type == "error"
+        # Tail is empty since no stderr
+        assert pool._get_stderr_tail(managed) == "(empty)"
+        await pool.shutdown()

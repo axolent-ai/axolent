@@ -34,6 +34,7 @@ from application.prompt_composer import PromptComposer
 from application.security.prompt_delimiters import escape_prompt_delimited_text
 from domain.conversation import ConversationTurn, build_context_block
 from domain.language import DEFAULT_LANGUAGE
+from application.audit_service import filter_task_meta
 from infrastructure.audit_log import write_audit_log
 from infrastructure.claude_process_pool import StreamEvent
 from infrastructure.conversation_storage import (
@@ -1303,13 +1304,9 @@ class ChatService:
         # Filter out internal objects that are not JSON-serializable
         # (e.g. _skill_match is a SkillMatch dataclass, _stream_guard is
         # a StreamGuard instance, _language_ctx is a LanguageContext).
-        _NON_SERIALIZABLE_KEYS = frozenset(
-            {"_skill_match", "_stream_guard", "_language_ctx"}
-        )
+        # Uses shared filter from audit_service.
         if task_meta:
-            audit.update(
-                {k: v for k, v in task_meta.items() if k not in _NON_SERIALIZABLE_KEYS}
-            )
+            audit.update(filter_task_meta(task_meta))
 
         # R2-SC-04 FIX: Write skill metadata into audit BEFORE persisting.
         # Previously, write_audit_log was called before skill fields were set,
