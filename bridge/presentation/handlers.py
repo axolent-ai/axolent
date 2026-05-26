@@ -14,6 +14,7 @@ import logging
 import re
 import time
 import uuid
+from datetime import datetime, timezone
 from threading import Lock
 from typing import TYPE_CHECKING, Any
 
@@ -420,8 +421,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # EK-01: Build RequestEnvelope BEFORE rate-limit check so that all
     # audit events (including rejections) carry a stable request_id.
-    from datetime import datetime, timezone
-
     _msg_envelope = RequestEnvelope.from_telegram(
         user_id=user_id,
         chat_id=chat_id,
@@ -471,8 +470,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if rate_limiter is not None:
         result: RateLimitResult = rate_limiter.check_and_consume(user_id)
         if not result.allowed:
-            from datetime import datetime, timezone
-
             _rl_lang = (
                 await chat_service.get_chat_language(user_id, chat_id)
                 or DEFAULT_LANGUAGE
@@ -601,8 +598,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             reminder_msg = t("rate_limit.unlimited_reminder", _remind_lang)
             await update.message.reply_text(reminder_msg)
             # Audit for unlimited reminder
-            from datetime import datetime, timezone
-
             write_raw_audit(
                 {
                     "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -814,8 +809,6 @@ async def _handle_message_streaming(
           generic error message, audit entry
         - Audit: always 2 entries (started + completed/crashed)
     """
-    from datetime import datetime, timezone
-
     t_start = time.monotonic()
     streaming_chunks = 0
     final_text = ""
@@ -1756,8 +1749,6 @@ async def handle_remember_command(
         )
         # R7-BLOCKER-02: write_raw_audit expects a single dict, not kwargs.
         # Do NOT include content_preview or matched_text (PII / payload).
-        from datetime import datetime, timezone
-
         write_raw_audit(
             {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1780,8 +1771,6 @@ async def handle_remember_command(
     try:
         entry_id = memory_service.remember_episodic(user_id=user_id, content=content)
     except SecretBlockedError as exc:
-        from datetime import datetime, timezone
-
         _first_secret = exc.matches[0]
         log.warning(  # nosemgrep: python-logger-credential-disclosure
             "remember blocked by secret scanner: user=%d pattern=%s layer=%d",
@@ -2654,8 +2643,6 @@ async def handle_debate_command(
 
     Queries multiple providers in parallel and shows answers side-by-side.
     """
-    from datetime import datetime, timezone
-
     from application.debate_orchestrator import DebateOrchestrator
     from application.execution import InstructionCompiler
 

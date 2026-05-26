@@ -42,6 +42,32 @@ class MemoryService:
         """
         self.storage = storage
 
+    @staticmethod
+    def _scan_and_raise(content: str, user_id: int, layer: str) -> None:
+        """Defense-in-depth gate: scan content for secrets before storage.
+
+        Shared by all three remember_* methods so that every memory
+        write path is protected, not just remember_episodic.
+
+        Args:
+            content: Text to scan.
+            user_id: Telegram user ID (for logging).
+            layer: Memory layer name (for logging).
+
+        Raises:
+            SecretBlockedError: If secrets are detected.
+        """
+        matches = _secret_scanner.scan(content)
+        if matches:
+            log.warning(
+                "remember_%s blocked: user=%d pattern=%s layer=%d",
+                layer,
+                user_id,
+                matches[0].pattern_name,
+                matches[0].layer,
+            )
+            raise SecretBlockedError(matches)
+
     def remember_episodic(
         self,
         user_id: int,
@@ -69,15 +95,7 @@ class MemoryService:
             SecretBlockedError: If content contains detected secrets.
         """
         # BL-3: Defense-in-depth gate. Every caller goes through this.
-        matches = _secret_scanner.scan(content)
-        if matches:
-            log.warning(
-                "remember_episodic blocked: user=%d pattern=%s layer=%d",
-                user_id,
-                matches[0].pattern_name,
-                matches[0].layer,
-            )
-            raise SecretBlockedError(matches)
+        self._scan_and_raise(content, user_id, "episodic")
 
         entry = EpisodicEntry(
             user_id=user_id,
@@ -99,6 +117,9 @@ class MemoryService:
     ) -> str:
         """Store a semantic fact.
 
+        Defense-in-depth: scans content for secrets/PII before storage.
+        Raises SecretBlockedError if secrets are detected.
+
         Args:
             user_id: Telegram user ID.
             content: The generalized fact.
@@ -109,7 +130,11 @@ class MemoryService:
 
         Returns:
             ID of the new entry (sem_...).
+
+        Raises:
+            SecretBlockedError: If content contains detected secrets.
         """
+        self._scan_and_raise(content, user_id, "semantic")
         entry = SemanticEntry(
             user_id=user_id,
             content=content,
@@ -131,6 +156,9 @@ class MemoryService:
     ) -> str:
         """Store a skill/pattern.
 
+        Defense-in-depth: scans content for secrets/PII before storage.
+        Raises SecretBlockedError if secrets are detected.
+
         Args:
             user_id: Telegram user ID.
             content: Description of the skill.
@@ -140,7 +168,11 @@ class MemoryService:
 
         Returns:
             ID of the new entry (pro_...).
+
+        Raises:
+            SecretBlockedError: If content contains detected secrets.
         """
+        self._scan_and_raise(content, user_id, "procedural")
         entry = ProceduralEntry(
             user_id=user_id,
             content=content,

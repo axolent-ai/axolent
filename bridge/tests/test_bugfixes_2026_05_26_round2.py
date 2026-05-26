@@ -842,6 +842,171 @@ class TestSecretScannerDefenseInDepth:
             service.remember_episodic(user_id=42, content=f"google key AIza{'G' * 35}")
         mock_storage.append.assert_not_called()
 
+    # --- BEOB-2: Defense-in-depth for remember_semantic + remember_procedural ---
+
+    def test_direct_remember_semantic_blocks_secret(self):
+        """remember_semantic blocks secrets via _scan_and_raise helper."""
+        from application.memory_service import MemoryService
+        from application.security.secret_scanner import SecretBlockedError
+
+        mock_storage = MagicMock()
+        service = MemoryService(storage=mock_storage)
+
+        prefix = "sk-" + "ant-"
+        suffix = "X" * 20 + "-DUMMY"
+        with pytest.raises(SecretBlockedError):
+            service.remember_semantic(user_id=42, content=f"fact: {prefix}{suffix}")
+        mock_storage.append.assert_not_called()
+
+    def test_direct_remember_procedural_blocks_secret(self):
+        """remember_procedural blocks secrets via _scan_and_raise helper."""
+        from application.memory_service import MemoryService
+        from application.security.secret_scanner import SecretBlockedError
+
+        mock_storage = MagicMock()
+        service = MemoryService(storage=mock_storage)
+
+        prefix = "sk_live_"
+        suffix = "Z" * 32
+        with pytest.raises(SecretBlockedError):
+            service.remember_procedural(
+                user_id=42,
+                content=f"stripe key {prefix}{suffix}",
+                skill_name="test_skill",
+            )
+        mock_storage.append.assert_not_called()
+
+
+# =====================================================================
+# End-to-End: Real SecretScanner through real handler path (BEOB-7)
+# =====================================================================
+
+
+class TestSecretBlockedEndToEnd:
+    """End-to-end tests with real SecretScanner (not mocked SecretBlockedError).
+
+    Verifies the full chain: handler -> MemoryService -> SecretScanner -> block.
+    Unlike TestRememberSecretBlocking which mocks SecretBlockedError as a
+    side_effect, these tests let the real scanner fire.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _allow_all(self):
+        with patch("presentation.decorators.ALLOW_ALL_USERS", True):
+            yield
+
+    async def test_end_to_end_anthropic_key_blocked_real_scanner(self):
+        """Full chain: real SecretScanner fires on Anthropic key in /remember."""
+        from application.memory_service import MemoryService
+        from presentation.handlers import handle_remember_command
+
+        # Real MemoryService with real SecretScanner (no mock on remember_episodic)
+        mock_storage = MagicMock()
+        real_memory_service = MemoryService(storage=mock_storage)
+
+        prefix = "sk-" + "ant-"
+        suffix = "X" * 20 + "-DUMMY"
+        secret_text = f"{prefix}{suffix}"
+        args = secret_text.split()
+        update = _make_update(text=f"/remember {secret_text}")
+        ctx = _make_context(args=args)
+        # Inject the REAL memory service (with real scanner)
+        ctx.application.bot_data["memory_service"] = real_memory_service
+
+        with patch("presentation.handlers.write_raw_audit") as mock_audit:
+            await handle_remember_command(update, ctx)
+
+        # Storage was never called (secret blocked before storage)
+        mock_storage.append.assert_not_called()
+        # Audit was written
+        mock_audit.assert_called_once()
+        audit_dict = mock_audit.call_args[0][0]
+        assert audit_dict["event_type"] == "remember_secret_blocked"
+        # User got a reply
+        update.message.reply_text.assert_called()
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert (
+            "sensitive" in reply_text.lower()
+            or "sensib" in reply_text.lower()
+            or "secret" in reply_text.lower()
+        )
+
+    async def test_end_to_end_stripe_key_blocked_real_scanner(self):
+        """Full chain: real SecretScanner fires on Stripe key in /remember."""
+        from application.memory_service import MemoryService
+        from presentation.handlers import handle_remember_command
+
+        mock_storage = MagicMock()
+        real_memory_service = MemoryService(storage=mock_storage)
+
+        prefix = "sk_live_"
+        suffix = "Z" * 32
+        secret_text = f"stripe key {prefix}{suffix}"
+        args = secret_text.split()
+        update = _make_update(text=f"/remember {secret_text}")
+        ctx = _make_context(args=args)
+        ctx.application.bot_data["memory_service"] = real_memory_service
+
+        with patch("presentation.handlers.write_raw_audit") as mock_audit:
+            await handle_remember_command(update, ctx)
+
+        mock_storage.append.assert_not_called()
+        mock_audit.assert_called_once()
+        audit_dict = mock_audit.call_args[0][0]
+        assert audit_dict["event_type"] == "remember_secret_blocked"
+        update.message.reply_text.assert_called()
+
+
+# =====================================================================
+# Conflict-Detection: False-positive tests (BEOB-3)
+# =====================================================================
+
+
+class TestConflictDetectionPredicates:
+    """Tests for predicate-aware conflict detection.
+
+    Verifies that different predicate types (property vs name)
+    on the same subject do NOT trigger false-positive conflicts.
+    """
+
+    def test_conflict_false_positive_different_predicates(self):
+        """'Mein Auto ist rot' + 'Mein Auto heisst Tesla' -> NO conflict.
+
+        Different predicates (property=ist vs name=heisst) on same subject
+        should not trigger a conflict.
+        """
+        from application.memory_conflict_detector import MemoryConflictDetector
+
+        detector = MemoryConflictDetector()
+        entries = [
+            {"id": "ep_001", "content": "Mein Auto ist rot"},
+            {"id": "ep_002", "content": "Mein Auto heisst Tesla"},
+        ]
+        conflicts = detector.detect(entries)
+        assert len(conflicts) == 0, (
+            f"Expected 0 conflicts (different predicates), got {len(conflicts)}: "
+            f"{[(c.subject, c.values) for c in conflicts]}"
+        )
+
+    def test_conflict_true_positive_same_predicate(self):
+        """'Mein Auto ist rot' + 'Mein Auto ist blau' -> conflict detected.
+
+        Same predicate (property=ist) on same subject should trigger a conflict.
+        """
+        from application.memory_conflict_detector import MemoryConflictDetector
+
+        detector = MemoryConflictDetector()
+        entries = [
+            {"id": "ep_001", "content": "Mein Auto ist rot"},
+            {"id": "ep_002", "content": "Mein Auto ist blau"},
+        ]
+        conflicts = detector.detect(entries)
+        assert len(conflicts) == 1
+        assert conflicts[0].subject == "auto"
+        assert "rot" in conflicts[0].values
+        assert "blau" in conflicts[0].values
+        assert conflicts[0].predicate_type == "property"
+
 
 # =====================================================================
 # Utility: FakeDBConnection for in-memory SQLite (reusable)

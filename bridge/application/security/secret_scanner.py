@@ -354,6 +354,10 @@ class SecretBlockedError(Exception):
 # ---------------------------------------------------------------
 
 
+# Maximum characters of matched text to keep in SecretMatch (logging safety).
+MATCHED_TEXT_TRUNCATE: int = 30
+
+
 class SecretScanner:
     """Multi-layered secret/PII scanner (HC-SC-13).
 
@@ -392,7 +396,7 @@ class SecretScanner:
             m = sp.pattern.search(text)
             if m:
                 # Truncate matched text for logging safety
-                matched = m.group()[:30]
+                matched = m.group()[:MATCHED_TEXT_TRUNCATE]
                 matches.append(
                     SecretMatch(
                         pattern_name=sp.name,
