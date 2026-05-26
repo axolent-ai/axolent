@@ -28,7 +28,10 @@ from typing import TYPE_CHECKING, Any, AsyncIterator, Optional
 
 from application.execution.context import ExecutionContext
 from application.execution.instruction_compiler import InstructionCompiler
-from application.memory_conflict_detector import MemoryConflictDetector
+from application.memory_conflict_detector import (
+    MemoryConflictDetector,
+    is_conflict_relevant_to_intent,
+)
 from application.execution.plan import ExecutionPlan
 from application.leakage_filter import check_for_system_prompt_leakage
 from application.prompt_composer import PromptComposer
@@ -298,7 +301,11 @@ class ChatService:
         return MAX_MEMORY_TOTAL_CHARS
 
     def _build_memory_context(
-        self, user_id: int, query: str, provider_name: str | None = None
+        self,
+        user_id: int,
+        query: str,
+        provider_name: str | None = None,
+        skill_trigger: str | None = None,
     ) -> tuple[str, int]:
         """Load relevant memory entries for the user based on query.
 
@@ -309,6 +316,9 @@ class ChatService:
             user_id: Telegram user ID.
             query: Current user message.
             provider_name: Optional provider name for memory budget lookup.
+            skill_trigger: If a skill matched, the trigger text. When set,
+                memory conflicts irrelevant to the skill are suppressed from
+                the prompt (Round 3 Skill > Memory priority rule).
 
         Returns:
             Tuple of (memory context string, number of loaded entries).
@@ -329,7 +339,14 @@ class ChatService:
             if not (episodic or semantic):
                 return "", 0
             # Jump directly to context building
-            return self._format_memory_context(episodic, semantic, [], provider_name)
+            return self._format_memory_context(
+                episodic,
+                semantic,
+                [],
+                provider_name,
+                skill_trigger=skill_trigger,
+                user_input=query,
+            )
 
         # Primary search term: longest keyword (most specific)
         primary_query = keywords[0]
@@ -366,7 +383,12 @@ class ChatService:
             return "", 0
 
         return self._format_memory_context(
-            episodic, semantic, procedural, provider_name
+            episodic,
+            semantic,
+            procedural,
+            provider_name,
+            skill_trigger=skill_trigger,
+            user_input=query,
         )
 
     def _format_memory_context(
@@ -375,6 +397,8 @@ class ChatService:
         semantic: list[dict],
         procedural: list[dict],
         provider_name: str | None = None,
+        skill_trigger: str | None = None,
+        user_input: str = "",
     ) -> tuple[str, int]:
         """Format memory entries into a context block for the system prompt.
 
@@ -383,6 +407,9 @@ class ChatService:
             semantic: Semantic memory entries.
             procedural: Procedural memory entries.
             provider_name: Optional provider name for budget lookup.
+            skill_trigger: If a skill matched, the trigger text (for conflict
+                relevance filtering). None = no skill matched, show all conflicts.
+            user_input: Original user input (for conflict relevance check).
 
         Returns:
             Tuple of (formatted memory block, total entry count).
@@ -448,10 +475,20 @@ class ChatService:
 
         # Bug 1: Detect and surface memory conflicts.
         # BL-1: All subject/values are escaped to prevent prompt-delimiter injection.
+        # Round 3 (2026-05-27): Filter irrelevant conflicts when a skill is active.
+        # Deterministic rule: Skill > Memory. Only inject conflict block if the
+        # conflict is relevant to the active skill/intent.
         all_entries = list(episodic) + list(semantic) + list(procedural)
         if all_entries:
             detector = MemoryConflictDetector()
             conflicts = detector.detect(all_entries)
+            # Filter: only show conflicts relevant to the current skill/intent
+            if skill_trigger:
+                conflicts = [
+                    c
+                    for c in conflicts
+                    if is_conflict_relevant_to_intent(c, skill_trigger, user_input)
+                ]
             if conflicts:
                 sections.append("[MEMORY CONFLICT DETECTED]")
                 sections.append(
@@ -533,24 +570,6 @@ class ChatService:
             # Load conversation history
             history = await get_history(uid, cid)
 
-            # Auto-memory loading: load relevant entries for current question
-            memory_context, memory_entries_loaded = self._build_memory_context(
-                uid, text
-            )
-
-            # Build context-enriched prompt (history + current message)
-            # If user replied to a specific bot message, prepend that context
-            if reply_to_text:
-                enriched_text = (
-                    "[USER REPLIED TO PREVIOUS BOT MESSAGE]\n"
-                    f'"{reply_to_text}"\n\n'
-                    "[USER'S CURRENT MESSAGE]\n"
-                    f"{text}"
-                )
-            else:
-                enriched_text = text
-            context_prompt = build_context_block(history, enriched_text)
-
             # Language resolution: use ExecutionContext if provided (no re-resolve)
             if context is not None:
                 lang = context.language.code
@@ -567,6 +586,61 @@ class ChatService:
 
             if lang != DEFAULT_LANGUAGE:
                 log.info("Language for chat: '%s' (source=%s)", lang, _lang_ctx.source)
+
+            # Phase 2a: TaskRouter classification + model resolution
+            task_slot_name: str | None = None
+            task_score: int = 0
+            task_matched_patterns: tuple[str, ...] = ()
+            task_matched_keywords: tuple[str, ...] = ()
+            user_model: str | None = None
+
+            if self.task_router is not None:
+                classification = self.task_router.classify(text)
+                task_slot_name = classification.slot.value
+                task_score = classification.score
+                task_matched_patterns = classification.matched_patterns
+                task_matched_keywords = classification.matched_keywords
+
+                # Resolve model via TaskRouter (slot override > global > default)
+                user_model = self.task_router.resolve_model(uid, classification.slot)
+            elif self.model_service is not None:
+                # Fallback: Phase 1 behavior (global override only)
+                user_model = self.model_service.get_user_model(uid)
+
+            # Round 3: Skill matching BEFORE memory context building (Skill > Memory).
+            # The skill trigger is passed to _build_memory_context so irrelevant
+            # memory conflicts can be suppressed from the prompt.
+            skill_block = ""
+            skill_match_result: "SkillMatch | None" = None
+            _skill_trigger: str | None = None
+            if self.skill_matcher is not None:
+                try:
+                    skill_block, skill_match_result = self._match_skills_for_prompt(
+                        uid, text, lang, task_slot_name
+                    )
+                    if skill_match_result is not None:
+                        _skill_trigger = skill_match_result.hypothesis.claim
+                except Exception:
+                    log.debug("Skill matching skipped due to error", exc_info=True)
+
+            # Auto-memory loading: load relevant entries for current question.
+            # Round 3: pass skill_trigger so irrelevant conflicts are filtered.
+            memory_context, memory_entries_loaded = self._build_memory_context(
+                uid, text, skill_trigger=_skill_trigger
+            )
+
+            # Build context-enriched prompt (history + current message)
+            # If user replied to a specific bot message, prepend that context
+            if reply_to_text:
+                enriched_text = (
+                    "[USER REPLIED TO PREVIOUS BOT MESSAGE]\n"
+                    f'"{reply_to_text}"\n\n'
+                    "[USER'S CURRENT MESSAGE]\n"
+                    f"{text}"
+                )
+            else:
+                enriched_text = text
+            context_prompt = build_context_block(history, enriched_text)
 
             # Side-effects: style observation + proactive activity recording
             if self.style_adaption_service is not None:
@@ -589,37 +663,6 @@ class ChatService:
                     )
                     if reactive.should_fire and not proactive_nudge:
                         proactive_nudge = reactive.nudge_text
-
-            # Phase 2a: TaskRouter classification + model resolution
-            task_slot_name: str | None = None
-            task_score: int = 0
-            task_matched_patterns: tuple[str, ...] = ()
-            task_matched_keywords: tuple[str, ...] = ()
-            user_model: str | None = None
-
-            if self.task_router is not None:
-                classification = self.task_router.classify(text)
-                task_slot_name = classification.slot.value
-                task_score = classification.score
-                task_matched_patterns = classification.matched_patterns
-                task_matched_keywords = classification.matched_keywords
-
-                # Resolve model via TaskRouter (slot override > global > default)
-                user_model = self.task_router.resolve_model(uid, classification.slot)
-            elif self.model_service is not None:
-                # Fallback: Phase 1 behavior (global override only)
-                user_model = self.model_service.get_user_model(uid)
-
-            # Skill-Compression: match BEFORE prompt composition (SC-03 fix)
-            skill_block = ""
-            skill_match_result: "SkillMatch | None" = None
-            if self.skill_matcher is not None:
-                try:
-                    skill_block, skill_match_result = self._match_skills_for_prompt(
-                        uid, text, lang, task_slot_name
-                    )
-                except Exception:
-                    log.debug("Skill matching skipped due to error", exc_info=True)
 
             # Prompt composition: InstructionCompiler (when context+plan)
             # or legacy PromptComposer (backward compat)
@@ -644,9 +687,10 @@ class ChatService:
                     memory_block=memory_context,
                 )
 
-            # Inject skill block into prompt (after composition)
+            # Round 3: Inject skill block at TOP of prompt (HIGH PRIORITY).
+            # Previously appended at end (lowest priority). Skill > Memory.
             if skill_block:
-                effective_prompt = f"{effective_prompt}\n\n{skill_block}"
+                effective_prompt = f"{skill_block}\n\n{effective_prompt}"
 
             # Provider call: use FallbackResolver if available, else direct route
             fallback_notice = ""
@@ -945,28 +989,8 @@ class ChatService:
         uid = user_id or 0
         cid = chat_id or 0
 
-        # Status: memory loading
-        if status_session is not None:
-            await status_session.update("memory_loading")
-
         # Prepare prompt (identical to process_user_message)
         history = await get_history(uid, cid)
-        memory_context, memory_entries_loaded = self._build_memory_context(uid, text)
-
-        # Status: memory loaded (with count)
-        if status_session is not None and memory_entries_loaded > 0:
-            await status_session.update("memory_loaded", n=memory_entries_loaded)
-
-        if reply_to_text:
-            enriched_text = (
-                "[USER REPLIED TO PREVIOUS BOT MESSAGE]\n"
-                f'"{reply_to_text}"\n\n'
-                "[USER'S CURRENT MESSAGE]\n"
-                f"{text}"
-            )
-        else:
-            enriched_text = text
-        context_prompt = build_context_block(history, enriched_text)
 
         # Language resolution: use ExecutionContext if provided (no re-resolve)
         if context is not None:
@@ -985,29 +1009,6 @@ class ChatService:
         # Update StatusSession language (resolved here, StatusSession created earlier)
         if status_session is not None:
             status_session.set_language(lang)
-
-        # Side-effects: style observation + proactive activity recording
-        if self.style_adaption_service is not None:
-            self.style_adaption_service.observe(uid, text)
-
-        proactive_nudge_text = ""
-        if self.proactive_trigger_service is not None:
-            self.proactive_trigger_service.record_activity(uid)
-            # Check proactive triggers (symmetric with non-streaming path)
-            trigger_result = self.proactive_trigger_service.check_triggers(
-                uid, cid, text, memory_entries=[]
-            )
-            if trigger_result.should_fire and trigger_result.nudge_text:
-                proactive_nudge_text = trigger_result.nudge_text
-            # Check reactive triggers (memory-based)
-            if memory_context and self.memory_service is not None:
-                entries = self.memory_service.list_recent(uid, "episodic", limit=5)
-                reactive = self.proactive_trigger_service.check_reactive_trigger(
-                    uid, cid, text, entries
-                )
-                if reactive.should_fire and reactive.nudge_text:
-                    if not proactive_nudge_text:
-                        proactive_nudge_text = reactive.nudge_text
 
         # Phase 2a: TaskRouter classification + model resolution
         user_model: str | None = None
@@ -1037,18 +1038,70 @@ class ChatService:
             if user_model:
                 task_meta["resolved_model"] = user_model
 
-        # Skill-Compression: match BEFORE prompt composition (SC-03 fix, streaming)
+        # Round 3: Skill matching BEFORE memory context building (Skill > Memory).
+        # The skill trigger is passed to _build_memory_context so irrelevant
+        # memory conflicts can be suppressed from the prompt.
         skill_block_streaming = ""
         skill_match_streaming: "SkillMatch | None" = None
+        _skill_trigger_streaming: str | None = None
         if self.skill_matcher is not None:
             try:
                 skill_block_streaming, skill_match_streaming = (
                     self._match_skills_for_prompt(uid, text, lang, task_slot_name)
                 )
+                if skill_match_streaming is not None:
+                    _skill_trigger_streaming = skill_match_streaming.hypothesis.claim
             except Exception:
                 log.debug(
                     "Skill matching skipped in streaming due to error", exc_info=True
                 )
+
+        # Status: memory loading
+        if status_session is not None:
+            await status_session.update("memory_loading")
+
+        # Auto-memory loading with Round 3 skill_trigger for conflict filtering
+        memory_context, memory_entries_loaded = self._build_memory_context(
+            uid, text, skill_trigger=_skill_trigger_streaming
+        )
+
+        # Status: memory loaded (with count)
+        if status_session is not None and memory_entries_loaded > 0:
+            await status_session.update("memory_loaded", n=memory_entries_loaded)
+
+        if reply_to_text:
+            enriched_text = (
+                "[USER REPLIED TO PREVIOUS BOT MESSAGE]\n"
+                f'"{reply_to_text}"\n\n'
+                "[USER'S CURRENT MESSAGE]\n"
+                f"{text}"
+            )
+        else:
+            enriched_text = text
+        context_prompt = build_context_block(history, enriched_text)
+
+        # Side-effects: style observation + proactive activity recording
+        if self.style_adaption_service is not None:
+            self.style_adaption_service.observe(uid, text)
+
+        proactive_nudge_text = ""
+        if self.proactive_trigger_service is not None:
+            self.proactive_trigger_service.record_activity(uid)
+            # Check proactive triggers (symmetric with non-streaming path)
+            trigger_result = self.proactive_trigger_service.check_triggers(
+                uid, cid, text, memory_entries=[]
+            )
+            if trigger_result.should_fire and trigger_result.nudge_text:
+                proactive_nudge_text = trigger_result.nudge_text
+            # Check reactive triggers (memory-based)
+            if memory_context and self.memory_service is not None:
+                entries = self.memory_service.list_recent(uid, "episodic", limit=5)
+                reactive = self.proactive_trigger_service.check_reactive_trigger(
+                    uid, cid, text, entries
+                )
+                if reactive.should_fire and reactive.nudge_text:
+                    if not proactive_nudge_text:
+                        proactive_nudge_text = reactive.nudge_text
 
         # Prompt composition: InstructionCompiler (when context+plan)
         # or legacy PromptComposer (backward compat)
@@ -1073,9 +1126,9 @@ class ChatService:
                 memory_block=memory_context,
             )
 
-        # Inject skill block into streaming prompt
+        # Round 3: Inject skill block at TOP of prompt (HIGH PRIORITY).
         if skill_block_streaming:
-            effective_prompt = f"{effective_prompt}\n\n{skill_block_streaming}"
+            effective_prompt = f"{skill_block_streaming}\n\n{effective_prompt}"
 
         # Proactive nudge: appended after composition (not part of standard blocks)
         if proactive_nudge_text:
@@ -1415,14 +1468,19 @@ class ChatService:
         if match_result is None:
             return "", None
 
-        # Build structured skill block for prompt injection
+        # Round 3: Build HIGH-PRIORITY skill instruction block.
+        # This block is injected at the TOP of the system prompt so the
+        # LLM treats it as the primary instruction for this turn.
+        # User spec: "Skill-Anweisung als hoch priorisierten Instruction-Block"
         hyp = match_result.hypothesis
         block_lines = [
-            "[APPLICABLE USER SKILL (from prior learnings)]",
-            f"  Skill: {hyp.claim}",
+            "[USER-DEFINED SKILL (HIGH PRIORITY)]",
+            f"  Instruction: {hyp.claim}",
             f"  Confidence: {match_result.confidence:.2f}",
             f"  Source: {hyp.source_type}",
-            "Apply this skill to your response where relevant.",
+            "This skill MUST be applied to the current user message. "
+            "Execute the skill instruction as the primary response. "
+            "Other context like memory conflicts is secondary to this skill.",
         ]
         return "\n".join(block_lines), match_result
 

@@ -158,6 +158,6 @@ class TestMatchSkillsForPromptMethod:
         source = _read_source("application/chat_service.py")
         assert "def _match_skills_for_prompt" in source
         # Should return tuple[str, SkillMatch | None]
-        assert "APPLICABLE USER SKILL" in source, (
-            "Prompt block must contain 'APPLICABLE USER SKILL' header"
+        assert "USER-DEFINED SKILL (HIGH PRIORITY)" in source, (
+            "Prompt block must contain 'USER-DEFINED SKILL (HIGH PRIORITY)' header"
         )

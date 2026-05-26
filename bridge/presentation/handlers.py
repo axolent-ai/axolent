@@ -1207,9 +1207,10 @@ async def handle_reset_command(
 ) -> None:
     """Handles /reset. Clears conversation history and sticky language for this chat.
 
-    T25: If a streaming session is active, cancels it first before
-    clearing state. Uses a short delay (200ms) to let the stream loop
-    notice the cancellation.
+    Bug-Fix Round 3 (2026-05-27): /reset now waits for in-flight LLM
+    responses to complete before clearing history. Previously /reset
+    would silently kill the running response, leaving the user without
+    an answer. Adds 30s timeout fallback so /reset cannot hang forever.
     """
     chat_service = _get_chat_service(context)
 
@@ -1217,25 +1218,41 @@ async def handle_reset_command(
     user_id: int = user.id if user else 0
     chat_id: int = update.effective_chat.id if update.effective_chat else 0
 
-    # T25: Cancel active streaming session before reset.
-    # The stream handler checks is_cancelled as a terminal state and will
-    # never finalize/save after cancel. We still wait briefly to give the
-    # event loop a chance to process the cancellation before clearing state.
+    # Round 3: Wait for active streaming session to COMPLETE (not cancel).
+    # User spec: "Bot soll Antwort trotzdem fertig liefern, dann reset."
+    # We wait up to 30s for the stream to finish naturally. If it does not
+    # finish in time, we cancel as fallback to prevent /reset from hanging.
     session_key = (user_id, chat_id)
     with _active_sessions_lock:
         active_session = _active_streaming_sessions.get(session_key)
     if active_session is not None:
-        active_session.cancel()
-        # T25: Wait up to 2s in 100ms increments for the stream loop to
-        # acknowledge cancellation. The cancel_event now propagates into
-        # the readline() race in the process pool, so acknowledgement
-        # should arrive within one readline cycle (typically <500ms).
-        for _ in range(20):
-            await asyncio.sleep(0.1)
+        # Wait for the stream to finish (up to 30s in 200ms increments)
+        stream_completed = False
+        for _ in range(150):  # 150 * 200ms = 30s
+            await asyncio.sleep(0.2)
             with _active_sessions_lock:
                 if _active_streaming_sessions.get(session_key) is None:
+                    stream_completed = True
                     break
-        log.info("Reset: cancelled active stream for user=%d chat=%d", user_id, chat_id)
+        if not stream_completed:
+            # Timeout fallback: cancel the stream so /reset does not hang
+            active_session.cancel()
+            for _ in range(10):  # 10 * 100ms = 1s grace for cancellation
+                await asyncio.sleep(0.1)
+                with _active_sessions_lock:
+                    if _active_streaming_sessions.get(session_key) is None:
+                        break
+            log.warning(
+                "Reset: stream timed out after 30s, cancelled for user=%d chat=%d",
+                user_id,
+                chat_id,
+            )
+        else:
+            log.info(
+                "Reset: stream completed naturally for user=%d chat=%d",
+                user_id,
+                chat_id,
+            )
 
     # Read language BEFORE reset (reset clears sticky language)
     raw_lang = await chat_service.get_chat_language(user_id, chat_id)

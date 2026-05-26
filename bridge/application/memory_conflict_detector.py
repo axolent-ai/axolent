@@ -105,6 +105,52 @@ class MemoryConflict:
     predicate_type: str = PREDICATE_PROPERTY
 
 
+def is_conflict_relevant_to_intent(
+    conflict: MemoryConflict,
+    skill_trigger: str | None,
+    user_input: str,
+) -> bool:
+    """Determine if a memory conflict is relevant given a matched skill.
+
+    Deterministic priority rule (Bug-Fix Round 3, 2026-05-27):
+    - If NO skill matched: all conflicts are relevant (existing behavior).
+    - If a skill matched AND the skill's trigger word appears in the
+      conflict values: relevant (the conflict directly concerns the skill).
+    - If a skill matched AND the trigger word does NOT appear in the
+      conflict values: irrelevant (conflict is about something else,
+      skill execution should not be blocked).
+
+    Args:
+        conflict: A detected MemoryConflict.
+        skill_trigger: The trigger text from the matched skill (None = no skill).
+        user_input: The original user input text.
+
+    Returns:
+        True if the conflict should be included in the prompt, False if it
+        should be suppressed because it is irrelevant to the active skill.
+    """
+    # No skill matched: all conflicts are relevant (existing behavior)
+    if not skill_trigger:
+        return True
+
+    # Normalize for comparison
+    trigger_lower = skill_trigger.strip().lower()
+    input_lower = user_input.strip().lower()
+
+    # Check if trigger word appears in any conflict value
+    for value in conflict.values:
+        if trigger_lower in value.lower():
+            return True
+        if input_lower in value.lower():
+            return True
+
+    # Check if the conflict subject matches the trigger
+    if trigger_lower in conflict.subject.lower():
+        return True
+
+    return False
+
+
 class MemoryConflictDetector:
     """Detects conflicting memory entries based on subject-value patterns.
 

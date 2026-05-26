@@ -2300,8 +2300,13 @@ class TestT25BackgroundStreamingTask:
                 _active_streaming_sessions.pop(session_key, None)
 
     @pytest.mark.asyncio
-    async def test_reset_cancels_stream_within_3s(self) -> None:
-        """Stream-Task is cancelled within 3s when /reset fires."""
+    async def test_reset_waits_for_stream_completion(self) -> None:
+        """Round 3: /reset waits for stream to complete naturally, not cancel.
+
+        Bug-Fix Round 3 (2026-05-27): /reset no longer cancels the stream.
+        Instead it waits for the stream to complete (session deregistered),
+        then resets. Session should NOT be cancelled.
+        """
         import asyncio
 
         from application.streaming_handler import StreamingSession
@@ -2332,7 +2337,7 @@ class TestT25BackgroundStreamingTask:
             # since asyncio.sleep is a module attribute shared globally).
             _real_sleep = asyncio.sleep
 
-            # Simulate: after cancel, session is deregistered after one tick
+            # Simulate: stream completes naturally (session deregistered)
             async def _delayed_deregister(*args, **kwargs):
                 await _real_sleep(0.01)  # fast in test, uses real sleep
                 with _active_sessions_lock:
@@ -2347,7 +2352,8 @@ class TestT25BackgroundStreamingTask:
                 await handle_reset_command(update, context)
                 elapsed = asyncio.get_event_loop().time() - start
 
-            assert session.is_cancelled is True
+            # Round 3: Session was NOT cancelled (stream completed naturally)
+            assert session.is_cancelled is False
             assert elapsed < 3.0, f"Reset took {elapsed:.2f}s, expected < 3s"
         finally:
             with _active_sessions_lock:
