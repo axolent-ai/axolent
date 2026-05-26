@@ -1,0 +1,8 @@
+# Funding links displayed on the GitHub repository sidebar.
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
+
+github: axolent-ai
+# open_collective: axolent
+# patreon: axolent
+custom:
+  - https://axolent.ai

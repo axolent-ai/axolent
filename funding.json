@@ -1,0 +1,150 @@
+{
+  "$schema": "https://fundingjson.org/schema/v1.1.0/funding.schema.json",
+  "version": "v1.1.0",
+  "entity": {
+    "type": "individual",
+    "role": "owner",
+    "name": "Jessica Bauer",
+    "email": "jessica@axolent.ai",
+    "description": "Solo founder and developer of AXOLENT, a privacy-first AI assistant infrastructure. Based in Austria. Background in digital marketing, ad operations, and AI engineering. Building AXOLENT to give users full control over their AI interactions, local data, and provider choices without cloud lock-in or token hijacking.",
+    "webpageUrl": {
+      "url": "https://axolent.ai"
+    }
+  },
+  "projects": [
+    {
+      "guid": "axolent",
+      "name": "AXOLENT",
+      "description": "Privacy-first AI assistant infrastructure. AGPL-3.0 licensed, Mode B architecture (local CLI wrapper using the user's own AI subscriptions, no OAuth hijacking, no API keys in code). Features include local-first memory with SQLite, PII pseudonymization pipeline, multi-provider support (Anthropic, OpenAI, Groq, Ollama), whitelist-based access control, OWASP LLM Top 10 security test suite, audit logging, and rate limiting. Designed for users who want powerful AI assistance without surrendering their data to third-party clouds.",
+      "webpageUrl": {
+        "url": "https://github.com/axolent-ai/axolent"
+      },
+      "repositoryUrl": {
+        "url": "https://github.com/axolent-ai/axolent"
+      },
+      "licenses": [
+        "spdx:AGPL-3.0-only"
+      ],
+      "tags": [
+        "ai",
+        "privacy",
+        "security",
+        "python",
+        "local-first",
+        "open-source",
+        "llm",
+        "assistant",
+        "pii-protection",
+        "multi-provider"
+      ]
+    }
+  ],
+  "funding": {
+    "channels": [
+      {
+        "guid": "github-sponsors",
+        "type": "payment-provider",
+        "address": "https://github.com/sponsors/axolent-ai",
+        "description": "GitHub Sponsors (preferred for recurring and one-time donations)"
+      },
+      {
+        "guid": "direct-contact",
+        "type": "other",
+        "address": "jessica@axolent.ai",
+        "description": "For grants, institutional funding, or bank transfer arrangements, contact directly via email."
+      }
+    ],
+    "plans": [
+      {
+        "guid": "grant-security-audit",
+        "status": "active",
+        "name": "Security and Privacy Audit",
+        "description": "Independent security review covering threat modeling, PII control plane review, memory/vault review, plugin sandbox review, desktop app security, penetration testing, and AGPL/open-source boundary review. This is the highest priority funding need to establish trust before public release.",
+        "amount": 45000,
+        "currency": "EUR",
+        "frequency": "one-time",
+        "channels": [
+          "github-sponsors",
+          "direct-contact"
+        ]
+      },
+      {
+        "guid": "grant-architecture-review",
+        "status": "active",
+        "name": "Senior Architecture Review",
+        "description": "External senior Python/AppSec architecture reviewer on retainer for 6-12 months. Covers critical PR/release reviews, codebase structure validation, security-sensitive design reviews, and public-repo professionalism. Budget for 1-2 review days per month.",
+        "amount": 25000,
+        "currency": "EUR",
+        "frequency": "one-time",
+        "channels": [
+          "github-sponsors",
+          "direct-contact"
+        ]
+      },
+      {
+        "guid": "grant-legal-privacy",
+        "status": "active",
+        "name": "Legal and Data Protection Review",
+        "description": "Legal review covering GDPR/DSGVO compliance, privacy policy, terms of service, AGPL licensing strategy, PII pseudonymization vs. anonymization legal assessment, and open-core/public-private boundary analysis.",
+        "amount": 20000,
+        "currency": "EUR",
+        "frequency": "one-time",
+        "channels": [
+          "github-sponsors",
+          "direct-contact"
+        ]
+      },
+      {
+        "guid": "grant-marketing-tests",
+        "status": "active",
+        "name": "Marketing and User Acquisition Tests",
+        "description": "Small-scale performance marketing tests with clear KPIs: landing page traffic, waitlist campaigns, demo video distribution, community engagement. Focus on validating cost-per-acquisition before scaling.",
+        "amount": 20000,
+        "currency": "EUR",
+        "frequency": "one-time",
+        "channels": [
+          "github-sponsors",
+          "direct-contact"
+        ]
+      },
+      {
+        "guid": "grant-reserve",
+        "status": "active",
+        "name": "Operational Reserve",
+        "description": "Buffer for unexpected needs: additional security re-reviews, app store issues, code signing, additional legal questions, bug bounty program, and post-release stabilization phase.",
+        "amount": 30000,
+        "currency": "EUR",
+        "frequency": "one-time",
+        "channels": [
+          "github-sponsors",
+          "direct-contact"
+        ]
+      },
+      {
+        "guid": "individual-supporter",
+        "status": "active",
+        "name": "Individual Supporter",
+        "description": "Support AXOLENT development with a recurring monthly contribution. Funds go toward API/tooling costs, benchmarking, CI infrastructure, and ongoing development.",
+        "amount": 0,
+        "currency": "EUR",
+        "frequency": "monthly",
+        "channels": [
+          "github-sponsors"
+        ]
+      },
+      {
+        "guid": "one-time-donation",
+        "status": "active",
+        "name": "One-time Donation",
+        "description": "Support AXOLENT with a one-time contribution of any amount.",
+        "amount": 0,
+        "currency": "EUR",
+        "frequency": "one-time",
+        "channels": [
+          "github-sponsors",
+          "direct-contact"
+        ]
+      }
+    ]
+  }
+}
