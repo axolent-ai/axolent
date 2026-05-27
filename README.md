@@ -191,6 +191,12 @@ axolent/
 | **2** | User acquisition, marketing, community | Future |
 | **3** | App store release, premium tier | Future |
 
+## What's Next: PII Control Plane
+
+Our next development phase builds a local PII Control Plane that automatically detects and pseudonymizes personal data (names, addresses, API keys, financial identifiers) before any LLM call. The pseudonym mapping stays local in an encrypted vault.
+
+A funding application for this work has been submitted to NLnet (NGI Zero Commons Fund). Status: under review.
+
 ## License: AGPL-3.0
 
 This project uses AGPL-3.0. Why?
