@@ -668,6 +668,17 @@ def main() -> None:
             "SkillMatcher + SkillExplainer + ImportOrchestrator)"
         )
 
+        # Round-4: Backfill missing skill aliases (idempotent, runs once)
+        from scripts.backfill_skill_aliases import run as _run_backfill_aliases
+
+        _bf_added, _bf_processed = _run_backfill_aliases(hypothesis_storage)
+        if _bf_added > 0:
+            log.info(
+                "Skill alias backfill: %d aliases added across %d hypotheses",
+                _bf_added,
+                _bf_processed,
+            )
+
     # Create ChatService with constructor injection
     chat_service = ChatService(
         provider_router=router,

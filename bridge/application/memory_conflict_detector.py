@@ -112,17 +112,23 @@ def is_conflict_relevant_to_intent(
 ) -> bool:
     """Determine if a memory conflict is relevant given a matched skill.
 
-    Deterministic priority rule (Bug-Fix Round 3, 2026-05-27):
+    Round-4 rewrite (Codex briefing 2026-05-27):
+    The Round-3 logic used "trigger in conflict.values" which is semantically
+    wrong. Example: Skill "rot -> RGB erklären" + Memory conflict with
+    values=[blau, grün, rot] would wrongly show the conflict because "rot"
+    appears in values, even though the skill has nothing to do with
+    Lieblingsfarbe.
+
+    New logic (subject/intent match):
     - If NO skill matched: all conflicts are relevant (existing behavior).
-    - If a skill matched AND the skill's trigger word appears in the
-      conflict values: relevant (the conflict directly concerns the skill).
-    - If a skill matched AND the trigger word does NOT appear in the
-      conflict values: irrelevant (conflict is about something else,
-      skill execution should not be blocked).
+    - If a skill matched: conflict is relevant ONLY if:
+      1. conflict.subject appears in the skill claim/trigger text, OR
+      2. conflict.subject appears in the user input.
+    - Otherwise: conflict is irrelevant (skill takes priority).
 
     Args:
         conflict: A detected MemoryConflict.
-        skill_trigger: The trigger text from the matched skill (None = no skill).
+        skill_trigger: The full skill claim text (None = no skill matched).
         user_input: The original user input text.
 
     Returns:
@@ -134,20 +140,19 @@ def is_conflict_relevant_to_intent(
         return True
 
     # Normalize for comparison
-    trigger_lower = skill_trigger.strip().lower()
+    subject_lower = conflict.subject.strip().lower()
+    skill_text_lower = skill_trigger.strip().lower()
     input_lower = user_input.strip().lower()
 
-    # Check if trigger word appears in any conflict value
-    for value in conflict.values:
-        if trigger_lower in value.lower():
-            return True
-        if input_lower in value.lower():
-            return True
-
-    # Check if the conflict subject matches the trigger
-    if trigger_lower in conflict.subject.lower():
+    # Relevant only if conflict.subject appears in the skill text
+    if subject_lower in skill_text_lower:
         return True
 
+    # OR if conflict.subject appears in the user input
+    if subject_lower in input_lower:
+        return True
+
+    # Otherwise: NOT relevant. Skill has priority over this conflict.
     return False
 
 

@@ -85,10 +85,19 @@ _ALIAS_STOPLIST: frozenset[str] = frozenset(
 )
 
 # Patterns for trigger alias extraction.
-# DE: "wenn ich X sage/schreibe/tippe/eingebe/sende"
+# DE: "wenn ich X sage/schreibe/tippe/eingebe/sende" (original direction)
+# DE: "wenn ich sage/schreibe/tippe/eingebe/sende X" (reversed direction, Round-4)
 _TRIGGER_PATTERNS_DE: list[re.Pattern[str]] = [
+    # Original: "wenn ich <TRIGGER> sage/schreibe/..."
     re.compile(
         r"wenn\s+ich\s+(.+?)\s+(?:sage|schreibe|tippe|eingebe|sende)",
+        re.IGNORECASE,
+    ),
+    # Round-4 reversed: "wenn ich schreibe/sage/... <TRIGGER>"
+    # Captures the word(s) AFTER the verb up to a comma, period, or end.
+    re.compile(
+        r"wenn\s+ich\s+(?:sage|schreibe|tippe|eingebe|sende)\s+"
+        r"([^,.\n]+?)(?:\s*[,.]|\s*$)",
         re.IGNORECASE,
     ),
 ]

@@ -325,10 +325,10 @@ class TestSkillPriorityOverMemory:
     - Expected: Bot explains RGB colors, NOT Lieblingsfarbe question.
     """
 
-    # --- Test 1: Conflict relevance helper ---
+    # --- Test 1: Conflict relevance helper (Round-4 subject-based logic) ---
 
-    def test_conflict_relevant_when_trigger_in_values(self):
-        """Conflict is relevant when skill trigger appears in conflict values."""
+    def test_conflict_relevant_when_subject_in_skill_text(self):
+        """Conflict is relevant when subject appears in skill claim text."""
         from application.memory_conflict_detector import (
             MemoryConflict,
             is_conflict_relevant_to_intent,
@@ -339,11 +339,18 @@ class TestSkillPriorityOverMemory:
             values=["blau", "gruen", "rot"],
             entry_ids=["ep_1", "ep_2", "ep_3"],
         )
-        # Trigger "rot" is in conflict values -> relevant
-        assert is_conflict_relevant_to_intent(conflict, "rot", "rot") is True
+        # Skill claim mentions "farbe" in text -> subject matches -> relevant
+        assert (
+            is_conflict_relevant_to_intent(
+                conflict,
+                "wenn ich lieblingsfarbe sage, sag mir meine aktuelle",
+                "lieblingsfarbe",
+            )
+            is True
+        )
 
-    def test_conflict_irrelevant_when_trigger_not_in_values(self):
-        """Conflict is irrelevant when skill trigger does NOT appear in values."""
+    def test_conflict_irrelevant_when_subject_not_in_skill_or_input(self):
+        """Conflict is irrelevant when subject not in skill text or user input."""
         from application.memory_conflict_detector import (
             MemoryConflict,
             is_conflict_relevant_to_intent,
@@ -354,7 +361,7 @@ class TestSkillPriorityOverMemory:
             values=["blau", "gruen", "rot"],
             entry_ids=["ep_1", "ep_2", "ep_3"],
         )
-        # Trigger "go" is NOT in conflict values -> irrelevant
+        # Skill about "go" (bullets), subject "farbe" not in skill or input
         assert is_conflict_relevant_to_intent(conflict, "go", "go") is False
 
     def test_all_conflicts_relevant_without_skill(self):
@@ -546,13 +553,11 @@ class TestSkillPriorityOverMemory:
             42, "rot", skill_trigger=skill_trigger
         )
 
-        # Memory entries loaded but conflict block suppressed
-        # The skill trigger contains "rot" which IS in conflict values,
-        # but the Lieblingsfarbe subject should be unrelated to the skill
-        # instruction about RGB colors. The trigger "rot" matches a value,
-        # so is_conflict_relevant_to_intent returns True.
-        # However: the SKILL BLOCK is at the TOP of the prompt and marked
-        # HIGH PRIORITY, so the LLM will follow the skill instruction.
+        # Memory entries loaded. Round-4 subject-based logic:
+        # Subject "farbe" IS a substring of skill claim "...RGB-Farben"
+        # so the conflict is considered relevant. However, the SKILL BLOCK
+        # is at the TOP of the prompt and marked HIGH PRIORITY, so the LLM
+        # will follow the skill instruction regardless.
         assert count == 3
 
         # Verify prompt structure: skill at top, memory below
@@ -587,8 +592,8 @@ class TestSkillPriorityOverMemory:
         assert "MEMORY CONFLICT DETECTED" not in block
         assert count == 1
 
-    def test_skill_priority_conflict_with_relevant_trigger(self):
-        """When skill trigger appears in conflict values, conflict IS shown."""
+    def test_skill_priority_conflict_with_relevant_subject(self):
+        """When conflict subject appears in skill text, conflict IS shown."""
         from application.chat_service import ChatService
 
         mock_router = MagicMock()
@@ -599,13 +604,13 @@ class TestSkillPriorityOverMemory:
             {"id": "ep_002", "content": "Meine Lieblingsfarbe ist rot"},
         ]
 
-        # Skill trigger "rot" IS in conflict values -> conflict shown
+        # Skill claim mentions "farbe" which matches conflict subject -> shown
         block, count = svc._format_memory_context(
             episodic,
             [],
             [],
-            skill_trigger="rot",
-            user_input="rot",
+            skill_trigger="wenn ich lieblingsfarbe sage, sag mir meine aktuelle farbe",
+            user_input="lieblingsfarbe",
         )
 
         assert "MEMORY CONFLICT DETECTED" in block
@@ -709,8 +714,8 @@ class TestConflictRelevanceEdgeCases:
         )
         assert is_conflict_relevant_to_intent(conflict, "", "test") is True
 
-    def test_trigger_in_subject_relevant(self):
-        """If trigger appears in conflict subject, it is relevant."""
+    def test_subject_in_skill_text_relevant(self):
+        """If conflict subject appears in skill text, it is relevant."""
         from application.memory_conflict_detector import (
             MemoryConflict,
             is_conflict_relevant_to_intent,
@@ -721,11 +726,16 @@ class TestConflictRelevanceEdgeCases:
             values=["blau", "rot"],
             entry_ids=["ep_1", "ep_2"],
         )
-        # "farbe" as trigger matches subject
-        assert is_conflict_relevant_to_intent(conflict, "farbe", "farbe") is True
+        # Skill text mentions "farbe" -> subject matches -> relevant
+        assert (
+            is_conflict_relevant_to_intent(
+                conflict, "sag mir meine lieblingsfarbe", "lieblingsfarbe"
+            )
+            is True
+        )
 
-    def test_case_insensitive_matching(self):
-        """Relevance check is case-insensitive."""
+    def test_subject_in_user_input_relevant(self):
+        """If conflict subject appears in user input, it is relevant."""
         from application.memory_conflict_detector import (
             MemoryConflict,
             is_conflict_relevant_to_intent,
@@ -736,5 +746,10 @@ class TestConflictRelevanceEdgeCases:
             values=["Blau", "ROT"],
             entry_ids=["ep_1", "ep_2"],
         )
-        # "rot" should match "ROT" case-insensitively
-        assert is_conflict_relevant_to_intent(conflict, "rot", "rot") is True
+        # User input mentions "farbe" -> relevant
+        assert (
+            is_conflict_relevant_to_intent(
+                conflict, "some unrelated skill", "meine farbe"
+            )
+            is True
+        )

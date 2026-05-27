@@ -158,6 +158,9 @@ WHITELIST_PATHS = {
     # Feature data: Memory-conflict detection with German regex patterns
     # (DE "Mein/Meine X ist Y" patterns). The German words ARE the feature.
     "bridge/application/memory_conflict_detector.py",
+    # Feature data: Sharp-s / double-s normalization for German alias matching.
+    # The sharp-s character in REPLACE() SQL and Python code IS the feature.
+    "bridge/application/skill_compression/skill_matcher.py",
 }
 
 WHITELIST_DIR_PREFIXES = (

@@ -276,6 +276,22 @@ class SkillMatcher:
 
     # ── Private matching methods ──────────────────────────────
 
+    @staticmethod
+    def _normalize_german(text: str) -> str:
+        """Normalize text for matching: sharp-s / double-s equivalence + lowercase.
+
+        Round-4 fix: Users may type 'weiss' or the sharp-s variant
+        interchangeably. Both must match the same alias regardless of
+        stored form.
+
+        Args:
+            text: Input text to normalize.
+
+        Returns:
+            Lowercased, stripped text with sharp-s replaced by double-s.
+        """
+        return text.strip().lower().replace("ß", "ss")
+
     def _try_alias_match(
         self,
         event: NormalizedEvent,
@@ -284,7 +300,7 @@ class SkillMatcher:
         """Try to match via direct alias lookup.
 
         Checks hypothesis_aliases table for an exact text match
-        against the event's raw_text (case-insensitive).
+        against the event's raw_text (case-insensitive, sharp-s normalized).
 
         This is the fast path (target: <5ms).
 
@@ -299,7 +315,10 @@ class SkillMatcher:
         if not raw_lower:
             return None
 
-        # Query aliases matching this text
+        # Round-4: Also try sharp-s / double-s normalized form
+        raw_normalized = self._normalize_german(event.raw_text)
+
+        # Query aliases matching this text (exact match first)
         rows = self._storage._conn.fetchall(
             "SELECT ha.hypothesis_id, ha.alias_text, ha.confidence "
             "FROM hypothesis_aliases ha "
@@ -309,6 +328,22 @@ class SkillMatcher:
             "ORDER BY ha.confidence DESC LIMIT 5",
             (raw_lower, user_id),
         )
+
+        # Round-4: If no exact match, try sharp-s normalized match.
+        # This handles both directions:
+        #   - User sends sharp-s form, alias stored as double-s
+        #   - User sends double-s form, alias stored as sharp-s (REPLACE normalizes DB value)
+        if not rows:
+            rows = self._storage._conn.fetchall(
+                "SELECT ha.hypothesis_id, ha.alias_text, ha.confidence "
+                "FROM hypothesis_aliases ha "
+                "JOIN hypotheses h ON ha.hypothesis_id = h.hypothesis_id "
+                "WHERE REPLACE(LOWER(ha.alias_text), 'ß', 'ss') = ? "
+                "AND h.user_id = ? "
+                "AND h.status IN ('confirmed', 'active') "
+                "ORDER BY ha.confidence DESC LIMIT 5",
+                (raw_normalized, user_id),
+            )
 
         if not rows:
             return None
