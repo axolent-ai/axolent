@@ -4,7 +4,7 @@
   "entity": {
     "type": "individual",
     "role": "owner",
-    "name": "Jessica Bauer",
+    "name": "Jessica Rybecká",
     "email": "jessica@axolent.ai",
     "description": "Solo founder and developer of AXOLENT, a privacy-first AI assistant infrastructure. Based in Austria. Background in digital marketing, ad operations, and AI engineering. Building AXOLENT to give users full control over their AI interactions, local data, and provider choices without cloud lock-in or token hijacking.",
     "webpageUrl": {
