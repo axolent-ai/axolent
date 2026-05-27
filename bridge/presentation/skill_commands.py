@@ -1522,14 +1522,32 @@ async def _handle_skill_confirm_inline(
         if original_text and original_envelope is not None:
             from presentation.handlers import reprocess_after_skill_confirmation
 
-            await reprocess_after_skill_confirmation(
-                context=context,
-                chat_id=chat_id,
-                user_id=user_id,
-                username=query.from_user.username if query.from_user else None,
-                text=original_text,
-                envelope=original_envelope,
-            )
+            try:
+                await reprocess_after_skill_confirmation(
+                    context=context,
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    username=query.from_user.username if query.from_user else None,
+                    text=original_text,
+                    envelope=original_envelope,
+                )
+                # Round-5b: Write skill_executed evidence after successful start
+                chat_service._write_skill_evidence(
+                    skill_match, signal_type="skill_executed", signal_strength=0.5
+                )
+            except Exception as exc:
+                # Round-5b: Write skill_execution_failed evidence on failure
+                chat_service._write_skill_evidence(
+                    skill_match,
+                    signal_type="skill_execution_failed",
+                    signal_strength=0.0,
+                )
+                log.error(
+                    "Skill execution failed after confirmation: hyp=%s error=%s",
+                    hyp_id,
+                    exc,
+                    exc_info=True,
+                )
 
         log.info(
             "Skill confirmed by user: hyp=%s user=%d, re-processing message",

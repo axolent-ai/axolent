@@ -1495,7 +1495,8 @@ class ChatService:
         Args:
             match_result: The skill match.
             signal_type: Evidence signal type. Defaults to "no_correction".
-                Supported: "no_correction", "user_confirmed", "user_declined_once",
+                Supported: "no_correction", "user_confirmed", "skill_executed",
+                "skill_execution_failed", "user_declined_once",
                 "user_declined_permanent", "cancelled".
             signal_strength: Signal strength [0, 1]. Defaults to 0.3.
         """

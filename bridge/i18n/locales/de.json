@@ -1581,8 +1581,8 @@
       "reviewed": true
     },
     "skill.confirm_applied": {
-      "text": "Skill angewendet.",
-      "source_hash": "r3_confirm_applied",
+      "text": "Skill wird angewendet...",
+      "source_hash": "r5b_confirm_applied",
       "auto_translated": false,
       "reviewed": true
     },

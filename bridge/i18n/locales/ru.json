@@ -1581,8 +1581,8 @@
       "reviewed": false
     },
     "skill.confirm_applied": {
-      "text": "Skill applied.",
-      "source_hash": "r3_confirm_applied",
+      "text": "Applying skill...",
+      "source_hash": "r5b_confirm_applied",
       "auto_translated": true,
       "reviewed": false
     },

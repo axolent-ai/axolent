@@ -1,16 +1,22 @@
-"""Bug-Fix Round 5: Skill execution after user confirmation.
+"""Bug-Fix Round 5 + 5b: Skill execution after user confirmation.
 
 Live-Bug 2026-05-27 11:20: User clicks "Ja" on ask-before-apply dialog,
 but no skill response comes. The callback only wrote evidence and confirmed
 status, but never re-processed the original message through the streaming
 pipeline with the skill instruction block.
 
-Fixes:
+Fixes (Round 5):
   1. After "yes" callback: promote hypothesis to 'active', then re-process
      original message through streaming pipeline (LLM gets skill instruction).
   2. Active skills auto-apply without ask-before-apply dialog (Round-5:
      should_ask_user returns False for STATUS_ACTIVE unconditionally).
   3. "Nie wieder" transitions hypothesis to 'paused'.
+
+Polish (Round 5b, Codex feedback):
+  1.1. i18n: "Skill angewendet." -> "Skill wird angewendet..." (action-in-progress)
+  1.2. Evidence split: user_confirmed (button click) vs skill_executed (after run)
+  1.3. Expired pending: graceful handling with localized message
+  1.4. "Nein" path: explicit test for evidence + no-execution + pending cleanup
 
 Memory rules enforced:
   - feedback_briefing_production_path_tests (production path tests)
@@ -692,3 +698,448 @@ class TestRegressionPreserved:
         assert "Confidence:" in skill_block
         assert "Source:" in skill_block
         assert "MUST be applied" in skill_block
+
+
+# =====================================================================
+# Round-5b: Codex cosmetic polish
+# =====================================================================
+
+
+class TestRound5bI18nApplyingSkill:
+    """Item 1.1: i18n text signals action-in-progress, not completion."""
+
+    def test_en_confirm_applied_says_applying(self):
+        """EN: skill.confirm_applied must say 'Applying skill...'."""
+        from i18n.domain.i18n import t
+
+        text = t("skill.confirm_applied", "en")
+        assert text == "Applying skill...", (
+            f"Expected 'Applying skill...', got '{text}'"
+        )
+
+    def test_de_confirm_applied_says_wird_angewendet(self):
+        """DE: skill.confirm_applied must say 'Skill wird angewendet...'."""
+        from i18n.domain.i18n import t
+
+        text = t("skill.confirm_applied", "de")
+        assert text == "Skill wird angewendet...", (
+            f"Expected 'Skill wird angewendet...', got '{text}'"
+        )
+
+    def test_non_en_de_locales_use_en_fallback(self):
+        """Non-EN/DE locales must also show 'Applying skill...'."""
+        from i18n.domain.i18n import t
+
+        for lang in ("fr", "es", "ja", "zh", "ar"):
+            text = t("skill.confirm_applied", lang)
+            assert text == "Applying skill...", (
+                f"Locale {lang}: expected 'Applying skill...', got '{text}'"
+            )
+
+
+class TestRound5bEvidenceSeparation:
+    """Item 1.2: user_confirmed vs skill_executed evidence split."""
+
+    def test_yes_callback_writes_user_confirmed_evidence(self):
+        """Button click 'Ja' writes user_confirmed (not skill_executed)."""
+        from application.skill_compression.hypothesis_storage import HypothesisStorage
+        from application.skill_compression.pattern_judge import PatternJudge
+        from application.skill_compression.privacy.privacy_pipeline import (
+            PrivacyPipeline,
+        )
+        from application.skill_compression.skill_matcher import SkillMatch, SkillMatcher
+        from application.chat_service import ChatService
+
+        conn = FakeDBConnection()
+        storage = HypothesisStorage(conn)
+        hyp_id = _create_confirmed_skill(
+            conn, storage, "wenn ich blitz sage, erklaere Gewitter"
+        )
+
+        hyp = storage.get_hypothesis(hyp_id)
+        skill_match = SkillMatch(
+            hypothesis=hyp,
+            confidence=0.85,
+            requires_confirmation=True,
+            explanation="alias match",
+            match_source="alias",
+        )
+
+        pipeline = PrivacyPipeline()
+        judge = PatternJudge(privacy_pipeline=pipeline)
+        matcher = SkillMatcher(storage, judge)
+
+        mock_router = MagicMock()
+        chat_service = ChatService(
+            provider_router=mock_router,
+            memory_service=MagicMock(),
+            skill_matcher=matcher,
+        )
+
+        # Simulate button click: user_confirmed
+        chat_service._write_skill_evidence(
+            skill_match, signal_type="user_confirmed", signal_strength=0.5
+        )
+
+        rows = conn.fetchall(
+            "SELECT signal_type FROM hypothesis_evidence WHERE hypothesis_id = ?",
+            (hyp_id,),
+        )
+        signal_types = [r["signal_type"] for r in rows]
+        assert "user_confirmed" in signal_types
+        assert "skill_executed" not in signal_types
+
+    def test_skill_executed_evidence_after_reprocess(self):
+        """After successful reprocess: skill_executed evidence is written."""
+        from application.skill_compression.hypothesis_storage import HypothesisStorage
+        from application.skill_compression.pattern_judge import PatternJudge
+        from application.skill_compression.privacy.privacy_pipeline import (
+            PrivacyPipeline,
+        )
+        from application.skill_compression.skill_matcher import SkillMatch, SkillMatcher
+        from application.chat_service import ChatService
+
+        conn = FakeDBConnection()
+        storage = HypothesisStorage(conn)
+        hyp_id = _create_confirmed_skill(
+            conn, storage, "wenn ich stern sage, erklaere Astronomie"
+        )
+
+        hyp = storage.get_hypothesis(hyp_id)
+        skill_match = SkillMatch(
+            hypothesis=hyp,
+            confidence=0.85,
+            requires_confirmation=True,
+            explanation="alias match",
+            match_source="alias",
+        )
+
+        pipeline = PrivacyPipeline()
+        judge = PatternJudge(privacy_pipeline=pipeline)
+        matcher = SkillMatcher(storage, judge)
+
+        mock_router = MagicMock()
+        chat_service = ChatService(
+            provider_router=mock_router,
+            memory_service=MagicMock(),
+            skill_matcher=matcher,
+        )
+
+        # Simulate: user_confirmed first, then skill_executed
+        chat_service._write_skill_evidence(
+            skill_match, signal_type="user_confirmed", signal_strength=0.5
+        )
+        chat_service._write_skill_evidence(
+            skill_match, signal_type="skill_executed", signal_strength=0.5
+        )
+
+        rows = conn.fetchall(
+            "SELECT signal_type FROM hypothesis_evidence WHERE hypothesis_id = ? "
+            "ORDER BY created_at",
+            (hyp_id,),
+        )
+        signal_types = [r["signal_type"] for r in rows]
+        assert signal_types == ["user_confirmed", "skill_executed"]
+
+    def test_skill_execution_failed_evidence_on_error(self):
+        """On reprocess failure: skill_execution_failed evidence is written."""
+        from application.skill_compression.hypothesis_storage import HypothesisStorage
+        from application.skill_compression.pattern_judge import PatternJudge
+        from application.skill_compression.privacy.privacy_pipeline import (
+            PrivacyPipeline,
+        )
+        from application.skill_compression.skill_matcher import SkillMatch, SkillMatcher
+        from application.chat_service import ChatService
+
+        conn = FakeDBConnection()
+        storage = HypothesisStorage(conn)
+        hyp_id = _create_confirmed_skill(
+            conn, storage, "wenn ich mond sage, erklaere Gezeiten"
+        )
+
+        hyp = storage.get_hypothesis(hyp_id)
+        skill_match = SkillMatch(
+            hypothesis=hyp,
+            confidence=0.85,
+            requires_confirmation=True,
+            explanation="alias match",
+            match_source="alias",
+        )
+
+        pipeline = PrivacyPipeline()
+        judge = PatternJudge(privacy_pipeline=pipeline)
+        matcher = SkillMatcher(storage, judge)
+
+        mock_router = MagicMock()
+        chat_service = ChatService(
+            provider_router=mock_router,
+            memory_service=MagicMock(),
+            skill_matcher=matcher,
+        )
+
+        # Simulate: user_confirmed, then execution failed
+        chat_service._write_skill_evidence(
+            skill_match, signal_type="user_confirmed", signal_strength=0.5
+        )
+        chat_service._write_skill_evidence(
+            skill_match, signal_type="skill_execution_failed", signal_strength=0.0
+        )
+
+        rows = conn.fetchall(
+            "SELECT signal_type FROM hypothesis_evidence WHERE hypothesis_id = ? "
+            "ORDER BY created_at",
+            (hyp_id,),
+        )
+        signal_types = [r["signal_type"] for r in rows]
+        assert "user_confirmed" in signal_types
+        assert "skill_execution_failed" in signal_types
+
+
+class TestRound5bExpiredPendingHandling:
+    """Item 1.3: Expired pending confirmation handled gracefully."""
+
+    @pytest.mark.asyncio
+    async def test_expired_pending_callback_handles_gracefully(self):
+        """Expired pending: user gets expired message, no execution, pending removed."""
+        from unittest.mock import AsyncMock
+
+        from presentation.skill_commands import (
+            SKILL_CONFIRM_TIMEOUT_SECONDS,
+            _handle_skill_confirm_inline,
+        )
+        from application.skill_compression.skill_matcher import SkillMatch
+        from application.skill_compression.hypothesis_storage import (
+            Hypothesis,
+            HypothesisScope,
+        )
+
+        mock_hyp = Hypothesis(
+            hypothesis_id="hyp_expired_r5b",
+            user_id=1,
+            type="preference",
+            scope=HypothesisScope(),
+            claim="test expired",
+            status="confirmed",
+            version=1,
+            elo_rating=1500.0,
+            source_type="live_chat",
+            decay_immune=False,
+            created_at="2026-01-01T00:00:00Z",
+            last_seen="2026-01-01T00:00:00Z",
+        )
+        mock_match = SkillMatch(
+            hypothesis=mock_hyp,
+            confidence=0.8,
+            requires_confirmation=True,
+            explanation="test",
+        )
+
+        # Pending store with expired entry
+        pending_store = {
+            (1, 10, "hyp_expired_r5b"): {
+                "skill_match": mock_match,
+                "original_text": "test",
+                "timestamp": time.time() - SKILL_CONFIRM_TIMEOUT_SECONDS - 120,
+                "envelope": MagicMock(),
+            }
+        }
+
+        mock_context = MagicMock()
+        mock_chat_service = MagicMock()
+        mock_chat_service._write_skill_evidence = MagicMock()
+        mock_context.application.bot_data = {
+            "chat_service": mock_chat_service,
+            "hypothesis_storage": MagicMock(),
+            "_pending_skill_confirmations": pending_store,
+        }
+
+        mock_query = AsyncMock()
+        mock_query.answer = AsyncMock()
+        mock_query.edit_message_text = AsyncMock()
+
+        await _handle_skill_confirm_inline(
+            mock_query,
+            mock_context,
+            1,
+            10,
+            "skill_confirm:yes:hyp_expired_r5b",
+            "en",
+        )
+
+        # No evidence written (expired)
+        mock_chat_service._write_skill_evidence.assert_not_called()
+
+        # Expired alert shown
+        mock_query.answer.assert_called_once()
+        call_kwargs = mock_query.answer.call_args
+        assert call_kwargs[1].get("show_alert") is True
+
+        # Pending entry removed after timeout
+        assert (1, 10, "hyp_expired_r5b") not in pending_store
+
+    @pytest.mark.asyncio
+    async def test_expired_pending_shows_localized_message(self):
+        """Expired pending: DE locale shows correct German message."""
+        from i18n.domain.i18n import t
+
+        text_en = t("skill.confirm_expired", "en")
+        text_de = t("skill.confirm_expired", "de")
+
+        assert "expired" in text_en.lower() or "again" in text_en.lower()
+        assert "abgelaufen" in text_de.lower() or "erneut" in text_de.lower()
+
+
+class TestRound5bNoPathExplicit:
+    """Item 1.4: 'Nein' callback path explicitly tested."""
+
+    @pytest.mark.asyncio
+    async def test_callback_no_evidence_and_no_execution(self):
+        """User clicks Nein: user_declined_once evidence, no execution, pending removed."""
+        from unittest.mock import AsyncMock
+
+        from presentation.skill_commands import _handle_skill_confirm_inline
+        from application.skill_compression.skill_matcher import SkillMatch
+        from application.skill_compression.hypothesis_storage import (
+            Hypothesis,
+            HypothesisScope,
+        )
+
+        mock_hyp = Hypothesis(
+            hypothesis_id="hyp_no_r5b",
+            user_id=1,
+            type="preference",
+            scope=HypothesisScope(),
+            claim="test no path",
+            status="confirmed",
+            version=1,
+            elo_rating=1500.0,
+            source_type="live_chat",
+            decay_immune=False,
+            created_at="2026-01-01T00:00:00Z",
+            last_seen="2026-01-01T00:00:00Z",
+        )
+        mock_match = SkillMatch(
+            hypothesis=mock_hyp,
+            confidence=0.8,
+            requires_confirmation=True,
+            explanation="test",
+        )
+
+        pending_store = {
+            (1, 10, "hyp_no_r5b"): {
+                "skill_match": mock_match,
+                "original_text": "test no",
+                "timestamp": time.time(),
+                "envelope": MagicMock(),
+            }
+        }
+
+        mock_context = MagicMock()
+        mock_chat_service = MagicMock()
+        mock_chat_service._write_skill_evidence = MagicMock()
+
+        # process_message should NOT be called (no execution on "no")
+        mock_chat_service.process_message = MagicMock()
+
+        mock_context.application.bot_data = {
+            "chat_service": mock_chat_service,
+            "hypothesis_storage": MagicMock(),
+            "_pending_skill_confirmations": pending_store,
+        }
+
+        mock_query = AsyncMock()
+        mock_query.answer = AsyncMock()
+        mock_query.edit_message_text = AsyncMock()
+        mock_query.from_user = MagicMock()
+        mock_query.from_user.id = 1
+
+        await _handle_skill_confirm_inline(
+            mock_query,
+            mock_context,
+            1,
+            10,
+            "skill_confirm:no:hyp_no_r5b",
+            "en",
+        )
+
+        # Evidence written: user_declined_once
+        mock_chat_service._write_skill_evidence.assert_called_once()
+        call_kwargs = mock_chat_service._write_skill_evidence.call_args
+        assert call_kwargs[1]["signal_type"] == "user_declined_once"
+
+        # No execution (process_message not called)
+        mock_chat_service.process_message.assert_not_called()
+
+        # Pending entry removed
+        assert (1, 10, "hyp_no_r5b") not in pending_store
+
+    @pytest.mark.asyncio
+    async def test_callback_no_does_not_change_status(self):
+        """User clicks Nein: hypothesis status stays confirmed (no transition)."""
+        from unittest.mock import AsyncMock
+
+        from presentation.skill_commands import _handle_skill_confirm_inline
+        from application.skill_compression.skill_matcher import SkillMatch
+        from application.skill_compression.hypothesis_storage import (
+            Hypothesis,
+            HypothesisScope,
+        )
+
+        mock_hyp = Hypothesis(
+            hypothesis_id="hyp_no_status_r5b",
+            user_id=1,
+            type="preference",
+            scope=HypothesisScope(),
+            claim="test no status",
+            status="confirmed",
+            version=1,
+            elo_rating=1500.0,
+            source_type="live_chat",
+            decay_immune=False,
+            created_at="2026-01-01T00:00:00Z",
+            last_seen="2026-01-01T00:00:00Z",
+        )
+        mock_match = SkillMatch(
+            hypothesis=mock_hyp,
+            confidence=0.8,
+            requires_confirmation=True,
+            explanation="test",
+        )
+
+        mock_storage = MagicMock()
+        pending_store = {
+            (1, 10, "hyp_no_status_r5b"): {
+                "skill_match": mock_match,
+                "original_text": "test",
+                "timestamp": time.time(),
+                "envelope": MagicMock(),
+            }
+        }
+
+        mock_context = MagicMock()
+        mock_chat_service = MagicMock()
+        mock_chat_service._write_skill_evidence = MagicMock()
+        mock_context.application.bot_data = {
+            "chat_service": mock_chat_service,
+            "hypothesis_storage": mock_storage,
+            "_pending_skill_confirmations": pending_store,
+        }
+
+        mock_query = AsyncMock()
+        mock_query.answer = AsyncMock()
+        mock_query.edit_message_text = AsyncMock()
+        mock_query.from_user = MagicMock()
+        mock_query.from_user.id = 1
+
+        await _handle_skill_confirm_inline(
+            mock_query,
+            mock_context,
+            1,
+            10,
+            "skill_confirm:no:hyp_no_status_r5b",
+            "en",
+        )
+
+        # Storage transition must NOT be called for "no"
+        mock_storage.transition_hypothesis_status.assert_not_called()
+        mock_storage.update_hypothesis_status.assert_not_called()
