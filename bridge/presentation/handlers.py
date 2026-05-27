@@ -783,6 +783,121 @@ async def _streaming_background_task(
             )
 
 
+async def reprocess_after_skill_confirmation(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    user_id: int,
+    username: str | None,
+    text: str,
+    envelope: RequestEnvelope,
+) -> None:
+    """Re-process a user message after skill confirmation (Round-5 fix).
+
+    Called from skill_commands._handle_skill_confirm_inline when the user
+    clicks "Ja" on the ask-before-apply dialog. At this point the hypothesis
+    has been promoted to 'active', so the skill matcher will find it and
+    should_ask_user() returns False, allowing the skill instruction block
+    to be injected into the LLM prompt.
+
+    This function creates a background streaming task identical to what
+    handle_message does, but without the ask-before-apply pre-flight
+    (which would be redundant since the user just confirmed).
+
+    Args:
+        context: Telegram handler context.
+        chat_id: Telegram chat ID.
+        user_id: Telegram user ID.
+        username: Telegram username.
+        text: Original user message text.
+        envelope: Original RequestEnvelope.
+    """
+    chat_service = _get_chat_service(context)
+    persistent_provider = _get_persistent_provider(context)
+
+    # Send typing indicator
+    try:
+        await context.bot.send_chat_action(chat_id, ChatAction.TYPING)
+    except Exception:
+        log.debug("Typing indicator failed in reprocess", exc_info=True)
+
+    if (
+        persistent_provider is not None
+        and hasattr(persistent_provider, "query_streaming")
+        and persistent_provider.is_available()
+    ):
+        # Build a minimal Update-like object for the streaming handler.
+        # The streaming handler needs update.effective_chat for message
+        # creation and update.message for legacy fallback error handling.
+        # We use the bot's get_chat to get the Chat object.
+        try:
+            chat_obj = await context.bot.get_chat(chat_id)
+        except Exception:
+            log.error("Cannot get chat %d for skill reprocess", chat_id, exc_info=True)
+            return
+
+        # Create a FakeUpdate that provides the minimal interface needed
+        # by _handle_message_streaming (effective_chat, message for error fallback).
+        fake_update = _SkillReprocessUpdate(chat_obj)
+
+        task = asyncio.create_task(
+            _streaming_background_task(
+                update=fake_update,
+                context=context,
+                chat_service=chat_service,
+                persistent_provider=persistent_provider,
+                user_id=user_id,
+                chat_id=chat_id,
+                username=username,
+                text=text,
+                reply_to_text=None,
+                envelope=envelope,
+            ),
+            name=f"skill_reprocess_{user_id}_{chat_id}_{envelope.request_id[:8]}",
+        )
+        _register_background_task(task, user_id, chat_id)
+    else:
+        # Legacy fallback: non-streaming.
+        # Cannot easily run without a full Update object; log and skip.
+        log.warning(
+            "Skill reprocess: no streaming provider available, "
+            "user=%d chat=%d. Skill confirmed but response not sent.",
+            user_id,
+            chat_id,
+        )
+
+
+class _SkillReprocessUpdate:
+    """Minimal Update-like object for re-processing after skill confirmation.
+
+    Provides the interface that _handle_message_streaming needs:
+      - effective_chat: Chat object (for send_chat_action, create_streaming_message)
+      - message: a stub with reply_text for error fallback
+
+    This avoids importing or constructing a full telegram.Update for a
+    synthetic re-process. The streaming handler only accesses
+    update.effective_chat and update.message.reply_text (for error fallback).
+    """
+
+    def __init__(self, chat):
+        self.effective_chat = chat
+        self.effective_user = None
+        self.message = _StubMessage(chat)
+
+
+class _StubMessage:
+    """Stub message for error-fallback reply_text calls."""
+
+    def __init__(self, chat):
+        self._chat = chat
+
+    async def reply_text(self, text, **kwargs):
+        """Send error text as a regular message to the chat."""
+        try:
+            await self._chat.send_message(text)
+        except Exception:
+            log.debug("Stub reply_text failed", exc_info=True)
+
+
 async def _handle_message_streaming(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,

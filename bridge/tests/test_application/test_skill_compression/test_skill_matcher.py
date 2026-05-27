@@ -330,8 +330,13 @@ class TestShouldAskUser:
         # Even with auto_apply_enabled=True
         assert should_ask_user(match, {"auto_apply_enabled": True}) is True
 
-    def test_active_auto_apply_disabled_asks(self) -> None:
-        """Status active + auto_apply_enabled=False: ask."""
+    def test_active_never_asks_regardless_of_preferences(self) -> None:
+        """Status active: never ask (Round-5: user already confirmed once).
+
+        Round-5 change (2026-05-27): Active skills auto-apply unconditionally.
+        Previously checked auto_apply_enabled preference. Now 'active' means
+        user explicitly approved, so it always auto-applies.
+        """
         hyp = _make_hypothesis(status=STATUS_ACTIVE)
         match = SkillMatch(
             hypothesis=hyp,
@@ -339,7 +344,7 @@ class TestShouldAskUser:
             requires_confirmation=False,
             explanation="test",
         )
-        assert should_ask_user(match, {"auto_apply_enabled": False}) is True
+        assert should_ask_user(match, {"auto_apply_enabled": False}) is False
 
     def test_active_auto_apply_enabled_does_not_ask(self) -> None:
         """Status active + auto_apply_enabled=True: do not ask."""
@@ -352,8 +357,11 @@ class TestShouldAskUser:
         )
         assert should_ask_user(match, {"auto_apply_enabled": True}) is False
 
-    def test_default_preferences_ask(self) -> None:
-        """Default preferences (no dict provided): should ask."""
+    def test_default_preferences_active_does_not_ask(self) -> None:
+        """Default preferences + active status: should NOT ask (Round-5).
+
+        Round-5 change: active skills never ask, regardless of preferences.
+        """
         hyp = _make_hypothesis(status=STATUS_ACTIVE)
         match = SkillMatch(
             hypothesis=hyp,
@@ -361,8 +369,8 @@ class TestShouldAskUser:
             requires_confirmation=False,
             explanation="test",
         )
-        # None = use defaults
-        assert should_ask_user(match) is True
+        # None = use defaults; active still does not ask
+        assert should_ask_user(match) is False
 
     def test_default_auto_apply_is_false(self) -> None:
         """Default preference for auto_apply_enabled must be False."""

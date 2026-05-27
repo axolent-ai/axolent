@@ -105,33 +105,36 @@ def should_ask_user(
     HC-SC-10 [BLOCKER]: "Ask Before Applying" as default.
 
     Logic:
-      - Status 'confirmed': ALWAYS ask (requires user confirmation)
-      - Status 'active' + auto_apply_enabled=False: ask
-      - Status 'active' + auto_apply_enabled=True: do not ask
-      - Default: auto_apply_enabled = False (Ask Before Applying)
+      - Status 'confirmed': ALWAYS ask (requires first-time user confirmation)
+      - Status 'active': NEVER ask (user has already confirmed at least once;
+        Round-5 fix: after first "yes" confirmation the hypothesis is promoted
+        to 'active' and auto-applies without further prompts)
+      - Default: ask
+
+    Round-5 change (2026-05-27): Active skills auto-apply unconditionally.
+    Previously, active skills still checked auto_apply_enabled preference
+    (defaulting to False, effectively always asking). The user expectation
+    is clear: after clicking "Ja" once, the skill should apply directly
+    on subsequent triggers without asking again.
 
     Args:
         match: The SkillMatch to evaluate.
-        user_preferences: User settings dict. Expected key:
-            'auto_apply_enabled' (bool, default False).
+        user_preferences: User settings dict (reserved for future use).
 
     Returns:
         True if user confirmation is required before applying.
     """
-    if user_preferences is None:
-        user_preferences = dict(DEFAULT_USER_PREFERENCES)
-
     status = match.hypothesis.status
 
     # Confirmed: always ask (user has confirmed the skill exists,
-    # but hasn't reached auto-apply threshold yet)
+    # but hasn't explicitly approved application yet)
     if status == STATUS_CONFIRMED:
         return True
 
-    # Active: depends on user preference
+    # Active: never ask (user already confirmed at least once)
+    # Round-5: active means "user approved", auto-apply unconditionally
     if status == STATUS_ACTIVE:
-        auto_apply = user_preferences.get("auto_apply_enabled", False)
-        return not bool(auto_apply)
+        return False
 
     # Any other status should not reach here (not matchable),
     # but defensively: always ask

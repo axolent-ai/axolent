@@ -597,8 +597,14 @@ class TestBehavioralGuards:
         assert should_ask_user(match, {"auto_apply_enabled": False}) is True
         assert should_ask_user(match, None) is True
 
-    def test_should_ask_user_for_active_respects_preference(self):
-        """HC-SC-10: Active skills respect auto_apply_enabled preference."""
+    def test_should_ask_user_for_active_never_asks(self):
+        """HC-SC-10 + Round-5: Active skills never ask (user already confirmed).
+
+        Round-5 change (2026-05-27): Active skills auto-apply unconditionally.
+        'Active' means the user has explicitly clicked "Ja" on the
+        ask-before-apply dialog at least once. After that, the skill
+        is trusted and auto-applies without further prompts.
+        """
         from application.skill_compression.hypothesis_storage import Hypothesis
         from application.skill_compression.skill_matcher import (
             SkillMatch,
@@ -615,13 +621,9 @@ class TestBehavioralGuards:
             explanation="test",
         )
 
-        # Default (no prefs): ask
-        assert should_ask_user(match) is True
-
-        # Explicit False: ask
-        assert should_ask_user(match, {"auto_apply_enabled": False}) is True
-
-        # Explicit True: don't ask
+        # Active: never ask, regardless of preferences
+        assert should_ask_user(match) is False
+        assert should_ask_user(match, {"auto_apply_enabled": False}) is False
         assert should_ask_user(match, {"auto_apply_enabled": True}) is False
 
     def test_skill_library_maximum_50_enforced(self):

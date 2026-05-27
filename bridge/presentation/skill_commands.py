@@ -1488,10 +1488,51 @@ async def _handle_skill_confirm_inline(
         chat_service._write_skill_evidence(
             skill_match, signal_type="user_confirmed", signal_strength=0.5
         )
-        # Edit confirmation message to show skill was applied
+
+        # Round-5: Promote hypothesis from 'confirmed' to 'active' so future
+        # triggers auto-apply without asking again (user already said yes).
+        if storage is not None:
+            try:
+                storage.transition_hypothesis_status(hyp_id, "active")
+                log.info(
+                    "Skill promoted to active after user confirmation: hyp=%s",
+                    hyp_id,
+                )
+            except Exception:
+                # Fallback: force update if transition matrix rejects
+                try:
+                    storage.update_hypothesis_status(hyp_id, "active")
+                    log.info("Skill force-promoted to active: hyp=%s", hyp_id)
+                except Exception:
+                    log.debug(
+                        "Failed to promote hypothesis %s to active",
+                        hyp_id,
+                        exc_info=True,
+                    )
+
+        # Edit confirmation message to indicate skill is being applied
         await query.edit_message_text(t("skill.confirm_applied", lang))
+
+        # Round-5 CRITICAL: Re-process the original user message with the
+        # skill now active. Previously, the flow stopped here and the user
+        # never got a skill-powered response. The original text and envelope
+        # are stored in the pending confirmation data.
+        original_text = pending.get("original_text", "")
+        original_envelope = pending.get("envelope")
+        if original_text and original_envelope is not None:
+            from presentation.handlers import reprocess_after_skill_confirmation
+
+            await reprocess_after_skill_confirmation(
+                context=context,
+                chat_id=chat_id,
+                user_id=user_id,
+                username=query.from_user.username if query.from_user else None,
+                text=original_text,
+                envelope=original_envelope,
+            )
+
         log.info(
-            "Skill confirmed by user: hyp=%s user=%d",
+            "Skill confirmed by user: hyp=%s user=%d, re-processing message",
             hyp_id,
             user_id,
         )
@@ -1535,14 +1576,13 @@ async def _handle_skill_confirm_inline(
     # on a different confirmation cannot accidentally consume the live one.
     pending_store.pop(store_key, None)
 
-    # Note on UX flow:
-    # The evidence is recorded for future interactions. The ORIGINAL message
-    # that triggered this flow is not re-streamed (that would be confusing UX).
-    # The user saw the skill claim text before deciding, and the NEXT message
-    # will benefit from the updated state. This is acceptable because:
-    # 1. User saw the skill claim text before deciding
-    # 2. The evidence is recorded for future interactions
-    # 3. Full re-streaming of the original message would be confusing UX
+    # Round-5 UX flow:
+    # - "yes": Original message IS re-processed with the skill active.
+    #   The hypothesis is promoted to 'active' and the streaming pipeline
+    #   runs with the skill instruction block in the prompt. The user
+    #   sees the skill-powered response immediately after clicking "Ja".
+    # - "no": Evidence recorded, next message proceeds normally.
+    # - "never": Hypothesis paused, will not trigger again.
 
 
 # Public alias for the handler (used in tests)
