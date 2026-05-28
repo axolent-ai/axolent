@@ -403,15 +403,35 @@ def compute_package_type(permissions: PermissionsConfig) -> str:
     """Determine package_type automatically from permissions.
 
     NOT user self-declaration. System computes based on what the skill requests.
+
+    Hierarchy (highest wins, no early-return masking):
+      privileged_plugin > code_plugin > tool_workflow > declarative_skill > local_skill
+
+    Policy: history_access is always at least declarative_skill (never local_skill).
+    Policy: tools with wildcard ("*") escalate to code_plugin.
+    Policy: memory_read with wildcard ("*") escalates to declarative_skill (minimum).
+
+    See Access/Risk/Package consistency matrix in security docs.
     """
+    # --- privileged_plugin (highest) ---
     if permissions.secrets_access:
         return "privileged_plugin"
+    # --- code_plugin ---
     if permissions.network_access.enabled or permissions.file_access.enabled:
         return "code_plugin"
+    if permissions.tools and "*" in permissions.tools:
+        return "code_plugin"
+    # --- tool_workflow ---
     if permissions.tools:
         return "tool_workflow"
-    if permissions.memory_read or permissions.memory_write:
+    # --- declarative_skill ---
+    if (
+        permissions.memory_read
+        or permissions.memory_write
+        or permissions.history_access.enabled
+    ):
         return "declarative_skill"
+    # --- local_skill (lowest) ---
     return "local_skill"
 
 
@@ -420,16 +440,50 @@ def compute_risk_level(permissions: PermissionsConfig) -> str:
 
     Default 'unknown' is resolved to a concrete level based on
     what the skill declares it needs.
+
+    MONOTONIC: High checks first, Medium checks second, Low last.
+    A low-risk permission can never mask a higher-risk permission.
+    Adding a permission to a skill can never downgrade its risk level.
+
+    Power-permission rule: any wildcard ("*"), "all_chats", "all",
+    "root", "home" scope MUST be high-risk. These scopes grant
+    broad access that requires explicit user approval.
+
+    See Access/Risk/Package consistency matrix in security docs.
     """
+    # --- HIGH first (all high-risk checks before any return) ---
     if permissions.secrets_access:
         return "high"
     if permissions.network_access.enabled or permissions.file_access.enabled:
         return "high"
-    if permissions.tools or permissions.memory_write:
+    if permissions.tools and "*" in permissions.tools:
+        return "high"
+    if permissions.history_access.enabled and _has_power_scope(
+        permissions.history_access.scopes
+    ):
+        return "high"
+    # --- MEDIUM next ---
+    if permissions.tools:
         return "medium"
-    if permissions.memory_read or permissions.history_access.enabled:
+    if permissions.memory_write:
+        return "medium"
+    if permissions.memory_read and "*" in permissions.memory_read:
+        return "medium"
+    # --- LOW last ---
+    if permissions.memory_read:
+        return "low"
+    if permissions.history_access.enabled:
         return "low"
     return "low"  # No permissions = safe = low
+
+
+# Power-permission scope detection
+_POWER_SCOPES = frozenset({"*", "all", "all_chats", "root", "home"})
+
+
+def _has_power_scope(scopes: tuple[str, ...]) -> bool:
+    """Return True if any scope in the tuple is a power-permission scope."""
+    return bool(_POWER_SCOPES.intersection(scopes))
 
 
 # ──────────────────────────────────────────────────────────────

@@ -1468,6 +1468,25 @@ class ChatService:
         if match_result is None:
             return "", None
 
+        # Phase 1 Etappe 2: PermissionGate enforcement for contract-aware matches.
+        # When the match result carries a SkillContract (contract-aware matcher),
+        # the PermissionGate checks execution rights BEFORE the skill block is built.
+        # Legacy matches (hypothesis-only) pass through without gate check.
+        _contract = getattr(match_result, "contract", None)
+        if _contract is not None:
+            from application.skill_compression.permission_gate import (
+                PermissionGate,
+            )
+
+            gate_result = PermissionGate.check_execution_allowed(_contract)
+            if gate_result.denied:
+                log.info(
+                    "Skill denied by PermissionGate: rule=%s skill_id=%s",
+                    gate_result.rule,
+                    getattr(_contract, "id", "unknown"),
+                )
+                return "", None
+
         # Round 3: Build HIGH-PRIORITY skill instruction block.
         # This block is injected at the TOP of the system prompt so the
         # LLM treats it as the primary instruction for this turn.
