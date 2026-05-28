@@ -238,6 +238,11 @@ GERMAN_MARKERS = [
 
 GERMAN_MARKER_PATTERN = re.compile("|".join(GERMAN_MARKERS), re.IGNORECASE)
 
+# Case-sensitive token whitelist: tokens that match a German marker pattern
+# (case-insensitive) but are NOT German. Each entry is the exact matched text.
+# Example: "MIT" is the SPDX license identifier, not the German word "mit".
+FALSE_POSITIVE_TOKENS = frozenset({"MIT"})
+
 
 # ---------------------------------------------------------------
 # Whitelist helpers
@@ -332,7 +337,7 @@ def _scan_file(path: Path) -> list[tuple[int, str, str]]:
 
         # Check German marker words
         m_marker = GERMAN_MARKER_PATTERN.search(line)
-        if m_marker:
+        if m_marker and m_marker.group(0) not in FALSE_POSITIVE_TOKENS:
             hits.append((line_no, m_marker.group(0), line[:120]))
 
     return hits
