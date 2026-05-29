@@ -286,7 +286,9 @@ from presentation.skill_commands import (
     handle_explain_command,
     handle_import_callback,
     handle_import_command,
+    handle_learn_callback,
     handle_learn_command,
+    handle_learn_followup_message,
     handle_skill_callback,
     handle_skill_detail_command,
     handle_skill_forget_command,
@@ -637,6 +639,9 @@ def main() -> None:
     skill_explainer = None
     import_orchestrator = None
     skill_learning_service = None
+    contract_store = None
+    draft_store = None
+    learn_flow_service = None
 
     if use_sqlite:
         hypothesis_storage = HypothesisStorage(sqlite_conn)
@@ -661,6 +666,28 @@ def main() -> None:
 
         import_orchestrator = ImportOrchestrator(hypothesis_storage)
         import_orchestrator.init_schema()
+
+        # Skill Contract v2: ContractStore + DraftStore + LearnFlowService
+        from application.skill_compression.contract_builder import ContractBuilder
+        from application.skill_compression.contract_store import ContractStore
+        from application.skill_compression.draft_store import DraftStore
+        from application.skill_compression.learn_flow_service import (
+            LearnFlowService,
+            PendingEditStore,
+        )
+
+        contract_store = ContractStore(sqlite_conn)
+        contract_store.init_schema()
+        draft_store = DraftStore()
+        pending_edit_store = PendingEditStore()
+        learn_flow_service = LearnFlowService(
+            contract_builder=ContractBuilder(),
+            draft_store=draft_store,
+            contract_store=contract_store,
+            privacy_pipeline=privacy_pipeline,
+            skill_learning_service=skill_learning_service,
+            pending_edit_store=pending_edit_store,
+        )
 
         log.info(
             "Skill-Compression: pipeline initialized "
@@ -760,6 +787,13 @@ def main() -> None:
         app.bot_data["import_orchestrator"] = import_orchestrator
     if skill_learning_service is not None:
         app.bot_data["skill_learning_service"] = skill_learning_service
+    # Skill Contract v2 bot_data entries
+    if contract_store is not None:
+        app.bot_data["contract_store"] = contract_store
+    if draft_store is not None:
+        app.bot_data["draft_store"] = draft_store
+    if learn_flow_service is not None:
+        app.bot_data["learn_flow_service"] = learn_flow_service
 
     # Lifecycle hooks: start/stop ProcessPool
     async def post_init(application: Application) -> None:
@@ -809,8 +843,18 @@ def main() -> None:
     app.add_handler(CommandHandler("explain", handle_explain_command))
     app.add_handler(CommandHandler("import", handle_import_command))
 
-    # Message handler (non-command text)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # Learn follow-up message handler (intercepts edit/needs_input follow-ups)
+    # Registered BEFORE generic handle_message so pending edits are consumed first.
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_learn_followup_message),
+        group=0,
+    )
+
+    # Message handler (non-command text) in group 1 (lower priority)
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message),
+        group=1,
+    )
 
     # Callback handlers for inline keyboard buttons
     app.add_handler(
@@ -826,6 +870,9 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(handle_lang_callback, pattern=r"^lang_set:"))
 
     # Skill-Compression callback handlers (Review Fix SC-01)
+    app.add_handler(
+        CallbackQueryHandler(handle_learn_callback, pattern=r"^skill_learn:")
+    )
     app.add_handler(CallbackQueryHandler(handle_skill_callback, pattern=r"^skill_"))
     app.add_handler(CallbackQueryHandler(handle_import_callback, pattern=r"^import_"))
 

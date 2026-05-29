@@ -1759,6 +1759,162 @@
       "source_hash": "secret_generic_v1",
       "auto_translated": false,
       "reviewed": true
+    },
+    "skill.learn_preview_header": {
+      "text": "New Skill Preview",
+      "source_hash": "learn_preview_header_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_preview_name": {
+      "text": "Name: {name}",
+      "source_hash": "learn_preview_name_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_preview_trigger": {
+      "text": "Trigger: \"{trigger}\" (whole message match)",
+      "source_hash": "learn_preview_trigger_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_preview_action": {
+      "text": "Action: {instruction}",
+      "source_hash": "learn_preview_action_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_preview_permissions": {
+      "text": "Permissions: None (sandbox)",
+      "source_hash": "learn_preview_perms_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_btn_save": {
+      "text": "Save",
+      "source_hash": "learn_btn_save_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_btn_edit": {
+      "text": "Edit",
+      "source_hash": "learn_btn_edit_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_btn_cancel": {
+      "text": "Cancel",
+      "source_hash": "learn_btn_cancel_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_cancelled": {
+      "text": "Skill creation cancelled.",
+      "source_hash": "learn_cancelled_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_draft_expired": {
+      "text": "Your skill draft has expired. Please start with /learn again.",
+      "source_hash": "learn_draft_expired_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_draft_already_saved": {
+      "text": "This skill has already been saved.",
+      "source_hash": "learn_draft_already_saved_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_draft_not_yours": {
+      "text": "This is not your skill draft.",
+      "source_hash": "learn_draft_not_yours_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_draft_stale": {
+      "text": "Draft was modified. Please try again.",
+      "source_hash": "learn_draft_stale_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_needs_trigger": {
+      "text": "I could not determine the trigger for this skill.\nWhich word or phrase should activate it?",
+      "source_hash": "learn_needs_trigger_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_trigger_rejected": {
+      "text": "The trigger was rejected: {reason}\nPlease choose a different trigger word.",
+      "source_hash": "learn_trigger_rejected_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_edit_prompt": {
+      "text": "What would you like to change?\nReply with the new trigger or instruction.",
+      "source_hash": "learn_edit_prompt_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_edit_choice": {
+      "text": "What would you like to edit?",
+      "source_hash": "learn_edit_choice_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_edit_trigger_btn": {
+      "text": "Trigger",
+      "source_hash": "learn_edit_trigger_btn_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_edit_instruction_btn": {
+      "text": "Instruction",
+      "source_hash": "learn_edit_instruction_btn_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_edit_trigger_prompt": {
+      "text": "Send me the new trigger word or phrase:",
+      "source_hash": "learn_edit_trigger_prompt_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_edit_instruction_prompt": {
+      "text": "Send me the new instruction:",
+      "source_hash": "learn_edit_instruction_prompt_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_edit_failed": {
+      "text": "Edit failed: {reason}\nYou can try again or use /learn to start over.",
+      "source_hash": "learn_edit_failed_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_edit_rejected_secret": {
+      "text": "Edit rejected: the new content may contain sensitive data.\nReason: {reason}",
+      "source_hash": "learn_edit_rejected_secret_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_validation_failed": {
+      "text": "Skill validation failed: {reason}\nPlease adjust and try again.",
+      "source_hash": "learn_validation_failed_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_quick_saved": {
+      "text": "Skill saved (quick mode): '{name}'",
+      "source_hash": "learn_quick_saved_v1",
+      "auto_translated": false,
+      "reviewed": true
+    },
+    "skill.learn_quick_rejected": {
+      "text": "Quick save rejected: {reason}",
+      "source_hash": "learn_quick_rejected_v1",
+      "auto_translated": false,
+      "reviewed": true
     }
   }
 }

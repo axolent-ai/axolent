@@ -31,7 +31,7 @@ from typing import Optional
 from uuid import uuid4
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ContextTypes
+from telegram.ext import ApplicationHandlerStop, ContextTypes
 
 from application.skill_compression.hypothesis_storage import (
     Hypothesis,
@@ -532,6 +532,77 @@ def _execute_forget(
 # ---------------------------------------------------------------
 
 
+def _get_learn_flow_service(context: ContextTypes.DEFAULT_TYPE):
+    """Get LearnFlowService from bot_data.
+
+    Args:
+        context: Telegram handler context.
+
+    Returns:
+        LearnFlowService or None if not initialized.
+    """
+    return context.application.bot_data.get("learn_flow_service")
+
+
+def _render_preview_text(draft, lang: str) -> str:
+    """Render a draft preview message using i18n keys.
+
+    Args:
+        draft: SkillDraft with contract data.
+        lang: Language code.
+
+    Returns:
+        Formatted preview text string.
+    """
+    contract = draft.contract
+    trigger = ""
+    if contract.activation.phrases:
+        trigger = contract.activation.phrases[0]
+    lines = [
+        t("skill.learn_preview_header", lang),
+        t("skill.learn_preview_name", lang, name=contract.name),
+        t("skill.learn_preview_trigger", lang, trigger=trigger),
+        t(
+            "skill.learn_preview_action",
+            lang,
+            instruction=contract.execution.instruction,
+        ),
+        t("skill.learn_preview_permissions", lang),
+    ]
+    return "\n".join(lines)
+
+
+def _build_learn_buttons(draft_id: str, etag: str, lang: str) -> InlineKeyboardMarkup:
+    """Build Save/Edit/Cancel buttons for learn preview.
+
+    Args:
+        draft_id: Draft identifier.
+        etag: Current etag for optimistic locking.
+        lang: Language code.
+
+    Returns:
+        InlineKeyboardMarkup with 3 buttons.
+    """
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    text=t("skill.learn_btn_save", lang),
+                    callback_data=f"skill_learn:save:{draft_id}:{etag}",
+                ),
+                InlineKeyboardButton(
+                    text=t("skill.learn_btn_edit", lang),
+                    callback_data=f"skill_learn:edit:{draft_id}:{etag}",
+                ),
+                InlineKeyboardButton(
+                    text=t("skill.learn_btn_cancel", lang),
+                    callback_data=f"skill_learn:cancel:{draft_id}",
+                ),
+            ]
+        ]
+    )
+
+
 @require_whitelist
 @require_private_chat
 @lcp_aware
@@ -539,12 +610,10 @@ def _execute_forget(
 async def handle_learn_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Handle /learn command: create a skill from last interaction.
+    """Handle /learn command: create a skill via contract-based flow.
 
-    Creates a new hypothesis with:
-      - status = confirmed (immediately usable)
-      - decay_immune = True (HC-SC-6)
-      - source_type = "learn_command"
+    Supports --quick flag for immediate persist (skip preview).
+    Normal mode: builds draft, shows preview with Save/Edit/Cancel buttons.
 
     HC-SC-13 [BLOCKER]: Checks for secrets before storing.
 
@@ -580,6 +649,15 @@ async def handle_learn_command(
         await update.message.reply_text(t("skill.learn_empty", lang))
         return
 
+    # Parse --quick flag
+    quick = False
+    if "--quick" in skill_text:
+        quick = True
+        skill_text = skill_text.replace("--quick", "").strip()
+        if not skill_text:
+            await update.message.reply_text(t("skill.learn_empty", lang))
+            return
+
     # HC-SC-8: Check max active skills
     active_count = storage.count_active_hypotheses(user_id)
     confirmed_count = len(
@@ -590,51 +668,405 @@ async def handle_learn_command(
         await update.message.reply_text(t("skill.learn_max_reached", lang))
         return
 
-    # Use SkillLearningService for full privacy gate (HC-SC-13 + HC-SC-14 + HC-SC-15)
-    learning_service = _get_skill_learning_service(context)
-    if learning_service is None:
-        # Fallback: legacy secret-only check if service not wired
-        secret_type = check_secret_content(skill_text)
-        if secret_type is not None:
+    # Use LearnFlowService (new contract-based flow)
+    learn_flow = _get_learn_flow_service(context)
+    if learn_flow is None:
+        # Fallback: legacy path if service not wired
+        learning_service = _get_skill_learning_service(context)
+        if learning_service is None:
+            secret_type = check_secret_content(skill_text)
+            if secret_type is not None:
+                await update.message.reply_text(
+                    t("skill.learn_secret_blocked", lang, secret_type=secret_type)
+                )
+                log.warning(  # nosemgrep: python-logger-credential-disclosure
+                    "Secret filter blocked /learn: user=%d type=%s",
+                    user_id,
+                    secret_type,
+                )
+                return
+            await update.message.reply_text(t("skill.system_not_initialized", lang))
+            return
+
+        result = learning_service.learn(
+            claim_text=skill_text,
+            user_id=user_id,
+            source="learn_command",
+        )
+
+        if not result.success:
             await update.message.reply_text(
-                t("skill.learn_secret_blocked", lang, secret_type=secret_type)
-            )
-            log.warning(  # nosemgrep: python-logger-credential-disclosure
-                "Secret filter blocked /learn: user=%d type=%s",
-                user_id,
-                secret_type,
+                t("skill.learn_privacy_blocked", lang, reason=result.rejection_reason)
             )
             return
-        await update.message.reply_text(t("skill.system_not_initialized", lang))
+
+        hyp = storage.get_hypothesis(result.hypothesis_id)
+        name = derive_skill_name(hyp) if hyp else skill_text[:40]
+        await update.message.reply_text(t("skill.learn_saved", lang, name=name))
         return
 
-    result = learning_service.learn(
-        claim_text=skill_text,
+    # Contract-based learn flow
+    flow_result = await learn_flow.start_learn(
         user_id=user_id,
-        source="learn_command",
+        chat_id=chat_id,
+        text=skill_text,
+        quick=quick,
     )
 
-    if not result.success:
+    if flow_result.status == "rejected":
         await update.message.reply_text(
-            t("skill.learn_privacy_blocked", lang, reason=result.rejection_reason)
+            t("skill.learn_quick_rejected", lang, reason=flow_result.rejection_reason)
         )
         log.info(
-            "Privacy pipeline blocked /learn: user=%d filter=%s",
+            "Learn flow rejected: user=%d reason_len=%d",
             user_id,
-            result.rejection_source,
+            len(flow_result.rejection_reason),
         )
         return
 
-    hyp = storage.get_hypothesis(result.hypothesis_id)
-    name = derive_skill_name(hyp) if hyp else skill_text[:40]
-    await update.message.reply_text(t("skill.learn_saved", lang, name=name))
+    if flow_result.status == "needs_input":
+        # Ask the user for the missing trigger
+        if flow_result.rejection_reason == "trigger_rejected":
+            await update.message.reply_text(
+                t("skill.learn_trigger_rejected", lang, reason="reserved word")
+            )
+        else:
+            await update.message.reply_text(t("skill.learn_needs_trigger", lang))
+        return
 
-    log.info(
-        "Skill learned via /learn: hyp=%s user=%d len=%d",
-        result.hypothesis_id,
-        user_id,
-        len(skill_text),
+    if flow_result.status == "saved":
+        # Quick mode: already persisted
+        await update.message.reply_text(
+            t("skill.learn_quick_saved", lang, name=flow_result.saved_contract_name)
+        )
+        log.info(
+            "Skill quick-saved via /learn: user=%d name_len=%d",
+            user_id,
+            len(flow_result.saved_contract_name),
+        )
+        return
+
+    if flow_result.status == "preview" and flow_result.draft is not None:
+        # Show preview with buttons
+        preview_text = _render_preview_text(flow_result.draft, lang)
+        keyboard = _build_learn_buttons(
+            flow_result.draft.draft_id, flow_result.draft.etag, lang
+        )
+        await update.message.reply_text(
+            text=preview_text,
+            reply_markup=keyboard,
+        )
+        log.info(
+            "Learn preview shown: user=%d draft=%s",
+            user_id,
+            flow_result.draft.draft_id,
+        )
+        return
+
+
+# ---------------------------------------------------------------
+# Learn flow callback handler (skill_learn:*)
+# ---------------------------------------------------------------
+
+
+@require_whitelist
+@require_private_chat
+async def handle_learn_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handle learn flow inline keyboard callbacks.
+
+    Callback patterns:
+      skill_learn:save:<draft_id>:<etag>
+      skill_learn:edit:<draft_id>:<etag>
+      skill_learn:cancel:<draft_id>
+
+    Args:
+        update: Telegram update.
+        context: Telegram handler context.
+    """
+    query = update.callback_query
+    if not query or not query.data:
+        return
+
+    data = query.data
+    user = query.from_user
+    if not user:
+        return
+    user_id = user.id
+    chat_id = query.message.chat_id if query.message else 0
+    lang = await _resolve_lang(context, user_id, chat_id)
+
+    learn_flow = _get_learn_flow_service(context)
+    if learn_flow is None:
+        await query.answer(
+            text=t("skill.system_not_initialized_short", lang), show_alert=True
+        )
+        return
+
+    # Parse callback data
+    parts = data.split(":")
+    if len(parts) < 3:
+        await query.answer()
+        return
+
+    action = parts[1]  # save | edit | cancel
+
+    if action == "save" and len(parts) >= 4:
+        draft_id = parts[2]
+        etag = parts[3]
+        await _handle_learn_save(
+            query, learn_flow, user_id, chat_id, draft_id, etag, lang
+        )
+
+    elif action == "edit" and len(parts) >= 4:
+        draft_id = parts[2]
+        etag = parts[3]
+        await _handle_learn_edit_prompt(
+            query, learn_flow, user_id, chat_id, draft_id, etag, lang
+        )
+
+    elif action == "edit_trigger" and len(parts) >= 4:
+        draft_id = parts[2]
+        etag = parts[3]
+        await _handle_learn_set_pending_edit(
+            query,
+            learn_flow,
+            user_id,
+            chat_id,
+            draft_id,
+            etag,
+            action="edit_trigger",
+            lang=lang,
+        )
+
+    elif action == "edit_instruction" and len(parts) >= 4:
+        draft_id = parts[2]
+        etag = parts[3]
+        await _handle_learn_set_pending_edit(
+            query,
+            learn_flow,
+            user_id,
+            chat_id,
+            draft_id,
+            etag,
+            action="edit_instruction",
+            lang=lang,
+        )
+
+    elif action == "cancel" and len(parts) >= 3:
+        draft_id = parts[2]
+        await _handle_learn_cancel(query, learn_flow, user_id, chat_id, draft_id, lang)
+
+    else:
+        await query.answer()
+
+
+async def _handle_learn_save(
+    query, learn_flow, user_id: int, chat_id: int, draft_id: str, etag: str, lang: str
+) -> None:
+    """Save a learn draft via callback."""
+    await query.answer()
+
+    result = await learn_flow.save_draft(user_id, chat_id, draft_id, etag)
+
+    if result.success:
+        await query.edit_message_text(
+            t("skill.learn_saved", lang, name=result.contract_name)
+        )
+        return
+
+    # Error mapping to i18n keys
+    if result.error_type == "not_found":
+        await query.edit_message_text(t("skill.learn_draft_already_saved", lang))
+    elif result.error_type == "stale":
+        await query.edit_message_text(t("skill.learn_draft_stale", lang))
+    elif result.error_type == "ownership":
+        await query.edit_message_text(t("skill.learn_draft_not_yours", lang))
+    elif result.error_type == "rejected":
+        await query.edit_message_text(
+            t("skill.learn_quick_rejected", lang, reason=result.error)
+        )
+    elif result.error_type == "validation":
+        await query.edit_message_text(
+            t("skill.learn_validation_failed", lang, reason=result.error)
+        )
+    else:
+        await query.edit_message_text(
+            t("skill.learn_validation_failed", lang, reason=result.error)
+        )
+
+
+async def _handle_learn_edit_prompt(
+    query, learn_flow, user_id: int, chat_id: int, draft_id: str, etag: str, lang: str
+) -> None:
+    """Show edit choice (trigger or instruction) and set pending state.
+
+    Sets a pending edit state so the follow-up message handler can
+    intercept the user's next message and apply the edit.
+    """
+    await query.answer()
+
+    # Show choice buttons: edit trigger or edit instruction
+    keyboard = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    text=t("skill.learn_edit_trigger_btn", lang),
+                    callback_data=f"skill_learn:edit_trigger:{draft_id}:{etag}",
+                ),
+                InlineKeyboardButton(
+                    text=t("skill.learn_edit_instruction_btn", lang),
+                    callback_data=f"skill_learn:edit_instruction:{draft_id}:{etag}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t("skill.learn_btn_cancel", lang),
+                    callback_data=f"skill_learn:cancel:{draft_id}",
+                ),
+            ],
+        ]
     )
+    await query.edit_message_text(
+        text=t("skill.learn_edit_choice", lang),
+        reply_markup=keyboard,
+    )
+
+
+async def _handle_learn_set_pending_edit(
+    query,
+    learn_flow,
+    user_id: int,
+    chat_id: int,
+    draft_id: str,
+    etag: str,
+    action: str,
+    lang: str,
+) -> None:
+    """Set pending edit state and prompt user for new value.
+
+    After this, the follow-up message handler will intercept the user's
+    next text message and apply the edit.
+    """
+    await query.answer()
+
+    # Set pending state in LearnFlowService
+    await learn_flow.set_pending_edit(
+        user_id=user_id,
+        chat_id=chat_id,
+        draft_id=draft_id,
+        etag=etag,
+        action=action,
+    )
+
+    # Prompt user for the new value
+    if action == "edit_trigger":
+        prompt_key = "skill.learn_edit_trigger_prompt"
+    else:
+        prompt_key = "skill.learn_edit_instruction_prompt"
+
+    await query.edit_message_text(t(prompt_key, lang))
+
+
+async def _handle_learn_cancel(
+    query, learn_flow, user_id: int, chat_id: int, draft_id: str, lang: str
+) -> None:
+    """Cancel a learn draft via callback."""
+    await query.answer()
+    await learn_flow.cancel_draft(user_id, chat_id, draft_id)
+    # Also clear any pending edit state
+    await learn_flow.clear_pending_state(user_id, chat_id)
+    await query.edit_message_text(t("skill.learn_cancelled", lang))
+
+
+# ---------------------------------------------------------------
+# Follow-up Message Handler for Edit/Needs-Input
+# ---------------------------------------------------------------
+
+
+@require_whitelist
+@require_private_chat
+async def handle_learn_followup_message(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handle follow-up messages for pending edit/needs_input states.
+
+    This handler is registered in main.py in group 0 (higher priority).
+    It checks if the user has a pending edit/input state. If yes, it
+    processes the message as an edit and raises ApplicationHandlerStop
+    to prevent group 1 (handle_message) from processing the same message.
+    If no pending state, it returns normally so the next group runs.
+
+    Args:
+        update: Telegram update.
+        context: Telegram handler context.
+
+    Raises:
+        ApplicationHandlerStop: When the message was consumed by the edit flow.
+    """
+    user = update.effective_user
+    if not user:
+        return
+    user_id = user.id
+    chat_id = update.effective_chat.id if update.effective_chat else 0
+    text = update.message.text if update.message else ""
+
+    if not text or not text.strip():
+        return
+
+    learn_flow = _get_learn_flow_service(context)
+    if learn_flow is None:
+        return
+
+    # Check for pending state
+    pending = await learn_flow.get_pending_state(user_id, chat_id)
+    if pending is None:
+        return  # No pending state: let handle_message in group 1 process it
+
+    # We have a pending state: process the follow-up
+    lang = await _resolve_lang(context, user_id, chat_id)
+
+    edit_result = await learn_flow.handle_follow_up(
+        user_id=user_id,
+        chat_id=chat_id,
+        text=text,
+    )
+
+    if edit_result is None:
+        # Should not happen (we checked pending above), but be safe
+        return
+
+    if not edit_result.success:
+        # Edit failed: inform user, they can try again
+        await update.message.reply_text(
+            t("skill.learn_edit_failed", lang, reason=edit_result.error)
+        )
+        raise ApplicationHandlerStop
+
+    # Edit succeeded: show new preview with updated draft
+    if edit_result.draft is not None:
+        preview_text = _render_preview_text(edit_result.draft, lang)
+        keyboard = _build_learn_buttons(
+            edit_result.draft.draft_id, edit_result.draft.etag, lang
+        )
+        await update.message.reply_text(
+            text=preview_text,
+            reply_markup=keyboard,
+        )
+        log.info(
+            "Learn edit applied: user=%d draft=%s action=%s",
+            user_id,
+            edit_result.draft.draft_id,
+            pending.action,
+        )
+    else:
+        await update.message.reply_text(
+            t("skill.learn_edit_failed", lang, reason="Draft not found after edit")
+        )
+
+    # Consumed: stop further handler groups from processing this message
+    raise ApplicationHandlerStop
 
 
 # ---------------------------------------------------------------

@@ -155,6 +155,9 @@ WHITELIST_PATHS = {
     # Feature data: German trigger-extraction regex patterns and stoplist for
     # skill alias matching (DE "wenn ich X sage" pattern). Words ARE the feature.
     "bridge/application/skill_compression/skill_learning_service.py",
+    # Feature data: German trigger-extraction regex patterns for ContractBuilder
+    # (DE "wenn ich X sage/schreibe" pattern). The German words ARE the feature.
+    "bridge/application/skill_compression/contract_builder.py",
     # Feature data: Memory-conflict detection with German regex patterns
     # (DE "Mein/Meine X ist Y" patterns). The German words ARE the feature.
     "bridge/application/memory_conflict_detector.py",
