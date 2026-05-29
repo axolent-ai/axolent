@@ -9,9 +9,9 @@ State Machine (Codex-approved):
     -> build contract (lifecycle=draft)
     -> safety precheck
     -> if needs_input: pending_input(trigger)
-    -> if quick: safety final -> persist contract + legacy ATOMAR
+    -> if quick: safety final -> persist contract ONLY
     -> else: draft preview
-         -> save: safety final -> persist contract + legacy ATOMAR
+         -> save: safety final -> persist contract ONLY
          -> edit: pending_edit(trigger|instruction)
          -> cancel: delete draft
   pending_edit / pending_input
@@ -21,12 +21,10 @@ State Machine (Codex-approved):
     -> update draft etag
     -> render preview again
 
-Dual-write strategy (transition until Etappe 4):
-  When a contract is saved, both a SkillContract (ContractStore) AND a
-  legacy Hypothesis (SkillLearningService) are created. This ensures
-  the existing Matcher (which is not yet contract-aware) can still
-  trigger the skill. The legacy write is removed in Etappe 4 when
-  the Matcher becomes contract-aware.
+Contract-only persist (Etappe 4):
+  Since the Matcher is now contract-aware, new skills are written ONLY
+  to ContractStore. No legacy Hypothesis is created. The dual-write
+  strategy from Etappe 3 has been removed.
 
 One Safety Gate rule:
   _validate_contract_safety() is the SINGLE entry point for all safety
@@ -38,7 +36,6 @@ Dependencies:
   - ContractBuilder (build drafts from free-text)
   - DraftStore (ephemeral preview/edit drafts)
   - ContractStore (persistent contract storage)
-  - SkillLearningService (legacy dual-write for matcher compatibility)
   - PrivacyPipeline / SecretScanner (safety checks)
   - PendingEditStore (in-memory edit/input state for follow-up handler)
 """
@@ -57,7 +54,6 @@ from application.skill_compression.contract_builder import (
     ContractBuilder,
 )
 from application.skill_compression.contract_store import (
-    ContractDuplicateNameError,
     ContractStore,
     ContractStoreError,
 )
@@ -70,14 +66,9 @@ from application.skill_compression.draft_store import (
     SkillDraft,
 )
 from application.skill_compression.privacy.privacy_pipeline import PrivacyPipeline
-from application.skill_compression.privacy.secret_scanner import SecretScanner
 from application.skill_compression.skill_contract import LifecycleConfig, SkillContract
-from application.skill_compression.skill_learning_service import SkillLearningService
 
 log = logging.getLogger(__name__)
-
-# Shared scanner for secret checks on edits
-_secret_scanner = SecretScanner()
 
 
 # ---------------------------------------------------------------
@@ -278,14 +269,12 @@ class LearnFlowService:
         draft_store: DraftStore,
         contract_store: ContractStore,
         privacy_pipeline: PrivacyPipeline,
-        skill_learning_service: SkillLearningService,
         pending_edit_store: Optional["PendingEditStore"] = None,
     ) -> None:
         self._builder = contract_builder
         self._draft_store = draft_store
         self._contract_store = contract_store
         self._privacy = privacy_pipeline
-        self._legacy_service = skill_learning_service
         self._pending_store = pending_edit_store or PendingEditStore()
 
     @property
@@ -521,27 +510,10 @@ class LearnFlowService:
             ),
         )
 
-        # BLOCKER-1 fix: Atomic dual-write with Contract Preflight + Rollback.
-        # Strategy:
-        #   1. Contract Preflight: validate name-uniqueness and schema BEFORE legacy
-        #   2. Legacy write
-        #   3. Contract persist
-        #   4. If contract persist fails AFTER legacy: tombstone the legacy hypothesis
-        #
-        # This prevents split-brain in BOTH directions:
-        #   Legacy-fail -> no Contract (step 2 fails, step 3 never runs)
-        #   Contract-fail-after-Legacy -> Legacy tombstoned (step 4)
+        # Etappe 4: Contract-only persist (no legacy dual-write).
+        # Preflight validates name-uniqueness and schema before persist.
 
-        trigger = ""
-        if contract.activation.phrases:
-            trigger = contract.activation.phrases[0]
-        instruction = contract.execution.instruction
-        if trigger:
-            legacy_text = f"when I say {trigger}, {instruction}"
-        else:
-            legacy_text = instruction
-
-        # Step 1: Contract Preflight (catch foreseeable failures before legacy write)
+        # Contract Preflight (catch foreseeable failures before persist)
         preflight_error = self._contract_preflight(contract, user_id)
         if preflight_error is not None:
             return SaveResult(
@@ -550,45 +522,19 @@ class LearnFlowService:
                 error_type="validation",
             )
 
-        # Step 2: Legacy write
-        legacy_result = self._legacy_service.learn(
-            claim_text=legacy_text,
-            user_id=user_id,
-            source="learn_command",
-        )
-
-        if not legacy_result.success:
-            log.warning(
-                "Dual-write legacy blocked: user=%d reason_len=%d",
-                user_id,
-                len(legacy_result.rejection_reason),
-            )
-            return SaveResult(
-                success=False,
-                error=legacy_result.rejection_reason or "Legacy dual-write failed",
-                error_type="rejected",
-            )
-
-        # Step 3: Persist to ContractStore (legacy succeeded)
+        # Persist to ContractStore (contract-only, no legacy hypothesis)
         try:
             saved = self._contract_store.persist(contract, user_id=user_id)
         except ContractStoreError as e:
-            # Step 4: Contract persist failed AFTER legacy success -> ROLLBACK legacy
             log.error(
-                "Contract persist failed after legacy success, rolling back: "
-                "user=%d hyp=%s error=%s",
+                "Contract persist failed: user=%d error=%s",
                 user_id,
-                legacy_result.hypothesis_id,
                 str(e),
             )
-            self._rollback_legacy(legacy_result.hypothesis_id)
-            error_type = "validation"
-            if isinstance(e, ContractDuplicateNameError):
-                error_type = "validation"
             return SaveResult(
                 success=False,
                 error=str(e),
-                error_type=error_type,
+                error_type="validation",
             )
 
         # Delete draft + clear any pending edit state
@@ -890,8 +836,8 @@ class LearnFlowService:
         """Persist a contract (used by quick mode).
 
         One Safety Gate already ran in start_learn() before this is called.
-        Transitions lifecycle draft->confirmed, persists to ContractStore,
-        atomic dual-writes to legacy HypothesisStorage.
+        Transitions lifecycle draft->confirmed, persists to ContractStore.
+        Etappe 4: contract-only, no legacy dual-write.
         """
         # Transition lifecycle: draft -> confirmed
         confirmed_contract = replace(
@@ -904,18 +850,7 @@ class LearnFlowService:
             ),
         )
 
-        # BLOCKER-1 fix: Atomic dual-write with Contract Preflight + Rollback (quick path).
-        # Same strategy as save_draft: preflight -> legacy -> contract -> rollback on fail.
-        trigger = ""
-        if confirmed_contract.activation.phrases:
-            trigger = confirmed_contract.activation.phrases[0]
-        instruction = confirmed_contract.execution.instruction
-        if trigger:
-            legacy_text = f"when I say {trigger}, {instruction}"
-        else:
-            legacy_text = text
-
-        # Step 1: Contract Preflight
+        # Contract Preflight
         preflight_error = self._contract_preflight(confirmed_contract, user_id)
         if preflight_error is not None:
             return LearnFlowResult(
@@ -924,39 +859,15 @@ class LearnFlowService:
                 rejection_reason=preflight_error,
             )
 
-        # Step 2: Legacy write
-        legacy_result = self._legacy_service.learn(
-            claim_text=legacy_text,
-            user_id=user_id,
-            source="learn_command",
-        )
-
-        if not legacy_result.success:
-            log.warning(
-                "Dual-write legacy blocked (quick): user=%d reason_len=%d",
-                user_id,
-                len(legacy_result.rejection_reason),
-            )
-            return LearnFlowResult(
-                status="rejected",
-                build_result=build_result,
-                rejection_reason=legacy_result.rejection_reason
-                or "Legacy dual-write failed",
-            )
-
-        # Step 3: Persist to ContractStore (legacy succeeded)
+        # Persist to ContractStore (contract-only, no legacy hypothesis)
         try:
             saved = self._contract_store.persist(confirmed_contract, user_id=user_id)
         except ContractStoreError as e:
-            # Step 4: Contract persist failed -> ROLLBACK legacy
             log.error(
-                "Contract persist failed after legacy success (quick), rolling back: "
-                "user=%d hyp=%s error=%s",
+                "Contract persist failed (quick): user=%d error=%s",
                 user_id,
-                legacy_result.hypothesis_id,
                 str(e),
             )
-            self._rollback_legacy(legacy_result.hypothesis_id)
             return LearnFlowResult(
                 status="rejected",
                 build_result=build_result,
@@ -1015,31 +926,3 @@ class LearnFlowService:
             return f"Contract validation failed: {error_msgs}"
 
         return None
-
-    def _rollback_legacy(self, hypothesis_id: str) -> None:
-        """Tombstone a legacy hypothesis after contract persist failure.
-
-        Sets the hypothesis status to 'rejected' so the Matcher ignores it.
-        This is the rollback mechanism for the dual-write atomicity guarantee.
-
-        If the hypothesis_id is empty or the tombstone fails, we log but do not
-        raise (to avoid masking the original ContractStoreError).
-        """
-        if not hypothesis_id:
-            log.warning("Cannot rollback legacy: empty hypothesis_id")
-            return
-
-        try:
-            self._legacy_service._storage.update_hypothesis_status(
-                hypothesis_id, "rejected"
-            )
-            log.info(
-                "Rolled back legacy hypothesis: hyp=%s (set to rejected)",
-                hypothesis_id,
-            )
-        except Exception as e:
-            log.error(
-                "Failed to rollback legacy hypothesis %s: %s",
-                hypothesis_id,
-                str(e),
-            )

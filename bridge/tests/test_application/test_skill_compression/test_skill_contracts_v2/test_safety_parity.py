@@ -26,17 +26,16 @@ from unittest.mock import MagicMock
 import pytest
 
 from application.skill_compression.contract_builder import ContractBuilder
-from application.skill_compression.contract_store import ContractStore
+from application.skill_compression.contract_store import (
+    ContractStore,
+    ContractStoreError,
+)
 from application.skill_compression.draft_store import DraftStore
 from application.skill_compression.learn_flow_service import (
     LearnFlowService,
     PendingEditStore,
 )
 from application.skill_compression.privacy.privacy_pipeline import PrivacyPipeline
-from application.skill_compression.skill_learning_service import (
-    LearnResult,
-    SkillLearningService,
-)
 from application.skill_compression.hypothesis_storage import HypothesisStorage
 
 
@@ -80,25 +79,14 @@ def privacy_pipeline() -> PrivacyPipeline:
 
 
 @pytest.fixture
-def skill_learning_service(
-    hypothesis_storage, privacy_pipeline
-) -> SkillLearningService:
-    return SkillLearningService(
-        storage=hypothesis_storage,
-        privacy_pipeline=privacy_pipeline,
-    )
-
-
-@pytest.fixture
 def learn_flow_service(
-    draft_store, contract_store, privacy_pipeline, skill_learning_service
+    draft_store, contract_store, privacy_pipeline
 ) -> LearnFlowService:
     return LearnFlowService(
         contract_builder=ContractBuilder(),
         draft_store=draft_store,
         contract_store=contract_store,
         privacy_pipeline=privacy_pipeline,
-        skill_learning_service=skill_learning_service,
     )
 
 
@@ -396,115 +384,34 @@ class TestSafetyParityNeedsInput:
 # ---------------------------------------------------------------
 
 
-class TestAtomicDualWrite:
-    """Dual-write must be atomic: legacy fails -> no contract persisted."""
+class TestContractOnlyPersist:
+    """Etappe 4: Contract-only persist (no legacy dual-write)."""
 
     @pytest.mark.asyncio
-    async def test_legacy_fails_save_blocked(
-        self, draft_store, contract_store, privacy_pipeline
-    ):
-        """Mock legacy.learn() returns success=False -> save must NOT succeed."""
-        from infrastructure.crypto_storage import CryptoConnection
-        import tempfile
-        import os
-
-        tmp = tempfile.mkdtemp()
-        db_path = os.path.join(tmp, "test_atomic.db")
-        conn = CryptoConnection(db_path, require_encryption=False)
-        storage = HypothesisStorage(conn)
-        storage.init_schema()
-        cs = ContractStore(conn)
-        cs.init_schema()
-
-        # Create a mock legacy service that always fails
-        mock_legacy = MagicMock()
-        mock_legacy.learn = MagicMock(
-            return_value=LearnResult(
-                success=False,
-                hypothesis_id="",
-                rejection_reason="Mock: legacy blocked",
-                rejection_source="test",
-            )
+    async def test_contract_persist_failure_no_partial(self, privacy_pipeline):
+        """ContractStoreError on persist -> rejected, no partial state."""
+        mock_cs = MagicMock(spec=ContractStore)
+        mock_cs.exists_by_name = MagicMock(return_value=False)
+        mock_cs.persist = MagicMock(
+            side_effect=ContractStoreError("Simulated DB failure")
         )
 
         service = LearnFlowService(
             contract_builder=ContractBuilder(),
             draft_store=DraftStore(),
-            contract_store=cs,
+            contract_store=mock_cs,
             privacy_pipeline=privacy_pipeline,
-            skill_learning_service=mock_legacy,
-        )
-
-        # Start learn (creates draft)
-        flow = await service.start_learn(user_id=42, chat_id=100, text=CLEAN_INPUT)
-        assert flow.status == "preview"
-
-        # Save should fail because legacy fails
-        save = await service.save_draft(
-            user_id=42,
-            chat_id=100,
-            draft_id=flow.draft.draft_id,
-            etag=flow.draft.etag,
-        )
-        assert not save.success
-        assert save.error_type == "rejected"
-
-        # Contract must NOT be in store
-        contracts = cs.get_by_user(42)
-        assert contracts == []
-
-        conn.close()
-
-    @pytest.mark.asyncio
-    async def test_legacy_fails_quick_blocked(self, privacy_pipeline):
-        """Mock legacy.learn() fails on quick path -> rejected."""
-        from infrastructure.crypto_storage import CryptoConnection
-        import tempfile
-        import os
-
-        tmp = tempfile.mkdtemp()
-        db_path = os.path.join(tmp, "test_atomic_quick.db")
-        conn = CryptoConnection(db_path, require_encryption=False)
-        storage = HypothesisStorage(conn)
-        storage.init_schema()
-        cs = ContractStore(conn)
-        cs.init_schema()
-
-        mock_legacy = MagicMock()
-        mock_legacy.learn = MagicMock(
-            return_value=LearnResult(
-                success=False,
-                hypothesis_id="",
-                rejection_reason="Mock: legacy blocked",
-                rejection_source="test",
-            )
-        )
-
-        service = LearnFlowService(
-            contract_builder=ContractBuilder(),
-            draft_store=DraftStore(),
-            contract_store=cs,
-            privacy_pipeline=privacy_pipeline,
-            skill_learning_service=mock_legacy,
         )
 
         result = await service.start_learn(
             user_id=42, chat_id=100, text=CLEAN_INPUT, quick=True
         )
         assert result.status == "rejected"
-        assert (
-            "legacy" in result.rejection_reason.lower()
-            or "blocked" in result.rejection_reason.lower()
-        )
-
-        contracts = cs.get_by_user(42)
-        assert contracts == []
-
-        conn.close()
+        assert "Simulated DB failure" in result.rejection_reason
 
     @pytest.mark.asyncio
     async def test_quick_and_preview_save_same_behavior(
-        self, learn_flow_service, contract_store, hypothesis_storage
+        self, learn_flow_service, contract_store
     ):
         """Quick and preview-save produce same outcome for identical input."""
         # Quick: saves

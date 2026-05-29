@@ -24,7 +24,6 @@ from application.skill_compression.learn_flow_service import (
     LearnFlowService,
 )
 from application.skill_compression.privacy.privacy_pipeline import PrivacyPipeline
-from application.skill_compression.skill_learning_service import SkillLearningService
 from application.skill_compression.hypothesis_storage import HypothesisStorage
 from pathlib import Path
 
@@ -76,25 +75,14 @@ def privacy_pipeline() -> PrivacyPipeline:
 
 
 @pytest.fixture
-def skill_learning_service(
-    hypothesis_storage, privacy_pipeline
-) -> SkillLearningService:
-    return SkillLearningService(
-        storage=hypothesis_storage,
-        privacy_pipeline=privacy_pipeline,
-    )
-
-
-@pytest.fixture
 def learn_flow_service(
-    draft_store, contract_store, privacy_pipeline, skill_learning_service
+    draft_store, contract_store, privacy_pipeline
 ) -> LearnFlowService:
     return LearnFlowService(
         contract_builder=ContractBuilder(),
         draft_store=draft_store,
         contract_store=contract_store,
         privacy_pipeline=privacy_pipeline,
-        skill_learning_service=skill_learning_service,
     )
 
 
@@ -160,7 +148,6 @@ def _make_fake_context(
     args=None,
     learn_flow_service=None,
     hypothesis_storage=None,
-    skill_learning_service=None,
 ):
     context = MagicMock()
     context.args = args or []
@@ -168,8 +155,6 @@ def _make_fake_context(
     bot_data = {}
     if hypothesis_storage is not None:
         bot_data["hypothesis_storage"] = hypothesis_storage
-    if skill_learning_service is not None:
-        bot_data["skill_learning_service"] = skill_learning_service
     if learn_flow_service is not None:
         bot_data["learn_flow_service"] = learn_flow_service
 

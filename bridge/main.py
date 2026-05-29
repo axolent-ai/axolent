@@ -650,10 +650,6 @@ def main() -> None:
         privacy_pipeline = PrivacyPipeline()
         pattern_judge = PatternJudge(privacy_pipeline=privacy_pipeline)
 
-        skill_matcher = SkillMatcher(
-            storage=hypothesis_storage,
-            pattern_judge=pattern_judge,
-        )
         skill_explainer = SkillExplainer(hypothesis_storage)
         skill_learning_service = SkillLearningService(
             storage=hypothesis_storage,
@@ -678,6 +674,13 @@ def main() -> None:
 
         contract_store = ContractStore(sqlite_conn)
         contract_store.init_schema()
+
+        # SkillMatcher: constructor wiring with contract_store (not private injection)
+        skill_matcher = SkillMatcher(
+            storage=hypothesis_storage,
+            pattern_judge=pattern_judge,
+            contract_store=contract_store,
+        )
         draft_store = DraftStore()
         pending_edit_store = PendingEditStore()
         learn_flow_service = LearnFlowService(
@@ -685,7 +688,6 @@ def main() -> None:
             draft_store=draft_store,
             contract_store=contract_store,
             privacy_pipeline=privacy_pipeline,
-            skill_learning_service=skill_learning_service,
             pending_edit_store=pending_edit_store,
         )
 

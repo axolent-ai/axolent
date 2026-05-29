@@ -89,6 +89,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_skill_contracts_user_name_unique
     ON skill_contracts(user_id, name);
 CREATE INDEX IF NOT EXISTS idx_skill_contracts_hypothesis
     ON skill_contracts(hypothesis_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_skill_contracts_hypothesis_unique
+    ON skill_contracts(hypothesis_id)
+    WHERE hypothesis_id IS NOT NULL AND hypothesis_id != '';
 CREATE INDEX IF NOT EXISTS idx_skill_contracts_origin
     ON skill_contracts(origin);
 CREATE INDEX IF NOT EXISTS idx_skill_contracts_status
@@ -123,6 +126,10 @@ class ContractChecksumError(ContractStoreError):
 
 class ContractDuplicateNameError(ContractStoreError):
     """Raised when a contract name already exists for the same user."""
+
+
+class ContractDuplicateHypothesisError(ContractStoreError):
+    """Raised when a hypothesis_id is already linked to another contract."""
 
 
 class ContractInvariantError(ContractStoreError):
@@ -219,6 +226,33 @@ class ContractStore:
     def init_schema(self) -> None:
         """Create the skill_contracts table if it does not exist."""
         self._db.executescript(SKILL_CONTRACTS_SCHEMA_SQL)
+
+    @staticmethod
+    def _classify_integrity_error(
+        exc: sqlite3.IntegrityError,
+        contract: SkillContract,
+        user_id: int,
+    ) -> ContractStoreError:
+        """Map a raw sqlite3.IntegrityError to a typed ContractStoreError.
+
+        Inspects the error message to determine which unique constraint was
+        violated and returns the appropriate domain exception.
+        """
+        err_msg = str(exc).lower()
+        if "hypothesis" in err_msg:
+            return ContractDuplicateHypothesisError(
+                f"A contract with hypothesis_id '{contract.hypothesis_id}' "
+                f"already exists (DB constraint)"
+            )
+        if "name" in err_msg:
+            return ContractDuplicateNameError(
+                f"A contract with name '{contract.name}' already exists "
+                f"for user {user_id} (DB constraint)"
+            )
+        # Fallback: unknown constraint, still wrap in domain error
+        return ContractStoreError(
+            f"DB integrity constraint violated for contract '{contract.id}': {exc}"
+        )
 
     # ── Central secure load helper ─────────────────────────────
 
@@ -419,13 +453,7 @@ class ContractStore:
                 ),
             )
         except sqlite3.IntegrityError as e:
-            err_msg = str(e).lower()
-            if "unique" in err_msg and "name" in err_msg:
-                raise ContractDuplicateNameError(
-                    f"A contract with name '{contract.name}' already exists for user {user_id} "
-                    f"(DB constraint)"
-                ) from e
-            raise
+            raise self._classify_integrity_error(e, contract, user_id) from e
 
         log.info(
             "Persisted contract %s (name='%s', user=%d, risk=%s, package=%s)",
@@ -635,31 +663,34 @@ class ContractStore:
         contract_json = contract.to_json()
 
         # Compare-and-swap update: WHERE includes contract_version
-        cursor = self._db.execute(
-            """UPDATE skill_contracts SET
-                name = ?, schema_version = ?, contract_version = ?,
-                hypothesis_id = ?, origin = ?, lifecycle_status = ?,
-                review_status = ?, risk_level = ?, package_type = ?,
-                checksum = ?, contract_json = ?, updated_at = ?
-               WHERE id = ? AND user_id = ? AND contract_version = ?""",
-            (
-                contract.name,
-                contract.schema_version,
-                contract.contract_version,
-                contract.hypothesis_id,
-                contract.origin,
-                contract.lifecycle.status,
-                contract.review_status,
-                contract.risk_level,
-                contract.store_meta.package_type,
-                contract.trust.checksum,
-                contract_json,
-                contract.updated_at,
-                contract.id,
-                user_id,
-                lock_version,
-            ),
-        )
+        try:
+            cursor = self._db.execute(
+                """UPDATE skill_contracts SET
+                    name = ?, schema_version = ?, contract_version = ?,
+                    hypothesis_id = ?, origin = ?, lifecycle_status = ?,
+                    review_status = ?, risk_level = ?, package_type = ?,
+                    checksum = ?, contract_json = ?, updated_at = ?
+                   WHERE id = ? AND user_id = ? AND contract_version = ?""",
+                (
+                    contract.name,
+                    contract.schema_version,
+                    contract.contract_version,
+                    contract.hypothesis_id,
+                    contract.origin,
+                    contract.lifecycle.status,
+                    contract.review_status,
+                    contract.risk_level,
+                    contract.store_meta.package_type,
+                    contract.trust.checksum,
+                    contract_json,
+                    contract.updated_at,
+                    contract.id,
+                    user_id,
+                    lock_version,
+                ),
+            )
+        except sqlite3.IntegrityError as e:
+            raise self._classify_integrity_error(e, contract, user_id) from e
 
         # Check if the update actually hit a row
         rowcount = cursor.rowcount if hasattr(cursor, "rowcount") else None

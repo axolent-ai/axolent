@@ -30,7 +30,6 @@ from application.skill_compression.contract_store import ContractStore
 from application.skill_compression.draft_store import DraftStore
 from application.skill_compression.learn_flow_service import LearnFlowService
 from application.skill_compression.privacy.privacy_pipeline import PrivacyPipeline
-from application.skill_compression.skill_learning_service import SkillLearningService
 from application.skill_compression.hypothesis_storage import HypothesisStorage
 
 # Bypass whitelist for all tests in this module
@@ -83,25 +82,14 @@ def privacy_pipeline() -> PrivacyPipeline:
 
 
 @pytest.fixture
-def skill_learning_service(
-    hypothesis_storage, privacy_pipeline
-) -> SkillLearningService:
-    return SkillLearningService(
-        storage=hypothesis_storage,
-        privacy_pipeline=privacy_pipeline,
-    )
-
-
-@pytest.fixture
 def learn_flow_service(
-    draft_store, contract_store, privacy_pipeline, skill_learning_service
+    draft_store, contract_store, privacy_pipeline
 ) -> LearnFlowService:
     return LearnFlowService(
         contract_builder=ContractBuilder(),
         draft_store=draft_store,
         contract_store=contract_store,
         privacy_pipeline=privacy_pipeline,
-        skill_learning_service=skill_learning_service,
     )
 
 
@@ -133,7 +121,6 @@ def _make_fake_context(
     args: list[str],
     learn_flow_service=None,
     hypothesis_storage=None,
-    skill_learning_service=None,
 ):
     """Create a minimal fake Context for handler testing."""
     context = MagicMock()
@@ -142,8 +129,6 @@ def _make_fake_context(
     bot_data = {}
     if hypothesis_storage is not None:
         bot_data["hypothesis_storage"] = hypothesis_storage
-    if skill_learning_service is not None:
-        bot_data["skill_learning_service"] = skill_learning_service
     if learn_flow_service is not None:
         bot_data["learn_flow_service"] = learn_flow_service
 
@@ -504,7 +489,6 @@ class TestP4EdgeCases:
         """Expired draft: get returns None, save returns not_found."""
         short_store = DraftStore(ttl_seconds=1)
         pipeline = PrivacyPipeline()
-        from application.skill_compression.hypothesis_storage import HypothesisStorage
         from infrastructure.crypto_storage import CryptoConnection
         import tempfile
         import os
@@ -512,18 +496,14 @@ class TestP4EdgeCases:
         tmp = tempfile.mkdtemp()
         db_path = os.path.join(tmp, "test_expire.db")
         conn = CryptoConnection(db_path, require_encryption=False)
-        storage = HypothesisStorage(conn)
-        storage.init_schema()
         cs = ContractStore(conn)
         cs.init_schema()
-        sls = SkillLearningService(storage=storage, privacy_pipeline=pipeline)
 
         service = LearnFlowService(
             contract_builder=ContractBuilder(),
             draft_store=short_store,
             contract_store=cs,
             privacy_pipeline=pipeline,
-            skill_learning_service=sls,
         )
 
         flow_result = await service.start_learn(

@@ -114,7 +114,7 @@ KNOWN_SPDX_LICENSES = frozenset(
     }
 )
 
-VALID_ORIGINS = frozenset({"local_learn", "manual_install", "store"})
+VALID_ORIGINS = frozenset({"local_learn", "manual_install", "store", "migrated"})
 VALID_ACTIVATION_KINDS = frozenset(
     {"shortcut", "intent", "workflow", "conditional", "conversation_flow"}
 )

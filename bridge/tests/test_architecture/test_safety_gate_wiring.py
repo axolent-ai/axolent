@@ -226,43 +226,36 @@ class TestSkillCommandsEditCallbacks:
 # ---------------------------------------------------------------
 
 
-class TestDualWriteAtomicityGuard:
-    """Guard: legacy_result is evaluated before contract persist."""
+class TestContractOnlyPersistGuard:
+    """Guard: Etappe 4 contract-only persist (no legacy dual-write)."""
 
-    def test_save_draft_evaluates_legacy_result(self) -> None:
-        """save_draft must check legacy_result.success."""
+    def test_save_draft_no_legacy_service(self) -> None:
+        """save_draft must NOT reference legacy_service (Etappe 4: dual-write removed)."""
         source = _read_source("application/skill_compression/learn_flow_service.py")
         save_start = source.find("async def save_draft(")
         assert save_start > 0
         save_section = source[save_start:]
-        # Limit to cancel_draft
         next_method = save_section.find("async def cancel_draft(")
         if next_method > 0:
             save_section = save_section[:next_method]
 
-        assert "legacy_result" in save_section, (
-            "save_draft must capture legacy_service.learn() result"
-        )
-        assert "legacy_result.success" in save_section, (
-            "save_draft must check legacy_result.success"
+        assert "_legacy_service" not in save_section, (
+            "save_draft must not reference _legacy_service (dual-write removed in Etappe 4)"
         )
 
-    def test_persist_contract_evaluates_legacy_result(self) -> None:
-        """_persist_contract must check legacy_result.success."""
+    def test_persist_contract_no_legacy_service(self) -> None:
+        """_persist_contract must NOT reference legacy_service."""
         source = _read_source("application/skill_compression/learn_flow_service.py")
         persist_start = source.find("async def _persist_contract(")
         assert persist_start > 0
         persist_section = source[persist_start:]
 
-        assert "legacy_result" in persist_section, (
-            "_persist_contract must capture legacy_service.learn() result"
-        )
-        assert "legacy_result.success" in persist_section, (
-            "_persist_contract must check legacy_result.success"
+        assert "_legacy_service" not in persist_section, (
+            "_persist_contract must not reference _legacy_service (dual-write removed)"
         )
 
-    def test_legacy_check_before_contract_persist_in_save(self) -> None:
-        """In save_draft: legacy check must happen BEFORE contract persist."""
+    def test_preflight_before_contract_persist_in_save(self) -> None:
+        """In save_draft: preflight check must happen BEFORE contract persist."""
         source = _read_source("application/skill_compression/learn_flow_service.py")
         save_start = source.find("async def save_draft(")
         save_section = source[save_start:]
@@ -270,11 +263,11 @@ class TestDualWriteAtomicityGuard:
         if next_method > 0:
             save_section = save_section[:next_method]
 
-        legacy_pos = save_section.find("legacy_result.success")
+        preflight_pos = save_section.find("_contract_preflight")
         persist_pos = save_section.find("self._contract_store.persist")
 
-        assert legacy_pos > 0
+        assert preflight_pos > 0
         assert persist_pos > 0
-        assert legacy_pos < persist_pos, (
-            "legacy_result.success check must come BEFORE _contract_store.persist"
+        assert preflight_pos < persist_pos, (
+            "_contract_preflight check must come BEFORE _contract_store.persist"
         )

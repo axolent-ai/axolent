@@ -1,15 +1,21 @@
 """Layer 5: SkillMatcher for Skill-Compression.
 
-Matches incoming user requests against the hypothesis pool to find
-applicable learned skills. This is the bridge between pattern storage
-and skill application.
+Matches incoming user requests against the hypothesis pool AND
+SkillContracts to find applicable learned skills. This is the bridge
+between pattern storage and skill application.
 
 Match strategy (from Spec, Layer 5):
   1. Direct alias match in hypothesis_aliases (fast, <5ms target)
-  2. Fingerprint similarity against active hypotheses (via FingerprintMatcher)
-  3. Only hypotheses with status 'confirmed' or 'active' are matched
-  4. 'candidate' and 'suggested' are NEVER applied
-  5. Score threshold: > 0.7
+  2. Contract-aware exact-phrase match against ContractStore
+  3. Fingerprint similarity against active hypotheses (via FingerprintMatcher)
+  4. Only hypotheses with status 'confirmed' or 'active' are matched
+  5. 'candidate' and 'suggested' are NEVER applied
+  6. Score threshold: > 0.7
+
+Dedup rule (Codex R2): when a Hypothesis has been migrated and exists
+as a SkillContract, the Contract takes precedence. The Matcher MUST NOT
+return both. Dedup key: hypothesis_id on Contract links back to the
+original Hypothesis.
 
 HC-SC-10 [BLOCKER]: "Ask Before Applying" as default.
   Auto-Apply only after threshold reached AND user opt-in.
@@ -28,7 +34,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from application.skill_compression.event_normalizer import NormalizedEvent
 from application.skill_compression.fingerprint_matcher import (
@@ -45,6 +51,10 @@ from application.skill_compression.pattern_judge import (
     STATUS_CONFIRMED,
     PatternJudge,
 )
+
+if TYPE_CHECKING:
+    from application.skill_compression.contract_store import ContractStore
+    from application.skill_compression.skill_contract import SkillContract
 
 log = logging.getLogger(__name__)
 
@@ -74,14 +84,16 @@ DEFAULT_USER_PREFERENCES: dict[str, object] = {
 
 @dataclass(frozen=True, slots=True)
 class SkillMatch:
-    """Result of matching a user request against a hypothesis.
+    """Result of matching a user request against a hypothesis or contract.
 
     Attributes:
         hypothesis: The matched hypothesis.
         confidence: Combined match confidence [0.0, 1.0].
         requires_confirmation: True if user must confirm before applying.
         explanation: Human-readable reason for this match.
-        match_source: How the match was found ('alias' or 'fingerprint').
+        match_source: How the match was found ('alias', 'fingerprint', 'contract').
+        contract: The matched SkillContract (None for legacy-only matches).
+            When set, PermissionGate enforcement is active in chat_service.
     """
 
     hypothesis: Hypothesis
@@ -89,6 +101,7 @@ class SkillMatch:
     requires_confirmation: bool
     explanation: str
     match_source: str = "fingerprint"
+    contract: Optional["SkillContract"] = None
 
 
 # ---------------------------------------------------------------
@@ -147,11 +160,16 @@ def should_ask_user(
 
 
 class SkillMatcher:
-    """Layer 5: Matches user requests against learned skill hypotheses.
+    """Layer 5: Matches user requests against learned skill hypotheses AND contracts.
 
-    Uses a two-stage matching strategy:
-      1. Fast alias lookup (exact text match in hypothesis_aliases)
-      2. Fingerprint similarity for fuzzy matching
+    Uses a three-stage matching strategy:
+      1. Fast contract match (exact-phrase against ContractStore activation phrases)
+      2. Fast alias lookup (exact text match in hypothesis_aliases, deduped)
+      3. Fingerprint similarity for fuzzy matching (deduped)
+
+    Dedup rule: when a Hypothesis has been migrated to a Contract, the
+    Contract match wins. The legacy Hypothesis is suppressed to prevent
+    double-triggering. Dedup key: contract.hypothesis_id == hypothesis.hypothesis_id.
 
     Only hypotheses with status 'confirmed' or 'active' are considered.
     The matcher does NOT apply skills; it returns SkillMatch objects
@@ -161,7 +179,7 @@ class SkillMatcher:
     async event loop (Telegram bot context).
 
     Usage:
-        matcher = SkillMatcher(storage, judge)
+        matcher = SkillMatcher(storage, judge, contract_store=store)
         result = matcher.match(event)
         if result is not None:
             if should_ask_user(result, user_prefs):
@@ -174,15 +192,19 @@ class SkillMatcher:
         self,
         storage: HypothesisStorage,
         pattern_judge: PatternJudge,
+        *,
+        contract_store: Optional["ContractStore"] = None,
     ) -> None:
         """Initialize the SkillMatcher.
 
         Args:
             storage: Hypothesis storage for DB access.
             pattern_judge: Pattern Judge for collision detection.
+            contract_store: Optional ContractStore for contract-aware matching.
         """
         self._storage = storage
         self._judge = pattern_judge
+        self._contract_store = contract_store
 
     @property
     def storage(self) -> HypothesisStorage:
@@ -198,13 +220,17 @@ class SkillMatcher:
         event: NormalizedEvent,
         scope_hint: dict | None = None,
     ) -> Optional[SkillMatch]:
-        """Match a user event against the hypothesis pool.
+        """Match a user event against contracts and hypothesis pool.
 
         Strategy:
-          1. Try direct alias match (fastest path)
-          2. Fall back to fingerprint similarity
-          3. If multiple matches: delegate to CollisionDetector
-          4. Score threshold > 0.7
+          1. Try contract exact-phrase match (highest priority)
+          2. Try direct alias match (fast path, deduped against contracts)
+          3. Fall back to fingerprint similarity (deduped against contracts)
+          4. If multiple matches: delegate to CollisionDetector
+          5. Score threshold > 0.7
+
+        Dedup: hypothesis matches whose hypothesis_id is already covered
+        by a contract match are suppressed (Contract > Legacy).
 
         Args:
             event: Normalized event from the user request.
@@ -215,18 +241,55 @@ class SkillMatcher:
         """
         user_id = event.user_id
 
-        # Stage 1: Direct alias match
+        # Stage 0: Collect hypothesis_ids covered by contracts (for dedup)
+        contract_covered_hyp_ids: set[str] = set()
+
+        # Stage 1: Contract exact-phrase match (highest priority)
+        contract_match = self._try_contract_match(event, user_id)
+        if contract_match is not None:
+            log.info(
+                "Contract match found: contract=%s confidence=%.3f",
+                contract_match.contract.id if contract_match.contract else "?",
+                contract_match.confidence,
+            )
+            # Collect the hypothesis_id this contract covers (for dedup)
+            if (
+                contract_match.contract is not None
+                and contract_match.contract.hypothesis_id
+            ):
+                contract_covered_hyp_ids.add(contract_match.contract.hypothesis_id)
+            return contract_match
+
+        # Build dedup set: all hypothesis_ids that have a contract equivalent
+        contract_covered_hyp_ids = self._get_contract_covered_hypothesis_ids(user_id)
+
+        # Stage 2: Direct alias match (deduped)
         alias_match = self._try_alias_match(event, user_id)
         if alias_match is not None:
-            log.info(
-                "Alias match found: hyp=%s confidence=%.3f",
-                alias_match.hypothesis.hypothesis_id,
-                alias_match.confidence,
-            )
-            return alias_match
+            # Dedup: if this hypothesis is covered by a contract, suppress
+            if alias_match.hypothesis.hypothesis_id in contract_covered_hyp_ids:
+                log.debug(
+                    "Alias match suppressed (contract exists): hyp=%s",
+                    alias_match.hypothesis.hypothesis_id,
+                )
+            else:
+                log.info(
+                    "Alias match found: hyp=%s confidence=%.3f",
+                    alias_match.hypothesis.hypothesis_id,
+                    alias_match.confidence,
+                )
+                return alias_match
 
-        # Stage 2: Fingerprint similarity match
+        # Stage 3: Fingerprint similarity match (deduped)
         fingerprint_matches = self._try_fingerprint_match(event, user_id, scope_hint)
+
+        # Filter out hypothesis matches covered by contracts
+        if contract_covered_hyp_ids:
+            fingerprint_matches = [
+                m
+                for m in fingerprint_matches
+                if m.hypothesis.hypothesis_id not in contract_covered_hyp_ids
+            ]
 
         if not fingerprint_matches:
             log.debug("No matches found for event %s", event.event_id)
@@ -244,10 +307,13 @@ class SkillMatcher:
         event: NormalizedEvent,
         scope_hint: dict | None = None,
     ) -> list[SkillMatch]:
-        """Find all matching hypotheses (for UI display / debugging).
+        """Find all matching contracts and hypotheses (for UI / debugging).
 
         Unlike match(), does not resolve collisions. Returns all
         candidates above threshold, sorted by confidence.
+
+        Contract-aware: includes contract matches and deduplicates legacy
+        matches whose hypothesis_id is covered by a confirmed/active contract.
 
         Args:
             event: Normalized event from the user request.
@@ -258,24 +324,260 @@ class SkillMatcher:
         """
         user_id = event.user_id
         all_matches: list[SkillMatch] = []
+        seen_ids: set[str] = set()
 
-        # Alias matches
+        # Stage 1: Contract matches (highest priority)
+        contract_matches = self._collect_all_contract_matches(event, user_id)
+        for cm in contract_matches:
+            hyp_id = cm.hypothesis.hypothesis_id
+            if hyp_id not in seen_ids:
+                all_matches.append(cm)
+                seen_ids.add(hyp_id)
+
+        # Build dedup set: hypothesis_ids covered by confirmed/active contracts
+        contract_covered_hyp_ids = self._get_contract_covered_hypothesis_ids(user_id)
+
+        # Stage 2: Alias matches (deduped)
         alias_match = self._try_alias_match(event, user_id)
         if alias_match is not None:
-            all_matches.append(alias_match)
+            hyp_id = alias_match.hypothesis.hypothesis_id
+            if hyp_id not in seen_ids and hyp_id not in contract_covered_hyp_ids:
+                all_matches.append(alias_match)
+                seen_ids.add(hyp_id)
 
-        # Fingerprint matches
+        # Stage 3: Fingerprint matches (deduped)
         fp_matches = self._try_fingerprint_match(event, user_id, scope_hint)
-        # Avoid duplicates (same hypothesis_id)
-        seen_ids = {m.hypothesis.hypothesis_id for m in all_matches}
         for m in fp_matches:
-            if m.hypothesis.hypothesis_id not in seen_ids:
+            hyp_id = m.hypothesis.hypothesis_id
+            if hyp_id not in seen_ids and hyp_id not in contract_covered_hyp_ids:
                 all_matches.append(m)
-                seen_ids.add(m.hypothesis.hypothesis_id)
+                seen_ids.add(hyp_id)
 
         # Sort by confidence descending
         all_matches.sort(key=lambda m: m.confidence, reverse=True)
         return all_matches
+
+    # ── Contract matching methods ────────────────────────────
+
+    def _collect_all_contract_matches(
+        self,
+        event: NormalizedEvent,
+        user_id: int,
+    ) -> list[SkillMatch]:
+        """Collect all contract matches for an event (for match_all).
+
+        Unlike _try_contract_match which returns only the first hit,
+        this collects ALL matching contracts for comprehensive display.
+
+        Args:
+            event: The normalized event.
+            user_id: User ID for filtering.
+
+        Returns:
+            List of SkillMatch objects from contracts.
+        """
+        if self._contract_store is None:
+            return []
+
+        raw_lower = event.raw_text.strip().lower()
+        if not raw_lower:
+            return []
+
+        raw_normalized = self._normalize_german(raw_lower)
+        contracts = self._load_matchable_contracts(user_id)
+        if not contracts:
+            return []
+
+        matches: list[SkillMatch] = []
+        for contract in contracts:
+            if contract.activation.mode != "exact_phrase":
+                continue
+            for phrase in contract.activation.phrases:
+                phrase_lower = phrase.strip().lower()
+                phrase_normalized = self._normalize_german(phrase_lower)
+                if raw_lower == phrase_lower or raw_normalized == phrase_normalized:
+                    synth_hyp = self._contract_to_hypothesis(contract, user_id)
+                    matches.append(
+                        SkillMatch(
+                            hypothesis=synth_hyp,
+                            confidence=1.0,
+                            requires_confirmation=(
+                                contract.lifecycle.status == "confirmed"
+                            ),
+                            explanation=(
+                                f"Contract exact-phrase match: '{phrase}' "
+                                f"(contract_id={contract.id})"
+                            ),
+                            match_source="contract",
+                            contract=contract,
+                        )
+                    )
+                    break  # One match per contract is enough
+        return matches
+
+    def _try_contract_match(
+        self,
+        event: NormalizedEvent,
+        user_id: int,
+    ) -> Optional[SkillMatch]:
+        """Try to match via contract activation phrases.
+
+        Loads matchable contracts (confirmed + active lifecycle status)
+        and checks if the event text matches any activation phrase
+        (exact_phrase mode, case-insensitive, German ss/sharp-s equivalence).
+
+        Args:
+            event: The normalized event.
+            user_id: User ID for filtering.
+
+        Returns:
+            SkillMatch from contract, or None.
+        """
+        if self._contract_store is None:
+            return None
+
+        raw_lower = event.raw_text.strip().lower()
+        if not raw_lower:
+            return None
+
+        raw_normalized = self._normalize_german(raw_lower)
+
+        # Load all matchable contracts for this user
+        contracts = self._load_matchable_contracts(user_id)
+        if not contracts:
+            return None
+
+        for contract in contracts:
+            # Only exact_phrase mode supported for now
+            if contract.activation.mode != "exact_phrase":
+                continue
+
+            for phrase in contract.activation.phrases:
+                phrase_lower = phrase.strip().lower()
+                phrase_normalized = self._normalize_german(phrase_lower)
+
+                # Check exact match (case-insensitive) or German normalized
+                if raw_lower == phrase_lower or raw_normalized == phrase_normalized:
+                    # Build a synthetic Hypothesis for backward compatibility
+                    # with chat_service which reads match_result.hypothesis.claim
+                    synth_hyp = self._contract_to_hypothesis(contract, user_id)
+
+                    return SkillMatch(
+                        hypothesis=synth_hyp,
+                        confidence=1.0,  # Exact contract match = highest confidence
+                        requires_confirmation=(
+                            contract.lifecycle.status == "confirmed"
+                        ),
+                        explanation=(
+                            f"Contract exact-phrase match: '{phrase}' "
+                            f"(contract_id={contract.id})"
+                        ),
+                        match_source="contract",
+                        contract=contract,
+                    )
+
+        return None
+
+    def _load_matchable_contracts(self, user_id: int) -> list:
+        """Load all contracts eligible for matching.
+
+        Only confirmed and active lifecycle statuses are matchable.
+
+        Args:
+            user_id: User ID.
+
+        Returns:
+            List of matchable SkillContract objects.
+        """
+        if self._contract_store is None:
+            return []
+
+        result = []
+        for status in ("confirmed", "active"):
+            result.extend(self._contract_store.get_by_user(user_id, status=status))
+        return result
+
+    def _get_contract_covered_hypothesis_ids(self, user_id: int) -> set[str]:
+        """Get hypothesis_ids covered by confirmed/active contracts for this user.
+
+        Used for dedup: if a Hypothesis has been migrated to a confirmed or
+        active Contract, the Contract match wins and the legacy Hypothesis
+        is suppressed.
+
+        Lifecycle-aware (Option 1): only confirmed and active contracts suppress
+        legacy hypotheses. needs_review and flagged contracts do NOT suppress,
+        so the old legacy skill continues to trigger until manual review.
+
+        Args:
+            user_id: User ID.
+
+        Returns:
+            Set of hypothesis_ids that have a confirmed/active contract.
+        """
+        if self._contract_store is None:
+            return set()
+
+        # Only confirmed + active contracts suppress legacy matches
+        contracts: list = []
+        for status in ("confirmed", "active"):
+            contracts.extend(self._contract_store.get_by_user(user_id, status=status))
+
+        return {
+            c.hypothesis_id
+            for c in contracts
+            if c.hypothesis_id is not None and c.hypothesis_id != ""
+        }
+
+    @staticmethod
+    def _contract_to_hypothesis(contract, user_id: int) -> Hypothesis:
+        """Create a synthetic Hypothesis from a SkillContract.
+
+        For backward compatibility: chat_service reads
+        match_result.hypothesis.claim for the skill instruction block.
+        The synthetic hypothesis carries the contract's instruction as claim
+        and the contract's first activation phrase for alias matching.
+
+        Args:
+            contract: The SkillContract.
+            user_id: User ID.
+
+        Returns:
+            A synthetic Hypothesis.
+        """
+        trigger = ""
+        if contract.activation.phrases:
+            trigger = contract.activation.phrases[0]
+        instruction = contract.execution.instruction
+
+        if trigger:
+            claim = f"when I say {trigger}, {instruction}"
+        else:
+            claim = instruction
+
+        status = contract.lifecycle.status
+        # Map contract lifecycle to hypothesis status
+        if status not in ("confirmed", "active"):
+            status = "confirmed"
+
+        return Hypothesis(
+            hypothesis_id=contract.hypothesis_id or contract.id,
+            user_id=user_id,
+            type="preference",
+            scope=HypothesisScope(),
+            claim=claim,
+            status=status,
+            version=contract.contract_version,
+            elo_rating=2000.0,  # Contracts get max Elo (trusted)
+            elo_games_played=0,
+            bayes_confidence=1.0,
+            support_count=1,
+            contradict_count=0,
+            source_type="learn_command",
+            decay_immune=True,
+            created_at=contract.created_at,
+            last_applied=None,
+            last_seen=contract.updated_at,
+        )
 
     # ── Private matching methods ──────────────────────────────
 

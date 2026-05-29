@@ -1,20 +1,18 @@
-"""Atomicity + Draft-Safety + Retry Tests (Etappe 3, Codex Re-Review Fixes).
+"""Contract-Only Persist + Draft-Safety + Retry Tests (Etappe 4).
 
 Tests for:
-  BLOCKER-1: Dual-Write Atomicity (Preflight + Rollback)
-    - Legacy-fail-before-Contract -> contracts=0, legacy=0
-    - Contract-fail-after-Legacy (Mock persist throws) -> contracts=0, legacy tombstoned
-    - Duplicate-Name after Legacy-Success -> no additional Legacy-Hypothesis
-    - ContractStore throws generic ContractStoreError -> no Partial-Write
-    - Quick-path and Preview-Save-path both have rollback protection
-    - Callback: ContractDuplicateNameError does not escape handle_learn_callback
+  Contract-Only Persist (Etappe 4, dual-write removed):
+    - Contract persist failure -> contracts=0
+    - Duplicate-Name -> rejected via preflight
+    - ContractStore throws generic ContractStoreError -> no partial write
+    - Quick-path and Preview-Save-path both handle failures
 
-  HIGH-1: Draft-Safety (needs_input pre-draft safety)
+  Draft-Safety (needs_input pre-draft safety):
     - Triggerless Secret-Input -> rejected, NO draft
     - needs_input Healthcare/Nudge -> no cleartext draft
     - DraftStore-Privacy: no Secret patterns in draft
 
-  MEDIUM-1: Retry (State-Machine pending management)
+  Retry (State-Machine pending management):
     - valid -> success -> pending cleared
     - invalid -> error -> pending remains
     - cancel -> cleared
@@ -42,10 +40,6 @@ from application.skill_compression.learn_flow_service import (
     LearnFlowService,
 )
 from application.skill_compression.privacy.privacy_pipeline import PrivacyPipeline
-from application.skill_compression.skill_learning_service import (
-    LearnResult,
-    SkillLearningService,
-)
 
 
 # ---------------------------------------------------------------
@@ -61,13 +55,6 @@ def db_conn(tmp_path: Path):
     db_path = tmp_path / "test_atomicity.db"
     conn = CryptoConnection(db_path, require_encryption=False)
     return conn
-
-
-@pytest.fixture
-def hypothesis_storage(db_conn) -> HypothesisStorage:
-    storage = HypothesisStorage(db_conn)
-    storage.init_schema()
-    return storage
 
 
 @pytest.fixture
@@ -88,25 +75,14 @@ def privacy_pipeline() -> PrivacyPipeline:
 
 
 @pytest.fixture
-def skill_learning_service(
-    hypothesis_storage, privacy_pipeline
-) -> SkillLearningService:
-    return SkillLearningService(
-        storage=hypothesis_storage,
-        privacy_pipeline=privacy_pipeline,
-    )
-
-
-@pytest.fixture
 def learn_flow_service(
-    draft_store, contract_store, privacy_pipeline, skill_learning_service
+    draft_store, contract_store, privacy_pipeline
 ) -> LearnFlowService:
     return LearnFlowService(
         contract_builder=ContractBuilder(),
         draft_store=draft_store,
         contract_store=contract_store,
         privacy_pipeline=privacy_pipeline,
-        skill_learning_service=skill_learning_service,
     )
 
 
@@ -120,110 +96,18 @@ STOPWORD_INPUT = "wenn ich ja sage, mache X"
 
 
 # ---------------------------------------------------------------
-# BLOCKER-1: Dual-Write Atomicity Matrix (4 cases + Failure Injection)
+# Contract-Only Persist (Etappe 4: no dual-write)
 # ---------------------------------------------------------------
 
 
-class TestAtomicityMatrix:
-    """All 4 failure cases for dual-write atomicity."""
+class TestContractOnlyPersist:
+    """Contract persist without legacy dual-write."""
 
     @pytest.mark.asyncio
-    async def test_legacy_fail_before_contract_no_writes(
-        self, draft_store, contract_store, privacy_pipeline
+    async def test_contract_persist_failure_no_partial(
+        self, draft_store, privacy_pipeline
     ):
-        """Case 1: Legacy fails -> contracts=0, legacy=0 (no writes)."""
-        mock_legacy = MagicMock()
-        mock_legacy.learn = MagicMock(
-            return_value=LearnResult(
-                success=False,
-                hypothesis_id="",
-                rejection_reason="Mock: legacy blocked",
-                rejection_source="test",
-            )
-        )
-
-        service = LearnFlowService(
-            contract_builder=ContractBuilder(),
-            draft_store=DraftStore(),
-            contract_store=contract_store,
-            privacy_pipeline=privacy_pipeline,
-            skill_learning_service=mock_legacy,
-        )
-
-        # Quick path
-        result = await service.start_learn(
-            user_id=42, chat_id=100, text=CLEAN_INPUT, quick=True
-        )
-        assert result.status == "rejected"
-        assert contract_store.get_by_user(42) == []
-
-    @pytest.mark.asyncio
-    async def test_contract_fail_after_legacy_rollback(
-        self, draft_store, contract_store, privacy_pipeline, hypothesis_storage
-    ):
-        """Case 2: Contract persist fails AFTER legacy success -> legacy tombstoned."""
-        real_legacy = SkillLearningService(
-            storage=hypothesis_storage, privacy_pipeline=privacy_pipeline
-        )
-
-        service = LearnFlowService(
-            contract_builder=ContractBuilder(),
-            draft_store=DraftStore(),
-            contract_store=contract_store,
-            privacy_pipeline=privacy_pipeline,
-            skill_learning_service=real_legacy,
-        )
-
-        # First save succeeds (creates the name)
-        result1 = await service.start_learn(
-            user_id=42, chat_id=100, text=CLEAN_INPUT, quick=True
-        )
-        assert result1.status == "saved"
-
-        # Count legacy hypotheses after first save
-        all_hyps = hypothesis_storage.get_hypotheses_by_user(user_id=42)
-        hyp_count_after_first = len([h for h in all_hyps if h.status == "confirmed"])
-
-        # Second save with SAME name should trigger ContractDuplicateNameError
-        # The preflight should catch this BEFORE legacy write
-        result2 = await service.start_learn(
-            user_id=42, chat_id=200, text=CLEAN_INPUT, quick=True
-        )
-        assert result2.status == "rejected"
-
-        # No new confirmed hypotheses should exist
-        all_hyps_after = hypothesis_storage.get_hypotheses_by_user(user_id=42)
-        hyp_count_after_second = len(
-            [h for h in all_hyps_after if h.status == "confirmed"]
-        )
-        assert hyp_count_after_second == hyp_count_after_first
-
-        # Contracts should still be exactly 1
-        contracts = contract_store.get_by_user(42)
-        assert len(contracts) == 1
-
-    @pytest.mark.asyncio
-    async def test_contract_fail_after_legacy_mock_persist_throws(
-        self, draft_store, privacy_pipeline, hypothesis_storage
-    ):
-        """Case 2b: Mock ContractStore.persist raises AFTER legacy -> rollback."""
-        from infrastructure.crypto_storage import CryptoConnection
-        import tempfile
-        import os
-
-        tmp = tempfile.mkdtemp()
-        db_path = os.path.join(tmp, "test_rollback.db")
-        conn = CryptoConnection(db_path, require_encryption=False)
-        storage = HypothesisStorage(conn)
-        storage.init_schema()
-        cs = ContractStore(conn)
-        cs.init_schema()
-
-        real_legacy = SkillLearningService(
-            storage=storage, privacy_pipeline=privacy_pipeline
-        )
-
-        # Patch contract_store.persist to throw AFTER preflight passes
+        """Contract persist failure -> contracts=0, no partial state."""
         mock_cs = MagicMock(spec=ContractStore)
         mock_cs.exists_by_name = MagicMock(return_value=False)
         mock_cs.persist = MagicMock(
@@ -235,7 +119,6 @@ class TestAtomicityMatrix:
             draft_store=DraftStore(),
             contract_store=mock_cs,
             privacy_pipeline=privacy_pipeline,
-            skill_learning_service=real_legacy,
         )
 
         result = await service.start_learn(
@@ -244,64 +127,32 @@ class TestAtomicityMatrix:
         assert result.status == "rejected"
         assert "Simulated DB failure" in result.rejection_reason
 
-        # Legacy hypothesis must be tombstoned (status=rejected)
-        all_hyps = storage.get_hypotheses_by_user(user_id=42)
-        for h in all_hyps:
-            assert h.status == "rejected", (
-                f"Legacy hypothesis {h.hypothesis_id} should be tombstoned but has status={h.status}"
-            )
-
-        conn.close()
-
     @pytest.mark.asyncio
-    async def test_duplicate_name_no_extra_legacy(
-        self, learn_flow_service, contract_store, hypothesis_storage
+    async def test_duplicate_name_rejected_by_preflight(
+        self, learn_flow_service, contract_store
     ):
-        """Case 3: Duplicate contract name -> preflight blocks, no extra legacy."""
+        """Duplicate contract name -> preflight blocks, rejected."""
         # First save
         result1 = await learn_flow_service.start_learn(
             user_id=42, chat_id=100, text=CLEAN_INPUT, quick=True
         )
         assert result1.status == "saved"
 
-        hyps_before = hypothesis_storage.get_hypotheses_by_user(user_id=42)
-        confirmed_before = [h for h in hyps_before if h.status == "confirmed"]
-
-        # Second save (duplicate name) - should be caught by preflight
+        # Second save (duplicate name) - caught by preflight
         result2 = await learn_flow_service.start_learn(
             user_id=42, chat_id=200, text=CLEAN_INPUT, quick=True
         )
         assert result2.status == "rejected"
-
-        # No new confirmed hypotheses
-        hyps_after = hypothesis_storage.get_hypotheses_by_user(user_id=42)
-        confirmed_after = [h for h in hyps_after if h.status == "confirmed"]
-        assert len(confirmed_after) == len(confirmed_before)
 
         # Still exactly 1 contract
         contracts = contract_store.get_by_user(42)
         assert len(contracts) == 1
 
     @pytest.mark.asyncio
-    async def test_generic_contract_store_error_no_partial_write(
-        self, draft_store, privacy_pipeline, hypothesis_storage
+    async def test_generic_contract_store_error_via_preview_save(
+        self, privacy_pipeline
     ):
-        """Case 4: Generic ContractStoreError -> no partial write."""
-        from infrastructure.crypto_storage import CryptoConnection
-        import tempfile
-        import os
-
-        tmp = tempfile.mkdtemp()
-        db_path = os.path.join(tmp, "test_generic_error.db")
-        conn = CryptoConnection(db_path, require_encryption=False)
-        storage = HypothesisStorage(conn)
-        storage.init_schema()
-
-        real_legacy = SkillLearningService(
-            storage=storage, privacy_pipeline=privacy_pipeline
-        )
-
-        # Mock that passes preflight but fails on persist
+        """Generic ContractStoreError on preview-save path -> no partial write."""
         mock_cs = MagicMock(spec=ContractStore)
         mock_cs.exists_by_name = MagicMock(return_value=False)
         mock_cs.persist = MagicMock(
@@ -313,7 +164,6 @@ class TestAtomicityMatrix:
             draft_store=DraftStore(),
             contract_store=mock_cs,
             privacy_pipeline=privacy_pipeline,
-            skill_learning_service=real_legacy,
         )
 
         # Preview path
@@ -329,30 +179,9 @@ class TestAtomicityMatrix:
         assert not save.success
         assert "IntegrityError" in save.error
 
-        # Legacy must be tombstoned
-        all_hyps = storage.get_hypotheses_by_user(user_id=42)
-        for h in all_hyps:
-            assert h.status == "rejected"
-
-        conn.close()
-
     @pytest.mark.asyncio
-    async def test_preview_save_path_has_rollback(self, draft_store, privacy_pipeline):
-        """Both quick AND preview-save paths have rollback protection."""
-        from infrastructure.crypto_storage import CryptoConnection
-        import tempfile
-        import os
-
-        tmp = tempfile.mkdtemp()
-        db_path = os.path.join(tmp, "test_both_paths.db")
-        conn = CryptoConnection(db_path, require_encryption=False)
-        storage = HypothesisStorage(conn)
-        storage.init_schema()
-
-        real_legacy = SkillLearningService(
-            storage=storage, privacy_pipeline=privacy_pipeline
-        )
-
+    async def test_duplicate_name_error_on_persist(self, draft_store, privacy_pipeline):
+        """ContractDuplicateNameError on persist -> rejected, no partial."""
         mock_cs = MagicMock(spec=ContractStore)
         mock_cs.exists_by_name = MagicMock(return_value=False)
         mock_cs.persist = MagicMock(
@@ -364,24 +193,39 @@ class TestAtomicityMatrix:
             draft_store=DraftStore(),
             contract_store=mock_cs,
             privacy_pipeline=privacy_pipeline,
-            skill_learning_service=real_legacy,
         )
 
-        # Quick path: rollback
-        result_quick = await service.start_learn(
+        # Quick path
+        result = await service.start_learn(
             user_id=42, chat_id=100, text=CLEAN_INPUT, quick=True
         )
-        assert result_quick.status == "rejected"
+        assert result.status == "rejected"
 
-        # All hypotheses must be rejected (tombstoned)
-        all_hyps = storage.get_hypotheses_by_user(user_id=42)
-        assert all(h.status == "rejected" for h in all_hyps)
+    @pytest.mark.asyncio
+    async def test_no_legacy_hypothesis_created(
+        self, learn_flow_service, contract_store, db_conn
+    ):
+        """Etappe 4: /learn creates ONLY contract, no legacy hypothesis."""
+        # Initialize hypothesis storage to check
+        storage = HypothesisStorage(db_conn)
+        storage.init_schema()
 
-        conn.close()
+        result = await learn_flow_service.start_learn(
+            user_id=42, chat_id=100, text=CLEAN_INPUT, quick=True
+        )
+        assert result.status == "saved"
+
+        # Contract exists
+        contracts = contract_store.get_by_user(42)
+        assert len(contracts) == 1
+
+        # NO legacy hypothesis was created
+        hyps = storage.get_hypotheses_by_user(user_id=42)
+        assert len(hyps) == 0
 
 
 # ---------------------------------------------------------------
-# HIGH-1: Draft-Safety (needs_input pre-draft safety)
+# Draft-Safety (needs_input pre-draft safety)
 # ---------------------------------------------------------------
 
 
@@ -461,7 +305,7 @@ class TestDraftSafety:
 
 
 # ---------------------------------------------------------------
-# MEDIUM-1: Retry (State-Machine pending management)
+# Retry (State-Machine pending management)
 # ---------------------------------------------------------------
 
 
@@ -626,21 +470,14 @@ class TestRetryStateMachine:
         tmp = tempfile.mkdtemp()
         db_path = os.path.join(tmp, "test_expired.db")
         conn = CryptoConnection(db_path, require_encryption=False)
-        storage = HypothesisStorage(conn)
-        storage.init_schema()
         cs = ContractStore(conn)
         cs.init_schema()
-
-        real_legacy = SkillLearningService(
-            storage=storage, privacy_pipeline=privacy_pipeline
-        )
 
         service = LearnFlowService(
             contract_builder=ContractBuilder(),
             draft_store=short_draft_store,
             contract_store=cs,
             privacy_pipeline=privacy_pipeline,
-            skill_learning_service=real_legacy,
         )
 
         # Create needs_input flow
