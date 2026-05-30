@@ -259,8 +259,9 @@ class TestNudgeFilterMutationKilling:
         long_claim = "Political personalization targeting recommend " + "x" * 100
         h = _hyp(long_claim)
         detail = nf.get_violation_detail(h)
-        if detail is not None:
-            assert len(detail.matched_text) <= 50
+        # Hard assert: this claim MUST trigger a violation (no vacuous if-gate)
+        assert detail is not None, "Expected violation detail for nudge policy claim"
+        assert len(detail.matched_text) <= 50
 
     def test_violates_nudge_policy_returns_true_on_violation(self) -> None:
         """Mutant: violates_nudge_policy returns False when violation exists."""
@@ -391,9 +392,15 @@ class TestSecretScannerMutationKilling:
         scanner = SecretScanner()
         long_token = "sk-" + "a" * 100
         matches = scanner.scan(long_token)
-        for m in matches:
-            if m.matched_text != "[redacted]":
-                assert len(m.matched_text) <= MATCHED_TEXT_TRUNCATE
+        # Hard assert: must produce at least one match (no vacuous loop)
+        assert len(matches) >= 1, "Expected at least one match for 'sk-...' token"
+        # At least one match must have non-redacted text that is truncated
+        non_redacted = [m for m in matches if m.matched_text != "[redacted]"]
+        for m in non_redacted:
+            assert len(m.matched_text) <= MATCHED_TEXT_TRUNCATE
+        # If all are redacted, the truncation is N/A but the scan still works
+        # Guard: at least verify the scan found the pattern
+        assert any(m.pattern_name for m in matches)
 
     def test_heuristic_redacted_text(self) -> None:
         """Mutant: heuristic matches use actual text instead of [redacted]."""

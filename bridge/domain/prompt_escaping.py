@@ -21,12 +21,24 @@ import re
 # Role labels used in AXOLENT prompts.
 # These must match the labels used in build_context_block and
 # any other prompt construction.
+# Extended with provider/multilingual labels that LLMs may interpret
+# as conversation-role markers (Finding c, Phase 1.5).
 _ROLE_LABELS: tuple[str, ...] = (
+    # Core AXOLENT labels
     "User",
     "Axolent",
     "System",
     "Assistant",
     "Human",
+    # Provider-agnostic English labels
+    "Bot",
+    "AI",
+    "Model",
+    "Tool",
+    "Function",
+    # German equivalents (multilingual user base)
+    "Benutzer",
+    "Assistent",
 )
 
 # Build regex: matches newline (or start) followed by a role label and colon.

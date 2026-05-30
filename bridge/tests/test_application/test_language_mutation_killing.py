@@ -205,11 +205,14 @@ class TestVerifierVerifyMethod:
             backend=MockBackend({"en": 0.9, "de": 0.1}),
             min_words=1,
         )
-        text = " ".join(["test"] * 25)
+        # Use non-whitelist words (e.g. "hello") so cleaning does not strip them
+        text = " ".join(["hello"] * 25)
         result = verifier.verify(text, "de")
-        if result.status == VerificationStatus.FAIL:
-            assert result.reason is not None
-            assert "de" in result.reason
+        # Hard assert: this setup MUST produce FAIL (no vacuous if-gate)
+        assert result.skipped is False, "Text must not be skipped by cleaning"
+        assert result.status == VerificationStatus.FAIL
+        assert result.reason is not None
+        assert "de" in result.reason
 
     def test_top_from_distribution_empty(self) -> None:
         """Mutant: empty dict handling removed."""
@@ -635,12 +638,20 @@ class TestStreamGuardReportFinalOutcome:
     """Kill mutants in report_final_outcome()."""
 
     def test_no_stats_is_noop(self) -> None:
-        """Mutant: None check on stats removed."""
+        """Mutant: None check on stats removed -> AttributeError."""
         guard = StreamGuard(expected_lang="de", backend=MockBackend({"de": 0.95}))
         guard._state.check_performed = True
         guard._state.aborted = True
-        # Should not raise
-        guard.report_final_outcome(verification_passed=False, stats=None)
+        # Calling with stats=None must return without mutating state
+        result = guard.report_final_outcome(verification_passed=False, stats=None)
+        assert result is None
+        # Contrast test: with a real stats object, the function DOES mutate
+        real_stats = StreamGuardStats()
+        guard.report_final_outcome(verification_passed=False, stats=real_stats)
+        assert real_stats.confirmed_aborts == 1, (
+            "Guard must increment confirmed_aborts with real stats "
+            "(proves None path is truly a no-op, not a broken code path)"
+        )
 
     def test_correct_abort_increments_confirmed(self) -> None:
         """Mutant: confirmed_aborts not incremented."""

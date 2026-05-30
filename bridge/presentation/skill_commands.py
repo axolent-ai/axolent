@@ -1126,7 +1126,7 @@ async def handle_explain_command(
         lines = [
             t("skill.explain_usage", lang),
             "",
-            "Fragetypen:",  # noqa: en-only
+            "Fragetypen:",  # allow: en-only
         ]
         for i, (_, desc) in enumerate(types_list, 1):
             lines.append(f"  {i}. {desc}")
@@ -1555,7 +1555,7 @@ async def handle_import_command(
         return
 
     folder_str = " ".join(args).strip()
-    folder_path = _Path(folder_str).expanduser().resolve()
+    folder_path = _Path(folder_str).expanduser().resolve()  # noqa: ASYNC240 -- local path validation, non-blocking
 
     if not folder_path.exists():
         await update.message.reply_text(

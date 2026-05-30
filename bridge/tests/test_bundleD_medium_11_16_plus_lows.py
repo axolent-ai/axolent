@@ -667,17 +667,30 @@ class TestLow9CancelAuditTaskMeta:
     """Cancelled stream audit entries include task_meta snapshot."""
 
     def test_filter_task_meta_filters_private_keys(self) -> None:
-        """filter_task_meta removes non-serializable keys."""
-        from application.audit_service import filter_task_meta
+        """filter_task_meta removes non-serializable keys from the set."""
+        from application.audit_service import (
+            AUDIT_NON_SERIALIZABLE_KEYS,
+            filter_task_meta,
+        )
 
+        # Include keys that MUST be dropped AND keys that MUST survive
         meta = {
-            "_language_code": "de",
-            "_provider_name": "claude",
-            "_guard_abort": True,
+            "_skill_match": object(),  # in drop-set
+            "_stream_guard": object(),  # in drop-set
+            "_language_ctx": object(),  # in drop-set
+            "_language_code": "de",  # NOT in drop-set, must survive
+            "_provider_name": "claude",  # NOT in drop-set, must survive
         }
         result = filter_task_meta(meta)
-        # Should return something (exact keys depend on AUDIT_NON_SERIALIZABLE_KEYS)
         assert isinstance(result, dict)
+        # Hard assert: every key in the drop-set MUST be absent
+        for key in AUDIT_NON_SERIALIZABLE_KEYS:
+            assert key not in result, f"Key '{key}' should have been filtered"
+        # Hard assert: keys NOT in the drop-set MUST survive
+        assert "_language_code" in result
+        assert result["_language_code"] == "de"
+        assert "_provider_name" in result
+        assert result["_provider_name"] == "claude"
 
 
 # =============================================================================
@@ -690,30 +703,45 @@ class TestLow10DebateErrorsDistinct:
 
     @pytest.mark.asyncio
     async def test_multiple_provider_errors_have_distinct_keys(self) -> None:
-        """When multiple providers fail, each gets its own error key."""
+        """When multiple providers fail, each gets a distinct error key in DebateResult."""
         from application.debate_orchestrator import DebateOrchestrator
         from application.provider_router import ProviderRouter
 
         router = MagicMock(spec=ProviderRouter)
-        router.list_available = AsyncMock(return_value=["claude", "ollama_local"])
-        router.route = AsyncMock(side_effect=RuntimeError("Connection failed"))
+        router.list_available = AsyncMock(return_value=["provider_a", "provider_b"])
+        router.providers = {}  # cleanup looks up providers here
 
-        _ = DebateOrchestrator(provider_router=router)
-        # Directly test the gather result processing logic
-        # by checking that errors dict uses provider-specific keys
-        providers = ["provider_a", "provider_b"]
-        results = [
-            RuntimeError("Error A"),
-            RuntimeError("Error B"),
-        ]
-        errors: dict[str, str] = {}
-        for provider_key, result in zip(providers, results):
-            if isinstance(result, Exception):
-                errors[f"provider_{provider_key}_error"] = str(result)
+        orchestrator = DebateOrchestrator(provider_router=router)
 
-        assert "provider_provider_a_error" in errors
-        assert "provider_provider_b_error" in errors
-        assert "unknown" not in errors
+        # Mock _query_provider to raise per-provider errors through the real code-path
+        async def _failing_query(
+            name: str, *_args: object, **_kwargs: object
+        ) -> tuple[str, str | None, str | None, str | None]:
+            raise RuntimeError(f"Connection failed: {name}")
+
+        orchestrator._query_provider = _failing_query  # type: ignore[assignment]
+
+        result = await orchestrator.debate(
+            question="test question",
+            user_id=1,
+            chat_id=1,
+            user_lang="en",
+        )
+
+        # The real code-path in debate() wraps each exception with
+        # f"provider_{provider_key}_error" as key (line 881)
+        assert "provider_provider_a_error" in result.errors
+        assert "provider_provider_b_error" in result.errors
+        assert (
+            "Connection failed: provider_a"
+            in result.errors["provider_provider_a_error"]
+        )
+        assert (
+            "Connection failed: provider_b"
+            in result.errors["provider_provider_b_error"]
+        )
+        # No generic "unknown" key
+        assert "unknown" not in result.errors
 
 
 # =============================================================================

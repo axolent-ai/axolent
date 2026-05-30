@@ -107,10 +107,18 @@ class TestGermanDetectionNegative:
         assert len(hits) == 0
 
     def test_noqa_suppresses_detection(self, tmp_path: Path) -> None:
-        """Lines with '# noqa: en-only' are not flagged."""
+        """Lines with '# noqa: en-only' are not flagged (legacy format)."""
         hits = self._write_and_scan(
             tmp_path,
             "# implements German 'duzen' behavior  # noqa: en-only\n",
+        )
+        assert len(hits) == 0
+
+    def test_allow_en_only_suppresses_detection(self, tmp_path: Path) -> None:
+        """Lines with '# allow: en-only' are not flagged (ruff-safe format)."""
+        hits = self._write_and_scan(
+            tmp_path,
+            "# implements German 'duzen' behavior  # allow: en-only\n",
         )
         assert len(hits) == 0
 
