@@ -1,0 +1,249 @@
+"""Generalized wiring guard: CallbackQuery + Command + Message handler coverage.
+
+Phase 1.5, Item 3: Extends the settings_v2-specific wiring guard to cover
+ALL handler registrations in main.py. Catches:
+  - Callback data prefixes emitted in presentation/ without a matching handler
+  - Command handlers registered but not importable
+  - Message handler registration order violations (learn_followup before handle_message)
+  - Specific-before-generic pattern ordering for callback handlers
+
+Doc-Lock: if any new callback_data prefix is introduced without a handler,
+or handlers are reordered, this test goes red.
+"""
+
+from __future__ import annotations
+
+import ast
+import re
+from pathlib import Path
+
+_BRIDGE_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _read_main_source() -> str:
+    """Read main.py source."""
+    return (_BRIDGE_ROOT / "main.py").read_text(encoding="utf-8")
+
+
+def _extract_registered_callback_patterns(source: str) -> list[tuple[str, int]]:
+    """Extract CallbackQueryHandler patterns and their line numbers from main.py.
+
+    Returns list of (pattern_string, line_number) in registration order.
+    """
+    results = []
+    for i, line in enumerate(source.splitlines(), 1):
+        m = re.search(r'CallbackQueryHandler\([^,]+,\s*pattern=r"([^"]+)"', line)
+        if m:
+            results.append((m.group(1), i))
+    return results
+
+
+def _extract_emitted_callback_prefixes() -> set[str]:
+    """Scan presentation/**/*.py for all callback_data=... string prefixes.
+
+    Returns set of prefixes (the part before the first ':' or '{').
+    """
+    pres_dir = _BRIDGE_ROOT / "presentation"
+    prefixes: set[str] = set()
+
+    for py_file in pres_dir.rglob("*.py"):
+        content = py_file.read_text(encoding="utf-8")
+        for m in re.finditer(r'callback_data\s*=\s*f?"([^"]+)"', content):
+            val = m.group(1)
+            # Extract prefix before first '{' or ':'
+            prefix = re.split(r"[{:]", val)[0]
+            if prefix:
+                prefixes.add(prefix)
+
+    return prefixes
+
+
+def _extract_registered_commands(source: str) -> list[str]:
+    """Extract all CommandHandler command names from main.py."""
+    return re.findall(r'CommandHandler\("([^"]+)"', source)
+
+
+class TestCallbackQueryPrefixCoverage:
+    """Every callback_data prefix emitted in presentation/ must have a handler."""
+
+    def test_all_emitted_prefixes_have_handlers(self) -> None:
+        """Each emitted callback_data prefix matches at least one registered pattern."""
+        source = _read_main_source()
+        registered = _extract_registered_callback_patterns(source)
+        emitted = _extract_emitted_callback_prefixes()
+
+        # Compile registered patterns
+        compiled = [re.compile(pat) for pat, _ in registered]
+
+        uncovered: list[str] = []
+        for prefix in sorted(emitted):
+            # Check if any registered pattern matches this prefix
+            # The prefix is the start of a callback_data value, so we test
+            # if the pattern would match a typical callback_data string
+            test_value = f"{prefix}:test_value"
+            if not any(p.match(test_value) or p.match(prefix) for p in compiled):
+                uncovered.append(prefix)
+
+        assert not uncovered, (
+            f"Callback data prefixes emitted in presentation/ but no matching "
+            f"CallbackQueryHandler registered in main.py: {uncovered}"
+        )
+
+    def test_emitted_prefixes_nontrivial(self) -> None:
+        """Sanity: we should find a non-trivial number of emitted prefixes."""
+        emitted = _extract_emitted_callback_prefixes()
+        # main.py has 9 CallbackQueryHandlers, presentation emits many prefixes
+        assert len(emitted) >= 15, (
+            f"Expected at least 15 emitted callback prefixes, found {len(emitted)}. "
+            f"Extraction logic may be broken."
+        )
+
+
+class TestCallbackQueryPatternOrdering:
+    """Specific patterns must be registered before their generic catch-all."""
+
+    # Known specific-before-generic pairs (from main.py)
+    # Each tuple: (specific_pattern, generic_pattern, description)
+    _ORDERING_INVARIANTS: list[tuple[str, str, str]] = [
+        (
+            r"^settings_v2_",
+            r"^settings_",
+            "settings_v2_ must come before settings_ (Etappe 1.5.1)",
+        ),
+        (
+            r"^skill_learn:",
+            r"^skill_",
+            "skill_learn: must come before skill_ (catch-all)",
+        ),
+    ]
+
+    def test_specific_before_generic(self) -> None:
+        """Each specific pattern is registered before its generic catch-all."""
+        source = _read_main_source()
+        registered = _extract_registered_callback_patterns(source)
+
+        errors: list[str] = []
+        for specific, generic, desc in self._ORDERING_INVARIANTS:
+            specific_line = None
+            generic_line = None
+            for pat, lineno in registered:
+                if pat == specific:
+                    specific_line = lineno
+                if pat == generic:
+                    generic_line = lineno
+
+            if specific_line is None:
+                errors.append(f"Specific pattern {specific!r} not found in main.py")
+            elif generic_line is None:
+                errors.append(f"Generic pattern {generic!r} not found in main.py")
+            elif specific_line > generic_line:
+                errors.append(
+                    f"ORDERING VIOLATION: {desc}. "
+                    f"Specific ({specific!r}) at line {specific_line} "
+                    f"AFTER generic ({generic!r}) at line {generic_line}."
+                )
+
+        assert not errors, "CallbackQueryHandler ordering violations:\n" + "\n".join(
+            f"  - {e}" for e in errors
+        )
+
+
+class TestCommandHandlerCoverage:
+    """Every registered CommandHandler must be importable and not dead."""
+
+    def test_all_command_handlers_importable(self) -> None:
+        """Every CommandHandler function referenced in main.py must be importable."""
+        source = _read_main_source()
+        tree = ast.parse(source, filename="main.py")
+
+        # Collect all from...import statements
+        imports: dict[str, str] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                for alias in node.names:
+                    name = alias.asname or alias.name
+                    imports[name] = module
+
+        # Find all CommandHandler("cmd", handler_func) calls and their handler names
+        handler_funcs: list[tuple[str, str]] = []
+        for m in re.finditer(r'CommandHandler\("(\w+)",\s*(\w+)\)', source):
+            handler_funcs.append((m.group(1), m.group(2)))
+
+        errors: list[str] = []
+        for cmd, func_name in handler_funcs:
+            if func_name not in imports:
+                errors.append(f"/{cmd}: handler {func_name} not found in imports")
+
+        assert not errors, (
+            "CommandHandler functions not imported in main.py:\n"
+            + "\n".join(f"  - {e}" for e in errors)
+        )
+
+    def test_command_handlers_nontrivial(self) -> None:
+        """Sanity: we should find at least 20 command handlers."""
+        source = _read_main_source()
+        commands = _extract_registered_commands(source)
+        assert len(commands) >= 20, (
+            f"Expected at least 20 command handlers, found {len(commands)}. "
+            f"Extraction may be broken."
+        )
+
+
+class TestMessageHandlerOrdering:
+    """MessageHandler registration order invariants.
+
+    learn_followup_message in group 0 MUST come before handle_message in group 1.
+    """
+
+    def test_learn_followup_before_handle_message(self) -> None:
+        """handle_learn_followup_message (group 0) before handle_message (group 1)."""
+        source = _read_main_source()
+
+        followup_pos = source.find("handle_learn_followup_message")
+        message_pos = source.find("handle_message)")
+        # Find the group= assignments near each
+        assert followup_pos != -1, "handle_learn_followup_message not found in main.py"
+        assert message_pos != -1, "handle_message not found in main.py"
+
+        # handle_learn_followup_message must appear BEFORE handle_message
+        # Get group numbers
+        followup_group_match = re.search(
+            r"handle_learn_followup_message.*?group=(\d+)",
+            source,
+            re.DOTALL,
+        )
+        message_group_match = re.search(
+            r"handle_message\).*?group=(\d+)",
+            source,
+            re.DOTALL,
+        )
+
+        assert followup_group_match is not None, (
+            "Could not find group= for handle_learn_followup_message"
+        )
+        assert message_group_match is not None, (
+            "Could not find group= for handle_message"
+        )
+
+        followup_group = int(followup_group_match.group(1))
+        message_group = int(message_group_match.group(1))
+
+        assert followup_group < message_group, (
+            f"handle_learn_followup_message (group {followup_group}) must be in a "
+            f"LOWER group than handle_message (group {message_group}). "
+            f"Lower group = higher priority in python-telegram-bot."
+        )
+
+    def test_both_message_handlers_registered(self) -> None:
+        """Both handle_learn_followup_message and handle_message are registered."""
+        source = _read_main_source()
+        assert "handle_learn_followup_message" in source
+        assert "handle_message" in source
+        # Both must be in MessageHandler calls
+        assert re.search(r"MessageHandler.*handle_learn_followup_message", source), (
+            "handle_learn_followup_message must be in a MessageHandler"
+        )
+        assert re.search(r"MessageHandler.*handle_message\b", source), (
+            "handle_message must be in a MessageHandler"
+        )

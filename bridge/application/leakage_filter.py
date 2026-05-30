@@ -25,6 +25,8 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+from application.security.input_normalizer import normalize_aggressive
+
 log = logging.getLogger(__name__)
 
 # Minimum length of a substring to qualify as a leak.
@@ -127,7 +129,12 @@ def check_for_forbidden_patterns(response: str) -> Optional[str]:
     if not response:
         return None
 
-    normalized = " ".join(response.lower().split())
+    # Aggressive normalization: fold confusables + strip Cf/Mn before matching.
+    # Prevents bypass via Zero-Width, Cyrillic homoglyphs, or combining marks
+    # in forbidden-pattern strings (Phase 1.5, Opus Befund p).
+    # Forbidden patterns are all Latin-based, so aggressive folding is safe.
+    security_normalized = normalize_aggressive(response)
+    normalized = " ".join(security_normalized.lower().split())
 
     for pattern, category in _FORBIDDEN_PATTERNS:
         if pattern in normalized:
@@ -188,7 +195,8 @@ def check_for_system_prompt_leakage(
             if text:
                 excluded_fps.update(_extract_fingerprints(text))
 
-    normalized_response = " ".join(response.lower().split())
+    # Aggressive normalization for fingerprint matching (Phase 1.5, Opus Befund p)
+    normalized_response = " ".join(normalize_aggressive(response).lower().split())
 
     for fp in fingerprints:
         if fp in excluded_fps:

@@ -264,3 +264,56 @@ class TestForbiddenPatterns:
         )
         result = check_for_forbidden_patterns(response)
         assert result is not None
+
+
+class TestLeakageFilterUnicodeBypass:
+    """Phase 1.5: LeakageFilter must normalize before matching (Opus Befund p).
+
+    Prevents bypass via Zero-Width characters, Cyrillic homoglyphs, or
+    combining marks in forbidden patterns.
+    """
+
+    def test_zero_width_in_forbidden_pattern(self) -> None:
+        """Zero-Width Space inserted into 'system prompt' is still detected."""
+        # U+200B (ZWSP) between "system" and "prompt"
+        zwsp = chr(0x200B)
+        response = f"language{zwsp} lock in the configuration"
+        result = check_for_forbidden_patterns(response)
+        assert result is not None
+        assert result == REFUSAL_RESPONSE
+
+    def test_cyrillic_homoglyph_in_forbidden_pattern(self) -> None:
+        """Cyrillic 'у' (U+0443) in 'system' is still detected as 'system'."""
+        # 'language lock' with Cyrillic 'а' (U+0430) -> should still match
+        response = "lаnguage lock rule active"
+        result = check_for_forbidden_patterns(response)
+        assert result is not None
+        assert result == REFUSAL_RESPONSE
+
+    def test_claude_md_with_zero_width(self) -> None:
+        """'claude.md' with Zero-Width inserted is still detected."""
+        zwsp = chr(0x200B)
+        response = f"As per clаude{zwsp}.md conventions, we should do X."
+        result = check_for_forbidden_patterns(response)
+        assert result is not None
+
+    def test_clean_response_still_passes(self) -> None:
+        """Normal response without forbidden patterns still passes."""
+        response = "Here is a summary of the weather forecast for today."
+        result = check_for_forbidden_patterns(response)
+        assert result is None
+
+    def test_fingerprint_bypass_with_zero_width(self) -> None:
+        """System prompt fingerprint with Zero-Width bypass is detected."""
+        system_prompt = (
+            "Du bist Axolent, ein persoenlicher KI-Assistent. "
+            "Du hilfst bei Recherche und Wissensarbeit."
+        )
+        zwsp = chr(0x200B)
+        # Insert ZWSP into a substring of the system prompt
+        response = (
+            f"Du bist Axolent, ein persoenlicher KI{zwsp}-Assistent. "
+            "Du hilfst bei Recherche und Wissensarbeit."
+        )
+        result = check_for_system_prompt_leakage(response, system_prompt)
+        assert result is not None

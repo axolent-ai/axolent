@@ -116,8 +116,8 @@ def test_escape_role_labels_count_matches_constant() -> None:
         escape_user_content_for_prompt,
     )
 
-    # Phase 1.5: 12 labels (5 core + 5 EN provider + 2 DE)
-    assert len(_ROLE_LABELS) == 12
+    # Phase 1.5: 15 labels (5 core + 5 EN provider + 2 DE + 3 agentic)
+    assert len(_ROLE_LABELS) == 15
 
     # Every label in the constant must actually be escaped
     for label in _ROLE_LABELS:
@@ -132,21 +132,90 @@ def test_escape_role_labels_count_matches_constant() -> None:
 
 
 # ---------------------------------------------------------------
-# Doc-Lock 5: RedactingFormatter overrides formatException
+# Doc-Lock 5a: normalize_for_security_check folds confusables
+# ---------------------------------------------------------------
+
+
+def test_normalize_folds_cross_script_confusables() -> None:
+    """Doc-Lock: normalize_aggressive folds Cyrillic/Greek confusables to Latin.
+
+    Phase 1.5 UTS-39: the _CONFUSABLES_MAP is applied via normalize_aggressive().
+    Empirically proven bypass (Opus Probe 1) is now closed.
+    """
+    from application.security.input_normalizer import normalize_aggressive
+
+    # Cyrillic 'a' (U+0430) -> Latin 'a'
+    assert normalize_aggressive("а") == "a"
+    # Greek omicron (U+03BF) -> Latin 'o'
+    assert normalize_aggressive("ο") == "o"
+    # Cyrillic Dze (U+0455) -> Latin 's'
+    assert normalize_aggressive("ѕ") == "s"
+
+
+# ---------------------------------------------------------------
+# Doc-Lock 5b: normalize_aggressive strips Mn/Variation Selectors
+# ---------------------------------------------------------------
+
+
+def test_normalize_strips_variation_selectors() -> None:
+    """Doc-Lock: normalize_aggressive strips Mn category incl. Variation Selectors.
+
+    Phase 1.5: U+FE00..U+FE0F (Variation Selectors, category Mn) are stripped
+    by normalize_aggressive(). Combining marks (category Mn) are also stripped.
+    """
+    from application.security.input_normalizer import normalize_aggressive
+
+    # U+FE0F (Variation Selector 16) is stripped
+    assert normalize_aggressive("a️b") == "ab"
+    # U+FE00 (Variation Selector 1) is stripped
+    assert normalize_aggressive("a︀b") == "ab"
+    # Combining diaeresis on non-composable base is stripped
+    assert normalize_aggressive("b̈c") == "bc"
+
+
+# ---------------------------------------------------------------
+# Doc-Lock 6: RedactingFormatter overrides formatException
 # ---------------------------------------------------------------
 
 
 def test_redacting_formatter_overrides_format_exception() -> None:
-    """Doc-Lock: RedactingFormatter docstring says 'covers formatException'."""
+    """Doc-Lock: RedactingFormatter.formatException actually redacts secrets.
+
+    Phase 1.5 (Opus Befund b): upgraded from source-string-match to
+    behavior test. A refactor that renames _redact_string or keeps it
+    only as a comment can no longer fool this lock.
+    """
+    import logging
+    import sys
+
     from infrastructure.log_redaction import RedactingFormatter
 
-    # formatException must be defined on RedactingFormatter itself, not just inherited
+    # Part 1: formatException must be defined on RedactingFormatter itself
     assert "formatException" in RedactingFormatter.__dict__, (
         "RedactingFormatter must override formatException (not just inherit it)"
     )
 
-    # The override must call _redact_string on the output
-    source = inspect.getsource(RedactingFormatter.formatException)
-    assert "_redact_string" in source, (
-        "formatException must call _redact_string to redact secrets"
+    # Part 2: Behavior probe -- actually format an exception with a secret
+    # and verify the secret is redacted in the output.
+    formatter = RedactingFormatter("%(message)s")
+    try:
+        raise RuntimeError("Bot token: 123456789:AAFakeTokenThatIsLongEnough1234")
+    except RuntimeError:
+        exc_info = sys.exc_info()
+
+    record = logging.LogRecord(
+        name="test_lock5",
+        level=logging.ERROR,
+        pathname="test.py",
+        lineno=1,
+        msg="Error occurred",
+        args=(),
+        exc_info=exc_info,
+    )
+    formatted = formatter.formatException(record.exc_info)
+    assert "AAFakeToken" not in formatted, (
+        "formatException must redact secrets from exception tracebacks"
+    )
+    assert "REDACTED" in formatted, (
+        "formatException must replace secrets with a REDACTED marker"
     )

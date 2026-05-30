@@ -33,7 +33,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-from application.security.input_normalizer import normalize_for_security_check
+from application.security.input_normalizer import normalize_aggressive
 
 log = logging.getLogger(__name__)
 
@@ -393,9 +393,11 @@ class SecretScanner:
         Returns:
             List of SecretMatch objects. Empty = clean.
         """
-        # Central normalization: defeats Zero-Width and Compatibility-Form bypasses.
-        # Cross-Script confusables remain Phase 1.5 / UTS-39 scope.
-        text = normalize_for_security_check(text)
+        # Aggressive normalization: defeats Zero-Width, Compatibility-Form,
+        # Combining-Mark, and Cross-Script Confusable bypasses (Phase 1.5).
+        # SecretScanner patterns are all Latin-based (API keys, tokens),
+        # so aggressive folding is safe here (no native-script patterns).
+        text = normalize_aggressive(text)
 
         matches: list[SecretMatch] = []
 

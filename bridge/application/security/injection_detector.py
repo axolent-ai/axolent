@@ -20,7 +20,10 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-from application.security.input_normalizer import normalize_for_security_check
+from application.security.input_normalizer import (
+    normalize_aggressive,
+    normalize_for_security_check,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,9 +43,9 @@ class InjectionMatch:
 
 # Compiled regex patterns for prompt injection detection.
 # Each tuple: (pattern_name, compiled_regex, severity)
-# Patterns are case-insensitive and applied after NFKC + Cf-strip normalization.
-# Note: NFKC folds Compatibility Forms (Fullwidth etc.) but NOT Cross-Script
-# Confusables (e.g. Cyrillic 'a' U+0430). Phase 1.5 plans UTS-39 skeleton.
+# Patterns are case-insensitive and applied after NFKC + Confusables + Mn-strip.
+# Phase 1.5: UTS-39 Confusables folding is now active (Cyrillic/Greek -> Latin).
+# Cross-Script bypass (e.g. Cyrillic 'a' U+0430) is closed.
 _INJECTION_PATTERNS: list[tuple[str, re.Pattern, str]] = [
     # Direct override attempts
     (
@@ -378,9 +381,11 @@ class InjectionDetector:
     def check(self, text: str) -> Optional[InjectionMatch]:
         """Check text for prompt injection patterns.
 
-        Normalizes text (NFKC + Cf-strip) before pattern matching.
-        Defeats Zero-Width and Fullwidth bypass (GAP-08). Does NOT
-        fold Cross-Script Confusables (Phase 1.5 UTS-39).
+        Two-pass normalization (Phase 1.5):
+          Pass 1: Basic (NFKC + Cf-strip) -- preserves native scripts
+                  for multilingual pattern matching (Russian, Hindi, etc.)
+          Pass 2: Aggressive (+ Confusables + Mn-strip) -- catches
+                  mixed-script bypass (Cyrillic 'a' in Latin text)
 
         Args:
             text: The text to check for injection patterns.
@@ -391,11 +396,12 @@ class InjectionDetector:
         if not text or not text.strip():
             return None
 
-        # Central normalization: NFKC + strip Cf (Zero-Width, Bidi, etc.)
-        normalized = normalize_for_security_check(text)
+        # Pass 1: Basic normalization (NFKC + Cf strip)
+        # Preserves Cyrillic/Devanagari/Thai for native-script patterns
+        basic = normalize_for_security_check(text)
 
         for pattern_name, regex, severity in self._patterns:
-            match = regex.search(normalized)
+            match = regex.search(basic)
             if match:
                 return InjectionMatch(
                     pattern_name=pattern_name,
@@ -403,13 +409,26 @@ class InjectionDetector:
                     severity=severity,
                 )
 
+        # Pass 2: Aggressive normalization (+ Confusables + Mn strip)
+        # Catches mixed-script bypass (Cyrillic substitutions in Latin)
+        aggressive = normalize_aggressive(text)
+        if aggressive != basic:
+            for pattern_name, regex, severity in self._patterns:
+                match = regex.search(aggressive)
+                if match:
+                    return InjectionMatch(
+                        pattern_name=pattern_name,
+                        matched_text=match.group(0),
+                        severity=severity,
+                    )
+
         return None
 
     def check_all(self, text: str) -> list[InjectionMatch]:
         """Check text for ALL matching injection patterns.
 
         Unlike check() which returns on first match, this returns
-        all matches. Useful for audit logging.
+        all matches. Useful for audit logging. Uses two-pass normalization.
 
         Args:
             text: The text to check.
@@ -420,19 +439,26 @@ class InjectionDetector:
         if not text or not text.strip():
             return []
 
-        normalized = normalize_for_security_check(text)
+        # Two-pass: basic + aggressive (deduplicate by pattern_name)
+        basic = normalize_for_security_check(text)
+        aggressive = normalize_aggressive(text)
+        seen_patterns: set[str] = set()
         matches: list[InjectionMatch] = []
 
-        for pattern_name, regex, severity in self._patterns:
-            match = regex.search(normalized)
-            if match:
-                matches.append(
-                    InjectionMatch(
-                        pattern_name=pattern_name,
-                        matched_text=match.group(0),
-                        severity=severity,
+        for normalized in (basic, aggressive):
+            for pattern_name, regex, severity in self._patterns:
+                if pattern_name in seen_patterns:
+                    continue
+                match = regex.search(normalized)
+                if match:
+                    seen_patterns.add(pattern_name)
+                    matches.append(
+                        InjectionMatch(
+                            pattern_name=pattern_name,
+                            matched_text=match.group(0),
+                            severity=severity,
+                        )
                     )
-                )
 
         return matches
 

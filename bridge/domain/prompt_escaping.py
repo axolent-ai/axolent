@@ -39,6 +39,10 @@ _ROLE_LABELS: tuple[str, ...] = (
     # German equivalents (multilingual user base)
     "Benutzer",
     "Assistent",
+    # Agentic and OpenAI-style role markers (Phase 1.5, Opus Befund e)
+    "Agent",
+    "Operator",
+    "Developer",
 )
 
 # Build regex: matches newline (or start) followed by a role label and colon.

@@ -11,7 +11,10 @@ from application.security.injection_detector import (
     InjectionDetector,
     InjectionMatch,
 )
-from application.security.input_normalizer import normalize_for_security_check
+from application.security.input_normalizer import (
+    normalize_aggressive,
+    normalize_for_security_check,
+)
 from application.security.prompt_delimiters import escape_prompt_delimited_text
 from application.security.secret_scanner import (
     SecretBlockedError,
@@ -26,5 +29,6 @@ __all__ = [
     "SecretMatch",
     "SecretScanner",
     "escape_prompt_delimited_text",
+    "normalize_aggressive",
     "normalize_for_security_check",
 ]
