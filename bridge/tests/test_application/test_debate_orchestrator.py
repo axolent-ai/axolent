@@ -57,7 +57,7 @@ class _MockProvider(LLMProvider):
     def get_capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities()
 
-    def is_available(self) -> bool:
+    async def is_available(self) -> bool:
         return self._available
 
     async def query(

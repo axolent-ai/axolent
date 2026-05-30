@@ -84,6 +84,10 @@ def require_whitelist(func: Callable) -> Callable:
             )
             if update.message:
                 await update.message.reply_text(t("errors.not_authorized", "en"))
+            elif update.callback_query:
+                await update.callback_query.answer(
+                    t("errors.not_authorized", "en"), show_alert=False
+                )
             return
 
         return await func(update, context)

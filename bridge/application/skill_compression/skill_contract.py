@@ -501,6 +501,63 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def iter_user_text_fields(contract: SkillContract) -> list[tuple[str, str]]:
+    """Yield all user-controlled text fields from a SkillContract.
+
+    Returns (field_label, value) pairs for every field that could contain
+    user-authored (or attacker-authored on JSON install) text content.
+    Shared by LearnFlowService and SkillInstaller for the One Safety Gate:
+    the PrivacyPipeline MUST scan every field returned here.
+
+    The canonical claim ("when I say <trigger>, <instruction>") is built
+    by the caller from phrases[0] + instruction. This function returns the
+    ADDITIONAL fields that must also be scanned.
+
+    Fields covered:
+      - name
+      - activation.phrases (ALL, not just [0])
+      - execution.instruction
+      - tags (each tag)
+      - intent.label
+      - intent.positive_examples (each)
+      - intent.negative_examples (each)
+
+    Args:
+        contract: The SkillContract to extract fields from.
+
+    Returns:
+        List of (field_label, text_value) tuples. Empty strings are excluded.
+    """
+    fields: list[tuple[str, str]] = []
+
+    if contract.name and contract.name.strip():
+        fields.append(("name", contract.name))
+
+    for i, phrase in enumerate(contract.activation.phrases):
+        if phrase and phrase.strip():
+            fields.append((f"phrases[{i}]", phrase))
+
+    if contract.execution.instruction and contract.execution.instruction.strip():
+        fields.append(("instruction", contract.execution.instruction))
+
+    for i, tag in enumerate(contract.tags):
+        if tag and tag.strip():
+            fields.append((f"tags[{i}]", tag))
+
+    if contract.intent.label and contract.intent.label.strip():
+        fields.append(("intent.label", contract.intent.label))
+
+    for i, ex in enumerate(contract.intent.positive_examples):
+        if ex and ex.strip():
+            fields.append((f"intent.positive_examples[{i}]", ex))
+
+    for i, ex in enumerate(contract.intent.negative_examples):
+        if ex and ex.strip():
+            fields.append((f"intent.negative_examples[{i}]", ex))
+
+    return fields
+
+
 def create_minimal_contract(
     *,
     name: str,

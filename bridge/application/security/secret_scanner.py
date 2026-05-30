@@ -33,6 +33,8 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
+from application.security.input_normalizer import normalize_for_security_check
+
 log = logging.getLogger(__name__)
 
 
@@ -382,6 +384,8 @@ class SecretScanner:
         """Scan text for secrets and PII.
 
         Runs Layer 2 (regex) and Layer 3 (heuristic) checks.
+        Applies central security normalization (NFKC + Cf strip)
+        before pattern matching to prevent Zero-Width bypass.
 
         Args:
             text: Text to scan.
@@ -389,6 +393,10 @@ class SecretScanner:
         Returns:
             List of SecretMatch objects. Empty = clean.
         """
+        # Central normalization: defeats Zero-Width and Compatibility-Form bypasses.
+        # Cross-Script confusables remain Phase 1.5 / UTS-39 scope.
+        text = normalize_for_security_check(text)
+
         matches: list[SecretMatch] = []
 
         # Layer 2: Regex patterns

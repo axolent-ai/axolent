@@ -66,7 +66,11 @@ from application.skill_compression.draft_store import (
     SkillDraft,
 )
 from application.skill_compression.privacy.privacy_pipeline import PrivacyPipeline
-from application.skill_compression.skill_contract import LifecycleConfig, SkillContract
+from application.skill_compression.skill_contract import (
+    LifecycleConfig,
+    SkillContract,
+    iter_user_text_fields,
+)
 
 log = logging.getLogger(__name__)
 
@@ -292,13 +296,14 @@ class LearnFlowService:
         user_id: int,
         source: str,
     ) -> Optional[str]:
-        """Central safety gate: runs full PrivacyPipeline on canonical claim form.
+        """Central safety gate: runs full PrivacyPipeline on ALL user text fields.
 
         This is THE SINGLE safety check before any persist. All paths
         (quick, save_draft, edit-save, needs_input-complete) MUST call this.
 
-        Checks SecretScanner + HealthcareFilter + NudgeFilter on the
-        canonical skill claim form: "when I say <trigger>, <instruction>".
+        Uses iter_user_text_fields() to scan every user-controlled field:
+        name, ALL phrases, instruction, tags, intent label/examples.
+        Shared with SkillInstaller._check_safety() (One Safety Gate, GAP-14 fix).
 
         Args:
             contract: The SkillContract to validate.
@@ -313,25 +318,23 @@ class LearnFlowService:
             HypothesisScope,
         )
 
-        # Build canonical claim: "when I say <trigger>, <instruction>"
-        trigger = ""
-        if contract.activation.phrases:
-            trigger = contract.activation.phrases[0]
-        instruction = contract.execution.instruction
+        # Scan ALL user-controlled text fields (GAP-14 fix).
+        # iter_user_text_fields returns (label, value) for name, ALL phrases,
+        # instruction, tags, intent label/examples.
+        all_text_parts = [value for _label, value in iter_user_text_fields(contract)]
+        combined_text = " | ".join(all_text_parts) if all_text_parts else ""
 
-        if trigger:
-            canonical_claim = f"when I say {trigger}, {instruction}"
-        else:
-            canonical_claim = instruction
+        if not combined_text.strip():
+            return "Contract has no scannable text content."
 
         # Build temporary hypothesis for PrivacyPipeline
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now_str = datetime.now(timezone.utc).isoformat()
         temp_hyp = Hypothesis(
             hypothesis_id=f"hyp_{uuid4().hex[:16]}",
             user_id=user_id,
             type="preference",
             scope=HypothesisScope(),
-            claim=canonical_claim,
+            claim=combined_text,
             status="confirmed",
             version=1,
             elo_rating=1500.0,
@@ -341,9 +344,9 @@ class LearnFlowService:
             contradict_count=0,
             source_type="learn_command",
             decay_immune=True,
-            created_at=now_iso,
+            created_at=now_str,
             last_applied=None,
-            last_seen=now_iso,
+            last_seen=now_str,
         )
 
         # Run full privacy pipeline (Healthcare + Secret + Nudge)

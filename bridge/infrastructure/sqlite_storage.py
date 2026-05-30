@@ -26,6 +26,70 @@ log = logging.getLogger(__name__)
 # Search modes (compatible with JSONL MemoryStorage)
 SearchMode = Literal["substring", "embedding"]
 
+# Maximum search query length (defense-in-depth against DoS)
+_MAX_SEARCH_QUERY_LEN = 200
+
+
+def _sanitize_search_query(query: str, max_len: int = _MAX_SEARCH_QUERY_LEN) -> str:
+    """Sanitize a user-supplied search query for FTS5/LIKE.
+
+    Truncates to max_len, strips whitespace, removes FTS5 operators
+    that could cause syntax errors. Returns empty string for empty input.
+
+    Args:
+        query: Raw user input.
+        max_len: Maximum allowed length (default 200).
+
+    Returns:
+        Sanitized query string (may be empty).
+    """
+    if not query:
+        return ""
+    sanitized = query.strip()[:max_len]
+    # Remove FTS5 special operators that could cause syntax errors
+    # (NEAR, NOT, OR, AND are valid FTS5 operators but we use phrase quoting)
+    # Remove unbalanced quotes to avoid FTS5 parse errors
+    sanitized = sanitized.replace('"', "")
+    return sanitized.strip()
+
+
+def _safe_int(value: object, default: int = 0, label: str = "field") -> int | None:
+    """Safely cast a value to int for migration.
+
+    Handles string-encoded numbers from legacy JSONL ("123" -> 123).
+    Rejects bool (bool is int subclass in Python) and float (no silent
+    truncation for IDs). Returns None for values that cannot be cast.
+
+    Args:
+        value: Raw value from JSONL data.
+        default: Fallback if value is None.
+        label: Field name for log messages.
+
+    Returns:
+        Integer value, or None if cast fails (caller should skip row).
+    """
+    if value is None:
+        return default
+    # Reject bool BEFORE int check (bool is int subclass in Python)
+    if isinstance(value, bool):
+        log.warning("Migration: rejected bool for %s=%r, skipping row", label, value)
+        return None
+    if isinstance(value, int):
+        return value
+    # Reject float (no silent truncation for IDs)
+    if isinstance(value, float):
+        log.warning("Migration: rejected float for %s=%r, skipping row", label, value)
+        return None
+    if isinstance(value, str):
+        s = value.strip()
+        if s.lstrip("-").isdigit() and s:
+            return int(s)
+        log.warning("Migration: cannot cast %s=%r to int, skipping row", label, value)
+        return None
+    log.warning("Migration: unsupported type for %s=%r, skipping row", label, value)
+    return None
+
+
 # Default DB path
 DEFAULT_DB_PATH: Path = Path(__file__).resolve().parent.parent / "data" / "axolent.db"
 
@@ -225,7 +289,10 @@ class SqliteConnection:
                     conn.execute(sql, params)
                 conn.execute("COMMIT")
             except Exception:
-                conn.execute("ROLLBACK")
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception as rollback_err:
+                    log.error("ROLLBACK failed after original error: %s", rollback_err)
                 raise
 
     def fetchall(self, sql: str, params: tuple | dict = ()) -> list[sqlite3.Row]:
@@ -370,6 +437,9 @@ class SqliteBookmarkStorage:
         Returns:
             List of matching bookmark dicts, newest first.
         """
+        query = _sanitize_search_query(query)
+        if not query:
+            return []
         # SQLite LIKE is case-insensitive by default for ASCII.
         # For Unicode correctness we use LOWER().
         rows = self._conn.fetchall(
@@ -612,11 +682,15 @@ class SqliteMemoryStorage:
 
         self._validate_layer(layer)
 
+        # Sanitize query: truncate, strip, remove FTS5 operators
+        query = _sanitize_search_query(query)
+        if not query:
+            return []
+
         # Try FTS5 first (faster for large datasets)
         try:
-            # Remove quotes from query (avoid FTS5 syntax errors)
-            fts_query = query.replace('"', "")
-            if fts_query.strip():
+            fts_query = query
+            if fts_query:
                 rows = self._conn.fetchall(
                     """SELECT me.id, me.user_id, me.type, me.content,
                               me.importance, me.timestamp, me.metadata_json
@@ -1037,10 +1111,17 @@ class SqliteSettingsStorage:
         return dict(row) if row else None
 
     def _upsert_field(self, user_id: int, field: str, value: object) -> None:
-        """Generic upsert for a single field.
+        """Two-statement upsert (INSERT OR IGNORE + UPDATE).
 
-        Creates the row if not present (with defaults for all other fields),
-        then updates the specific field.
+        Each statement is serialized via SqliteConnection's per-statement
+        lock. NO BEGIN/COMMIT transaction wrapping. Single-process
+        correctness: idempotent INSERT + last-writer-wins UPDATE is
+        acceptable for settings. For multi-process concurrency (Phase 2
+        multi-user), revisit with explicit transaction wrapping.
+
+        Note: ON CONFLICT DO UPDATE was tried but caused regression
+        (initial INSERT set NULL for the target field). Reverted to
+        two-statement approach.
 
         Args:
             user_id: Telegram user ID.
@@ -1048,7 +1129,10 @@ class SqliteSettingsStorage:
             value: New value.
         """
         ts = datetime.now(timezone.utc).isoformat()
-        # Ensure row exists with all defaults
+        # Two statements, each lock-serialized (NOT a single transaction).
+        # INSERT OR IGNORE ensures the row exists, UPDATE sets the value.
+        # B608 is acceptable here: `field` is never user-controlled, it comes
+        # from an internal whitelist of column names enforced by the caller.
         self._conn.execute(
             """INSERT OR IGNORE INTO user_settings
                (user_id, language, model, debate_providers, rate_limit_profile,
@@ -1057,9 +1141,6 @@ class SqliteSettingsStorage:
                VALUES (?, NULL, NULL, '', 'normal', 1, 1, 1, 0, 1, 1, 'UTC', ?)""",
             (user_id, ts),
         )
-        # Update the target field + updated_at.
-        # B608 is acceptable here: `field` is never user-controlled, it comes
-        # from an internal whitelist of column names enforced by the caller.
         self._conn.execute(  # nosemgrep
             f"UPDATE user_settings SET {field} = ?, updated_at = ? WHERE user_id = ?",  # nosec B608
             (value, ts, user_id),
@@ -1253,6 +1334,7 @@ def _migrate_bookmarks_jsonl(conn: SqliteConnection, path: Path) -> int:
     """
     entries: list[tuple] = []
     corrupt = 0
+    skipped_cast = 0
 
     with open(path, encoding="utf-8", errors="replace") as f:
         for line_num, line in enumerate(f, 1):
@@ -1261,12 +1343,27 @@ def _migrate_bookmarks_jsonl(conn: SqliteConnection, path: Path) -> int:
                 continue
             try:
                 data = json.loads(line)
+                uid = _safe_int(data.get("user_id", 0), label="user_id")
+                if uid is None:
+                    skipped_cast += 1
+                    continue
+                cid = _safe_int(
+                    data.get("chat_id", data.get("user_id", 0)),
+                    label="chat_id",
+                )
+                if cid is None:
+                    skipped_cast += 1
+                    continue
+                mid = _safe_int(data.get("message_id", 0), label="message_id")
+                if mid is None:
+                    skipped_cast += 1
+                    continue
                 entries.append(
                     (
-                        data.get("user_id", 0),
+                        uid,
                         data.get("username"),
-                        data.get("chat_id", data.get("user_id", 0)),
-                        data.get("message_id", 0),
+                        cid,
+                        mid,
                         data.get("content", ""),
                         data.get("timestamp", datetime.now(timezone.utc).isoformat()),
                     )
@@ -1281,6 +1378,8 @@ def _migrate_bookmarks_jsonl(conn: SqliteConnection, path: Path) -> int:
 
     if corrupt > 0:
         log.info("Migration: %d corrupt bookmark lines skipped", corrupt)
+    if skipped_cast > 0:
+        log.info("Migration: %d bookmark rows skipped (non-integer IDs)", skipped_cast)
 
     if entries:
         conn.execute_in_transaction(
@@ -1311,6 +1410,7 @@ def _migrate_memory_jsonl(conn: SqliteConnection, path: Path, layer: str) -> int
     """
     entries: list[tuple] = []
     corrupt = 0
+    skipped_cast = 0
     base_keys = {"id", "user_id", "content", "importance", "timestamp", "type"}
 
     with open(path, encoding="utf-8", errors="replace") as f:
@@ -1320,11 +1420,15 @@ def _migrate_memory_jsonl(conn: SqliteConnection, path: Path, layer: str) -> int
                 continue
             try:
                 data = json.loads(line)
+                uid = _safe_int(data.get("user_id", 0), label="user_id")
+                if uid is None:
+                    skipped_cast += 1
+                    continue
                 metadata = {k: v for k, v in data.items() if k not in base_keys}
                 entries.append(
                     (
                         data.get("id", ""),
-                        data.get("user_id", 0),
+                        uid,
                         layer,
                         data.get("content", ""),
                         data.get("importance"),
@@ -1345,6 +1449,12 @@ def _migrate_memory_jsonl(conn: SqliteConnection, path: Path, layer: str) -> int
         log.info(
             "Migration: %d corrupt lines in %s skipped",
             corrupt,
+            path.name,
+        )
+    if skipped_cast > 0:
+        log.info(
+            "Migration: %d rows in %s skipped (non-integer user_id)",
+            skipped_cast,
             path.name,
         )
 

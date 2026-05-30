@@ -152,6 +152,10 @@ class StreamingSession:
     _edits_sent: int = 0
     _backoff_active: bool = False
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
+    # StreamGuard abort flag: distinguishes guard cancellation from user /stop.
+    # When True, the handler should trigger a non-streaming repair call
+    # instead of a hard return.
+    _guard_abort: bool = False
     # T23: Live multi-message rollover state
     part_count: int = 1
     previous_parts: list[str] = field(default_factory=list)
@@ -164,8 +168,23 @@ class StreamingSession:
         return self.cancel_event.is_set()
 
     def cancel(self) -> None:
-        """Request cancellation of this streaming session."""
+        """Request cancellation of this streaming session (user /stop)."""
         self.cancel_event.set()
+
+    def guard_abort(self) -> None:
+        """Request cancellation due to StreamGuard language drift.
+
+        Unlike cancel(), this signals a repair is needed rather than a
+        hard discard. The presentation handler checks is_guard_abort to
+        decide whether to trigger a non-streaming repair call.
+        """
+        self._guard_abort = True
+        self.cancel_event.set()
+
+    @property
+    def is_guard_abort(self) -> bool:
+        """True when cancellation was triggered by StreamGuard (not user /stop)."""
+        return self._guard_abort
 
     @property
     def full_text(self) -> str:
@@ -459,9 +478,18 @@ async def finalize_streaming(session: StreamingSession, final_text: str) -> str:
     """
     # T23: If rollover already happened, we only need to finalize the last part.
     if session.part_count > 1:
-        # The final_text is the FULL text. Extract only the current part's portion.
-        # current_part_offset marks where the current part starts in the full text.
-        current_part_text = final_text[session.current_part_offset :]
+        # Invariant: current_part_offset and final_text must be in the SAME
+        # string space. When text_guard.fix() modifies final_text (e.g.
+        # replacing "ae" with a single char), offsets from the raw streaming
+        # phase become invalid. Use the sum of previous_parts lengths as
+        # offset base (previous_parts are raw/unfixed), and fall back to
+        # session.accumulated_text when the offset exceeds final_text length.
+        prev_len = sum(len(p) for p in session.previous_parts)
+        if prev_len < len(final_text):
+            current_part_text = final_text[prev_len:]
+        else:
+            # Offset mismatch (text_guard shortened text): use what we have
+            current_part_text = session.accumulated_text or final_text
         session.accumulated_text = current_part_text
 
         html_text = markdown_to_telegram_html(current_part_text)

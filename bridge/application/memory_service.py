@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Optional, Union
 
+from application.security.injection_detector import InjectionDetector, InjectionMatch
 from application.security.secret_scanner import SecretBlockedError, SecretScanner
 from domain.memory.episodic import EpisodicEntry
 from domain.memory.procedural import ProceduralEntry
@@ -25,6 +26,29 @@ log = logging.getLogger(__name__)
 
 # Module-level scanner instance (stateless, safe to share).
 _secret_scanner = SecretScanner()
+_injection_detector = InjectionDetector()
+
+
+class MemoryInjectionBlockedError(Exception):
+    """Raised when a memory write is blocked due to injection patterns.
+
+    Memory entries are injected into every future system prompt, so a
+    malicious entry would achieve persistent prompt injection. This
+    error is the service-level gate (defense-in-depth); the Telegram
+    handler has a first-line check as well.
+
+    Attributes:
+        pattern_name: Name of the matched injection pattern.
+        severity: Severity level of the match.
+    """
+
+    def __init__(self, match: InjectionMatch) -> None:
+        self.pattern_name = match.pattern_name
+        self.severity = match.severity
+        super().__init__(
+            f"Memory rejected: injection pattern '{match.pattern_name}' "
+            f"(severity={match.severity})"
+        )
 
 
 class MemoryService:
@@ -44,10 +68,14 @@ class MemoryService:
 
     @staticmethod
     def _scan_and_raise(content: str, user_id: int, layer: str) -> None:
-        """Defense-in-depth gate: scan content for secrets before storage.
+        """Defense-in-depth gate: scan content for secrets and injection before storage.
 
         Shared by all three remember_* methods so that every memory
-        write path is protected, not just remember_episodic.
+        write path is protected, not just remember_episodic. Covers
+        both SecretScanner (API keys, tokens) and InjectionDetector
+        (prompt injection patterns). The Telegram handler has its own
+        first-line injection check (defense-in-depth); this is the
+        canonical service-level gate.
 
         Args:
             content: Text to scan.
@@ -56,7 +84,9 @@ class MemoryService:
 
         Raises:
             SecretBlockedError: If secrets are detected.
+            MemoryInjectionBlockedError: If injection patterns are detected.
         """
+        # Gate 1: Secret detection
         matches = _secret_scanner.scan(content)
         if matches:
             log.warning(
@@ -67,6 +97,18 @@ class MemoryService:
                 matches[0].layer,
             )
             raise SecretBlockedError(matches)
+
+        # Gate 2: Injection detection (Muster-B closure)
+        injection_match = _injection_detector.check(content)
+        if injection_match is not None:
+            log.warning(
+                "remember_%s injection blocked: user=%d pattern=%s severity=%s",
+                layer,
+                user_id,
+                injection_match.pattern_name,
+                injection_match.severity,
+            )
+            raise MemoryInjectionBlockedError(injection_match)
 
     def remember_episodic(
         self,

@@ -152,6 +152,9 @@ WHITELIST_PATHS = {
     # Feature data: German PII/secret descriptions and i18n label keys (HC-SC-13).
     # SecretScanner is the canonical location in application/security/.
     "bridge/application/security/secret_scanner.py",
+    # Feature data: Multilingual injection detection patterns (20 locales).
+    # Non-ASCII chars in regex patterns ARE the detection feature (Finding 9 fix).
+    "bridge/application/security/injection_detector.py",
     # Feature data: German trigger-extraction regex patterns and stoplist for
     # skill alias matching (DE "wenn ich X sage" pattern). Words ARE the feature.
     "bridge/application/skill_compression/skill_learning_service.py",

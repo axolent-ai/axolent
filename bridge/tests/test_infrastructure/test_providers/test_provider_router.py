@@ -39,7 +39,7 @@ def _make_mock_provider(
     """
     provider = MagicMock(spec=LLMProvider)
     provider.name = name
-    provider.is_available = MagicMock(return_value=available)
+    provider.is_available = AsyncMock(return_value=available)
     if with_async_query:
         provider.query = AsyncMock(
             return_value=ProviderResponse(
@@ -132,14 +132,15 @@ class TestProviderRouterListing:
         router = ProviderRouter(providers=providers, default="claude")
         assert sorted(router.list_registered()) == ["claude", "gemini"]
 
-    def test_list_available_filters_unavailable(self) -> None:
+    @pytest.mark.asyncio
+    async def test_list_available_filters_unavailable(self) -> None:
         providers = {
             "claude": _make_mock_provider("claude", available=True),
             "gemini": _make_mock_provider("gemini", available=False),
             "ollama_local": _make_mock_provider("ollama_local", available=True),
         }
         router = ProviderRouter(providers=providers, default="claude")
-        available = router.list_available()
+        available = await router.list_available()
         assert "claude" in available
         assert "ollama_local" in available
         assert "gemini" not in available

@@ -263,8 +263,10 @@ class CryptoConnection:
             )
 
         log.warning(
-            "SQLCipher not available. Opening DB WITHOUT encryption. "
-            "This is acceptable for development/testing only."
+            "SECURITY: SQLCipher not available. Opening DB WITHOUT encryption. "
+            "This is acceptable for development/testing only. "
+            "DB path: %s",
+            self._db_path,
         )
         self._conn = sqlite3.connect(
             str(self._db_path),

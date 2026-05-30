@@ -257,7 +257,10 @@ from presentation.callbacks import (
     handle_bookmark_show_callback,
 )
 from presentation.onboarding_callbacks import handle_wizard_callback
-from presentation.settings_callbacks import handle_settings_callback
+from presentation.settings_callbacks import (
+    handle_settings_callback,
+    handle_settings_v2_callback,
+)
 from presentation.decorators import ALLOW_ALL_USERS, WHITELIST
 from presentation.handlers import (
     handle_bookmarks_command,
@@ -286,6 +289,7 @@ from presentation.skill_commands import (
     handle_explain_command,
     handle_import_callback,
     handle_import_command,
+    handle_installskill_command,
     handle_learn_callback,
     handle_learn_command,
     handle_learn_followup_message,
@@ -440,9 +444,9 @@ def _build_provider_router(process_pool: ClaudeProcessPool) -> ProviderRouter:
 
     router = ProviderRouter(providers=providers, default=default)
 
-    # Log which providers are actually available
-    available = router.list_available()
-    log.info("Available providers: %s", available if available else ["NONE!"])
+    # Log registered providers (availability is async, checked at runtime)
+    registered = router.list_registered()
+    log.info("Registered providers: %s", registered)
 
     return router
 
@@ -642,6 +646,7 @@ def main() -> None:
     contract_store = None
     draft_store = None
     learn_flow_service = None
+    skill_installer = None
 
     if use_sqlite:
         hypothesis_storage = HypothesisStorage(sqlite_conn)
@@ -663,7 +668,7 @@ def main() -> None:
         import_orchestrator = ImportOrchestrator(hypothesis_storage)
         import_orchestrator.init_schema()
 
-        # Skill Contract v2: ContractStore + DraftStore + LearnFlowService
+        # Skill Contract v2: ContractStore + DraftStore + LearnFlowService + SkillInstaller
         from application.skill_compression.contract_builder import ContractBuilder
         from application.skill_compression.contract_store import ContractStore
         from application.skill_compression.draft_store import DraftStore
@@ -671,6 +676,7 @@ def main() -> None:
             LearnFlowService,
             PendingEditStore,
         )
+        from application.skill_compression.skill_installer import SkillInstaller
 
         contract_store = ContractStore(sqlite_conn)
         contract_store.init_schema()
@@ -689,6 +695,12 @@ def main() -> None:
             contract_store=contract_store,
             privacy_pipeline=privacy_pipeline,
             pending_edit_store=pending_edit_store,
+        )
+
+        # SkillInstaller: manual/offline skill installation
+        skill_installer = SkillInstaller(
+            contract_store=contract_store,
+            privacy_pipeline=privacy_pipeline,
         )
 
         log.info(
@@ -796,6 +808,8 @@ def main() -> None:
         app.bot_data["draft_store"] = draft_store
     if learn_flow_service is not None:
         app.bot_data["learn_flow_service"] = learn_flow_service
+    if skill_installer is not None:
+        app.bot_data["skill_installer"] = skill_installer
 
     # Lifecycle hooks: start/stop ProcessPool
     async def post_init(application: Application) -> None:
@@ -844,6 +858,7 @@ def main() -> None:
     app.add_handler(CommandHandler("learn", handle_learn_command))
     app.add_handler(CommandHandler("explain", handle_explain_command))
     app.add_handler(CommandHandler("import", handle_import_command))
+    app.add_handler(CommandHandler("installskill", handle_installskill_command))
 
     # Learn follow-up message handler (intercepts edit/needs_input follow-ups)
     # Registered BEFORE generic handle_message so pending edits are consumed first.
@@ -864,6 +879,11 @@ def main() -> None:
     )
     app.add_handler(
         CallbackQueryHandler(handle_bookmark_delete_callback, pattern=r"^bm_del:")
+    )
+    # Settings v2 handler MUST come before the generic ^settings_ handler
+    # (more specific pattern wins by registration order, analogous to skill_learn:)
+    app.add_handler(
+        CallbackQueryHandler(handle_settings_v2_callback, pattern=r"^settings_v2_")
     )
     app.add_handler(
         CallbackQueryHandler(handle_settings_callback, pattern=r"^settings_")

@@ -776,13 +776,18 @@ class TestImportArchitectureGuards:
         )
 
         forbidden_prefixes = (
-            "infrastructure",
             "presentation",
             "requests",
             "httpx",
             "aiohttp",
             "urllib.request",
         )
+        # infrastructure.safe_json is explicitly allowed: parsers MUST use
+        # safe_json_load for DoS-safe JSON parsing (MUSS 3, Bundle E).
+        # All other infrastructure imports remain forbidden.
+        allowed_infra = {"infrastructure.safe_json"}
+        # General infrastructure prefix is still checked below, but
+        # allowed_infra entries are skipped.
 
         parser_files = [
             "markdown_importer.py",
@@ -808,6 +813,15 @@ class TestImportArchitectureGuards:
                         for alias in node.names:
                             module = alias.name
 
+                    # Skip explicitly allowed infrastructure modules
+                    if module in allowed_infra:
+                        continue
+                    # Check for general infrastructure prefix too
+                    if module.startswith("infrastructure"):
+                        raise AssertionError(
+                            f"Parser {filename} imports from forbidden "
+                            f"package: {module} (only {allowed_infra} allowed)"
+                        )
                     for prefix in forbidden_prefixes:
                         assert not module.startswith(prefix), (
                             f"Parser {filename} imports from forbidden "

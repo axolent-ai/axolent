@@ -1775,6 +1775,130 @@ async def handle_import_callback(
 
 
 # ---------------------------------------------------------------
+# Command: /installskill (Finding 4, GAP-15 fix)
+# ---------------------------------------------------------------
+
+
+def _get_skill_installer(context: ContextTypes.DEFAULT_TYPE):
+    """Get SkillInstaller from bot_data.
+
+    Args:
+        context: Telegram handler context.
+
+    Returns:
+        SkillInstaller or None if not initialized.
+    """
+    return context.application.bot_data.get("skill_installer")
+
+
+@require_whitelist
+@require_private_chat
+@lcp_aware
+@typechecked
+async def handle_installskill_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handle /installskill command: install a skill from a JSON file upload.
+
+    Usage:
+      1. Reply to a document message with /installskill
+      2. The document must be a .json file containing a valid skill contract
+
+    Full safety pipeline: PrivacyPipeline scans ALL contract text fields
+    (name, phrases, instruction, tags, intent) via iter_user_text_fields().
+    ContractValidator runs all V1-V17 rules.
+
+    GAP-14/GAP-15 fix: closes the field-coverage gap and production-path gap.
+
+    Args:
+        update: Telegram update.
+        context: Telegram handler context.
+    """
+    user = update.effective_user
+    if not user:
+        return
+    user_id = user.id
+    chat_id = update.effective_chat.id if update.effective_chat else 0
+    lang = await _resolve_lang(context, user_id, chat_id)
+
+    installer = _get_skill_installer(context)
+    if installer is None:
+        await update.message.reply_text(t("skill.system_not_initialized", lang))
+        return
+
+    # Get JSON content: from reply-to-document or inline text
+    raw_json: Optional[str] = None
+
+    reply = update.message.reply_to_message
+    if reply and reply.document:
+        doc = reply.document
+        # Validate file type
+        fname = doc.file_name or ""
+        if not fname.lower().endswith(".json"):
+            await update.message.reply_text(t("skill.install_json_only", lang))
+            return
+
+        # Size guard: reject files over 100KB
+        if doc.file_size and doc.file_size > 100_000:
+            await update.message.reply_text(t("skill.install_too_large", lang))
+            return
+
+        # Download and read
+        try:
+            tg_file = await doc.get_file()
+            raw_bytes = await tg_file.download_as_bytearray()
+            raw_json = raw_bytes.decode("utf-8", errors="replace")
+        except Exception as exc:
+            log.error(
+                "installskill download failed: user=%d error=%s",
+                user_id,
+                str(exc),
+            )
+            await update.message.reply_text(t("skill.install_download_failed", lang))
+            return
+    elif context.args:
+        # Inline JSON string (for testing/power users)
+        raw_json = " ".join(context.args).strip()
+    else:
+        await update.message.reply_text(t("skill.install_usage", lang))
+        return
+
+    if not raw_json or not raw_json.strip():
+        await update.message.reply_text(t("skill.install_empty", lang))
+        return
+
+    # Run installer (safety + validation + persist)
+    # Defense-in-depth: catch any unexpected exception so that malformed
+    # uploads never crash the handler (e.g. RecursionError from extreme
+    # nesting was fixed in safe_json_load, but belt-and-suspenders).
+    try:
+        result = installer.install_from_json_string(raw_json, user_id=user_id)
+    except Exception as exc:
+        log.error(
+            "installskill unexpected error: user=%d error=%s",
+            user_id,
+            type(exc).__name__,
+        )
+        await update.message.reply_text(
+            t(
+                "skill.install_failed",
+                lang,
+                error=f"Unexpected error: {type(exc).__name__}",
+            )
+        )
+        return
+
+    if result.success:
+        await update.message.reply_text(
+            t("skill.install_success", lang, name=result.contract_name)
+        )
+    else:
+        await update.message.reply_text(
+            t("skill.install_failed", lang, error=result.error)
+        )
+
+
+# ---------------------------------------------------------------
 # RISK-3: Ask-Before-Apply confirmation flow
 # ---------------------------------------------------------------
 

@@ -26,10 +26,11 @@ No external dependencies. Pure json parsing.
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any, Iterator
+
+from infrastructure.safe_json import safe_json_load
 
 from application.skill_compression.conversation_import.conversation_source import (
     ParsedConversation,
@@ -38,8 +39,8 @@ from application.skill_compression.conversation_import.conversation_source impor
 
 log = logging.getLogger(__name__)
 
-# Maximum file size to attempt parsing (500 MB safety limit)
-_MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024
+# Maximum file size to attempt parsing (10 MB, consistent with orchestrator cap)
+_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 
 
 class ClaudeImporter:
@@ -134,8 +135,12 @@ class ClaudeImporter:
             ParsedConversation instances.
         """
         try:
-            data = json.loads(content)
-        except json.JSONDecodeError as exc:
+            data = safe_json_load(
+                content,
+                max_bytes=_MAX_FILE_SIZE_BYTES,
+                max_depth=64,
+            )
+        except ValueError as exc:
             log.warning("Invalid JSON in Claude export: %s", exc)
             return
 
@@ -167,8 +172,12 @@ class ClaudeImporter:
                 continue
 
             try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
+                entry = safe_json_load(
+                    line,
+                    max_bytes=_MAX_FILE_SIZE_BYTES,
+                    max_depth=64,
+                )
+            except ValueError:
                 log.debug("Skipping invalid JSON at line %d", line_num)
                 continue
 

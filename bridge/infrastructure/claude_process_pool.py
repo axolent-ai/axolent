@@ -19,6 +19,7 @@ Features:
 from __future__ import annotations
 
 import asyncio
+import collections
 import json
 import logging
 import os
@@ -108,7 +109,9 @@ class ManagedProcess:
     _accumulated_text: str = ""
     model: str = ""
     is_dirty: bool = False
-    _stderr_lines: list[str] = field(default_factory=list)
+    _stderr_lines: collections.deque[str] = field(
+        default_factory=lambda: collections.deque(maxlen=1000)
+    )
     _stderr_task: asyncio.Task | None = field(default=None, repr=False)
 
 
@@ -133,6 +136,10 @@ class ClaudeProcessPool:
         self._creation_locks: dict[PoolKey, asyncio.Lock] = {}
         self._cleanup_task: asyncio.Task | None = None
         self._shutdown = False
+        # Keys currently in init phase: excluded from LRU eviction
+        # to prevent race where a cold-starting process is the oldest
+        # LRU candidate and gets killed during init.
+        self._pending_init: set[PoolKey] = set()
 
     @staticmethod
     def is_cli_available() -> bool:
@@ -292,8 +299,13 @@ class ClaudeProcessPool:
 
         # Wait for init regardless of was_cold (pre-warm path can
         # return was_cold=False even when is_ready is still False).
+        # Mark as pending_init to protect from LRU eviction during init.
         if not managed.is_ready:
-            await self._wait_for_init(managed)
+            self._pending_init.add(key)
+            try:
+                await self._wait_for_init(managed)
+            finally:
+                self._pending_init.discard(key)
 
         # Yield init event with process metadata (before the lock,
         # so the caller knows was_cold/pid immediately)
@@ -444,6 +456,8 @@ class ClaudeProcessPool:
             for key, mp in self._processes.items():
                 if mp.lock.locked():
                     continue  # Active stream, do not evict
+                if key in self._pending_init:
+                    continue  # Cold-starting process, do not evict
                 if mp.last_used < oldest_time:
                     oldest_time = mp.last_used
                     candidate_key = key
@@ -662,7 +676,9 @@ class ClaudeProcessPool:
         """Return the last N stderr lines as a single string for diagnostics."""
         if not managed._stderr_lines:
             return "(empty)"
-        tail = managed._stderr_lines[-max_lines:]
+        # deque does not support slicing; use list conversion for tail
+        lines = list(managed._stderr_lines)
+        tail = lines[-max_lines:]
         return "\n".join(tail)
 
     async def _read_response(
@@ -847,7 +863,13 @@ class ClaudeProcessPool:
                 return
 
             elif event_type == "error":
-                error_msg = event.get("error", {}).get("message", "Unknown error")
+                err = event.get("error", {})
+                if isinstance(err, dict):
+                    error_msg = err.get("message", "Unknown error")
+                elif isinstance(err, str):
+                    error_msg = err
+                else:
+                    error_msg = str(err) if err else "Unknown error"
                 yield StreamEvent(
                     event_type="error",
                     text=error_msg,

@@ -30,17 +30,19 @@ def _make_pool_mock() -> AsyncMock:
 class TestClaudePersistentProviderAvailability:
     """Tests für is_available()."""
 
-    def test_available_when_claude_in_path(self) -> None:
+    @pytest.mark.asyncio
+    async def test_available_when_claude_in_path(self) -> None:
         pool = _make_pool_mock()
         provider = ClaudePersistentProvider(process_pool=pool)
         with patch("shutil.which", return_value="/usr/bin/claude"):
-            assert provider.is_available() is True
+            assert await provider.is_available() is True
 
-    def test_not_available_when_claude_missing(self) -> None:
+    @pytest.mark.asyncio
+    async def test_not_available_when_claude_missing(self) -> None:
         pool = _make_pool_mock()
         provider = ClaudePersistentProvider(process_pool=pool)
         with patch("shutil.which", return_value=None):
-            assert provider.is_available() is False
+            assert await provider.is_available() is False
 
     def test_name_is_claude_persistent(self) -> None:
         pool = _make_pool_mock()

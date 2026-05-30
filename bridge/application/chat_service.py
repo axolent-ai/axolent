@@ -779,8 +779,11 @@ class ChatService:
                 response = f"{response}\n\n_{fallback_notice}_"
 
             # C-3: System prompt leakage guard
+            # Pass memory_context as exclude_texts so that legitimate
+            # memory citations are not flagged as system prompt leakage.
+            _exclude = [memory_context] if memory_context else None
             leak_replacement = check_for_system_prompt_leakage(
-                response, effective_prompt
+                response, effective_prompt, exclude_texts=_exclude
             )
             if leak_replacement is not None:
                 log.warning(
@@ -1225,7 +1228,12 @@ class ChatService:
                         # Write audit AFTER classification so the entry
                         # includes outcome and partial verification data.
                         write_audit_log(stream_guard.build_audit_entry())
-                        # Signal cancellation for silent retry
+                        # Signal guard abort (distinct from user /stop).
+                        # task_meta flag tells the presentation handler to
+                        # trigger a non-streaming repair call instead of a
+                        # hard discard.
+                        task_meta["_guard_abort"] = True
+                        task_meta["_guard_abort_text"] = accumulated_for_guard
                         if cancel_event is not None:
                             cancel_event.set()
                         return
@@ -1239,6 +1247,9 @@ class ChatService:
         task_meta["_language_code"] = lang
         task_meta["_language_ctx"] = _lang_ctx
         task_meta["_user_model"] = user_model
+        # Pack memory context for leakage filter exclude_texts (MUSS 7)
+        if memory_context:
+            task_meta["_memory_context"] = memory_context
         # Issue 2: store actual provider name (not model ID) for repair routing.
         # Streaming always uses claude_persistent; resolved_model is a model ID
         # like "claude-sonnet-4-6" which ProviderRouter cannot route to.
@@ -1300,9 +1311,13 @@ class ChatService:
         language_enforced = False
 
         # C-3: leakage check on the final response
+        # Pass memory_context as exclude_texts so that legitimate
+        # memory citations are not flagged as system prompt leakage.
         if system_prompt:
+            _mem_ctx = (task_meta or {}).get("_memory_context", "")
+            _exclude = [_mem_ctx] if _mem_ctx else None
             leak_replacement = check_for_system_prompt_leakage(
-                response_text, system_prompt
+                response_text, system_prompt, exclude_texts=_exclude
             )
             if leak_replacement is not None:
                 log.warning(

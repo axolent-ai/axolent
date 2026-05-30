@@ -17,6 +17,8 @@ import time
 import urllib.error
 import urllib.request
 
+import httpx
+
 from infrastructure.providers.base import (
     LLMProvider,
     ProviderCapabilities,
@@ -76,20 +78,20 @@ class OllamaProvider(LLMProvider):
         """Ollama capabilities: local, free, 8k context (model-dependent)."""
         return _CAPABILITIES
 
-    def is_available(self) -> bool:
+    async def is_available(self) -> bool:
         """Check if Ollama is reachable on the configured host.
 
-        Makes an HTTP GET to /api/tags with short timeout (2s).
+        Makes an async HTTP GET to /api/tags with short timeout (2s).
         True on 200 OK, False on connection error or timeout.
+        Non-blocking: uses httpx.AsyncClient to avoid event-loop stalls.
         """
         try:
             host = _get_host()
             url = f"{host}/api/tags"
-            req = urllib.request.Request(url, method="GET")
-            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
-            with urllib.request.urlopen(req, timeout=2) as response:  # nosec B310
-                return response.status == 200
-        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError):
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                response = await client.get(url)
+                return response.status_code == 200
+        except (httpx.HTTPError, OSError, TimeoutError, ConnectionError):
             return False
 
     async def query(

@@ -38,7 +38,7 @@ class OpenAICodexProvider(LLMProvider):
         """OpenAI capabilities: cloud, subscription, 128k context."""
         return _CAPABILITIES
 
-    def is_available(self) -> bool:
+    async def is_available(self) -> bool:
         """Stub: always False until real implementation."""
         return False
 

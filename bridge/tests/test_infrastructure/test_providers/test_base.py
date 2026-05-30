@@ -154,7 +154,8 @@ class TestLLMProviderInterface:
         with pytest.raises(TypeError):
             IncompleteProvider()  # type: ignore
 
-    def test_complete_subclass_works(self) -> None:
+    @pytest.mark.asyncio
+    async def test_complete_subclass_works(self) -> None:
         """Eine vollständige Subklasse kann instanziiert werden."""
 
         class DummyProvider(LLMProvider):
@@ -163,7 +164,7 @@ class TestLLMProviderInterface:
             def get_capabilities(self) -> ProviderCapabilities:
                 return ProviderCapabilities(max_context_tokens=8_000)
 
-            def is_available(self) -> bool:
+            async def is_available(self) -> bool:
                 return True
 
             async def query(
@@ -177,7 +178,7 @@ class TestLLMProviderInterface:
 
         provider = DummyProvider()
         assert provider.name == "dummy"
-        assert provider.is_available() is True
+        assert await provider.is_available() is True
         caps = provider.get_capabilities()
         assert caps.max_context_tokens == 8_000
 
@@ -209,7 +210,7 @@ class TestStreamingProviderMixin:
             def get_capabilities(self) -> ProviderCapabilities:
                 return ProviderCapabilities(supports_streaming=True)
 
-            def is_available(self) -> bool:
+            async def is_available(self) -> bool:
                 return True
 
             async def query(

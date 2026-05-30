@@ -55,7 +55,7 @@ class ClaudeProvider(LLMProvider):
         """Claude capabilities: cloud, subscription, 200k context."""
         return _CAPABILITIES
 
-    def is_available(self) -> bool:
+    async def is_available(self) -> bool:
         """Check if `claude` CLI is in PATH."""
         return shutil.which("claude") is not None
 

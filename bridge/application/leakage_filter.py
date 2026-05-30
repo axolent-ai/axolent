@@ -142,7 +142,11 @@ def check_for_forbidden_patterns(response: str) -> Optional[str]:
     return None
 
 
-def check_for_system_prompt_leakage(response: str, system_prompt: str) -> Optional[str]:
+def check_for_system_prompt_leakage(
+    response: str,
+    system_prompt: str,
+    exclude_texts: Optional[list[str]] = None,
+) -> Optional[str]:
     """Check whether the LLM response contains parts of the system prompt.
 
     Two-layer check:
@@ -152,6 +156,10 @@ def check_for_system_prompt_leakage(response: str, system_prompt: str) -> Option
     Args:
         response: The LLM response to check.
         system_prompt: The active system prompt.
+        exclude_texts: Optional list of texts whose fingerprints should be
+            excluded from leak detection. Used to whitelist memory content
+            that was injected into the system prompt: when the LLM correctly
+            cites its own memory, that is NOT a leak.
 
     Returns:
         None if no leak was detected.
@@ -173,9 +181,18 @@ def check_for_system_prompt_leakage(response: str, system_prompt: str) -> Option
     if not fingerprints:
         return None
 
+    # Build exclusion set from memory/whitelist texts
+    excluded_fps: set[str] = set()
+    if exclude_texts:
+        for text in exclude_texts:
+            if text:
+                excluded_fps.update(_extract_fingerprints(text))
+
     normalized_response = " ".join(response.lower().split())
 
     for fp in fingerprints:
+        if fp in excluded_fps:
+            continue  # Fingerprint from whitelisted text (e.g. memory)
         if fp in normalized_response:
             log.warning(
                 "System prompt leakage detected: %d-char match found. "

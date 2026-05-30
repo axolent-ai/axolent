@@ -1521,7 +1521,7 @@ class TestStderrCapture:
         result_events = [e for e in events if e.event_type == "result"]
         assert len(result_events) == 1
         assert result_events[0].full_text == "Hello"
-        assert managed._stderr_lines == []
+        assert list(managed._stderr_lines) == []
         await pool.shutdown()
 
     @pytest.mark.asyncio

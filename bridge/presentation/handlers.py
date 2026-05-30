@@ -710,7 +710,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if (
         persistent_provider is not None
         and hasattr(persistent_provider, "query_streaming")
-        and persistent_provider.is_available()
+        and await persistent_provider.is_available()
     ):
         task = asyncio.create_task(
             _streaming_background_task(
@@ -823,7 +823,7 @@ async def reprocess_after_skill_confirmation(
     if (
         persistent_provider is not None
         and hasattr(persistent_provider, "query_streaming")
-        and persistent_provider.is_available()
+        and await persistent_provider.is_available()
     ):
         # Build a minimal Update-like object for the streaming handler.
         # The streaming handler needs update.effective_chat for message
@@ -1029,6 +1029,7 @@ async def _handle_message_streaming(
             )
         )
 
+        stream_iter = None
         try:
             (
                 stream_iter,
@@ -1120,33 +1121,100 @@ async def _handle_message_streaming(
                 await keepalive
             except asyncio.CancelledError:
                 pass
+            # Explicitly close the async generator to release managed.lock
+            # and avoid orphaned generators holding resources until GC.
+            if stream_iter is not None:
+                try:
+                    await stream_iter.aclose()
+                except Exception:  # nosec B110 - best-effort generator cleanup
+                    pass  # generator may already be exhausted
 
         duration = time.monotonic() - t_start
 
-        # EK-03: If cancelled, hard return. No fallback finalize, no save.
-        # This prevents /reset from storing partial responses into history.
+        # EK-03: If cancelled, decide between user /stop (hard discard)
+        # and StreamGuard abort (trigger non-streaming repair call).
         if session.is_cancelled:
-            log.info(
-                "Stream cancelled (terminal): user=%d chat=%d, "
-                "discarding %d accumulated chars",
-                user_id,
-                chat_id,
-                len(session.accumulated_text or ""),
-            )
-            # Audit the cancellation, then exit completely
-            write_raw_audit(
-                {
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "event_type": "stream_cancelled",
-                    "request_id": envelope.request_id,
-                    "user_id": user_id,
-                    "chat_id": chat_id,
-                    "streaming_chunks": streaming_chunks,
-                    "accumulated_chars": len(session.accumulated_text or ""),
-                    "duration_seconds": round(duration, 2),
-                }
-            )
-            return  # hard exit: no fallback, no save, no finalize
+            is_guard = task_meta.get("_guard_abort", False)
+
+            if is_guard:
+                # StreamGuard detected language drift. Trigger a
+                # non-streaming repair call to produce a correct response.
+                log.info(
+                    "StreamGuard abort: triggering repair call "
+                    "(user=%d chat=%d, partial=%d chars)",
+                    user_id,
+                    chat_id,
+                    len(task_meta.get("_guard_abort_text", "")),
+                )
+                write_raw_audit(
+                    {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "event_type": "stream_guard_repair_triggered",
+                        "request_id": envelope.request_id,
+                        "user_id": user_id,
+                        "chat_id": chat_id,
+                        "streaming_chunks": streaming_chunks,
+                        "partial_chars": len(task_meta.get("_guard_abort_text", "")),
+                        "duration_seconds": round(duration, 2),
+                    }
+                )
+                # Non-streaming repair: re-send the user message through
+                # the synchronous path which includes LCP enforcement.
+                try:
+                    repair_result = await chat_service.process_user_message(
+                        text=text,
+                        user_id=user_id,
+                        chat_id=chat_id,
+                        username=username,
+                        system_prompt=_get_system_prompt(context),
+                        provider_name=task_meta.get("_provider_name"),
+                        reply_to_text=reply_to_text,
+                        context=_exec_ctx,
+                        plan=_exec_plan,
+                    )
+                    final_text = repair_result.response
+                    await finalize_streaming(session, final_text)
+                    log.info(
+                        "StreamGuard repair succeeded: %d chars (user=%d)",
+                        len(final_text),
+                        user_id,
+                    )
+                except Exception as repair_err:
+                    log.error(
+                        "StreamGuard repair failed: %s (user=%d)",
+                        repair_err,
+                        user_id,
+                    )
+                    await abort_streaming(
+                        session,
+                        "Language correction failed. Please try again.",
+                    )
+                # process_user_message already saves history; do not
+                # fall through to save_streaming_result (would double-save).
+                return
+            else:
+                # User /stop or /reset: hard discard (original behavior).
+                log.info(
+                    "Stream cancelled (terminal): user=%d chat=%d, "
+                    "discarding %d accumulated chars",
+                    user_id,
+                    chat_id,
+                    len(session.accumulated_text or ""),
+                )
+                write_raw_audit(
+                    {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "event_type": "stream_cancelled",
+                        "request_id": envelope.request_id,
+                        "user_id": user_id,
+                        "chat_id": chat_id,
+                        "streaming_chunks": streaming_chunks,
+                        "accumulated_chars": len(session.accumulated_text or ""),
+                        "duration_seconds": round(duration, 2),
+                        **filter_task_meta(task_meta),
+                    }
+                )
+                return  # hard exit: no fallback, no save, no finalize
 
         # Fallback: no final text but accumulated text available
         if not final_text and session.accumulated_text and not had_error:

@@ -195,21 +195,34 @@ class MemoryConflictDetector:
             content = entry.get("content", "")
             entry_id = entry.get("id", "")
 
+            # Collect all matches for this entry, then deduplicate:
+            # If two patterns match with overlapping subjects (e.g.
+            # "farbe" and "lieblingsfarbe" for the same predicate_type),
+            # keep only the most specific (longest subject).
+            matches: list[tuple[str, str, str]] = []  # (subject, value, pred_type)
             for svp in _SUBJECT_VALUE_PATTERNS:
                 m = svp.pattern.search(content)
                 if m:
                     subject = m.group(1).strip().lower()
-                    value = m.group(2).strip().lower()
-                    # Truncate value to first 100 chars to avoid noise
-                    value = value[:100]
-                    key = (subject, svp.predicate_type)
+                    value = m.group(2).strip().lower()[:100]
+                    matches.append((subject, value, svp.predicate_type))
 
-                    if key not in subject_map:
-                        subject_map[key] = {}
-                    if value not in subject_map[key]:
-                        subject_map[key][value] = []
-                    subject_map[key][value].append(entry_id)
-                    break  # First matching pattern wins
+            # Deduplicate: for same predicate_type, keep first match
+            # (patterns are ordered most-specific-first, so the first
+            # matching pattern is the most appropriate one). Different
+            # predicate types are independent (multi-subject entries).
+            best_per_type: dict[str, tuple[str, str]] = {}
+            for subject, value, pred_type in matches:
+                if pred_type not in best_per_type:
+                    best_per_type[pred_type] = (subject, value)
+
+            for pred_type, (subject, value) in best_per_type.items():
+                key = (subject, pred_type)
+                if key not in subject_map:
+                    subject_map[key] = {}
+                if value not in subject_map[key]:
+                    subject_map[key][value] = []
+                subject_map[key][value].append(entry_id)
 
         # Build conflicts: groups with 2+ distinct values
         conflicts: list[MemoryConflict] = []

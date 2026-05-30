@@ -140,6 +140,7 @@ def _make_mock_chat_service() -> MagicMock:
     # --- sync attributes / services --------------------------------
     svc.provider_router = MagicMock()
     svc.provider_router.providers = {}
+    svc.provider_router.list_available = AsyncMock(return_value=[])
     svc.memory_service = None
     svc.model_service = None
     svc.task_router = MagicMock()

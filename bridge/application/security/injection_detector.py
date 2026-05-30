@@ -17,9 +17,10 @@ NOT a silver bullet. Defense-in-depth requires:
 from __future__ import annotations
 
 import re
-import unicodedata
 from dataclasses import dataclass
 from typing import Optional
+
+from application.security.input_normalizer import normalize_for_security_check
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,7 +40,9 @@ class InjectionMatch:
 
 # Compiled regex patterns for prompt injection detection.
 # Each tuple: (pattern_name, compiled_regex, severity)
-# Patterns are case-insensitive and applied after NFKC normalization.
+# Patterns are case-insensitive and applied after NFKC + Cf-strip normalization.
+# Note: NFKC folds Compatibility Forms (Fullwidth etc.) but NOT Cross-Script
+# Confusables (e.g. Cyrillic 'a' U+0430). Phase 1.5 plans UTS-39 skeleton.
 _INJECTION_PATTERNS: list[tuple[str, re.Pattern, str]] = [
     # Direct override attempts
     (
@@ -168,6 +171,179 @@ _INJECTION_PATTERNS: list[tuple[str, re.Pattern, str]] = [
         ),
         "high",
     ),
+    # --- Multilingual override patterns (Finding 9, 20-locale coverage) ---
+    # French
+    (
+        "ignore_previous_fr",
+        re.compile(
+            r"ignor(e[zr]?|ons)\s+(toutes?\s+)?(les\s+)?(instructions?|consignes?)\s+(pr[eé]c[eé]dentes?|ant[eé]rieures?|pr[eé]c[eé]dentes?)",
+            re.IGNORECASE,
+        ),
+        "high",
+    ),
+    # Spanish
+    (
+        "ignore_previous_es",
+        re.compile(
+            r"ignora\s+(todas?\s+)?(las\s+)?(instrucciones?|directrices?)\s+(anteriores?|previas?)",
+            re.IGNORECASE,
+        ),
+        "high",
+    ),
+    # Italian
+    (
+        "ignore_previous_it",
+        re.compile(
+            r"ignora\s+(tutte?\s+)?(le\s+)?(istruzioni|direttive)\s+(precedenti|anteriori)",
+            re.IGNORECASE,
+        ),
+        "high",
+    ),
+    # Portuguese
+    (
+        "ignore_previous_pt",
+        re.compile(
+            r"ignor(e|ar)\s+(todas?\s+)?(as\s+)?(instru[cç][oõ]es?|diretrizes?)\s+(anteriores?|pr[eé]vias?)",
+            re.IGNORECASE,
+        ),
+        "high",
+    ),
+    # Russian
+    (
+        "ignore_previous_ru",
+        re.compile(
+            r"игнорируй\s+(все\s+)?предыдущие\s+инструкции",
+            re.IGNORECASE,
+        ),
+        "high",
+    ),
+    # Japanese
+    (
+        "ignore_previous_ja",
+        re.compile(
+            r"(以前|上記|すべて)(の)?指示(を)?無視",
+            re.IGNORECASE,
+        ),
+        "high",
+    ),
+    # Chinese
+    (
+        "ignore_previous_zh",
+        re.compile(
+            r"忽略(所有|之前|上述)(的)?指令",
+            re.IGNORECASE,
+        ),
+        "high",
+    ),
+    # Arabic
+    (
+        "ignore_previous_ar",
+        re.compile(
+            r"تجاهل\s+(جميع\s+)?التعليمات\s+السابقة",
+            re.IGNORECASE,
+        ),
+        "high",
+    ),
+    # Hindi
+    (
+        "ignore_previous_hi",
+        re.compile(
+            r"(पिछले|पूर्व|सभी)\s+(निर्देशों|अनुदेशों)\s+(को\s+)?अनदेखा\s+कर",
+            re.IGNORECASE,
+        ),
+        "high",
+    ),
+    # Korean
+    (
+        "ignore_previous_ko",
+        re.compile(
+            r"(이전|위|모든)\s*(지시|명령)(을|를)?\s*무시",
+            re.IGNORECASE,
+        ),
+        "high",
+    ),
+    # Dutch
+    (
+        "ignore_previous_nl",
+        re.compile(
+            r"negeer\s+(alle\s+)?(vorige|eerdere|bovenstaande)\s+(instructies?|aanwijzingen?)",
+            re.IGNORECASE,
+        ),
+        "high",
+    ),
+    # Polish
+    (
+        "ignore_previous_pl",
+        re.compile(
+            r"ignoruj\s+(wszystkie\s+)?(poprzednie|wcześniejsze)\s+(instrukcje|polecenia)",
+            re.IGNORECASE,
+        ),
+        "high",
+    ),
+    # Swedish
+    (
+        "ignore_previous_sv",
+        re.compile(
+            r"ignorera\s+(alla\s+)?(tidigare|föregående)\s+(instruktioner|anvisningar)",
+            re.IGNORECASE,
+        ),
+        "high",
+    ),
+    # Turkish
+    (
+        "ignore_previous_tr",
+        re.compile(
+            r"(önceki|tüm)\s+(talimatları?|yönergeleri?)\s+(yok\s+say|görmezden\s+gel|ihmal\s+et)",
+            re.IGNORECASE,
+        ),
+        "high",
+    ),
+    # Ukrainian
+    (
+        "ignore_previous_uk",
+        re.compile(
+            r"ігноруй\s+(всі\s+)?попередні\s+інструкції",
+            re.IGNORECASE,
+        ),
+        "high",
+    ),
+    # Vietnamese
+    (
+        "ignore_previous_vi",
+        re.compile(
+            r"bỏ\s+qua\s+(tất\s+cả\s+)?(các\s+)?(hướng\s+dẫn|chỉ\s+thị)\s+(trước|đã\s+cho)",
+            re.IGNORECASE,
+        ),
+        "high",
+    ),
+    # Thai (patterns in NFKC-normalized form since detector normalizes first)
+    (
+        "ignore_previous_th",
+        re.compile(
+            r"(ละเลย|เพิกเฉย).{0,20}(คำสั่ง|คําสั่ง|คำแนะนำ|คําแนะนํา)",
+            re.IGNORECASE,
+        ),
+        "high",
+    ),
+    # Indonesian
+    (
+        "ignore_previous_id",
+        re.compile(
+            r"abaikan\s+(semua\s+)?(instruksi|perintah)\s+(sebelumnya|di\s+atas)",
+            re.IGNORECASE,
+        ),
+        "high",
+    ),
+    # --- Language-agnostic structural patterns (Finding 9/10) ---
+    # Role labels that could appear in user input to spoof turns
+    (
+        "axolent_role_injection",
+        re.compile(
+            r"^\s*Axolent\s*:",
+            re.MULTILINE,
+        ),
+        "high",
+    ),
 ]
 
 
@@ -202,8 +378,9 @@ class InjectionDetector:
     def check(self, text: str) -> Optional[InjectionMatch]:
         """Check text for prompt injection patterns.
 
-        Normalizes text (NFKC) before pattern matching to prevent
-        homoglyph bypass (GAP-08 defense-in-depth).
+        Normalizes text (NFKC + Cf-strip) before pattern matching.
+        Defeats Zero-Width and Fullwidth bypass (GAP-08). Does NOT
+        fold Cross-Script Confusables (Phase 1.5 UTS-39).
 
         Args:
             text: The text to check for injection patterns.
@@ -214,8 +391,8 @@ class InjectionDetector:
         if not text or not text.strip():
             return None
 
-        # NFKC normalization: defeats homoglyph attacks
-        normalized = unicodedata.normalize("NFKC", text)
+        # Central normalization: NFKC + strip Cf (Zero-Width, Bidi, etc.)
+        normalized = normalize_for_security_check(text)
 
         for pattern_name, regex, severity in self._patterns:
             match = regex.search(normalized)
@@ -243,7 +420,7 @@ class InjectionDetector:
         if not text or not text.strip():
             return []
 
-        normalized = unicodedata.normalize("NFKC", text)
+        normalized = normalize_for_security_check(text)
         matches: list[InjectionMatch] = []
 
         for pattern_name, regex, severity in self._patterns:

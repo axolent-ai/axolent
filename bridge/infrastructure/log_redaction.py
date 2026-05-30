@@ -36,8 +36,10 @@ SECRET_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ),
     # 4. Anthropic API key
     (re.compile(r"sk-ant-[a-zA-Z0-9_-]{20,}"), "<REDACTED-ANTHROPIC-KEY>"),
-    # 5. OpenAI API key (sk- followed by 40+ alphanum, but NOT sk-ant-)
-    (re.compile(r"sk-(?!ant-)[a-zA-Z0-9]{40,}"), "<REDACTED-OPENAI-KEY>"),
+    # 5. OpenAI API key: sk-proj-..., sk-svcacct-..., sk-admin-..., sk-<40+>
+    #    Accepts hyphens and underscores in body (modern key formats).
+    #    Negative lookahead for sk-ant- (Anthropic keys have own pattern).
+    (re.compile(r"sk-(?!ant-)[A-Za-z0-9_-]{20,}"), "<REDACTED-OPENAI-KEY>"),
     # 6. Generic Bearer token in headers
     (re.compile(r"Bearer\s+[A-Za-z0-9._-]{20,}"), "Bearer <REDACTED>"),
 ]
@@ -132,6 +134,44 @@ class SecretRedactionFilter(logging.Filter):
         return True
 
 
+class RedactingFormatter(logging.Formatter):
+    """Formatter that redacts secrets from the FINAL formatted output.
+
+    This covers exception tracebacks (formatException) which the filter
+    approach misses, because filters only see record.msg/record.args,
+    not the formatted traceback text.
+
+    Defense-in-depth: works alongside SecretRedactionFilter. The filter
+    catches secrets in msg/args early; the formatter catches anything
+    that leaks into the final formatted string (especially tracebacks
+    from httpx/telegram exceptions containing bot tokens in URLs).
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Format the record and redact any secrets in the final output.
+
+        Args:
+            record: The log record to format.
+
+        Returns:
+            Formatted and redacted log string.
+        """
+        output = super().format(record)
+        return _redact_string(output)
+
+    def formatException(self, ei: tuple) -> str:  # type: ignore[override]
+        """Format exception info and redact secrets from traceback.
+
+        Args:
+            ei: Exception info tuple (type, value, traceback).
+
+        Returns:
+            Redacted traceback string.
+        """
+        output = super().formatException(ei)
+        return _redact_string(output)
+
+
 # ---------------------------------------------------------------------------
 # Logger names that should have the filter installed (defense-in-depth:
 # root logger catches everything, but explicit sub-loggers ensure coverage
@@ -148,8 +188,32 @@ _TARGET_LOGGER_NAMES: Sequence[str] = (
 )
 
 
+def _install_redacting_formatter(handler: logging.Handler) -> None:
+    """Replace a handler's formatter with RedactingFormatter (preserving format).
+
+    Idempotent: does nothing if already a RedactingFormatter.
+
+    Args:
+        handler: The handler to upgrade.
+    """
+    if isinstance(handler.formatter, RedactingFormatter):
+        return
+
+    # Preserve existing format string if any
+    fmt = None
+    datefmt = None
+    if handler.formatter:
+        fmt = handler.formatter._fmt
+        datefmt = handler.formatter.datefmt
+
+    handler.setFormatter(RedactingFormatter(fmt=fmt, datefmt=datefmt))
+
+
 def install_secret_redaction_filter(logger: logging.Logger | None = None) -> None:
-    """Install SecretRedactionFilter on loggers AND their handlers.
+    """Install SecretRedactionFilter AND RedactingFormatter.
+
+    The filter catches secrets in msg/args early. The formatter catches
+    secrets in the final output including tracebacks (Finding 6 fix).
 
     Python logging caveat: filters on a parent logger do NOT apply to
     records that propagate up from child loggers. Records propagated from
@@ -160,6 +224,9 @@ def install_secret_redaction_filter(logger: logging.Logger | None = None) -> Non
       2. On all root-logger handlers (catches ALL propagated records before
          they are emitted -- this is the critical layer).
       3. On key sub-loggers (defense-in-depth for propagate=False cases).
+
+    Additionally installs RedactingFormatter on ALL handlers (covers
+    exception tracebacks that filters cannot reach).
 
     Safe to call multiple times (idempotent): checks whether the filter
     class is already attached before adding.
@@ -180,6 +247,7 @@ def install_secret_redaction_filter(logger: logging.Logger | None = None) -> Non
         # Also install on this logger's handlers
         for handler in logger.handlers:
             _add_filter_if_missing(handler)
+            _install_redacting_formatter(handler)
         return
 
     # Install on root logger
@@ -189,6 +257,7 @@ def install_secret_redaction_filter(logger: logging.Logger | None = None) -> Non
     # Install on ALL root-logger handlers (critical: catches propagated records)
     for handler in root.handlers:
         _add_filter_if_missing(handler)
+        _install_redacting_formatter(handler)
 
     # Install on specific sub-loggers (defense-in-depth for propagate=False)
     for name in _TARGET_LOGGER_NAMES:
@@ -197,3 +266,4 @@ def install_secret_redaction_filter(logger: logging.Logger | None = None) -> Non
         # Also install on any handlers directly on the sub-logger
         for handler in sub_logger.handlers:
             _add_filter_if_missing(handler)
+            _install_redacting_formatter(handler)

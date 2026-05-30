@@ -210,7 +210,7 @@ class DebateOrchestrator:
         self._instruction_compiler = instruction_compiler
         self._language_enforcement = language_enforcement
 
-    def _select_providers(self) -> list[str]:
+    async def _select_providers(self) -> list[str]:
         """Determine which providers to use for the debate.
 
         Priority:
@@ -225,7 +225,7 @@ class DebateOrchestrator:
         """
         configured = _get_configured_providers()
         if configured is not None:
-            available = set(self.provider_router.list_available())
+            available = set(await self.provider_router.list_available())
             selected = [p for p in configured if p in available]
             if not selected:
                 log.warning(
@@ -235,7 +235,7 @@ class DebateOrchestrator:
                 )
             return deduplicate_providers(selected)
 
-        all_available = self.provider_router.list_available()
+        all_available = await self.provider_router.list_available()
         return deduplicate_providers(all_available)
 
     async def _query_provider(
@@ -689,7 +689,7 @@ class DebateOrchestrator:
 
         # Judge provider selection: claude_persistent > claude > ollama_local
         judge_candidates = ["claude_persistent", "claude", "ollama_local"]
-        available = set(self.provider_router.list_available())
+        available = set(await self.provider_router.list_available())
 
         # Exclude providers that participated in the debate to minimize
         # self-evaluation bias? No: with only 2 providers none would remain.
@@ -837,7 +837,7 @@ class DebateOrchestrator:
                 context.request_id,
             )
 
-        providers = self._select_providers()
+        providers = await self._select_providers()
         if not providers:
             return DebateResult(
                 question=question,
@@ -876,9 +876,9 @@ class DebateOrchestrator:
         errors: dict[str, str] = {}
         provider_models: dict[str, str] = {}
 
-        for result in results:
+        for provider_key, result in zip(providers, results):
             if isinstance(result, Exception):
-                errors["unknown"] = str(result)
+                errors[f"provider_{provider_key}_error"] = str(result)
                 continue
             provider_name, text, error, model_id = result
             if text is not None:

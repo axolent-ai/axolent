@@ -27,10 +27,11 @@ No external dependencies. Pure json parsing.
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any, Iterator
+
+from infrastructure.safe_json import safe_json_load
 
 from application.skill_compression.conversation_import.conversation_source import (
     ParsedConversation,
@@ -39,8 +40,8 @@ from application.skill_compression.conversation_import.conversation_source impor
 
 log = logging.getLogger(__name__)
 
-# Maximum file size to attempt parsing (500 MB safety limit)
-_MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024
+# Maximum file size to attempt parsing (10 MB, consistent with orchestrator cap)
+_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 
 
 class ChatGPTImporter:
@@ -102,9 +103,13 @@ class ChatGPTImporter:
             ParsedConversation instances.
         """
         try:
-            with path.open("r", encoding="utf-8", errors="replace") as fh:
-                data = json.load(fh)
-        except (OSError, json.JSONDecodeError) as exc:
+            raw = path.read_text(encoding="utf-8", errors="replace")
+            data = safe_json_load(
+                raw,
+                max_bytes=_MAX_FILE_SIZE_BYTES,
+                max_depth=64,
+            )
+        except (OSError, ValueError) as exc:
             log.warning("Failed to parse ChatGPT export: %s: %s", path, exc)
             return
 

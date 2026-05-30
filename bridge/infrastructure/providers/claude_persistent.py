@@ -50,6 +50,10 @@ _CAPABILITIES = ProviderCapabilities(
 )
 
 
+class _SubprocessError(Exception):
+    """Internal sentinel for subprocess errors during response collection."""
+
+
 class ClaudePersistentProvider(LLMProvider, StreamingProvider):
     """Claude Code CLI as LLM provider with persistent subprocess (Mode B).
 
@@ -67,7 +71,7 @@ class ClaudePersistentProvider(LLMProvider, StreamingProvider):
         """Claude capabilities: cloud, subscription, 200k context, streaming."""
         return _CAPABILITIES
 
-    def is_available(self) -> bool:
+    async def is_available(self) -> bool:
         """Check if `claude` CLI is in PATH."""
         return ClaudeProcessPool.is_cli_available()
 
@@ -108,24 +112,50 @@ class ClaudePersistentProvider(LLMProvider, StreamingProvider):
 
         try:
             full_text = ""
-            async for event in self._pool.send_message(
-                user_id=user_id,
-                chat_id=chat_id,
-                prompt=prompt,
-                system_prompt=system_prompt,
-                model=model,
-            ):
-                if event.event_type == "result":
-                    full_text = event.full_text
-                    break
-                elif event.event_type == "error":
-                    duration = time.monotonic() - start
-                    return ProviderResponse(
-                        text="",
-                        duration_seconds=duration,
-                        provider_name=self.name,
-                        error=f"subprocess_error: {event.text}",
-                    )
+
+            async def _collect_response() -> str:
+                """Collect the full response from the process pool stream."""
+                result = ""
+                async for event in self._pool.send_message(
+                    user_id=user_id,
+                    chat_id=chat_id,
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    model=model,
+                ):
+                    if event.event_type == "result":
+                        result = event.full_text
+                        break
+                    elif event.event_type == "error":
+                        raise _SubprocessError(event.text or "Unknown error")
+                return result
+
+            try:
+                full_text = await asyncio.wait_for(
+                    _collect_response(), timeout=timeout_seconds
+                )
+            except asyncio.TimeoutError:
+                duration = time.monotonic() - start
+                log.warning(
+                    "ClaudePersistentProvider timeout after %.1fs (limit=%ds)",
+                    duration,
+                    timeout_seconds,
+                )
+                return ProviderResponse(
+                    text="",
+                    duration_seconds=duration,
+                    provider_name=self.name,
+                    model=model or CLAUDE_POOL_MODEL,
+                    error=f"timeout_after_{timeout_seconds}s",
+                )
+            except _SubprocessError as sub_err:
+                duration = time.monotonic() - start
+                return ProviderResponse(
+                    text="",
+                    duration_seconds=duration,
+                    provider_name=self.name,
+                    error=f"subprocess_error: {sub_err}",
+                )
 
             duration = time.monotonic() - start
 

@@ -145,7 +145,7 @@ class ProviderRouter:
 
         provider = self.providers[target]
 
-        if not provider.is_available():
+        if not await provider.is_available():
             raise ProviderUnavailable(
                 target,
                 reason="CLI not installed or no API key set",
@@ -187,11 +187,13 @@ class ProviderRouter:
 
         return await provider.query(**kwargs)
 
-    def list_available(self) -> list[str]:
+    async def list_available(self) -> list[str]:
         """Return a list of all available providers."""
-        return [
-            name for name, provider in self.providers.items() if provider.is_available()
-        ]
+        results = []
+        for name, provider in self.providers.items():
+            if await provider.is_available():
+                results.append(name)
+        return results
 
     def list_registered(self) -> list[str]:
         """Return a list of all registered providers."""

@@ -119,6 +119,9 @@ class DraftStore:
         self._drafts: dict[tuple[int, int, str], SkillDraft] = {}
         # Quick lookup: (user_id, chat_id) -> draft_id (one active draft per chat)
         self._active: dict[tuple[int, int], str] = {}
+        # O(1) ownership index: (chat_id, draft_id) -> user_id
+        # Prevents cross-user scan on get() miss.
+        self._draft_owners: dict[tuple[int, str], int] = {}
         self._lock = asyncio.Lock()
 
     @property
@@ -167,6 +170,7 @@ class DraftStore:
             old_draft_id = self._active.get((user_id, chat_id))
             if old_draft_id is not None:
                 self._drafts.pop((user_id, chat_id, old_draft_id), None)
+                self._draft_owners.pop((chat_id, old_draft_id), None)
 
             # Create new draft
             draft_id = uuid4().hex
@@ -188,6 +192,7 @@ class DraftStore:
 
             self._drafts[(user_id, chat_id, draft_id)] = draft
             self._active[(user_id, chat_id)] = draft_id
+            self._draft_owners[(chat_id, draft_id)] = user_id
             return draft
 
     async def get(
@@ -216,11 +221,13 @@ class DraftStore:
             draft = self._drafts.get(key)
 
             if draft is None:
-                # Could be a different user's draft (check all keys)
-                for k, d in self._drafts.items():
-                    if k[2] == draft_id and k[1] == chat_id:
-                        if d.user_id != user_id:
-                            raise DraftOwnershipError("Draft ownership check failed.")
+                # O(1) ownership check via secondary index instead of
+                # scanning all drafts (prevents cross-user probe / DoS).
+                owner_key = (chat_id, draft_id)
+                if owner_key in self._draft_owners:
+                    owner_uid = self._draft_owners[owner_key]
+                    if owner_uid != user_id:
+                        raise DraftOwnershipError("Draft ownership check failed.")
                 return None
 
             # Check ownership
@@ -232,6 +239,7 @@ class DraftStore:
                 # Expired: remove and return None
                 self._drafts.pop(key, None)
                 self._active.pop((user_id, chat_id), None)
+                self._draft_owners.pop((chat_id, draft_id), None)
                 return None
 
             return draft
@@ -269,11 +277,12 @@ class DraftStore:
             draft = self._drafts.get(key)
 
             if draft is None:
-                # Check if it exists for another user
-                for k, d in self._drafts.items():
-                    if k[2] == draft_id and k[1] == chat_id:
-                        if d.user_id != user_id:
-                            raise DraftOwnershipError("Draft ownership check failed.")
+                # O(1) ownership check via secondary index
+                owner_key = (chat_id, draft_id)
+                if owner_key in self._draft_owners:
+                    owner_uid = self._draft_owners[owner_key]
+                    if owner_uid != user_id:
+                        raise DraftOwnershipError("Draft ownership check failed.")
                 raise DraftNotFoundError(f"Draft '{draft_id}' not found.")
 
             # Check ownership
@@ -284,6 +293,7 @@ class DraftStore:
             if datetime.now(timezone.utc) > draft.expires_at:
                 self._drafts.pop(key, None)
                 self._active.pop((user_id, chat_id), None)
+                self._draft_owners.pop((chat_id, draft_id), None)
                 raise DraftExpiredError(
                     f"Draft '{draft_id}' has expired. Please start with /learn again."
                 )
@@ -339,11 +349,12 @@ class DraftStore:
             draft = self._drafts.get(key)
 
             if draft is None:
-                # Check if it belongs to another user
-                for k, d in self._drafts.items():
-                    if k[2] == draft_id and k[1] == chat_id:
-                        if d.user_id != user_id:
-                            raise DraftOwnershipError("Draft ownership check failed.")
+                # O(1) ownership check via secondary index
+                owner_key = (chat_id, draft_id)
+                if owner_key in self._draft_owners:
+                    owner_uid = self._draft_owners[owner_key]
+                    if owner_uid != user_id:
+                        raise DraftOwnershipError("Draft ownership check failed.")
                 return False
 
             if draft.user_id != user_id:
@@ -351,6 +362,7 @@ class DraftStore:
 
             self._drafts.pop(key, None)
             self._active.pop((user_id, chat_id), None)
+            self._draft_owners.pop((chat_id, draft_id), None)
             return True
 
     async def cleanup_expired(self) -> int:
@@ -372,6 +384,7 @@ class DraftStore:
             user_id, chat_id, draft_id = key
             if self._active.get((user_id, chat_id)) == draft_id:
                 self._active.pop((user_id, chat_id), None)
+            self._draft_owners.pop((chat_id, draft_id), None)
         return len(expired_keys)
 
     async def get_active_for_chat(
@@ -398,5 +411,6 @@ class DraftStore:
             if datetime.now(timezone.utc) > draft.expires_at:
                 self._drafts.pop((user_id, chat_id, draft_id), None)
                 self._active.pop((user_id, chat_id), None)
+                self._draft_owners.pop((chat_id, draft_id), None)
                 return None
             return draft

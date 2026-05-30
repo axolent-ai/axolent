@@ -152,10 +152,13 @@ class LLMProvider(ABC):
         ...
 
     @abstractmethod
-    def is_available(self) -> bool:
+    async def is_available(self) -> bool:
         """Check if the provider is available on this system.
 
         Checks e.g. whether the CLI binary is in PATH or an API key is set.
+
+        Must be non-blocking (no sync network IO). Implementations with
+        network checks must use async HTTP clients (e.g. httpx.AsyncClient).
         """
         ...
 

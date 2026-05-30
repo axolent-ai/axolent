@@ -8,3 +8,8 @@
 # (commit 9f4a24e). Working-tree value is already dummy-safe since
 # commit a51e77b. See .gitleaks.toml allowlist for current rules.
 9f4a24ec4cbd13c3a2b6b74b37ce2492b3729570:bridge/tests/test_security/test_stride_high_fixes.py:generic-api-key:80
+
+# False positive: _make_fake_context() call in learn_flow_production test.
+# The function arguments list happens to match github-pat regex pattern.
+# No actual token present. Verified: commit bdaeed19 line 586.
+bdaeed19da099b52ec8f9639776c5442f7493966:bridge/tests/test_application/test_skill_compression/test_skill_contracts_v2/test_learn_flow_production.py:github-pat:586

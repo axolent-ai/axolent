@@ -22,74 +22,74 @@ from infrastructure.providers.ollama_local import OllamaProvider
 
 
 class TestOllamaProviderAvailability:
-    """Tests für is_available()."""
+    """Tests for is_available() (async, uses httpx)."""
 
-    def test_available_when_ollama_responds_200(self) -> None:
-        """is_available() gibt True wenn HTTP 200 von /api/tags."""
+    @pytest.mark.asyncio
+    async def test_available_when_ollama_responds_200(self) -> None:
+        """is_available() returns True on HTTP 200 from /api/tags."""
         provider = OllamaProvider()
 
         mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.__enter__ = MagicMock(return_value=mock_response)
-        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.status_code = 200
 
-        with patch("urllib.request.urlopen", return_value=mock_response):
-            assert provider.is_available() is True
+        with patch("httpx.AsyncClient.get", return_value=mock_response):
+            assert await provider.is_available() is True
 
-    def test_not_available_when_connection_refused(self) -> None:
-        """is_available() gibt False bei Connection-Error."""
+    @pytest.mark.asyncio
+    async def test_not_available_when_connection_refused(self) -> None:
+        """is_available() returns False on connection error."""
+        import httpx
+
         provider = OllamaProvider()
 
-        import urllib.error
-
         with patch(
-            "urllib.request.urlopen",
-            side_effect=urllib.error.URLError("Connection refused"),
+            "httpx.AsyncClient.get",
+            side_effect=httpx.ConnectError("Connection refused"),
         ):
-            assert provider.is_available() is False
+            assert await provider.is_available() is False
 
-    def test_not_available_when_timeout(self) -> None:
-        """is_available() gibt False bei Timeout."""
+    @pytest.mark.asyncio
+    async def test_not_available_when_timeout(self) -> None:
+        """is_available() returns False on timeout."""
+        import httpx
+
         provider = OllamaProvider()
 
         with patch(
-            "urllib.request.urlopen",
-            side_effect=TimeoutError("Connection timed out"),
+            "httpx.AsyncClient.get",
+            side_effect=httpx.TimeoutException("timed out"),
         ):
-            assert provider.is_available() is False
+            assert await provider.is_available() is False
 
-    def test_not_available_when_oserror(self) -> None:
-        """is_available() gibt False bei OSError (z.B. Network unreachable)."""
+    @pytest.mark.asyncio
+    async def test_not_available_when_oserror(self) -> None:
+        """is_available() returns False on OSError (network unreachable)."""
         provider = OllamaProvider()
 
         with patch(
-            "urllib.request.urlopen",
+            "httpx.AsyncClient.get",
             side_effect=OSError("Network unreachable"),
         ):
-            assert provider.is_available() is False
+            assert await provider.is_available() is False
 
     def test_name_is_ollama_local(self) -> None:
         provider = OllamaProvider()
         assert provider.name == "ollama_local"
 
-    def test_respects_ollama_host_env(self) -> None:
-        """is_available() nutzt OLLAMA_HOST env-var."""
+    @pytest.mark.asyncio
+    async def test_respects_ollama_host_env(self) -> None:
+        """is_available() uses OLLAMA_HOST env-var."""
         provider = OllamaProvider()
 
         mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.__enter__ = MagicMock(return_value=mock_response)
-        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.status_code = 200
 
         with patch.dict("os.environ", {"OLLAMA_HOST": "http://custom-host:9999"}):
-            with patch(
-                "urllib.request.urlopen", return_value=mock_response
-            ) as mock_open:
-                provider.is_available()
+            with patch("httpx.AsyncClient.get", return_value=mock_response) as mock_get:
+                await provider.is_available()
                 # Verify custom host was used
-                call_args = mock_open.call_args
-                req = call_args[0][0]
-                assert "custom-host:9999" in req.full_url
+                call_args = mock_get.call_args
+                assert "custom-host:9999" in call_args[0][0]
 
 
 class TestOllamaProviderCapabilities:
