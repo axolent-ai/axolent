@@ -26,6 +26,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
+from application.security.input_normalizer import (
+    normalize_aggressive,
+    normalize_for_security_check,
+)
 from application.skill_compression.hypothesis_storage import Hypothesis
 
 log = logging.getLogger(__name__)
@@ -266,6 +270,21 @@ _CATEGORY_PATTERNS: dict[NudgeCategory, list[re.Pattern[str]]] = {
     ],
 }
 
+# Aggressive-normalized pattern variants (Phase 1.5 Polish-Polish):
+# For Pass 2, patterns must ALSO be aggressive-normalized so that German
+# alternatives with umlauts (e.g. "kündig", "lösch") match the aggressive
+# input (e.g. "kundig", "losch"). Built at module load by running
+# normalize_aggressive on each pattern's source string. ASCII regex
+# metacharacters are unchanged by normalization, only non-ASCII literals
+# (umlauts) are folded to Latin equivalents.
+_CATEGORY_PATTERNS_AGGRESSIVE: dict[NudgeCategory, list[re.Pattern[str]]] = {}
+for _cat, _patterns in _CATEGORY_PATTERNS.items():
+    _CATEGORY_PATTERNS_AGGRESSIVE[_cat] = [
+        re.compile(normalize_aggressive(p.pattern), p.flags) for p in _patterns
+    ]
+# Cleanup loop variables from module namespace
+del _cat, _patterns
+
 
 # ---------------------------------------------------------------
 # Result dataclass
@@ -353,6 +372,14 @@ class NudgeFilter:
     def _evaluate(self, hypothesis: Hypothesis) -> Optional[NudgeViolation]:
         """Check all negative categories against hypothesis claim.
 
+        Two-pass pattern matching (Phase 1.5 Polish-Polish architecture):
+          Pass 1: normalize_for_security_check (NFKC + Cf-strip).
+            Preserves umlauts while stripping Zero-Width and composing
+            combining diacritics via NFKC. German patterns match natively.
+          Pass 2: normalize_aggressive + _CATEGORY_PATTERNS_AGGRESSIVE.
+            Folds everything to Latin. Uses aggressive pattern variants
+            (German umlaut alternatives also folded) to avoid Split-Brain.
+
         Args:
             hypothesis: The hypothesis to evaluate.
 
@@ -361,9 +388,25 @@ class NudgeFilter:
         """
         claim = hypothesis.claim
 
+        # Pass 1: basic normalization (NFKC + Cf-strip). Preserves umlauts,
+        # strips Zero-Width chars, composes combining diacritics.
+        basic_claim = normalize_for_security_check(claim)
         for category, patterns in _CATEGORY_PATTERNS.items():
             for pattern in patterns:
-                m = pattern.search(claim)
+                m = pattern.search(basic_claim)
+                if m:
+                    return NudgeViolation(
+                        category=category,
+                        matched_text=m.group()[:50],
+                        description=CATEGORY_DESCRIPTIONS[category],
+                    )
+
+        # Pass 2: aggressive normalization + aggressive patterns.
+        # Folds confusables to Latin, strips combining marks.
+        aggressive_claim = normalize_aggressive(claim)
+        for category, patterns in _CATEGORY_PATTERNS_AGGRESSIVE.items():
+            for pattern in patterns:
+                m = pattern.search(aggressive_claim)
                 if m:
                     return NudgeViolation(
                         category=category,

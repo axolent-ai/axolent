@@ -31,6 +31,10 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
+from application.security.input_normalizer import (
+    normalize_aggressive,
+    normalize_for_security_check,
+)
 from application.skill_compression.event_normalizer import NormalizedEvent
 from application.skill_compression.hypothesis_storage import Hypothesis
 
@@ -215,6 +219,23 @@ _HEALTHCARE_PATTERN: re.Pattern[str] = re.compile(
     re.IGNORECASE,
 )
 
+# Aggressive-normalized pattern variants (Phase 1.5 Polish-Polish):
+# For Pass 2 (aggressive input), patterns must ALSO be aggressive-normalized.
+# Otherwise German keywords like "angststoerung" (aggressive form of
+# "angststörung") won't match because the pattern still expects the umlaut.
+# Built at module load: each keyword is normalize_aggressive'd, then
+# deduplicated and compiled into a single alternation pattern.
+_HEALTHCARE_KEYWORDS_AGGRESSIVE: frozenset[str] = frozenset(
+    normalize_aggressive(kw) for kw in ALL_HEALTHCARE_KEYWORDS
+)
+
+_HEALTHCARE_PATTERN_AGGRESSIVE: re.Pattern[str] = re.compile(
+    r"\b(?:"
+    + "|".join(re.escape(kw) for kw in sorted(_HEALTHCARE_KEYWORDS_AGGRESSIVE) if kw)
+    + r")\b",
+    re.IGNORECASE,
+)
+
 # ---------------------------------------------------------------
 # Behavioral-change patterns (Layer 3)
 # ---------------------------------------------------------------
@@ -381,6 +402,14 @@ class HealthcareFilter:
     def _evaluate(self, hypothesis: Hypothesis) -> HealthcareFilterResult:
         """Run all four filter layers on a hypothesis.
 
+        Two-pass pattern matching (Phase 1.5 Polish-Polish architecture):
+          Pass 1: normalize_for_security_check (NFKC + Cf-strip).
+            Preserves umlauts while stripping Zero-Width and composing
+            combining diacritics via NFKC. German keywords match natively.
+          Pass 2: normalize_aggressive (NFD + Mn-strip + confusables-fold + NFKC).
+            Folds everything to Latin. Uses _HEALTHCARE_PATTERN_AGGRESSIVE
+            (keywords also aggressive-normalized) to avoid Split-Brain.
+
         Args:
             hypothesis: The hypothesis to evaluate.
 
@@ -399,8 +428,17 @@ class HealthcareFilter:
                     matched_term=tag,
                 )
 
-        # Layer 2: Healthcare keyword scan
-        match = _HEALTHCARE_PATTERN.search(claim)
+        # Two-pass matching (Phase 1.5 Polish-Polish):
+        # Pass 1: basic normalization (NFKC + Cf-strip). Preserves umlauts,
+        # strips Zero-Width chars, composes combining diacritics to pre-composed.
+        # Catches: DE+ZWSP, DE+combining-diaeresis.
+        basic_claim = normalize_for_security_check(claim)
+        # Pass 2: aggressive normalization. Folds confusables to Latin, strips
+        # all combining marks. Catches: Cyrillic-in-DE, mixed-script attacks.
+        aggressive_claim = normalize_aggressive(claim)
+
+        # --- Pass 1: basic claim vs raw patterns (umlauts preserved both sides)
+        match = _HEALTHCARE_PATTERN.search(basic_claim)
         if match:
             return HealthcareFilterResult(
                 blocked=True,
@@ -409,9 +447,8 @@ class HealthcareFilter:
                 matched_term=match.group(),
             )
 
-        # Layer 3: Behavioral-change pattern detection
         for pattern in _BEHAVIORAL_CHANGE_PATTERNS:
-            match = pattern.search(claim)
+            match = pattern.search(basic_claim)
             if match:
                 return HealthcareFilterResult(
                     blocked=True,
@@ -422,9 +459,40 @@ class HealthcareFilter:
                     matched_term=match.group(),
                 )
 
-        # Layer 4: Mood-inference pattern detection
         for pattern in _MOOD_INFERENCE_PATTERNS:
-            match = pattern.search(claim)
+            match = pattern.search(basic_claim)
+            if match:
+                return HealthcareFilterResult(
+                    blocked=True,
+                    layer=4,
+                    reason=f"Mood-inference pattern: '{match.group()}'",
+                    matched_term=match.group(),
+                )
+
+        # --- Pass 2: aggressive claim vs aggressive patterns (Latin-only both)
+        match = _HEALTHCARE_PATTERN_AGGRESSIVE.search(aggressive_claim)
+        if match:
+            return HealthcareFilterResult(
+                blocked=True,
+                layer=2,
+                reason=f"Healthcare keyword detected (aggressive): '{match.group()}'",
+                matched_term=match.group(),
+            )
+
+        for pattern in _BEHAVIORAL_CHANGE_PATTERNS:
+            match = pattern.search(aggressive_claim)
+            if match:
+                return HealthcareFilterResult(
+                    blocked=True,
+                    layer=3,
+                    reason=(
+                        f"Behavioral-clinical phenotyping pattern: '{match.group()}'"
+                    ),
+                    matched_term=match.group(),
+                )
+
+        for pattern in _MOOD_INFERENCE_PATTERNS:
+            match = pattern.search(aggressive_claim)
             if match:
                 return HealthcareFilterResult(
                     blocked=True,

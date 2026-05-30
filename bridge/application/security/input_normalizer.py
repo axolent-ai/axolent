@@ -9,12 +9,15 @@ Level 1 (basic): normalize_for_security_check()
   pattern matching (InjectionDetector multilingual patterns).
 
 Level 2 (aggressive): normalize_aggressive()
-  1. Everything from Level 1
-  2. Cross-Script Confusables folding (Cyrillic/Greek -> Latin)
-  3. Strip Mn (Combining Mark) category including Variation Selectors
-  Catches mixed-script bypass attacks (Cyrillic 'a' in Latin text).
+  1. NFD decompose (isolates combining marks from base chars)
+  2. Strip Mn (Combining Mark) category including Variation Selectors
+  3. Cross-Script Confusables folding (Cyrillic/Greek -> Latin)
+  4. NFKC normalize (final compatibility form)
+  5. Strip Cf (Format/Zero-Width) category
+  Catches mixed-script bypass attacks (Cyrillic 'a' in Latin text)
+  AND combining-diacritic bypasses (U+0308 on 'o' to evade 'ignore').
   CAUTION: destroys non-Latin scripts. Used by SecretScanner (Latin
-  patterns only) and LeakageFilter (Latin patterns only).
+  patterns only), LeakageFilter, HealthcareFilter, and NudgeFilter.
 
 InjectionDetector uses BOTH levels (two-pass matching) to catch both
 native-script injections AND mixed-script bypasses.
@@ -133,17 +136,20 @@ def normalize_for_security_check(text: str) -> str:
 
 
 def normalize_aggressive(text: str) -> str:
-    """Aggressive normalization: confusables folding + Mn strip (Phase 1.5).
+    """Aggressive normalization: NFD decompose, Mn strip, confusables fold, NFKC.
 
-    Steps:
-      1. Basic normalization (NFKC + Cf strip)
-      2. Cross-Script Confusables folding (Cyrillic/Greek -> Latin)
-      3. Strip Mn (Combining Mark) category characters
+    Steps (Decompose-First architecture, Phase 1.5.2-Polish):
+      1. NFD decompose (separates pre-composed chars into base + combining marks)
+      2. Strip Mn (Combining Mark) category (now isolated by NFD)
+      3. Cross-Script Confusables folding (Cyrillic/Greek -> Latin via UTS-39)
+      4. NFKC normalize (final compatibility form)
+      5. Strip Cf (Format/Zero-Width) category
 
-    This level is for detecting mixed-script bypass attacks where an attacker
-    substitutes Latin characters with visually identical Cyrillic/Greek chars.
-    Closes the empirically proven bypass: Cyrillic 'a' (U+0430) in
-    "ignore all previous instructions" was NOT detected without this.
+    Why NFD first (Codex finding):
+      Old order (NFKC -> confusables -> Mn-strip) failed on combining diacritics:
+        'igno' + U+0308 -> NFKC composes to pre-composed char (no longer Mn)
+        -> Mn-strip is a no-op -> pattern 'ignore' cannot match 'ignore with umlaut'.
+      New order decomposes FIRST so combining marks are always isolated and stripped.
 
     CAUTION: This destroys non-Latin scripts (Russian, Hindi, Thai).
     Modules that need native-script detection (InjectionDetector multilang
@@ -159,15 +165,21 @@ def normalize_aggressive(text: str) -> str:
     if not text:
         return text
 
-    # Step 1: Basic normalization
-    normalized = normalize_for_security_check(text)
+    # Step 1: NFD decompose - separates pre-composed chars into base + Mn
+    normalized = unicodedata.normalize("NFD", text)
 
-    # Step 2: Cross-Script Confusables folding (UTS-39 subset)
+    # Step 2: Strip Mn (Combining Mark) category characters
+    # Now isolated by NFD: covers combining diacritics (U+0300..U+036F),
+    # combining marks, and Variation Selectors (U+FE00..U+FE0F category Mn).
+    normalized = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
+
+    # Step 3: Cross-Script Confusables folding (UTS-39 subset)
     normalized = "".join(_CONFUSABLES_MAP.get(ch, ch) for ch in normalized)
 
-    # Step 3: Strip Mn (Combining Mark) category characters
-    # Covers: combining diacritics (U+0300..U+036F), combining marks,
-    # and Variation Selectors (U+FE00..U+FE0F are category Mn).
-    cleaned = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
+    # Step 4: NFKC normalize - final compatibility form
+    normalized = unicodedata.normalize("NFKC", normalized)
+
+    # Step 5: Strip Cf (Format/Zero-Width) category
+    cleaned = "".join(ch for ch in normalized if unicodedata.category(ch) != "Cf")
 
     return cleaned

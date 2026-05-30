@@ -332,7 +332,7 @@ def _scan_file(path: Path) -> list[tuple[int, str, str]]:
 
         # Inline suppress marker allows intentional German terms in English
         # comments (e.g. quoting a concept). Both legacy and new format:
-        #   Legacy: "# noqa: en-only"  (conflicts with ruff noqa parsing)
+        #   Legacy: the 'noqa' prefix with 'en-only' suffix (conflicts with ruff)
         #   New:    "# allow: en-only" (ruff-safe)
         if "noqa: en-only" in line or "allow: en-only" in line:
             continue

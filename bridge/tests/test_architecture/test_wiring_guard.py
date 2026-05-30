@@ -16,6 +16,7 @@ from __future__ import annotations
 import ast
 import re
 from pathlib import Path
+from typing import Optional
 
 _BRIDGE_ROOT = Path(__file__).resolve().parents[2]
 
@@ -41,6 +42,16 @@ def _extract_registered_callback_patterns(source: str) -> list[tuple[str, int]]:
 def _extract_emitted_callback_prefixes() -> set[str]:
     """Scan presentation/**/*.py for all callback_data=... string prefixes.
 
+    Uses AST-based extraction (Phase 1.5 Polish-Polish Item 6) to catch:
+      - ast.Constant: literal strings (single/double quoted)
+      - ast.JoinedStr: f-strings (leading literal parts before first variable)
+      - ast.BinOp: simple string concatenation (left-side literal, best-effort)
+
+    Module-level string constants (ast.Name) are NOT resolved; this is a
+    known limitation acceptable because the codebase currently uses only
+    inline literals for callback_data. If constants are introduced later,
+    the extractor can be extended.
+
     Returns set of prefixes (the part before the first ':' or '{').
     """
     pres_dir = _BRIDGE_ROOT / "presentation"
@@ -48,14 +59,61 @@ def _extract_emitted_callback_prefixes() -> set[str]:
 
     for py_file in pres_dir.rglob("*.py"):
         content = py_file.read_text(encoding="utf-8")
-        for m in re.finditer(r'callback_data\s*=\s*f?"([^"]+)"', content):
-            val = m.group(1)
-            # Extract prefix before first '{' or ':'
-            prefix = re.split(r"[{:]", val)[0]
+        try:
+            tree = ast.parse(content, filename=str(py_file))
+        except SyntaxError:
+            continue
+
+        for node in ast.walk(tree):
+            # Find keyword argument callback_data=...
+            if not isinstance(node, ast.keyword):
+                continue
+            if node.arg != "callback_data":
+                continue
+
+            value = node.value
+            prefix = _extract_prefix_from_ast_node(value, content)
             if prefix:
                 prefixes.add(prefix)
 
     return prefixes
+
+
+def _extract_prefix_from_ast_node(node: ast.expr, source: str = "") -> Optional[str]:
+    """Extract callback_data prefix from an AST value node.
+
+    Handles:
+      - ast.Constant (literal strings)
+      - ast.JoinedStr (f-strings: extracts leading literal parts)
+      - ast.BinOp with Str+... (string concatenation, best-effort)
+
+    Returns the prefix (before first ':' or '{'), or None.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        # Plain string literal (single or double quoted)
+        return re.split(r"[{:]", node.value)[0] or None
+
+    if isinstance(node, ast.JoinedStr):
+        # f-string: extract leading Constant parts before first FormattedValue
+        parts: list[str] = []
+        for part in node.values:
+            if isinstance(part, ast.Constant) and isinstance(part.value, str):
+                parts.append(part.value)
+            else:
+                # Hit a FormattedValue (variable), stop collecting
+                break
+        if parts:
+            joined = "".join(parts)
+            prefix = re.split(r"[{:]", joined)[0]
+            return prefix or None
+
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        # String concatenation: "prefix" + variable
+        left_prefix = _extract_prefix_from_ast_node(node.left, source)
+        if left_prefix:
+            return left_prefix
+
+    return None
 
 
 def _extract_registered_commands(source: str) -> list[str]:
@@ -246,4 +304,129 @@ class TestMessageHandlerOrdering:
         )
         assert re.search(r"MessageHandler.*handle_message\b", source), (
             "handle_message must be in a MessageHandler"
+        )
+
+
+class TestDecoratorStackConsistency:
+    """Every CommandHandler function MUST carry at least one permission-granting
+    decorator from the explicit AUTHORIZATION_DECORATORS allowlist.
+
+    Missing decorators are silent privilege gaps: a handler without an
+    authorization decorator allows ANY user to execute that command,
+    bypassing the whitelist check entirely.
+
+    AUTHORIZATION_DECORATORS: explicit allowlist. Adding a new permission-granting
+    decorator (e.g. @conditional_whitelist) REQUIRES updating this list.
+    Without update, the guard gives false security by accepting handlers without
+    a recognized authorization decorator.
+
+    Detection method: AST-scan of the source file containing each handler
+    to verify that a recognized decorator appears in the decorator chain above
+    the function definition.
+    """
+
+    # Explicit allowlist of permission-granting decorator names.
+    # Adding a new authorization decorator to the codebase REQUIRES adding it here.
+    # See docs/CONVENTIONS.md for the update obligation.
+    AUTHORIZATION_DECORATORS: frozenset[str] = frozenset(
+        [
+            "require_whitelist",
+            # Add new permission-granting decorators here with a comment explaining
+            # their authorization semantics. Example:
+            # "require_admin",  # Only bot admins can execute this handler
+        ]
+    )
+
+    # Handlers that are intentionally public (if any) go here with
+    # justification. Currently: none. All handlers require whitelist.
+    EXEMPT_HANDLERS: set[str] = set()
+
+    def test_all_command_handlers_have_authorization_decorator(self) -> None:
+        """Every CommandHandler function has a recognized authorization decorator."""
+        source = _read_main_source()
+
+        # Extract handler function names from CommandHandler("cmd", func)
+        handler_funcs = re.findall(r'CommandHandler\("\w+",\s*(\w+)\)', source)
+        assert len(handler_funcs) >= 20, (
+            f"Expected at least 20 handlers, found {len(handler_funcs)}"
+        )
+
+        # Resolve each handler to its source file and check decorators
+        errors: list[str] = []
+
+        # Build import map: func_name -> module_path
+        import_map: dict[str, str] = {}
+        tree = ast.parse(source, filename="main.py")
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                for alias in node.names:
+                    name = alias.asname or alias.name
+                    import_map[name] = module
+
+        for func_name in handler_funcs:
+            if func_name in self.EXEMPT_HANDLERS:
+                continue
+
+            module_path = import_map.get(func_name)
+            if not module_path:
+                errors.append(f"{func_name}: not found in main.py imports")
+                continue
+
+            # Resolve module file
+            module_file = _BRIDGE_ROOT / module_path.replace(".", "/")
+            # Could be a package or a .py file
+            if module_file.with_suffix(".py").exists():
+                module_file = module_file.with_suffix(".py")
+            elif (module_file / "__init__.py").exists():
+                module_file = module_file / "__init__.py"
+            else:
+                errors.append(f"{func_name}: module file not found for {module_path}")
+                continue
+
+            mod_source = module_file.read_text(encoding="utf-8")
+
+            # Find the function definition and check decorators above it.
+            lines = mod_source.splitlines()
+            func_def_pattern = re.compile(
+                rf"^\s*(async\s+)?def\s+{re.escape(func_name)}\s*\("
+            )
+            found_def = False
+            for i, line in enumerate(lines):
+                if func_def_pattern.match(line):
+                    found_def = True
+                    # Check preceding lines for authorization decorators
+                    # (decorators are in the lines immediately above def)
+                    decorator_lines: list[str] = []
+                    j = i - 1
+                    while j >= 0 and (
+                        lines[j].strip().startswith("@") or lines[j].strip() == ""
+                    ):
+                        if lines[j].strip().startswith("@"):
+                            decorator_lines.append(lines[j].strip())
+                        j -= 1
+
+                    has_authz = any(
+                        any(
+                            deco_name in d
+                            for deco_name in self.AUTHORIZATION_DECORATORS
+                        )
+                        for d in decorator_lines
+                    )
+                    if not has_authz:
+                        errors.append(
+                            f"{func_name} in {module_path}: MISSING authorization "
+                            f"decorator. Found: {decorator_lines}. "
+                            f"Allowed: {sorted(self.AUTHORIZATION_DECORATORS)}."
+                        )
+                    break
+
+            if not found_def:
+                errors.append(
+                    f"{func_name}: function definition not found in {module_path}"
+                )
+
+        assert not errors, (
+            "CommandHandler functions missing authorization decorator:\n"
+            + "\n".join(f"  - {e}" for e in errors)
         )

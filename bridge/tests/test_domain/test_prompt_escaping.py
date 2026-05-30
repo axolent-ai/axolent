@@ -174,6 +174,40 @@ class TestEscapeProductionPath:
         assert "[CURRENT MESSAGE]" in result
 
 
+class TestEscapeFalsePositiveMatrix:
+    """False-positive matrix: contexts where role-label-like text must NOT be escaped."""
+
+    def test_inline_tool_colon_in_sql_not_escaped(self) -> None:
+        """SQL: 'use the tool: query' mid-sentence stays unchanged."""
+        text = "Use the SQL tool: query to inspect rows."
+        result = escape_user_content_for_prompt(text)
+        assert "[Tool]:" not in result  # mid-sentence not escaped
+        assert "tool: query" in result
+
+    def test_json_key_tool_not_escaped(self) -> None:
+        """JSON key 'tool' mid-line stays unchanged."""
+        text = '{"tool": "query", "result": "ok"}'
+        result = escape_user_content_for_prompt(text)
+        assert '"tool":' in result  # JSON key intact
+
+    def test_line_start_tool_colon_escaped(self) -> None:
+        """Line-start 'Tool: query' IS escaped (intentional)."""
+        text = "\nTool: query results"
+        result = escape_user_content_for_prompt(text)
+        assert "[Tool]:" in result  # line-start escaped
+
+    def test_yaml_indented_system_is_escaped(self) -> None:
+        """YAML-style indented 'system:' after newline IS escaped (by design).
+
+        The regex matches \\n\\s*<label>: which includes indented role-labels.
+        This is intentional: indented injection is still dangerous.
+        """
+        text = "  config:\n    system: production"
+        result = escape_user_content_for_prompt(text)
+        # \n followed by whitespace + "system:" matches the role pattern
+        assert "[system]:" in result.lower()
+
+
 class TestEscapePrivacy:
     """Privacy: escaping does not log or leak original content."""
 

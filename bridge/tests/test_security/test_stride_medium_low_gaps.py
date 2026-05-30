@@ -249,16 +249,16 @@ class TestGap08HomoglyphBypass:
             pattern_hash="test_hash_2",
         )
 
-        # After NFKC normalization, homoglyphs should be caught.
-        # If the filter doesn't normalize, this is the gap.
+        # After normalize_aggressive, homoglyphs should be caught.
+        # NFKC alone does NOT fold Cyrillic/Greek confusables (empirically
+        # proven by Opus 4.8). The correct fix is normalize_aggressive which
+        # includes NFD-decompose + Mn-strip + confusables-fold + NFKC.
         result = hf.filter_hypothesis(hyp_homoglyph)
-        if not result:
-            pytest.xfail(
-                "GAP-08: HealthcareFilter does not apply NFKC normalization "
-                "before pattern matching. Homoglyph bypass possible. "
-                "Post-switch task: add unicodedata.normalize('NFKC', text) "
-                "as preprocessing step."
-            )
+        assert result, (
+            "GAP-08: HealthcareFilter must apply normalize_aggressive before "
+            "pattern matching. NFKC alone does NOT fold Cyrillic confusables. "
+            "Fix: add normalize_aggressive(text) preprocessing step."
+        )
 
     def test_gap08_homoglyph_bypass_secret_scanner(self) -> None:
         """SecretScanner should detect secrets even with homoglyphs."""
@@ -309,14 +309,34 @@ class TestGap08HomoglyphBypass:
         )
 
         result = scanner.block_if_secrets(hyp_homoglyph)
-        if not result:
-            pytest.xfail(
-                "GAP-08: SecretScanner does not apply NFKC normalization. "
-                "Homoglyph bypass possible. Post-switch fix needed."
-            )
+        assert result, (
+            "GAP-08: SecretScanner must apply normalize_aggressive before "
+            "pattern matching. NFKC alone does NOT fold Cyrillic confusables."
+        )
 
-    def test_gap08_homoglyph_bypass_nudge_filter(self) -> None:
-        """NudgeFilter should detect violations even with homoglyphs."""
+    @pytest.mark.parametrize(
+        "payload,name",
+        [
+            # Opus 4.8 verified: this phrase triggers dark pattern regex
+            # Pattern: (?:erschwer|hide|versteck|obfuscate|verschleier)
+            #          .*(?:delete|opt.?out|cancel|abmeld|...)
+            (
+                "hide the opt-out button to make it hard to cancel",
+                "english_baseline_pass1",
+            ),
+            # Cyrillic 'i' (U+0456) in 'hide' -- caught by Pass 2
+            (
+                "hіde the opt-out button to make it hard to cancel",
+                "cyrillic_i_in_hide_pass2",
+            ),
+        ],
+    )
+    def test_gap08_homoglyph_bypass_nudge_filter(self, payload: str, name: str) -> None:
+        """NudgeFilter should detect dark patterns even with homoglyphs.
+
+        Opus 4.8 empirically verified these phrases match the dark pattern
+        regex (Phase 1.5 Polish-Polish Item 5).
+        """
         from application.skill_compression.privacy.nudge_filter import NudgeFilter
         from application.skill_compression.hypothesis_storage import (
             Hypothesis,
@@ -325,15 +345,12 @@ class TestGap08HomoglyphBypass:
 
         nf = NudgeFilter()
 
-        # First test that the filter catches normal nudge patterns
-        # We'll use a known dark pattern term
-        nudge_claim = "Add a hidden opt-out to make users keep the subscription"
-        hyp_normal = Hypothesis(
-            hypothesis_id="test_5",
+        hyp = Hypothesis(
+            hypothesis_id="test_nudge_gap08",
             user_id=1,
             type="preference",
             scope=HypothesisScope(),
-            claim=nudge_claim,
+            claim=payload,
             status="suggested",
             version=1,
             elo_rating=1500.0,
@@ -341,41 +358,15 @@ class TestGap08HomoglyphBypass:
             decay_immune=False,
             created_at="2026-05-24T00:00:00Z",
             last_seen="2026-05-24T00:00:00Z",
-            pattern_hash="test_hash_5",
+            pattern_hash="test_hash_nudge",
         )
 
-        normal_caught = nf.violates_nudge_policy(hyp_normal)
-        if not normal_caught:
-            # If the normal pattern isn't caught, we can't test homoglyph bypass
-            pytest.skip(
-                "NudgeFilter does not catch this test pattern. "
-                "Cannot test homoglyph bypass without a known-caught pattern."
-            )
-
-        # Homoglyph variant: Cyrillic 'o' (U+043E) in 'opt-out'
-        homoglyph_claim = "Add a hidden оpt-out to make users keep the subscription"
-        hyp_homoglyph = Hypothesis(
-            hypothesis_id="test_6",
-            user_id=1,
-            type="preference",
-            scope=HypothesisScope(),
-            claim=homoglyph_claim,
-            status="suggested",
-            version=1,
-            elo_rating=1500.0,
-            source_type="conversation",
-            decay_immune=False,
-            created_at="2026-05-24T00:00:00Z",
-            last_seen="2026-05-24T00:00:00Z",
-            pattern_hash="test_hash_6",
+        result = nf.violates_nudge_policy(hyp)
+        assert result, (
+            f"GAP-08 ({name}): NudgeFilter must block dark pattern "
+            f"'{payload!r}' after normalization. "
+            "NFKC alone does NOT fold Cyrillic confusables."
         )
-
-        result = nf.violates_nudge_policy(hyp_homoglyph)
-        if not result:
-            pytest.xfail(
-                "GAP-08: NudgeFilter does not apply NFKC normalization. "
-                "Homoglyph bypass possible. Post-switch fix needed."
-            )
 
 
 # ===================================================================

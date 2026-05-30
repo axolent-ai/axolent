@@ -8,8 +8,9 @@ when embedded in the conversation context block, looks like a real assistant
 turn. Similarly '\\n---\\n' can break structural sections.
 
 Defense: escape_user_content_for_prompt() neutralizes these patterns by
-prefixing role labels with a Unicode word-joiner (invisible but breaks regex
-matching by the LLM) and replacing structural delimiters.
+wrapping role labels in brackets (Role: becomes [Role]:) so the LLM no
+longer interprets them as conversation-role markers, and replacing
+structural delimiters.
 
 Pure domain: no I/O, no storage, no framework dependencies.
 """

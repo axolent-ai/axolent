@@ -1,0 +1,21 @@
+# Repo-wide Ruff configuration (Phase 1.5.2-Polish, Item 6).
+#
+# Moved from bridge/pyproject.toml to ensure ALL files in the repo
+# (including root-level scripts/) get the same lint rules.
+# Previously, scripts/ at root did not inherit bridge/'s config.
+
+target-version = "py311"
+
+[lint]
+extend-select = [
+    "ASYNC",  # async-related rules (blocks sync IO in async functions)
+    "T20",    # print() detection (forces logging through RedactingFormatter)
+]
+
+[lint.per-file-ignores]
+"bridge/main.py" = ["E402"]
+"bridge/domain/text_guard/__main__.py" = ["T201"]   # CLI entry-point, print() is the intended output channel
+"scripts/*" = ["T201", "ASYNC250"]                    # root-level scripts (pre-commit hooks, dev tools with interactive input)
+"bridge/scripts/*" = ["T201"]                        # bridge-level migration/backfill scripts
+"bridge/tests/*" = ["T201"]                          # test helpers may print diagnostics
+"bridge/tests/test_e2e_telegram/conftest.py" = ["ASYNC220", "ASYNC240"]  # fixture manages subprocess + paths intentionally

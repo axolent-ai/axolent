@@ -70,7 +70,7 @@ _FAKE_UMLAUT_PATTERNS = re.compile(
 )
 
 # Suppress token: lines containing this string are skipped.
-# Composed so ruff does not flag it (ruff recognizes "# noqa: X" as a directive).
+# Composed via concatenation so ruff does not parse it as a lint directive.
 _SUPPRESS_TOKEN = "# noqa: " + "fake-umlaut"
 
 # Whitelist: files/patterns that are NOT checked

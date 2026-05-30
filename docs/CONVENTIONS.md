@@ -42,26 +42,38 @@ test_<module>_<claim_description>
 
 Examples from the codebase:
 
-- `test_input_normalizer_no_cyrillic_claim`
-- `test_injection_detector_no_cyrillic_claim`
-- `test_upsert_field_no_atomic_claim`
-- `test_no_unqualified_homoglyph_claim`
+Negative locks (claim must NOT be present):
 
-For positive locks (claim IS true and must stay true):
+- `test_upsert_field_no_atomic_claim` (bundleE)
+- `test_no_unqualified_homoglyph_claim` (bundleF)
 
-- `test_iter_user_text_fields_covers_7_fields`
+Positive locks (claim IS true and must stay true):
+
+- `test_iter_user_text_fields_covers_7_field_groups`
 - `test_safe_json_load_default_max_depth_is_64`
 - `test_safe_int_rejects_bool`
 - `test_escape_role_labels_count_matches_constant`
 - `test_redacting_formatter_overrides_format_exception`
+- `test_prompt_escaping_brackets_not_word_joiner`
 
 ### Location
 
-All Doc-Lock tests live in:
+Architectural doc-locks (cross-module, security-critical claims, default-deny
+invariants, monotonicity, normalization coverage) live in:
 
 ```
 tests/test_architecture/test_doc_locks.py
 ```
+
+Bundle-specific or incident-specific regression locks may remain co-located
+with their original test bundle, but must be recognizable as doc-locks via
+naming convention (`test_*_claim`, `test_*_lock`, `test_*_doc_lock`) or a
+class/comment that identifies them as doc-locks.
+
+Existing examples of co-located doc-locks:
+
+- `tests/test_bundleE_final_review_fixes.py` (TestMuss8DokuCorrections)
+- `tests/test_bundleF_handler_e2e.py` (TestSecretScannerDokuLock)
 
 ### Example Pattern
 
@@ -84,3 +96,34 @@ When reviewing PRs that touch `application/security/`,
 2. If yes: is there a Doc-Lock test for it?
 3. If a Doc-Lock test exists: does the change update both the
    docstring AND the test?
+
+---
+
+## Authorization Decorator Guards
+
+### What Is This?
+
+The wiring guard (`tests/test_architecture/test_wiring_guard.py`,
+`TestDecoratorStackConsistency`) ensures that every command/callback
+handler registered at runtime is protected by a recognized
+authorization decorator (e.g. `@require_whitelist`).
+
+### Update Obligation
+
+If a new permission-granting command decorator is introduced, you
+**MUST** update `TestDecoratorStackConsistency.AUTHORIZATION_DECORATORS`
+in `tests/test_architecture/test_wiring_guard.py` and add a comment
+explaining its authorization semantics. Without this update, the guard
+would silently accept new handlers using the new decorator as if they
+were unprotected.
+
+### Example
+
+```python
+AUTHORIZATION_DECORATORS: frozenset[str] = frozenset(
+    [
+        "require_whitelist",
+        # "require_admin",  # Only bot admins can execute this handler
+    ]
+)
+```
